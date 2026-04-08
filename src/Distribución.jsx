@@ -1,8 +1,9 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Settings, Store, Package, Upload, ArrowUpDown, Sliders, Map as MapIcon, Calculator, Plus, Trash2, Download, CheckSquare, ListPlus, Wand2, FileSpreadsheet, ToggleLeft, ToggleRight, BarChart3, ScatterChart as ScatterIcon, Moon, Sun, Info, ChevronDown, ChevronUp, Edit3, Check, X } from 'lucide-react';
+import { Settings, Store, Package, Upload, ArrowUpDown, Sliders, Map as MapIcon, Calculator, Plus, Trash2, Download, CheckSquare, ListPlus, Wand2, FileSpreadsheet, ToggleLeft, ToggleRight, BarChart3, ScatterChart as ScatterIcon, Info, ChevronDown, ChevronUp, Edit3, Check, X } from 'lucide-react';
 
 export default function Distribucion() {
-  const [theme, setTheme] = useState('light'); // Cambiado a 'light' por defecto para que haga match con tu captura
+  // Ajustado a 'light' por defecto para encajar con tu Layout
+  const [theme, setTheme] = useState('light'); 
   const [activeTab, setActiveTab] = useState(1); 
   const fileInputRef = useRef(null);
   const chequeraFileInputRef = useRef(null);
@@ -41,11 +42,8 @@ export default function Distribucion() {
   // --- MOTOR DE TEMAS ---
   const themes = {
     dark: {
-      appBg: "bg-black text-gray-100", header: "bg-zinc-950 border-purple-900/50 shadow-md",
-      logoIcon: "bg-purple-600 text-white", logoAccent: "text-yellow-400",
-      btnMenu: "bg-zinc-900 text-gray-300 hover:text-white hover:bg-zinc-800 border border-zinc-800",
-      menuBg: "bg-zinc-900 border border-zinc-700 shadow-xl", menuItem: "hover:bg-zinc-800 text-gray-200 border-zinc-800",
-      card: "bg-zinc-900 border-zinc-800 shadow-lg", cardInner: "bg-zinc-950 border-zinc-800",
+      appBg: "bg-transparent text-gray-100", 
+      card: "bg-zinc-900 border-zinc-800 shadow-sm", cardInner: "bg-zinc-950 border-zinc-800",
       textMain: "text-white", textMuted: "text-gray-400", textAccent1: "text-purple-400", textAccent2: "text-yellow-400",
       iconAccent1: "text-purple-400 bg-purple-900/30", iconAccent2: "text-yellow-400 bg-yellow-500/20",
       border: "border-zinc-800", input: "bg-zinc-950 border-zinc-700 text-white focus:ring-purple-500",
@@ -56,10 +54,7 @@ export default function Distribucion() {
       tabActive: "border-purple-500 text-purple-400",
     },
     light: {
-      appBg: "bg-transparent text-gray-800", header: "bg-white border-gray-200 shadow-sm",
-      logoIcon: "bg-blue-600 text-white", logoAccent: "text-blue-600",
-      btnMenu: "bg-white text-gray-600 hover:text-gray-900 hover:bg-gray-100 border border-gray-300",
-      menuBg: "bg-white border border-gray-200 shadow-xl", menuItem: "hover:bg-gray-50 text-gray-700 border-gray-100",
+      appBg: "bg-transparent text-gray-800", 
       card: "bg-white border-gray-200 shadow-sm", cardInner: "bg-gray-50 border-gray-200",
       textMain: "text-gray-900", textMuted: "text-gray-500", textAccent1: "text-blue-600", textAccent2: "text-indigo-600",
       iconAccent1: "text-blue-600 bg-blue-50", iconAccent2: "text-indigo-600 bg-indigo-50",
@@ -160,7 +155,7 @@ export default function Distribucion() {
   }, [scoreWeights, activeClusters]);
 
 
-  // --- CARGAS Y LECTURAS (Con ISO-8859-1 para Acentos) ---
+  // --- CARGAS Y LECTURAS ---
   const handleStoreCSVUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -311,7 +306,8 @@ export default function Distribucion() {
     reader.readAsText(file, 'ISO-8859-1'); 
   };
 
-  // CÁLCULOS VISUALES Y ORDENAMIENTO
+
+  // --- CÁLCULOS VISUALES Y ORDENAMIENTO ---
   const storeStats = useMemo(() => {
     const stats = { total: stores.length, goas: goas.length, clusters: { 'Sin Asignar': 0 } };
     activeClusters.forEach(c => stats.clusters[c] = 0);
@@ -556,7 +552,6 @@ export default function Distribucion() {
     const results = [];
     const warnings = []; 
     
-    // REVERSIÓN INTELIGENTE: Sin acumulación cruzada para respetar la curva de tallas
     chequera.forEach(item => {
       let qtyToDistribute = parseInt(item.qty);
       if (qtyToDistribute <= 0) return;
@@ -957,7 +952,7 @@ export default function Distribucion() {
   return (
     <div className={`h-full flex flex-col font-sans transition-colors duration-300 ${t.appBg}`}>
       
-      <div className="flex space-x-6 px-8 mt-4 overflow-x-auto custom-scrollbar">
+      <div className="flex space-x-6 px-8 mt-4 border-b border-gray-200 dark:border-zinc-800 overflow-x-auto custom-scrollbar">
         <button onClick={() => setActiveTab(1)} className={`flex items-center space-x-2 px-4 py-3 font-bold text-sm transition-colors border-b-2 ${activeTab === 1 ? t.tabActive : `border-transparent ${t.textMuted} hover:${t.textMain}`}`}>
           <Store size={18} /><span>1. Tiendas y Clústeres</span>
         </button>
@@ -967,13 +962,6 @@ export default function Distribucion() {
         >
           <Calculator size={18} /><span>2. Distribución</span>
         </button>
-        
-        {/* Toggle para pruebas internas (Opcional, si el shell ya lo controla puedes quitar este div) */}
-        <div className="ml-auto flex items-center mb-2">
-           <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className={`p-2 rounded-lg transition-colors ${t.btnGhost}`}>
-              {theme === 'dark' ? <Sun size={18}/> : <Moon size={18}/>}
-           </button>
-        </div>
       </div>
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 transition-colors duration-300">
@@ -1450,7 +1438,6 @@ export default function Distribucion() {
         )}
 
       </main>
-      <style dangerouslySetInnerHTML={{__html: `.custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; } .custom-scrollbar::-webkit-scrollbar-track { background: transparent; } .custom-scrollbar::-webkit-scrollbar-thumb { background: ${theme === 'dark' ? '#3f3f46' : '#d1d5db'}; border-radius: 4px; } .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: ${theme === 'dark' ? '#52525b' : '#9ca3af'}; } @keyframes fadeInUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } } .animate-fade-in-up { animation: fadeInUp 0.4s ease-out forwards; }`}} />
     </div>
   );
 }
