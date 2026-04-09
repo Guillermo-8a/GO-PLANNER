@@ -1,9 +1,87 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Settings, Store, Package, Upload, ArrowUpDown, Sliders, Map as MapIcon, Calculator, Plus, Trash2, Download, CheckSquare, ListPlus, Wand2, FileSpreadsheet, ToggleLeft, ToggleRight, BarChart3, ScatterChart as ScatterIcon, Info, ChevronDown, ChevronUp, Edit3, Check, X } from 'lucide-react';
+import { Settings, Store, Package, Upload, ArrowUpDown, Sliders, Map as MapIcon, Calculator, Plus, Trash2, Download, CheckSquare, ListPlus, Wand2, FileSpreadsheet, ToggleLeft, ToggleRight, BarChart3, Activity, Moon, Sun, Info, ChevronDown, ChevronUp, Edit3, Check, X } from 'lucide-react';
 
+// ============================================================================
+// COMPONENTE EXTERNO: GRÁFICA DE DISPERSIÓN (Para evitar errores de React)
+// ============================================================================
+const ScatterPlot = ({ data, title, subtitle, colorClass, maxVentas, maxInv, t }) => {
+  let trendline = null;
+  const n = data.length;
+  
+  if (n > 1) {
+    let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
+    data.forEach(d => { sumX += d.x; sumY += d.y; sumXY += d.x * d.y; sumXX += d.x * d.x; });
+    const denominator = (n * sumXX - sumX * sumX);
+    
+    if (denominator !== 0) {
+        const slope = (n * sumXY - sumX * sumY) / denominator;
+        const intercept = (sumY - slope * sumX) / n;
+        const y1 = slope * 0 + intercept;
+        const y2 = slope * maxVentas + intercept;
+        trendline = { 
+          y1: 100 - (y1 / maxInv) * 100, 
+          y2: 100 - (y2 / maxInv) * 100 
+        };
+    }
+  }
+
+  return (
+    <div className={`p-5 rounded-xl border flex flex-col col-span-1 ${t.cardInner}`}>
+      <div className="flex justify-between items-start mb-4">
+        <div>
+          <h4 className={`text-sm font-bold flex items-center ${t.textMain}`}><Activity size={16} className="mr-2"/> {title}</h4>
+          <p className={`text-[10px] ${t.textMuted}`}>{subtitle}</p>
+        </div>
+        <div className="flex flex-col items-end text-[9px] gap-1">
+           <div className="flex items-center"><span className="w-6 border-t-2 border-dashed border-red-500 mr-1"></span> R² Tendencia</div>
+           <div className="flex items-center"><span className={`w-2 h-2 rounded-full ${colorClass.replace('text-', 'bg-')} mr-1`}></span> Tiendas</div>
+        </div>
+      </div>
+      
+      <div className="relative h-48 w-full border-l border-b border-zinc-700/50 flex mt-auto">
+        <svg className="w-full h-full absolute inset-0 overflow-visible">
+          <line x1="0" y1="25%" x2="100%" y2="25%" stroke="currentColor" strokeOpacity="0.1" strokeDasharray="4"/>
+          <line x1="0" y1="50%" x2="100%" y2="50%" stroke="currentColor" strokeOpacity="0.1" strokeDasharray="4"/>
+          <line x1="0" y1="75%" x2="100%" y2="75%" stroke="currentColor" strokeOpacity="0.1" strokeDasharray="4"/>
+          
+          {trendline && !isNaN(trendline.y1) && !isNaN(trendline.y2) && (
+            <line x1="0%" y1={`${trendline.y1}%`} x2="100%" y2={`${trendline.y2}%`} stroke="#ef4444" strokeWidth="2" strokeDasharray="6" className="opacity-70" />
+          )}
+
+          {data.map((d, i) => {
+            if(maxVentas === 0 || maxInv === 0) return null;
+            const cx = `${(d.x / maxVentas) * 100}%`;
+            const cy = `${Math.max(0, Math.min(100, 100 - (d.y / maxInv) * 100))}%`; 
+            return (
+              <g key={i} className="group cursor-crosshair">
+                <circle cx={cx} cy={cy} r="4" className={`opacity-60 hover:opacity-100 transition-all hover:r-6 fill-current ${colorClass}`} />
+                <title>{`${d.name}\nVentas Históricas: $${d.x.toLocaleString()}\nOH Antes: ${d.oh}\nEnvío Nuevo: ${d.env}\nInventario Total: ${d.oh + d.env}`}</title>
+              </g>
+            );
+          })}
+        </svg>
+        
+        <div className="absolute -left-9 top-0 bottom-0 flex flex-col justify-between text-[8px] text-zinc-500 py-1 text-right pr-2 bg-transparent">
+          <span>{Math.round(maxInv)}</span>
+          <span>{Math.round(maxInv/2)}</span>
+          <span>0</span>
+        </div>
+        <div className="absolute -bottom-5 left-0 right-0 flex justify-between text-[8px] text-zinc-500 px-1">
+          <span>$0</span>
+          <span>Ventas</span>
+          <span>${Math.round(maxVentas).toLocaleString()}</span>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+
+// ============================================================================
+// COMPONENTE PRINCIPAL
+// ============================================================================
 export default function Distribucion() {
-  // Ajustado a 'light' por defecto para encajar con tu Layout
-  const [theme, setTheme] = useState('light'); 
+  const [theme, setTheme] = useState('light'); // Por defecto light para tu layout
   const [activeTab, setActiveTab] = useState(1); 
   const fileInputRef = useRef(null);
   const chequeraFileInputRef = useRef(null);
@@ -714,244 +792,87 @@ export default function Distribucion() {
     triggerDownload(`O9_Distribucion_${new Date().toISOString().split('T')[0]}.csv`, csvContent);
   };
 
+  // --- PREPARACIÓN DE DATOS PARA GRÁFICAS SIN COMPONENTES ANIDADOS ---
+  const topStoresData = useMemo(() => {
+    if (distributionResult.length === 0) return [];
+    const agg = {};
+    distributionResult.forEach(r => {
+      if (!agg[r.nombre]) agg[r.nombre] = { qty: 0, cluster: r.globalCluster };
+      agg[r.nombre].qty += r.qty;
+    });
+    return Object.entries(agg).map(([name, val]) => ({ name, qty: val.qty, cluster: val.cluster })).sort((a, b) => b.qty - a.qty).slice(0, 10);
+  }, [distributionResult]);
 
-  // --- COMPONENTES PARA GRÁFICAS DE TAB 2 ---
-  
-  const ChartByStore = () => {
-    const data = useMemo(() => {
-      const agg = {};
-      distributionResult.forEach(r => {
-        if (!agg[r.nombre]) agg[r.nombre] = { qty: 0, cluster: r.globalCluster };
-        agg[r.nombre].qty += r.qty;
-      });
-      return Object.entries(agg).map(([name, val]) => ({ name, qty: val.qty, cluster: val.cluster })).sort((a, b) => b.qty - a.qty).slice(0, 10);
-    }, [distributionResult]);
-    if (data.length === 0) return null;
-    const max = Math.max(...data.map(d => d.qty), 1);
+  const topStoresMax = Math.max(...topStoresData.map(d => d.qty), 1);
 
-    return (
-      <div className={`p-5 rounded-xl border ${t.cardInner}`}>
-        <h4 className={`text-sm font-bold flex items-center mb-4 ${t.textMain}`}><Store size={16} className="mr-2"/> Top 10 Tiendas Receptoras</h4>
-        <div className="space-y-3">
-          {data.map((d, i) => (
-            <div key={i} className="flex items-center text-xs">
-              <span className={`font-black text-[9px] px-1.5 py-0.5 rounded border mr-2 ${d.cluster === activeClusters[0] ? t.badgeAA : d.cluster === activeClusters[1] ? t.badgeA : t.badgeOther}`}>{d.cluster || '-'}</span>
-              <span className={`w-28 truncate pr-2 ${t.textMuted}`} title={d.name}>{d.name}</span>
-              <div className="flex-1 h-5 bg-black/20 rounded overflow-hidden flex">
-                <div className="bg-purple-500 h-full flex items-center px-2 text-[10px] text-white font-bold transition-all duration-1000 ease-out" style={{width: `${(d.qty/max)*100}%`}}>
-                  {d.qty}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  };
+  const modelsStoreData = useMemo(() => {
+    if (distributionResult.length === 0) return { stores: [], models: [] };
+    const agg = {};
+    const modelsSet = new Set();
+    distributionResult.forEach(r => {
+      if (!agg[r.nombre]) agg[r.nombre] = { total: 0, models: {} };
+      agg[r.nombre].total += r.qty;
+      const dispModelo = r.modelo !== 'N/A' ? r.modelo : r.sku;
+      agg[r.nombre].models[dispModelo] = (agg[r.nombre].models[dispModelo] || 0) + r.qty;
+      modelsSet.add(dispModelo);
+    });
+    const sorted = Object.entries(agg).map(([name, val]) => ({ name, ...val })).sort((a, b) => b.total - a.total).slice(0, 15);
+    return { stores: sorted, models: Array.from(modelsSet) };
+  }, [distributionResult]);
 
-  const ChartModelsByStore = () => {
-    const data = useMemo(() => {
-      const agg = {};
-      const modelsSet = new Set();
-      distributionResult.forEach(r => {
-        if (!agg[r.nombre]) agg[r.nombre] = { total: 0, models: {} };
-        agg[r.nombre].total += r.qty;
-        const dispModelo = r.modelo !== 'N/A' ? r.modelo : r.sku;
-        agg[r.nombre].models[dispModelo] = (agg[r.nombre].models[dispModelo] || 0) + r.qty;
-        modelsSet.add(dispModelo);
-      });
-      const sorted = Object.entries(agg).map(([name, val]) => ({ name, ...val })).sort((a, b) => b.total - a.total).slice(0, 15);
-      return { stores: sorted, models: Array.from(modelsSet) };
-    }, [distributionResult]);
+  const modelsStoreMax = Math.max(...modelsStoreData.stores.map(d => d.total), 1);
+  const modelsColors = ['bg-indigo-500', 'bg-pink-500', 'bg-amber-500', 'bg-teal-500', 'bg-cyan-500', 'bg-rose-500', 'bg-violet-500', 'bg-fuchsia-500'];
 
-    if (data.stores.length === 0) return null;
-    const max = Math.max(...data.stores.map(d => d.total), 1);
-    const colors = ['bg-indigo-500', 'bg-pink-500', 'bg-amber-500', 'bg-teal-500', 'bg-cyan-500', 'bg-rose-500', 'bg-violet-500', 'bg-fuchsia-500'];
+  const zonesData = useMemo(() => {
+    if (distributionResult.length === 0) return [];
+    const agg = {};
+    distributionResult.forEach(r => {
+      agg[r.zona] = (agg[r.zona] || 0) + r.qty;
+    });
+    return Object.entries(agg).map(([name, qty]) => ({ name, qty })).sort((a, b) => b.qty - a.qty);
+  }, [distributionResult]);
 
-    return (
-      <div className={`p-5 rounded-xl border col-span-1 md:col-span-2 ${t.cardInner}`}>
-        <h4 className={`text-sm font-bold flex items-center mb-4 ${t.textMain}`}><Package size={16} className="mr-2"/> Envío por Modelo (Top 15 Tiendas)</h4>
-        
-        <div className="flex flex-wrap gap-2 mb-4">
-           {data.models.map((m, i) => (
-              <div key={m} className="flex items-center text-[10px] text-gray-400"><span className={`w-3 h-3 rounded-sm mr-1 ${colors[i%colors.length]}`}></span>{m}</div>
-           ))}
-        </div>
+  const zonesMax = Math.max(...zonesData.map(d => d.qty), 1);
 
-        <div className="space-y-3">
-          {data.stores.map((d, i) => (
-            <div key={i} className="flex items-center text-xs">
-              <span className={`w-32 truncate pr-2 ${t.textMuted}`} title={d.name}>{d.name}</span>
-              <div className="flex-1 h-5 bg-black/20 rounded overflow-hidden flex">
-                {data.models.map((m, j) => {
-                   const qty = d.models[m] || 0;
-                   if(qty === 0) return null;
-                   const width = `${(qty/max)*100}%`;
-                   return (
-                      <div key={m} title={`${m}: ${qty} pzs`} className={`h-full flex items-center justify-center text-[9px] text-white font-bold transition-all duration-1000 ease-out ${colors[j%colors.length]}`} style={{width}}>
-                         {qty > (max*0.05) ? qty : ''} 
-                      </div>
-                   )
-                })}
-              </div>
-              <span className={`w-8 text-right font-bold ml-2 ${t.textMain}`}>{d.total}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  };
-
-  const ChartByZone = () => {
-    const data = useMemo(() => {
-      const agg = {};
-      distributionResult.forEach(r => {
-        agg[r.zona] = (agg[r.zona] || 0) + r.qty;
-      });
-      return Object.entries(agg).map(([name, qty]) => ({ name, qty })).sort((a, b) => b.qty - a.qty);
-    }, [distributionResult]);
-    if (data.length === 0) return null;
-    const max = Math.max(...data.map(d => d.qty), 1);
-
-    return (
-      <div className={`p-5 rounded-xl border ${t.cardInner}`}>
-        <h4 className={`text-sm font-bold flex items-center mb-4 ${t.textMain}`}><MapIcon size={16} className="mr-2"/> Piezas por Zona</h4>
-        <div className="space-y-3 max-h-64 overflow-y-auto custom-scrollbar pr-2">
-          {data.map((d, i) => (
-            <div key={i} className="flex items-center text-xs">
-              <span className={`w-28 truncate pr-2 font-bold ${t.textAccent2}`} title={d.name}>{d.name}</span>
-              <div className="flex-1 h-5 bg-black/20 rounded overflow-hidden flex">
-                <div className="bg-yellow-500 h-full flex items-center px-2 text-[10px] text-black font-black transition-all duration-1000 ease-out" style={{width: `${(d.qty/max)*100}%`}}>
-                  {d.qty}
-                </div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-    );
-  };
-
-  const ScatterPlot = ({ data, title, subtitle, colorClass, maxVentas, maxInv }) => {
-    let trendline = null;
-    const n = data.length;
-    
-    if (n > 1) {
-      let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
-      data.forEach(d => { sumX += d.x; sumY += d.y; sumXY += d.x * d.y; sumXX += d.x * d.x; });
-      const denominator = (n * sumXX - sumX * sumX);
-      
-      if (denominator !== 0) {
-          const slope = (n * sumXY - sumX * sumY) / denominator;
-          const intercept = (sumY - slope * sumX) / n;
-          const y1 = slope * 0 + intercept;
-          const y2 = slope * maxVentas + intercept;
-          trendline = { 
-            y1: 100 - (y1 / maxInv) * 100, 
-            y2: 100 - (y2 / maxInv) * 100 
-          };
+  const scatterData = useMemo(() => {
+    if (distributionResult.length === 0) return { pre: [], post: [], maxInvPre: 10, maxInvPost: 10, maxVentas: 100 };
+    const agg = {};
+    distributionResult.forEach(r => {
+      if(!agg[r.centro]) {
+          agg[r.centro] = { name: r.nombre, env: 0, ohByGoa: {}, ventasByGoa: {} };
       }
-    }
-
-    return (
-      <div className={`p-5 rounded-xl border flex flex-col col-span-1 ${t.cardInner}`}>
-        <div className="flex justify-between items-start mb-4">
-          <div>
-            <h4 className={`text-sm font-bold flex items-center ${t.textMain}`}><ScatterIcon size={16} className="mr-2"/> {title}</h4>
-            <p className={`text-[10px] ${t.textMuted}`}>{subtitle}</p>
-          </div>
-          <div className="flex flex-col items-end text-[9px] gap-1">
-             <div className="flex items-center"><span className="w-6 border-t-2 border-dashed border-red-500 mr-1"></span> R² Tendencia</div>
-             <div className="flex items-center"><span className={`w-2 h-2 rounded-full ${colorClass.replace('text-', 'bg-')} mr-1`}></span> Tiendas</div>
-          </div>
-        </div>
+      agg[r.centro].ohByGoa[r.goa] = r.initialOH;
+      agg[r.centro].ventasByGoa[r.goa] = r.ventas;
+      agg[r.centro].env += r.qty;
+    });
+    
+    const pre = [];
+    const post = [];
+    
+    Object.values(agg).forEach(d => {
+        const totalOH = Object.values(d.ohByGoa).reduce((sum, val) => sum + val, 0);
+        const totalVentas = Object.values(d.ventasByGoa).reduce((sum, val) => sum + val, 0);
         
-        <div className="relative h-48 w-full border-l border-b border-zinc-700/50 flex mt-auto">
-          <svg className="w-full h-full absolute inset-0 overflow-visible">
-            <line x1="0" y1="25%" x2="100%" y2="25%" stroke="currentColor" strokeOpacity="0.1" strokeDasharray="4"/>
-            <line x1="0" y1="50%" x2="100%" y2="50%" stroke="currentColor" strokeOpacity="0.1" strokeDasharray="4"/>
-            <line x1="0" y1="75%" x2="100%" y2="75%" stroke="currentColor" strokeOpacity="0.1" strokeDasharray="4"/>
-            
-            {trendline && !isNaN(trendline.y1) && !isNaN(trendline.y2) && (
-              <line x1="0%" y1={`${trendline.y1}%`} x2="100%" y2={`${trendline.y2}%`} stroke="#ef4444" strokeWidth="2" strokeDasharray="6" className="opacity-70" />
-            )}
+        pre.push({ x: totalVentas, y: totalOH, name: d.name, oh: totalOH, env: 0 });
+        post.push({ x: totalVentas, y: totalOH + d.env, name: d.name, oh: totalOH, env: d.env });
+    });
+    
+    let preMax = Math.max(...pre.map(d => d.y), 5) * 1.1; 
+    if (preMax === 0 || isNaN(preMax)) preMax = 10;
 
-            {data.map((d, i) => {
-              if(maxVentas === 0 || maxInv === 0) return null;
-              const cx = `${(d.x / maxVentas) * 100}%`;
-              const cy = `${Math.max(0, Math.min(100, 100 - (d.y / maxInv) * 100))}%`; 
-              return (
-                <g key={i} className="group cursor-crosshair">
-                  <circle cx={cx} cy={cy} r="4" className={`opacity-60 hover:opacity-100 transition-all hover:r-6 fill-current ${colorClass}`} />
-                  <title>{`${d.name}\nVentas Históricas: $${d.x.toLocaleString()}\nOH Antes: ${d.oh}\nEnvío Nuevo: ${d.env}\nInventario Total: ${d.oh + d.env}`}</title>
-                </g>
-              );
-            })}
-          </svg>
-          
-          <div className="absolute -left-9 top-0 bottom-0 flex flex-col justify-between text-[8px] text-zinc-500 py-1 text-right pr-2 bg-transparent">
-            <span>{Math.round(maxInv)}</span>
-            <span>{Math.round(maxInv/2)}</span>
-            <span>0</span>
-          </div>
-          <div className="absolute -bottom-5 left-0 right-0 flex justify-between text-[8px] text-zinc-500 px-1">
-            <span>$0</span>
-            <span>Ventas</span>
-            <span>${Math.round(maxVentas).toLocaleString()}</span>
-          </div>
-        </div>
-      </div>
-    );
-  };
+    let postMax = Math.max(...post.map(d => d.y), 5) * 1.1; 
+    if (postMax === 0 || isNaN(postMax)) postMax = 10;
 
-  const DoubleScatterCharts = () => {
-    const { preData, postData, maxInvPre, maxInvPost, maxVentas } = useMemo(() => {
-      const agg = {};
-      distributionResult.forEach(r => {
-        if(!agg[r.centro]) {
-            agg[r.centro] = { name: r.nombre, env: 0, ohByGoa: {}, ventasByGoa: {} };
-        }
-        agg[r.centro].ohByGoa[r.goa] = r.initialOH;
-        agg[r.centro].ventasByGoa[r.goa] = r.ventas;
-        agg[r.centro].env += r.qty;
-      });
-      
-      const pre = [];
-      const post = [];
-      
-      Object.values(agg).forEach(d => {
-          const totalOH = Object.values(d.ohByGoa).reduce((sum, val) => sum + val, 0);
-          const totalVentas = Object.values(d.ventasByGoa).reduce((sum, val) => sum + val, 0);
-          
-          pre.push({ x: totalVentas, y: totalOH, name: d.name, oh: totalOH, env: 0 });
-          post.push({ x: totalVentas, y: totalOH + d.env, name: d.name, oh: totalOH, env: d.env });
-      });
-      
-      let preMax = Math.max(...pre.map(d => d.y), 5) * 1.1; 
-      if (preMax === 0 || isNaN(preMax)) preMax = 10;
-
-      let postMax = Math.max(...post.map(d => d.y), 5) * 1.1; 
-      if (postMax === 0 || isNaN(postMax)) postMax = 10;
-
-      let maxVentasVal = Math.max(...post.map(d => d.x), 100);
-      
-      return { preData: pre, postData: post, maxInvPre: preMax, maxInvPost: postMax, maxVentas: maxVentasVal };
-    }, [distributionResult]);
-
-    if(preData.length === 0) return null;
-
-    return (
-      <>
-        <ScatterPlot data={preData} title="Antes: Físico (OH)" subtitle="OH Original vs Ventas" colorClass="text-blue-400" maxVentas={maxVentas} maxInv={maxInvPre} />
-        <ScatterPlot data={postData} title="Después: Distribuido" subtitle="Total (OH + Envío) vs Ventas" colorClass="text-emerald-400" maxVentas={maxVentas} maxInv={maxInvPost} />
-      </>
-    );
-  };
+    let maxVentasVal = Math.max(...post.map(d => d.x), 100);
+    
+    return { pre: pre, post: post, maxInvPre: preMax, maxInvPost: postMax, maxVentas: maxVentasVal };
+  }, [distributionResult]);
 
 
   return (
     <div className={`h-full flex flex-col font-sans transition-colors duration-300 ${t.appBg}`}>
       
+      {/* TABS NATIVAS DEL SHELL */}
       <div className="flex space-x-6 px-8 mt-4 border-b border-gray-200 dark:border-zinc-800 overflow-x-auto custom-scrollbar">
         <button onClick={() => setActiveTab(1)} className={`flex items-center space-x-2 px-4 py-3 font-bold text-sm transition-colors border-b-2 ${activeTab === 1 ? t.tabActive : `border-transparent ${t.textMuted} hover:${t.textMain}`}`}>
           <Store size={18} /><span>1. Tiendas y Clústeres</span>
@@ -962,10 +883,17 @@ export default function Distribucion() {
         >
           <Calculator size={18} /><span>2. Distribución</span>
         </button>
+        
+        <div className="ml-auto flex items-center mb-2">
+           <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className={`p-2 rounded-lg transition-colors ${t.btnGhost}`} title="Cambiar Tema Interno">
+              {theme === 'dark' ? <Sun size={18}/> : <Moon size={18}/>}
+           </button>
+        </div>
       </div>
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 transition-colors duration-300">
         
+        {/* TAB 1 */}
         {activeTab === 1 && (
           stores.length === 0 ? (
             <div className={`p-10 md:p-16 rounded-2xl border text-center flex flex-col items-center justify-center ${theme==='dark'?'bg-zinc-900/50 border-zinc-800':'bg-white border-gray-200 shadow-sm'}`}>
@@ -1192,6 +1120,7 @@ export default function Distribucion() {
           )
         )}
 
+        {/* TAB 2 */}
         {activeTab === 2 && (
           <div className="space-y-6">
             
@@ -1395,6 +1324,7 @@ export default function Distribucion() {
               </div>
             )}
 
+            {/* RENDERIZADO EN LÍNEA DE GRÁFICAS PARA EVITAR ERRORES DE COMPONENTES ANIDADOS */}
             {distributionResult.length > 0 && (
               <div className="space-y-6 animate-fade-in-up">
                 <div className={`p-6 rounded-xl border border-green-500/50 bg-green-500/5 ${theme==='light' ? 'bg-green-50 border-green-200' : ''}`}>
@@ -1424,12 +1354,84 @@ export default function Distribucion() {
                 </h3>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  <ChartByStore />
-                  <ChartByZone />
-                  <ChartModelsByStore />
-                  <div className="col-span-1 md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
-                     <DoubleScatterCharts />
-                  </div>
+                  {/* TOP 10 TIENDAS */}
+                  {topStoresData.length > 0 && (
+                    <div className={`p-5 rounded-xl border ${t.cardInner}`}>
+                      <h4 className={`text-sm font-bold flex items-center mb-4 ${t.textMain}`}><Store size={16} className="mr-2"/> Top 10 Tiendas Receptoras</h4>
+                      <div className="space-y-3">
+                        {topStoresData.map((d, i) => (
+                          <div key={i} className="flex items-center text-xs">
+                            <span className={`font-black text-[9px] px-1.5 py-0.5 rounded border mr-2 ${d.cluster === activeClusters[0] ? t.badgeAA : d.cluster === activeClusters[1] ? t.badgeA : t.badgeOther}`}>{d.cluster || '-'}</span>
+                            <span className={`w-28 truncate pr-2 ${t.textMuted}`} title={d.name}>{d.name}</span>
+                            <div className="flex-1 h-5 bg-black/20 rounded overflow-hidden flex">
+                              <div className="bg-purple-500 h-full flex items-center px-2 text-[10px] text-white font-bold transition-all duration-1000 ease-out" style={{width: `${(d.qty/topStoresMax)*100}%`}}>
+                                {d.qty}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* PIEZAS POR ZONA */}
+                  {zonesData.length > 0 && (
+                    <div className={`p-5 rounded-xl border ${t.cardInner}`}>
+                      <h4 className={`text-sm font-bold flex items-center mb-4 ${t.textMain}`}><MapIcon size={16} className="mr-2"/> Piezas por Zona</h4>
+                      <div className="space-y-3 max-h-64 overflow-y-auto custom-scrollbar pr-2">
+                        {zonesData.map((d, i) => (
+                          <div key={i} className="flex items-center text-xs">
+                            <span className={`w-28 truncate pr-2 font-bold ${t.textAccent2}`} title={d.name}>{d.name}</span>
+                            <div className="flex-1 h-5 bg-black/20 rounded overflow-hidden flex">
+                              <div className="bg-yellow-500 h-full flex items-center px-2 text-[10px] text-black font-black transition-all duration-1000 ease-out" style={{width: `${(d.qty/zonesMax)*100}%`}}>
+                                {d.qty}
+                              </div>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* ENVÍO POR MODELO */}
+                  {modelsStoreData.stores.length > 0 && (
+                    <div className={`p-5 rounded-xl border col-span-1 md:col-span-2 ${t.cardInner}`}>
+                      <h4 className={`text-sm font-bold flex items-center mb-4 ${t.textMain}`}><Package size={16} className="mr-2"/> Envío por Modelo (Top 15 Tiendas)</h4>
+                      <div className="flex flex-wrap gap-2 mb-4">
+                         {modelsStoreData.models.map((m, i) => (
+                            <div key={m} className="flex items-center text-[10px] text-gray-400"><span className={`w-3 h-3 rounded-sm mr-1 ${modelsColors[i%modelsColors.length]}`}></span>{m}</div>
+                         ))}
+                      </div>
+                      <div className="space-y-3">
+                        {modelsStoreData.stores.map((d, i) => (
+                          <div key={i} className="flex items-center text-xs">
+                            <span className={`w-32 truncate pr-2 ${t.textMuted}`} title={d.name}>{d.name}</span>
+                            <div className="flex-1 h-5 bg-black/20 rounded overflow-hidden flex">
+                              {modelsStoreData.models.map((m, j) => {
+                                 const qty = d.models[m] || 0;
+                                 if(qty === 0) return null;
+                                 const width = `${(qty/modelsStoreMax)*100}%`;
+                                 return (
+                                    <div key={m} title={`${m}: ${qty} pzs`} className={`h-full flex items-center justify-center text-[9px] text-white font-bold transition-all duration-1000 ease-out ${modelsColors[j%modelsColors.length]}`} style={{width}}>
+                                       {qty > (modelsStoreMax*0.05) ? qty : ''} 
+                                    </div>
+                                 )
+                              })}
+                            </div>
+                            <span className={`w-8 text-right font-bold ml-2 ${t.textMain}`}>{d.total}</span>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* GRÁFICAS DE DISPERSIÓN */}
+                  {scatterData.pre.length > 0 && (
+                    <div className="col-span-1 md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
+                      <ScatterPlot data={scatterData.pre} title="Antes: Físico (OH)" subtitle="OH Original vs Ventas" colorClass="text-blue-400" maxVentas={scatterData.maxVentas} maxInv={scatterData.maxInvPre} t={t} />
+                      <ScatterPlot data={scatterData.post} title="Después: Distribuido" subtitle="Total (OH + Envío) vs Ventas" colorClass="text-emerald-400" maxVentas={scatterData.maxVentas} maxInv={scatterData.maxInvPost} t={t} />
+                    </div>
+                  )}
                 </div>
               </div>
             )}
@@ -1438,6 +1440,7 @@ export default function Distribucion() {
         )}
 
       </main>
+      <style dangerouslySetInnerHTML={{__html: `.custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; } .custom-scrollbar::-webkit-scrollbar-track { background: transparent; } .custom-scrollbar::-webkit-scrollbar-thumb { background: ${theme === 'dark' ? '#3f3f46' : '#d1d5db'}; border-radius: 4px; } .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: ${theme === 'dark' ? '#52525b' : '#9ca3af'}; } @keyframes fadeInUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } } .animate-fade-in-up { animation: fadeInUp 0.4s ease-out forwards; }`}} />
     </div>
   );
 }
