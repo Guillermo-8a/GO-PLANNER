@@ -8,6 +8,14 @@ import {
   Zap, Save, X, FileSpreadsheet, Calendar, Menu, Sun, Moon, Database, ShoppingCart, Rocket, Upload
 } from 'lucide-react';
 
+// Simuladores temporales para que el código funcione en esta vista previa aislada.
+// IMPORTANTE: En tu entorno local, borra estas líneas y descomenta tu import real:
+// import { useDispatch, globalActions } from '../context/GlobalContext';
+const useDispatch = () => ({});
+const globalActions = {
+  publishForecast: (dispatch, data) => console.log("Datos listos para enviar al GlobalContext:", data)
+};
+
 // --- Motores Matemáticos Inteligencia V4 (Restaurados y Blindados) ---
 const engines = {
   'SES': (data, p, horizon) => {
@@ -74,7 +82,8 @@ const getMetrics = (actual, forecast) => {
   return { wmape, accuracy: Math.max(0, 100 - wmape), bias: (sumErr / sumActual) * 100 };
 };
 
-export default function App() {
+export default function ModuleForecast() {
+  const gDispatch = useDispatch();
   const [theme, setTheme] = useState('dark');
   const [brands, setBrands] = useState([]);
   const [selectedBrandId, setSelectedBrandId] = useState(null);
@@ -120,6 +129,22 @@ export default function App() {
   }, [currentBrand]);
 
   const winner = allResults.length > 0 ? allResults[0] : { name: 'N/A', accuracy: 0, bias: 0, wmape: 0, future: [] };
+
+  // Publicar resultados de forecast al estado global (opcional, no bloquea nada)
+  useEffect(() => {
+    if (brands.length > 0 && winner.name !== 'N/A') {
+      globalActions.publishForecast(gDispatch, {
+        brands,
+        results: brands.map(b => ({
+          skuId:       b.id,
+          brandName:   b.name,
+          future:      winner.future || [],
+          accuracy:    winner.accuracy || 0,
+          unit:        b.unit,
+        })),
+      });
+    }
+  }, [brands, winner.name]);
 
   const chartData = useMemo(() => {
     if (!currentBrand || !currentBrand.data) return [];
