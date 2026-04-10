@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
+import { Menu } from 'lucide-react';
 
 // --- Motores Matemáticos Inteligencia V4 (Restaurados y Blindados) ---
 const engines = {
