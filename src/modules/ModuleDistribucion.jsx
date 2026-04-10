@@ -1,9 +1,3 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Settings, Store, Package, Upload, ArrowUpDown, Sliders, Map as MapIcon, Calculator, Plus, Trash2, Download, CheckSquare, ListPlus, Wand2, FileSpreadsheet, ToggleLeft, ToggleRight, BarChart3, Activity, Moon, Sun, Info, ChevronDown, ChevronUp, Edit3, Check, X } from 'lucide-react';
-
-// --- INTEGRACIÓN CON EL CASCARÓN GLOBAL ---
-// ⚠️ IMPORTANTE PARA TU PROYECTO EN VS CODE ⚠️
-// 1. DESCOMENTA la siguiente línea para conectarlo a tu Contexto Global:
 import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
 // ============================================================================
