@@ -1,5 +1,4 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-
 import * as Icons from '../utils/icons';
 import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
@@ -83,13 +82,9 @@ const ScatterPlot = ({ data, title, subtitle, colorClass, maxVentas, maxInv, t }
 // COMPONENTE PRINCIPAL
 // ============================================================================
 export default function Distribucion() {
-  // --- INICIALIZACIÓN DEL CONTEXTO GLOBAL ---
   const gDispatch = useDispatch();
   const gState    = useGlobal();
-  const otbDisponible = !!gState?.otbData;
-  
-  // TEMA GLOBAL SINCRONIZADO DESDE EL SHELL
-  const theme = gState?.theme || 'light'; 
+  const theme     = gState?.theme || 'light'; 
 
   const [activeTab, setActiveTab] = useState(1); 
   const fileInputRef = useRef(null);
@@ -393,38 +388,6 @@ export default function Distribucion() {
     reader.readAsText(file, 'ISO-8859-1'); 
   };
 
-
-  // --- CÁLCULOS VISUALES Y ORDENAMIENTO ---
-  const storeStats = useMemo(() => {
-    const stats = { total: stores.length, goas: goas.length, clusters: { 'Sin Asignar': 0 } };
-    activeClusters.forEach(c => stats.clusters[c] = 0);
-    stores.forEach(s => {
-      const clusterValues = Object.values(s.clusters);
-      if(clusterValues.length === 0) stats.clusters['Sin Asignar']++;
-      else { const primaryCluster = clusterValues[0]; if(stats.clusters[primaryCluster] !== undefined) stats.clusters[primaryCluster]++; }
-    });
-    return stats;
-  }, [stores, goas, activeClusters]);
-
-  const sortedStores = useMemo(() => {
-    return [...stores].sort((a, b) => {
-      let valA = a[storeSortBy]; let valB = b[storeSortBy];
-      if (typeof valA === 'string') { valA = valA.toLowerCase(); valB = valB.toLowerCase(); }
-      if (valA < valB) return storeSortOrder === 'asc' ? -1 : 1;
-      if (valA > valB) return storeSortOrder === 'asc' ? 1 : -1;
-      return 0;
-    });
-  }, [stores, storeSortBy, storeSortOrder]);
-
-  const toggleSort = (field) => {
-    if (storeSortBy === field) setStoreSortOrder(storeSortOrder === 'asc' ? 'desc' : 'asc');
-    else { setStoreSortBy(field); setStoreSortOrder('desc'); }
-  };
-
-  const displayedStores = useMemo(() => {
-    if (selectedGoaFilter === 'ALL') return sortedStores;
-    return sortedStores.filter(s => s.clusters[selectedGoaFilter]);
-  }, [sortedStores, selectedGoaFilter]);
 
   const downloadClusterMatrix = () => {
     if (stores.length === 0) return;
@@ -816,7 +779,8 @@ export default function Distribucion() {
     triggerDownload(`O9_Distribucion_${new Date().toISOString().split('T')[0]}.csv`, csvContent);
   };
 
-  // --- PREPARACIÓN DE DATOS PARA GRÁFICAS SIN COMPONENTES ANIDADOS ---
+
+  // --- PREPARACIÓN DE DATOS PARA GRÁFICAS ---
   const topStoresData = useMemo(() => {
     if (distributionResult.length === 0) return [];
     const agg = {};
@@ -826,7 +790,6 @@ export default function Distribucion() {
     });
     return Object.entries(agg).map(([name, val]) => ({ name, qty: val.qty, cluster: val.cluster })).sort((a, b) => b.qty - a.qty).slice(0, 10);
   }, [distributionResult]);
-
   const topStoresMax = Math.max(...topStoresData.map(d => d.qty), 1);
 
   const modelsStoreData = useMemo(() => {
@@ -843,7 +806,6 @@ export default function Distribucion() {
     const sorted = Object.entries(agg).map(([name, val]) => ({ name, ...val })).sort((a, b) => b.total - a.total).slice(0, 15);
     return { stores: sorted, models: Array.from(modelsSet) };
   }, [distributionResult]);
-
   const modelsStoreMax = Math.max(...modelsStoreData.stores.map(d => d.total), 1);
   const modelsColors = ['bg-indigo-500', 'bg-pink-500', 'bg-amber-500', 'bg-teal-500', 'bg-cyan-500', 'bg-rose-500', 'bg-violet-500', 'bg-fuchsia-500'];
 
@@ -855,7 +817,6 @@ export default function Distribucion() {
     });
     return Object.entries(agg).map(([name, qty]) => ({ name, qty })).sort((a, b) => b.qty - a.qty);
   }, [distributionResult]);
-
   const zonesMax = Math.max(...zonesData.map(d => d.qty), 1);
 
   const scatterData = useMemo(() => {
@@ -896,7 +857,7 @@ export default function Distribucion() {
   return (
     <div className={`h-full flex flex-col font-sans transition-colors duration-300 ${t.appBg}`}>
       
-      {/* TABS NATIVAS DEL SHELL */}
+      {/* TABS NATIVAS */}
       <div className="flex space-x-6 px-8 mt-4 border-b border-gray-200 dark:border-zinc-800 overflow-x-auto custom-scrollbar">
         <button onClick={() => setActiveTab(1)} className={`flex items-center space-x-2 px-4 py-3 font-bold text-sm transition-colors border-b-2 ${activeTab === 1 ? t.tabActive : `border-transparent ${t.textMuted} hover:${t.textMain}`}`}>
           <Icons.Store size={18} /><span>1. Tiendas y Clústeres</span>
@@ -993,7 +954,7 @@ export default function Distribucion() {
                 </div>
                 <div className="flex flex-col flex-1 w-full lg:w-auto">
                   <div className="flex items-center mb-2">
-                    <Icons.Sliders size={16} className={`mr-2 ${t.textAccent1}`} />
+                    <Icons.Settings2 size={16} className={`mr-2 ${t.textAccent1}`} />
                     <span className={`text-xs font-bold ${t.textMain}`}>Calibración del Score (Total: {scoreWeights.sales + scoreWeights.margin + scoreWeights.rotation}%)</span>
                   </div>
                   <div className="flex flex-wrap gap-4">
@@ -1047,9 +1008,9 @@ export default function Distribucion() {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <div className={`flex rounded-lg p-1 border ${t.cardInner}`}>
-                      <button onClick={()=>toggleSort('score')} className={`px-3 py-1.5 text-[10px] font-bold rounded flex items-center transition ${storeSortBy==='score'? (theme==='dark'?'bg-zinc-800 text-yellow-400':'bg-white shadow text-blue-600') : t.textMuted}`}>Score <Icons.ArrowUpDown size={12} className="ml-1"/></button>
-                      <button onClick={()=>toggleSort('sales')} className={`px-3 py-1.5 text-[10px] font-bold rounded flex items-center transition ${storeSortBy==='sales'? (theme==='dark'?'bg-zinc-800 text-yellow-400':'bg-white shadow text-blue-600') : t.textMuted}`}>Vtas <Icons.ArrowUpDown size={12} className="ml-1"/></button>
-                      <button onClick={()=>toggleSort('totalOH')} className={`px-3 py-1.5 text-[10px] font-bold rounded flex items-center transition ${storeSortBy==='totalOH'? (theme==='dark'?'bg-zinc-800 text-yellow-400':'bg-white shadow text-blue-600') : t.textMuted}`}>OH <Icons.ArrowUpDown size={12} className="ml-1"/></button>
+                      <button onClick={()=>toggleSort('score')} className={`px-3 py-1.5 text-[10px] font-bold rounded flex items-center transition ${storeSortBy==='score'? (theme==='dark'?'bg-zinc-800 text-yellow-400':'bg-white shadow text-blue-600') : t.textMuted}`}>Score <Icons.Filter size={12} className="ml-1"/></button>
+                      <button onClick={()=>toggleSort('sales')} className={`px-3 py-1.5 text-[10px] font-bold rounded flex items-center transition ${storeSortBy==='sales'? (theme==='dark'?'bg-zinc-800 text-yellow-400':'bg-white shadow text-blue-600') : t.textMuted}`}>Vtas <Icons.Filter size={12} className="ml-1"/></button>
+                      <button onClick={()=>toggleSort('totalOH')} className={`px-3 py-1.5 text-[10px] font-bold rounded flex items-center transition ${storeSortBy==='totalOH'? (theme==='dark'?'bg-zinc-800 text-yellow-400':'bg-white shadow text-blue-600') : t.textMuted}`}>OH <Icons.Filter size={12} className="ml-1"/></button>
                     </div>
                     
                     <select 
@@ -1325,10 +1286,10 @@ export default function Distribucion() {
                 <div className="flex flex-col md:flex-row items-center gap-6">
                   <div className={`flex items-center p-2 rounded-lg border ${theme==='dark'?'bg-black/30 border-zinc-800':'bg-gray-100 border-gray-200'}`}>
                     <button onClick={() => setConsiderOH(false)} className={`flex items-center px-3 py-1.5 rounded text-xs font-bold transition-all ${!considerOH ? (theme==='dark'?'bg-zinc-800 text-white shadow':'bg-white text-black shadow') : t.textMuted}`}>
-                      <Icons.ToggleLeft size={16} className={`mr-1 ${!considerOH ? 'text-red-400' : ''}`} /> Llenado Push
+                      <Icons.Box size={16} className={`mr-1 ${!considerOH ? 'text-red-400' : ''}`} /> Llenado Push
                     </button>
                     <button onClick={() => setConsiderOH(true)} className={`flex items-center px-3 py-1.5 rounded text-xs font-bold transition-all ${considerOH ? (theme==='dark'?'bg-zinc-800 text-white shadow':'bg-white text-black shadow') : t.textMuted}`}>
-                      Cuidar Dispersión (OH) <Icons.ToggleRight size={16} className={`ml-1 ${considerOH ? 'text-emerald-400' : ''}`} />
+                      Cuidar Dispersión (OH) <Icons.CheckSquare size={16} className={`ml-1 ${considerOH ? 'text-emerald-400' : ''}`} />
                     </button>
                   </div>
 
@@ -1336,7 +1297,7 @@ export default function Distribucion() {
                     onClick={processDistribution}
                     className={`px-8 py-4 rounded-xl font-black uppercase tracking-wider transition-all flex items-center justify-center shadow-lg hover:scale-105 transform duration-200 ${theme==='dark'?'bg-purple-600 text-white hover:bg-purple-500':'bg-indigo-600 text-white hover:bg-indigo-700'}`}
                   >
-                    <Icons.Wand2 size={20} className="mr-2" /> Calcular Distribución
+                    <Icons.Zap size={20} className="mr-2" /> Calcular Distribución
                   </button>
                 </div>
               </div>
