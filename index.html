@@ -2,21 +2,20 @@
 <html lang="es">
   <head>
     <meta charset="UTF-8" />
-    <link rel="icon" type="image/svg+xml" href="/vite.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" 
-          content="default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline';">
-    <title>GO PLANNER
-    <!-- Cargamos Tailwind CSS para asegurar el diseño inmediato -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;700;900&display=swap" rel="stylesheet">
-    <style>
-      body { font-family: 'Inter', sans-serif; background-color: black; margin: 0; }
-    </style>
+
+    <!-- Seguridad básica OWASP -->
+    <meta http-equiv="X-Content-Type-Options" content="nosniff" />
+    <meta http-equiv="X-Frame-Options" content="DENY" />
+
+    <!-- SEO / identidad -->
+    <meta name="description" content="GO Planner — Sistema integrado de planeación" />
+    <title>GO Planner</title>
+
+    <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
   </head>
-  <body class="bg-black">
+  <body>
     <div id="root"></div>
-    <!-- Esta línea conecta con el arranque de React en src/main.jsx -->
     <script type="module" src="/src/main.jsx"></script>
   </body>
 </html>
