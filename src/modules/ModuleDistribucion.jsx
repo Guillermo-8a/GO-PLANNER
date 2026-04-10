@@ -2,9 +2,9 @@ import React, { useState, useMemo, useEffect,useRef } from 'react';
 
 import { 
   TrendingUp, Package, ShoppingCart, BarChart2, Box, Database, RefreshCw,
-  Search, Calendar, Filter, CheckCircle2, AlertCircle, Upload, Download,
+  Search, Calendar, Filter, CheckCircle2, AlertCircle, Upload, Download, Store,
   Settings, FileText, Table, Sun, Moon, Menu, Store, Activity, CheckSquare, BarChart3, MapIcon, FileSpreadsheet
-} from 'lucide-react';
+} from 'icons,js';
 
 import { useGlobal, useDispatch, globalActions } from '../context/GlobalContext';
 
