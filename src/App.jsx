@@ -8,7 +8,7 @@ import { useState } from 'react';
 import { GlobalProvider, useGlobal, useDispatch, globalActions } from './context/GlobalContext';
 import ModuleForecast     from './modules/ModuleForecast';
 import ModuleAssortment   from './modules/ModuleAssortment';
-import ModuleDistribución from './modules/ModuleDistribucion';
+import ModuleDistribucion from './modules/ModuleDistribucion';
 import ModuleReplenishment   from './modules/ModuleReplenishment';
 
 import {
