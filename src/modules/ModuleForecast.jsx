@@ -1,3 +1,4 @@
+import React, { useState } from 'react';
 import { useDispatch, globalActions } from '../context/GlobalContext';
 
 // --- Motores Matemáticos Inteligencia V4 (Restaurados y Blindados) ---
