@@ -1,5 +1,12 @@
 import React, { useState, useMemo, useEffect,useRef } from 'react';
-import { Menu, Settings, Store, Package, Upload, ArrowUpDown, Sliders, Layers, MoreVertical, Sun, Moon, Info, Map, Database, Edit3, Trash2, Save, Rocket, X, Calendar, Trophy, FileSpreadsheet, Check, Copy, ShoppingCart, Settings2, Zap } from 'lucide-react';
+import { Menu, Settings, Store, Package, Upload, ArrowUpDown, Sliders, Layers, MoreVertical, Sun, Moon, Info, Map, Database, Edit3, 
+        Trash2, Save, Rocket, X, Calendar, Trophy, FileSpreadsheet, Check, Copy, ShoppingCart, Settings2, Zap, Calculator, Plus, Activity } from 'lucide-react';
+import { 
+  TrendingUp, Package, ShoppingCart, BarChart2, Box, Database, RefreshCw,
+  Search, Calendar, Filter, CheckCircle2, AlertCircle, Upload, Download,
+  Settings, FileText, Table, Sun, Moon, Menu
+} from 'lucide-react';
+
 import { useGlobal, useDispatch, globalActions } from '../context/GlobalContext';
 
 // ============================================================================
