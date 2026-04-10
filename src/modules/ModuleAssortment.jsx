@@ -1,3 +1,4 @@
+import React, { useState } from 'react';
 import { Settings, Store, Package, Upload, ArrowUpDown, Sliders, Layers, MoreVertical, Sun, Moon, Info, Map, Database } from 'lucide-react';
 
 // =====================================================================
