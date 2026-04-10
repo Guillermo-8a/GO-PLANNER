@@ -2,7 +2,7 @@ import React, { useState, useMemo, useEffect,useRef } from 'react';
 
 import { 
   TrendingUp, Package, ShoppingCart, BarChart2, Box, Database, RefreshCw,
-  Search, Calendar, Filter, CheckCircle2, AlertCircle, Upload, Download, Store,
+  Search, Calendar, Filter, CheckCircle2, AlertCircle, Upload, Download,
   Settings, FileText, Table, Sun, Moon, Menu, Store, Activity, CheckSquare, BarChart3, MapIcon, FileSpreadsheet
 } from '../utils/icons';
 
