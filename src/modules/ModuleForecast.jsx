@@ -4,7 +4,7 @@ import {
   BarChart, Bar, ComposedChart, Cell, Area
 } from 'recharts';
 import { 
-  TrendingUp, Settings2, Trophy, Layers, Plus, Trash2, Edit3, Download, Copy, Check,
+  TrendingUp, Settings2, Trophy, Layers, Plus, Trash2, Edit3, Download, Copy, Check, Plus
   Zap, Save, X, FileSpreadsheet, Calendar, Menu, Sun, Moon, Database, ShoppingCart, Rocket, Upload
 } from 'lucide-react';
 
