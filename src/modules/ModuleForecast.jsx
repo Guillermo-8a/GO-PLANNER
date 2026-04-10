@@ -70,7 +70,7 @@ const getMetrics = (actual, forecast) => {
 };
 
 export default function ModuleForecast() {
-  const gDispatch = useDispatch();
+  const dispatch = useDispatch();
   const [theme, setTheme] = useState('dark');
   const [brands, setBrands] = useState([]);
   const [selectedBrandId, setSelectedBrandId] = useState(null);
