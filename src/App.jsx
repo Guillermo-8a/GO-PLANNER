@@ -8,8 +8,8 @@ import { useState } from 'react';
 import { GlobalProvider, useGlobal, useDispatch, globalActions } from './context/GlobalContext';
 import ModuleForecast     from './modules/ModuleForecast';
 import ModuleAssortment   from './modules/ModuleAssortment';
-import ModuleDistribucion from './modules/ModuleDistribucion';
-import ModuleResurtido    from './modules/ModuleResurtido';
+import ModuleDistribución from './modules/ModuleDistribucion';
+import ModuleResurtido    from './modules/ModuleReplenishment';
 
 import {
   Layers, Menu, Bell, Sun, Moon,
