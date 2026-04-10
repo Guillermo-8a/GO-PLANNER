@@ -5,7 +5,7 @@ export {
   Search, Calendar, Filter, CheckCircle2, AlertCircle, Upload, Download,
   Settings, FileText, Table, Sun, Moon, Menu,
 
-  Plus, Store, Activity, CheckSquare, BarChart3,
+  Plus, Store, Activity, CheckSquare, BarChart3, X,
   MapIcon, FileSpreadsheet, Edit3, Trash2, Rocket,
   Save, Copy, Check, Trophy, Zap, Settings2
 
