@@ -1,12 +1,8 @@
-import React, { useState, useMemo, useEffect,useRef } from 'react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
 
-import { 
-  TrendingUp, Package, ShoppingCart, BarChart2, Box, Database, RefreshCw,
-  Search, Calendar, Filter, CheckCircle2, AlertCircle, Upload, Download,
-  Settings, FileText, Table, Sun, Moon, Menu, Store, Activity, CheckSquare, BarChart3, MapIcon, FileSpreadsheet
-} from '../utils/icons';
+import * as Icons from '../utils/icons';
 
-import { useGlobal, useDispatch, globalActions } from '../context/GlobalContext';
+import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
 // ============================================================================
 // COMPONENTE EXTERNO: GRÁFICA DE DISPERSIÓN (Para evitar errores de React)
@@ -36,7 +32,7 @@ const ScatterPlot = ({ data, title, subtitle, colorClass, maxVentas, maxInv, t }
     <div className={`p-5 rounded-xl border flex flex-col col-span-1 ${t.cardInner}`}>
       <div className="flex justify-between items-start mb-4">
         <div>
-          <h4 className={`text-sm font-bold flex items-center ${t.textMain}`}><Activity size={16} className="mr-2"/> {title}</h4>
+          <h4 className={`text-sm font-bold flex items-center ${t.textMain}`}><Icons.Activity size={16} className="mr-2"/> {title}</h4>
           <p className={`text-[10px] ${t.textMuted}`}>{subtitle}</p>
         </div>
         <div className="flex flex-col items-end text-[9px] gap-1">
@@ -91,9 +87,10 @@ export default function Distribucion() {
   // --- INICIALIZACIÓN DEL CONTEXTO GLOBAL ---
   const gDispatch = useDispatch ? useDispatch() : null;
   const gState    = useGlobal ? useGlobal() : null;
-  const otbDisponible = !!gState?.otbData;
+  
+  // TEMA GLOBAL SINCRONIZADO DESDE EL SHELL
+  const theme = gState?.theme || 'light'; 
 
-  const [theme, setTheme] = useState('light'); // Por defecto light para tu layout
   const [activeTab, setActiveTab] = useState(1); 
   const fileInputRef = useRef(null);
   const chequeraFileInputRef = useRef(null);
@@ -156,7 +153,7 @@ export default function Distribucion() {
       tabActive: "border-blue-600 text-blue-600",
     }
   };
-  const t = themes[theme];
+  const t = themes[theme] || themes.light;
 
   // --- LÓGICA CORE Y PARSERS ---
   const parseCSVRow = (row, sep) => {
@@ -642,12 +639,6 @@ export default function Distribucion() {
     const results = [];
     const warnings = []; 
     
-    // Clonar el Inventario (OH) inicial para actualizarlo dinámicamente corrida por corrida
-    const dynamicOH = {};
-    stores.forEach(s => {
-       dynamicOH[s.centerCode] = { ...s.goaOH };
-    });
-    
     chequera.forEach(item => {
       let qtyToDistribute = parseInt(item.qty);
       if (qtyToDistribute <= 0) return;
@@ -694,18 +685,13 @@ export default function Distribucion() {
         let totalNeed = 0;
         const storeNeeds = [];
         
-        // Calculamos usando el OH Dinámico (actualizado por tallas anteriores)
-        let totalSystemOH = 0;
-        eligibleStores.forEach(s => {
-            totalSystemOH += (dynamicOH[s.centerCode][goaName] || 0);
-        });
-        
+        const totalSystemOH = eligibleStores.reduce((sum, s) => sum + (s.goaOH[goaName] || 0), 0);
         const totalPool = totalSystemOH + qtyToDistribute; 
 
         eligibleStores.forEach(store => {
           const share = store.goaScores[goaName] / totalScore;
           const idealTotalQty = share * totalPool;
-          const currentOH = dynamicOH[store.centerCode][goaName] || 0;
+          const currentOH = store.goaOH[goaName] || 0;
           
           let need = idealTotalQty - currentOH;
           if (need < 0) need = 0; 
@@ -752,10 +738,7 @@ export default function Distribucion() {
         allocations.set(storeCenter, (allocations.get(storeCenter) || 0) + 1);
       }
 
-      // IMPORTANTE: Actualizar el OH dinámico para que la SIGUIENTE talla respete la dispersión real
       allocations.forEach((qty, centerCode) => {
-        dynamicOH[centerCode][goaName] = (dynamicOH[centerCode][goaName] || 0) + qty;
-        
         const storeObj = eligibleStores.find(s => s.centerCode === centerCode);
         results.push({
           centro: centerCode,
@@ -917,20 +900,14 @@ export default function Distribucion() {
       {/* TABS NATIVAS DEL SHELL */}
       <div className="flex space-x-6 px-8 mt-4 border-b border-gray-200 dark:border-zinc-800 overflow-x-auto custom-scrollbar">
         <button onClick={() => setActiveTab(1)} className={`flex items-center space-x-2 px-4 py-3 font-bold text-sm transition-colors border-b-2 ${activeTab === 1 ? t.tabActive : `border-transparent ${t.textMuted} hover:${t.textMain}`}`}>
-          <Store size={18} /><span>1. Tiendas y Clústeres</span>
+          <Icons.Store size={18} /><span>1. Tiendas y Clústeres</span>
         </button>
         <button 
           onClick={() => { if (stores.length > 0) setActiveTab(2); }} 
           className={`flex items-center space-x-2 px-4 py-3 font-bold text-sm transition-colors border-b-2 ${activeTab === 2 ? t.tabActive : `border-transparent ${t.textMuted} hover:${t.textMain}`} ${stores.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
         >
-          <Calculator size={18} /><span>2. Distribución</span>
+          <Icons.Calculator size={18} /><span>2. Distribución</span>
         </button>
-        
-        <div className="ml-auto flex items-center mb-2">
-           <button onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} className={`p-2 rounded-lg transition-colors ${t.btnGhost}`} title="Cambiar Tema Interno">
-              {theme === 'dark' ? <Sun size={18}/> : <Moon size={18}/>}
-           </button>
-        </div>
       </div>
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 transition-colors duration-300">
@@ -940,7 +917,7 @@ export default function Distribucion() {
           stores.length === 0 ? (
             <div className={`p-10 md:p-16 rounded-2xl border text-center flex flex-col items-center justify-center ${theme==='dark'?'bg-zinc-900/50 border-zinc-800':'bg-white border-gray-200 shadow-sm'}`}>
               <div className={`p-5 rounded-full mb-6 ${theme==='dark'?'bg-purple-900/20 text-purple-400':'bg-blue-50 text-blue-600'}`}>
-                <Store size={48} strokeWidth={1.5} />
+                <Icons.Store size={48} strokeWidth={1.5} />
               </div>
               <h3 className={`text-2xl font-black mb-3 tracking-wide ${t.textMain}`}>Configura tu Matriz de Distribución</h3>
               <p className={`text-sm max-w-lg mb-8 leading-relaxed ${t.textMuted}`}>Para comenzar, necesitamos conocer el historial de ventas de tus sucursales para crear el clustering dinámico.</p>
@@ -952,7 +929,7 @@ export default function Distribucion() {
                   <p className={`text-xs mb-6 h-12 ${t.textMuted}`}>Archivo .CSV obligatorio con ventas históricas para calcular el Score de Mérito.</p>
                   
                   <label className={`cursor-pointer w-full py-3.5 rounded-xl text-sm font-black tracking-wider uppercase transition shadow-lg flex items-center justify-center hover:scale-105 transform duration-200 ${t.btnPrimary}`}>
-                    <Upload size={18} className="mr-2" /> Subir Base (.CSV)
+                    <Icons.Upload size={18} className="mr-2" /> Subir Base (.CSV)
                     <input type="file" accept=".csv" onChange={handleStoreCSVUpload} ref={fileInputRef} className="hidden" />
                   </label>
                 </div>
@@ -963,7 +940,7 @@ export default function Distribucion() {
                   <p className={`text-xs mb-6 h-12 ${t.textMuted}`}>Opcional. Matriz cruzada para restringir qué tiendas pueden recibir qué marcas.</p>
                   
                   <label className={`cursor-pointer w-full py-3.5 rounded-xl text-sm font-black tracking-wider uppercase transition shadow-lg flex items-center justify-center border border-dashed hover:scale-105 transform duration-200 ${theme==='dark'?'border-zinc-600 text-zinc-300 hover:bg-zinc-800':'border-gray-400 text-gray-600 hover:bg-gray-100'}`}>
-                    <ListPlus size={18} className="mr-2" /> Subir Matriz (.CSV)
+                    <Icons.ListPlus size={18} className="mr-2" /> Subir Matriz (.CSV)
                     <input type="file" accept=".csv" onChange={handleBrandMatrixUpload} className="hidden" />
                   </label>
                 </div>
@@ -975,10 +952,10 @@ export default function Distribucion() {
               <div className={`p-4 rounded-xl border flex flex-col transition-all ${theme==='dark'?'bg-blue-900/10 border-blue-900/30':'bg-blue-50 border-blue-200'}`}>
                 <div className="flex justify-between items-center cursor-pointer select-none" onClick={() => setShowGuide(!showGuide)}>
                   <div className="flex items-center">
-                    <Info size={18} className={`mr-2 ${theme==='dark'?'text-blue-400':'text-blue-600'}`} />
+                    <Icons.Info size={18} className={`mr-2 ${theme==='dark'?'text-blue-400':'text-blue-600'}`} />
                     <h3 className={`text-sm font-bold ${theme==='dark'?'text-blue-400':'text-blue-700'}`}>Guía Rápida y Formatos (CSV)</h3>
                   </div>
-                  {showGuide ? <ChevronUp size={18} className={theme==='dark'?'text-blue-400':'text-blue-600'}/> : <ChevronDown size={18} className={theme==='dark'?'text-blue-400':'text-blue-600'}/>}
+                  {showGuide ? <Icons.ChevronUp size={18} className={theme==='dark'?'text-blue-400':'text-blue-600'}/> : <Icons.ChevronDown size={18} className={theme==='dark'?'text-blue-400':'text-blue-600'}/>}
                 </div>
                 
                 {showGuide && (
@@ -1007,7 +984,7 @@ export default function Distribucion() {
 
               <div className={`p-5 rounded-xl border flex flex-col lg:flex-row items-start lg:items-center justify-between gap-6 ${t.cardInner}`}>
                 <div className={`flex items-center p-3 rounded-lg border ${theme==='dark'?'bg-black/20 border-black/30':'bg-white shadow-sm'}`}>
-                  <Settings size={20} className={`mr-3 ${t.textAccent2}`} />
+                  <Icons.Settings size={20} className={`mr-3 ${t.textAccent2}`} />
                   <div className="flex flex-col">
                     <label className={`text-[10px] font-bold uppercase tracking-wider ${t.textMuted}`}>Cantidad de Clústeres</label>
                     <select value={numClusters} onChange={(e) => setNumClusters(Number(e.target.value))} className={`mt-1 p-1.5 rounded outline-none font-bold text-sm cursor-pointer transition-colors ${t.inputYellow}`}>
@@ -1017,7 +994,7 @@ export default function Distribucion() {
                 </div>
                 <div className="flex flex-col flex-1 w-full lg:w-auto">
                   <div className="flex items-center mb-2">
-                    <Sliders size={16} className={`mr-2 ${t.textAccent1}`} />
+                    <Icons.Sliders size={16} className={`mr-2 ${t.textAccent1}`} />
                     <span className={`text-xs font-bold ${t.textMain}`}>Calibración del Score (Total: {scoreWeights.sales + scoreWeights.margin + scoreWeights.rotation}%)</span>
                   </div>
                   <div className="flex flex-wrap gap-4">
@@ -1030,13 +1007,13 @@ export default function Distribucion() {
 
               <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className={`p-4 rounded-xl border flex items-center space-x-4 border-l-4 border-l-purple-500 relative overflow-hidden ${t.card}`}>
-                  <div className="absolute -right-4 -top-4 opacity-5"><Store size={100} /></div>
-                  <div className={`p-3 rounded-full relative z-10 ${t.iconAccent1}`}><Store size={24}/></div>
+                  <div className="absolute -right-4 -top-4 opacity-5"><Icons.Store size={100} /></div>
+                  <div className={`p-3 rounded-full relative z-10 ${t.iconAccent1}`}><Icons.Store size={24}/></div>
                   <div className="relative z-10"><p className={`text-xs font-bold uppercase tracking-wider ${t.textMuted}`}>Total Tiendas</p><p className={`text-3xl font-black ${t.textMain}`}>{storeStats.total}</p></div>
                 </div>
                 <div className={`p-4 rounded-xl border flex items-center space-x-4 border-l-4 border-l-blue-500 relative overflow-hidden ${t.card}`}>
-                  <div className="absolute -right-4 -top-4 opacity-5"><Package size={100} /></div>
-                  <div className={`p-3 rounded-full relative z-10 ${t.iconAccent2}`}><Package size={24}/></div>
+                  <div className="absolute -right-4 -top-4 opacity-5"><Icons.Package size={100} /></div>
+                  <div className={`p-3 rounded-full relative z-10 ${t.iconAccent2}`}><Icons.Package size={24}/></div>
                   <div className="relative z-10 flex-1 min-w-0">
                     <p className={`text-xs font-bold uppercase tracking-wider ${t.textMuted}`}>Grupos de Artículos</p>
                     {goas.length === 0 ? (
@@ -1071,9 +1048,9 @@ export default function Distribucion() {
                   </div>
                   <div className="flex flex-wrap gap-2">
                     <div className={`flex rounded-lg p-1 border ${t.cardInner}`}>
-                      <button onClick={()=>toggleSort('score')} className={`px-3 py-1.5 text-[10px] font-bold rounded flex items-center transition ${storeSortBy==='score'? (theme==='dark'?'bg-zinc-800 text-yellow-400':'bg-white shadow text-blue-600') : t.textMuted}`}>Score <ArrowUpDown size={12} className="ml-1"/></button>
-                      <button onClick={()=>toggleSort('sales')} className={`px-3 py-1.5 text-[10px] font-bold rounded flex items-center transition ${storeSortBy==='sales'? (theme==='dark'?'bg-zinc-800 text-yellow-400':'bg-white shadow text-blue-600') : t.textMuted}`}>Vtas <ArrowUpDown size={12} className="ml-1"/></button>
-                      <button onClick={()=>toggleSort('totalOH')} className={`px-3 py-1.5 text-[10px] font-bold rounded flex items-center transition ${storeSortBy==='totalOH'? (theme==='dark'?'bg-zinc-800 text-yellow-400':'bg-white shadow text-blue-600') : t.textMuted}`}>OH <ArrowUpDown size={12} className="ml-1"/></button>
+                      <button onClick={()=>toggleSort('score')} className={`px-3 py-1.5 text-[10px] font-bold rounded flex items-center transition ${storeSortBy==='score'? (theme==='dark'?'bg-zinc-800 text-yellow-400':'bg-white shadow text-blue-600') : t.textMuted}`}>Score <Icons.ArrowUpDown size={12} className="ml-1"/></button>
+                      <button onClick={()=>toggleSort('sales')} className={`px-3 py-1.5 text-[10px] font-bold rounded flex items-center transition ${storeSortBy==='sales'? (theme==='dark'?'bg-zinc-800 text-yellow-400':'bg-white shadow text-blue-600') : t.textMuted}`}>Vtas <Icons.ArrowUpDown size={12} className="ml-1"/></button>
+                      <button onClick={()=>toggleSort('totalOH')} className={`px-3 py-1.5 text-[10px] font-bold rounded flex items-center transition ${storeSortBy==='totalOH'? (theme==='dark'?'bg-zinc-800 text-yellow-400':'bg-white shadow text-blue-600') : t.textMuted}`}>OH <Icons.ArrowUpDown size={12} className="ml-1"/></button>
                     </div>
                     
                     <select 
@@ -1090,17 +1067,17 @@ export default function Distribucion() {
                       className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center shadow transition hover:scale-105 ${theme==='dark'?'bg-emerald-600 text-white hover:bg-emerald-500':'bg-emerald-600 text-white hover:bg-emerald-500'}`}
                       title="Descargar CSV con Clústeres"
                     >
-                      <Download size={14} className="mr-2" /> Bajar Matriz
+                      <Icons.Download size={14} className="mr-2" /> Bajar Matriz
                     </button>
 
                     <label className={`cursor-pointer px-4 py-2 rounded-lg text-xs font-bold flex items-center transition border border-dashed ${theme==='dark'?'border-zinc-600 text-zinc-300 hover:bg-zinc-800':'border-gray-400 text-gray-600 hover:bg-gray-100'}`} title="Opcional: Matriz Cruzada">
-                      <ListPlus size={14} className="mr-2" /> 
+                      <Icons.ListPlus size={14} className="mr-2" /> 
                       {Object.keys(brandMatrix).length > 0 ? `Marcas (${Object.keys(brandMatrix).length})` : 'Subir Marcas'}
                       <input type="file" accept=".csv" onChange={handleBrandMatrixUpload} className="hidden" />
                     </label>
 
                     <label className={`cursor-pointer px-4 py-2 rounded-lg text-xs font-bold flex items-center transition ${t.btnGhost}`}>
-                      <Upload size={14} className="mr-2" /> Recargar Base
+                      <Icons.Upload size={14} className="mr-2" /> Recargar Base
                       <input type="file" accept=".csv" onChange={handleStoreCSVUpload} ref={fileInputRef} className="hidden" />
                     </label>
                   </div>
@@ -1170,7 +1147,7 @@ export default function Distribucion() {
               <div className="flex justify-between items-start">
                 <div>
                   <h2 className={`text-xl font-bold flex items-center mb-2 ${t.textMain}`}>
-                    <ListPlus className={`mr-2 ${t.textAccent1}`} size={24} />
+                    <Icons.ListPlus className={`mr-2 ${t.textAccent1}`} size={24} />
                     Ingreso de Modelos a Distribuir
                   </h2>
                   <p className={`text-sm ${t.textMuted}`}>Agrega los modelos que deseas repartir. Tip: Puedes poner varias cantidades (10,20) para generar corridas de tallas.</p>
@@ -1233,7 +1210,7 @@ export default function Distribucion() {
                       <div className="flex gap-2">
                         <input type="text" placeholder="10,15.." value={manualEntry.qty} onChange={e => setManualEntry({...manualEntry, qty: e.target.value})} className={`w-full p-2.5 rounded-lg border text-sm font-bold outline-none ${!manualEntry.qty ? 'border-red-500/50' : ''} ${t.input}`} />
                         <button onClick={handleManualAdd} className={`px-4 rounded-lg flex items-center justify-center transition-all ${t.btnPrimary}`} title="Añadir a lista">
-                          <Plus size={20} />
+                          <Icons.Plus size={20} />
                         </button>
                       </div>
                     </div>
@@ -1254,7 +1231,7 @@ export default function Distribucion() {
 
                   <div className={`w-full md:w-72 flex flex-col justify-end gap-3 p-4 rounded-xl border ${t.cardInner}`}>
                     <label className={`cursor-pointer w-full py-3.5 rounded-lg font-bold text-sm tracking-wide transition-all flex items-center justify-center border border-dashed ${theme==='dark'?'border-zinc-600 text-zinc-300 hover:bg-zinc-800':'border-gray-400 text-gray-600 hover:bg-gray-100'}`}>
-                      <Upload size={16} className="mr-2" /> Subir CSV
+                      <Icons.Upload size={16} className="mr-2" /> Subir CSV
                       <input type="file" accept=".csv" onChange={handleChequeraCSVUpload} ref={chequeraFileInputRef} className="hidden" />
                     </label>
 
@@ -1269,7 +1246,7 @@ export default function Distribucion() {
                       disabled={!modelsInputText.trim()}
                       className={`w-full py-4 rounded-lg font-black uppercase tracking-wider transition-all flex items-center justify-center ${modelsInputText.trim() ? t.btnPrimary : 'bg-zinc-800 text-zinc-500 cursor-not-allowed border border-zinc-700'}`}
                     >
-                      <Plus size={18} className="mr-2" /> Añadir Pegados
+                      <Icons.Plus size={18} className="mr-2" /> Añadir Pegados
                     </button>
                   </div>
                 </div>
@@ -1310,8 +1287,8 @@ export default function Distribucion() {
                                 <td className="p-2"><input type="text" value={editingItem.talla} onChange={e=>setEditingItem({...editingItem, talla: e.target.value})} className={`w-full p-1.5 rounded text-xs outline-none border ${t.input}`} /></td>
                                 <td className="p-2"><input type="number" min="1" value={editingItem.qty} onChange={e=>setEditingItem({...editingItem, qty: e.target.value})} className={`w-full p-1.5 rounded text-xs text-right font-bold outline-none border ${!editingItem.qty ? 'border-red-500' : ''} ${t.input}`} /></td>
                                 <td className="p-2 text-center flex justify-center gap-2">
-                                  <button onClick={saveEditItem} className="text-emerald-500 hover:text-emerald-400 p-1"><Check size={16}/></button>
-                                  <button onClick={()=>setEditingItem(null)} className="text-gray-500 hover:text-red-400 p-1"><X size={16}/></button>
+                                  <button onClick={saveEditItem} className="text-emerald-500 hover:text-emerald-400 p-1"><Icons.Check size={16}/></button>
+                                  <button onClick={()=>setEditingItem(null)} className="text-gray-500 hover:text-red-400 p-1"><Icons.X size={16}/></button>
                                 </td>
                               </>
                             ) : (
@@ -1325,8 +1302,8 @@ export default function Distribucion() {
                                 <td className={`p-3 text-xs font-bold ${t.textMuted}`}>{item.talla !== 'N/A' ? item.talla : '-'}</td>
                                 <td className={`p-3 text-right font-mono text-sm ${t.textMain}`}>{item.qty.toLocaleString()}</td>
                                 <td className="p-3 text-center flex justify-center gap-2">
-                                  <button onClick={() => startEditItem(item)} className="text-gray-500 hover:text-blue-500 transition-colors p-1"><Edit3 size={16} /></button>
-                                  <button onClick={() => removeChequeraItem(item.id)} className="text-gray-500 hover:text-red-500 transition-colors p-1"><Trash2 size={16} /></button>
+                                  <button onClick={() => startEditItem(item)} className="text-gray-500 hover:text-blue-500 transition-colors p-1"><Icons.Edit3 size={16} /></button>
+                                  <button onClick={() => removeChequeraItem(item.id)} className="text-gray-500 hover:text-red-500 transition-colors p-1"><Icons.Trash2 size={16} /></button>
                                 </td>
                               </>
                             )}
@@ -1349,10 +1326,10 @@ export default function Distribucion() {
                 <div className="flex flex-col md:flex-row items-center gap-6">
                   <div className={`flex items-center p-2 rounded-lg border ${theme==='dark'?'bg-black/30 border-zinc-800':'bg-gray-100 border-gray-200'}`}>
                     <button onClick={() => setConsiderOH(false)} className={`flex items-center px-3 py-1.5 rounded text-xs font-bold transition-all ${!considerOH ? (theme==='dark'?'bg-zinc-800 text-white shadow':'bg-white text-black shadow') : t.textMuted}`}>
-                      <ToggleLeft size={16} className={`mr-1 ${!considerOH ? 'text-red-400' : ''}`} /> Llenado Push
+                      <Icons.ToggleLeft size={16} className={`mr-1 ${!considerOH ? 'text-red-400' : ''}`} /> Llenado Push
                     </button>
                     <button onClick={() => setConsiderOH(true)} className={`flex items-center px-3 py-1.5 rounded text-xs font-bold transition-all ${considerOH ? (theme==='dark'?'bg-zinc-800 text-white shadow':'bg-white text-black shadow') : t.textMuted}`}>
-                      Cuidar Dispersión (OH) <ToggleRight size={16} className={`ml-1 ${considerOH ? 'text-emerald-400' : ''}`} />
+                      Cuidar Dispersión (OH) <Icons.ToggleRight size={16} className={`ml-1 ${considerOH ? 'text-emerald-400' : ''}`} />
                     </button>
                   </div>
 
@@ -1360,18 +1337,18 @@ export default function Distribucion() {
                     onClick={processDistribution}
                     className={`px-8 py-4 rounded-xl font-black uppercase tracking-wider transition-all flex items-center justify-center shadow-lg hover:scale-105 transform duration-200 ${theme==='dark'?'bg-purple-600 text-white hover:bg-purple-500':'bg-indigo-600 text-white hover:bg-indigo-700'}`}
                   >
-                    <Wand2 size={20} className="mr-2" /> Calcular Distribución
+                    <Icons.Wand2 size={20} className="mr-2" /> Calcular Distribución
                   </button>
                 </div>
               </div>
+            )}
 
-            {/* RENDERIZADO EN LÍNEA DE GRÁFICAS PARA EVITAR ERRORES DE COMPONENTES ANIDADOS */}
             {distributionResult.length > 0 && (
               <div className="space-y-6 animate-fade-in-up">
                 <div className={`p-6 rounded-xl border border-green-500/50 bg-green-500/5 ${theme==='light' ? 'bg-green-50 border-green-200' : ''}`}>
                   <div className="flex flex-col md:flex-row items-center justify-between gap-4">
                     <div className="flex items-center">
-                      <div className="p-3 rounded-full bg-green-500 text-white mr-4"><CheckSquare size={24} /></div>
+                      <div className="p-3 rounded-full bg-green-500 text-white mr-4"><Icons.CheckSquare size={24} /></div>
                       <div>
                         <h3 className={`text-xl font-black text-green-600 ${theme==='dark'?'text-green-400':''}`}>Distribución Completa</h3>
                         <p className={`text-sm ${t.textMuted}`}>Se generaron <strong>{distributionResult.length}</strong> combinaciones mediante {considerOH ? 'el calculo con OH' : 'Push Proporcional'}.</p>
@@ -1380,17 +1357,17 @@ export default function Distribucion() {
 
                     <div className="flex flex-col sm:flex-row gap-3">
                       <button onClick={downloadSAP} className="px-5 py-2.5 rounded-lg font-bold text-sm tracking-wide transition-all flex items-center justify-center shadow-md bg-blue-600 text-white hover:bg-blue-500 hover:scale-105">
-                        <FileSpreadsheet size={16} className="mr-2" /> Descargar SAP
+                        <Icons.FileSpreadsheet size={16} className="mr-2" /> Descargar SAP
                       </button>
                       <button onClick={downloadO9} className="px-5 py-2.5 rounded-lg font-bold text-sm tracking-wide transition-all flex items-center justify-center shadow-md bg-emerald-600 text-white hover:bg-emerald-500 hover:scale-105">
-                        <Download size={16} className="mr-2" /> Descargar O9
+                        <Icons.Download size={16} className="mr-2" /> Descargar O9
                       </button>
                     </div>
                   </div>
                 </div>
 
                 <h3 className={`text-lg font-bold flex items-center pt-2 ${t.textMain}`}>
-                  <BarChart3 className={`mr-2 ${t.textAccent1}`} size={20} />
+                  <Icons.BarChart3 className={`mr-2 ${t.textAccent1}`} size={20} />
                   Dashboard de Resultados
                 </h3>
                 
@@ -1398,7 +1375,7 @@ export default function Distribucion() {
                   {/* TOP 10 TIENDAS */}
                   {topStoresData.length > 0 && (
                     <div className={`p-5 rounded-xl border ${t.cardInner}`}>
-                      <h4 className={`text-sm font-bold flex items-center mb-4 ${t.textMain}`}><Store size={16} className="mr-2"/> Top 10 Tiendas Receptoras</h4>
+                      <h4 className={`text-sm font-bold flex items-center mb-4 ${t.textMain}`}><Icons.Store size={16} className="mr-2"/> Top 10 Tiendas Receptoras</h4>
                       <div className="space-y-3">
                         {topStoresData.map((d, i) => (
                           <div key={i} className="flex items-center text-xs">
@@ -1418,7 +1395,7 @@ export default function Distribucion() {
                   {/* PIEZAS POR ZONA */}
                   {zonesData.length > 0 && (
                     <div className={`p-5 rounded-xl border ${t.cardInner}`}>
-                      <h4 className={`text-sm font-bold flex items-center mb-4 ${t.textMain}`}><MapIcon size={16} className="mr-2"/> Piezas por Zona</h4>
+                      <h4 className={`text-sm font-bold flex items-center mb-4 ${t.textMain}`}><Icons.Map size={16} className="mr-2"/> Piezas por Zona</h4>
                       <div className="space-y-3 max-h-64 overflow-y-auto custom-scrollbar pr-2">
                         {zonesData.map((d, i) => (
                           <div key={i} className="flex items-center text-xs">
@@ -1437,7 +1414,7 @@ export default function Distribucion() {
                   {/* ENVÍO POR MODELO */}
                   {modelsStoreData.stores.length > 0 && (
                     <div className={`p-5 rounded-xl border col-span-1 md:col-span-2 ${t.cardInner}`}>
-                      <h4 className={`text-sm font-bold flex items-center mb-4 ${t.textMain}`}><Package size={16} className="mr-2"/> Envío por Modelo (Top 15 Tiendas)</h4>
+                      <h4 className={`text-sm font-bold flex items-center mb-4 ${t.textMain}`}><Icons.Package size={16} className="mr-2"/> Envío por Modelo (Top 15 Tiendas)</h4>
                       <div className="flex flex-wrap gap-2 mb-4">
                          {modelsStoreData.models.map((m, i) => (
                             <div key={m} className="flex items-center text-[10px] text-gray-400"><span className={`w-3 h-3 rounded-sm mr-1 ${modelsColors[i%modelsColors.length]}`}></span>{m}</div>
