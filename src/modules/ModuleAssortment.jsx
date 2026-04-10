@@ -1,9 +1,8 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Settings, Store, Package, Upload, ArrowUpDown, Sliders, Layers, MoreVertical, Sun, Moon, Info, Map, Database } from 'lucide-react';
 
 // =====================================================================
 // IMPORT REAL (Descomenta esta línea en tu entorno local)
-// import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
+import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
 export default function App() {
   const [theme, setTheme] = useState('dark'); 
