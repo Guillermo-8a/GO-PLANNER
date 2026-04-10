@@ -1,12 +1,11 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { Settings, Store, Package, Upload, ArrowUpDown, Sliders, Layers, MoreVertical, Sun, Moon, Info, Map, Database } from 'lucide-react';
-import { Menu } from 'lucide-react';
+import React, { useState, useMemo, useEffect,useRef } from 'react';
+import { Menu, Settings, Store, Package, Upload, ArrowUpDown, Sliders, Layers, MoreVertical, Sun, Moon, Info, Map, Database } from 'lucide-react';
 
 // =====================================================================
 // IMPORT REAL (Descomenta esta línea en tu entorno local)
 import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
-export default function App() {
+export default function ModuleAssortment() {
   const [theme, setTheme] = useState('dark'); 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const fileInputRef = useRef(null);
