@@ -1,5 +1,3 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Settings, Store, Package, Upload, ArrowUpDown, Sliders, Layers, MoreVertical, Sun, Moon, Info, Map, Database, ShoppingCart, BarChart3, Plus, Trash2, Save, Download, Zap, DollarSign, Target, FileSpreadsheet, Edit3, Lightbulb, CalendarDays, Compass, Activity, Wand2, RefreshCw, ClipboardList, Calculator } from 'lucide-react';
 import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
 export default function App() {
@@ -10,7 +8,7 @@ export default function App() {
   const forecastFileInputRef = useRef(null);
   const [activeTab, setActiveTab] = useState('data');
 
-  // --- INTEGRACIÓN GLOBAL CONTEXT (CÓDIGO DE CLAUDE) ---
+  // --- INTEGRACIÓN GLOBAL CONTEXT ---
   const gDispatch = useDispatch();
   const gState    = useGlobal();
   const forecastDisponible = !!gState?.forecastData;
@@ -50,7 +48,7 @@ export default function App() {
   const [reportView, setReportView] = useState('sugerido'); 
   const [suggestedPlans, setSuggestedPlans] = useState([]); 
 
-  // --- PUBLICAR OTB AL GLOBAL CONTEXT (CÓDIGO DE CLAUDE) ---
+  // --- PUBLICAR OTB AL GLOBAL CONTEXT ---
   useEffect(() => {
     if (goas.length > 0) {
       const totalBudget = goas.reduce((s, g) => s + (g.budget || 0), 0);
@@ -164,6 +162,7 @@ export default function App() {
       const goa = row.goa;
       if (!dataByGoa[goa]) { dataByGoa[goa] = []; maxVals[goa] = { sales: 0, margin: 0, rotation: 0 }; }
       dataByGoa[goa].push(row);
+      
       if (row.sales > maxVals[goa].sales) maxVals[goa].sales = row.sales;
       if (row.margin > maxVals[goa].margin) maxVals[goa].margin = row.margin;
       if (row.rotation > maxVals[goa].rotation) maxVals[goa].rotation = row.rotation;
@@ -310,6 +309,7 @@ export default function App() {
     setStores((stores || []).map(s => s.id === storeId ? { ...s, clusters: { ...(s.clusters || {}), [goaName]: newCluster } } : s));
   };
 
+  // --- CARGA DE CSV PRESUPUESTOS (NUEVA FUNCIÓN RESTAURADA) ---
   const handleBudgetCSVUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -335,6 +335,7 @@ export default function App() {
     reader.readAsText(file);
   };
 
+  // --- CARGA DE CSV FORECAST BET ---
   const handleForecastCSVUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -655,7 +656,6 @@ export default function App() {
   return (
     <div className={`min-h-screen font-sans pb-12 transition-colors duration-300 ${t.appBg}`}>
       
-      {/* HEADER Y MINI MENU */}
       <header className={`border-b sticky top-0 z-20 transition-colors duration-300 ${t.header}`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
@@ -665,7 +665,7 @@ export default function App() {
             </div>
             
             <div className="relative">
-              <button onClick={() => setIsMenuOpen(!isMenuOpen)} className={`p-2 rounded-lg transition-all focus:outline-none ${t.btnMenu}`} title="Menú">
+              <button onClick={() => setIsMenuOpen(!isMenuOpen)} className={`p-2 rounded-lg transition-all focus:outline-none ${t.btnMenu}`} title="Ajustes">
                 <MoreVertical size={20} />
               </button>
               {isMenuOpen && (
@@ -778,12 +778,6 @@ export default function App() {
                         <button onClick={()=>toggleSort('sales')} className={`px-2 py-1 text-[10px] font-bold rounded flex items-center transition ${storeSortBy==='sales'? (theme==='dark'?'bg-zinc-800 text-yellow-400':'bg-white shadow text-blue-600') : t.textMuted}`}>Vtas <ArrowUpDown size={10} className="ml-1"/></button>
                       </div>
                       
-                      {forecastDisponible && (
-                        <button onClick={handleLoadForecast} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center transition bg-indigo-600 text-white hover:bg-indigo-500`}>
-                          <Database size={16} className="mr-2" /> Extraer Forecast
-                        </button>
-                      )}
-
                       <label className={`cursor-pointer px-4 py-2 rounded-lg text-sm font-bold flex items-center transition ${t.btnGhost}`}>
                         <Upload size={16} className="mr-2" /> Actualizar CSV
                         <input type="file" accept=".csv" onChange={handleStoreCSVUpload} ref={fileInputRef} className="hidden" />
@@ -926,20 +920,15 @@ export default function App() {
         {activeTab === 'budget' && (
           <div className="space-y-6">
             
-            {(goas || []).length === 0 && !isSyncing ? (
+            {(goas || []).length === 0 ? (
               <EmptyState 
                 icon={Database} title="Conectar con GO Forecasting" 
                 desc="En el ecosistema GO PLANNER, tu presupuesto y curvas de vida mensual se definen en el módulo de Forecasting."
                 action={
                   <div className="flex flex-wrap justify-center gap-4">
-                    {forecastDisponible && (
-                      <button onClick={handleLoadForecast} className={`px-6 py-3.5 rounded-xl text-sm font-black tracking-wider uppercase transition shadow-lg flex items-center hover:scale-105 transform duration-200 bg-indigo-600 text-white hover:bg-indigo-500`}>
-                        <Database size={18} className="mr-2" /> Extraer de Forecast
-                      </button>
-                    )}
                     <label className={`cursor-pointer px-6 py-3.5 rounded-xl text-sm font-black tracking-wider uppercase transition shadow-lg flex items-center hover:scale-105 transform duration-200 ${t.btnGhost}`}>
                       <Upload size={18} className="mr-2" /> Importar Manual (.CSV)
-                      <input type="file" accept=".csv" onChange={handleForecastCSVUpload} ref={forecastFileInputRef} className="hidden" />
+                      <input type="file" accept=".csv" onChange={handleBudgetCSVUpload} ref={budgetFileInputRef} className="hidden" />
                     </label>
                   </div>
                 }
@@ -949,14 +938,9 @@ export default function App() {
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                   <h2 className={`text-xl font-bold flex items-center ${t.textMain}`}><Database className={`mr-3 ${t.textAccent1}`}/> Forecast y Curvas Mensuales (Importado)</h2>
                   <div className="flex space-x-3">
-                    {forecastDisponible && (
-                      <button onClick={handleLoadForecast} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center transition bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg`}>
-                        <Database size={16} className="mr-2" /> Extraer de Forecast
-                      </button>
-                    )}
                     <label className={`cursor-pointer px-4 py-2.5 rounded-lg text-sm font-bold flex items-center transition ${t.btnGhost} shadow-lg`}>
-                      <Upload size={16} className="mr-2" /> Importar BET (.CSV)
-                      <input type="file" accept=".csv" onChange={handleForecastCSVUpload} ref={forecastFileInputRef} className="hidden" />
+                      <Upload size={16} className="mr-2" /> Importar Manual (.CSV)
+                      <input type="file" accept=".csv" onChange={handleBudgetCSVUpload} ref={budgetFileInputRef} className="hidden" />
                     </label>
                   </div>
                 </div>
