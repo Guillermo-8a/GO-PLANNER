@@ -1,8 +1,4 @@
 import { useDispatch, globalActions } from '../context/GlobalContext';
-const useDispatch = () => ({});
-const globalActions = {
-  publishForecast: (dispatch, data) => console.log("Datos listos para enviar al GlobalContext:", data)
-};
 
 // --- Motores Matemáticos Inteligencia V4 (Restaurados y Blindados) ---
 const engines = {
