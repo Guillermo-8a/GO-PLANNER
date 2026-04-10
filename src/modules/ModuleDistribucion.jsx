@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect,useRef } from 'react';
 import { 
   TrendingUp, Package, ShoppingCart, BarChart2, Box, Database, RefreshCw,
   Search, Calendar, Filter, CheckCircle2, AlertCircle, Upload, Download,
-  Settings, FileText, Table, Sun, Moon, Menu
+  Settings, FileText, Table, Sun, Moon, Menu, Store, Activity, CheckSquare, BarChart3, MapIcon, FileSpreadsheet
 } from 'lucide-react';
 
 import { useGlobal, useDispatch, globalActions } from '../context/GlobalContext';
@@ -1364,7 +1364,6 @@ export default function Distribucion() {
                   </button>
                 </div>
               </div>
-            )}
 
             {/* RENDERIZADO EN LÍNEA DE GRÁFICAS PARA EVITAR ERRORES DE COMPONENTES ANIDADOS */}
             {distributionResult.length > 0 && (
