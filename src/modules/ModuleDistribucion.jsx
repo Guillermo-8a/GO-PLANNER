@@ -1,6 +1,11 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Settings, Store, Package, Upload, ArrowUpDown, Sliders, Map as MapIcon, Calculator, Plus, Trash2, Download, CheckSquare, ListPlus, Wand2, FileSpreadsheet, ToggleLeft, ToggleRight, BarChart3, Activity, Moon, Sun, Info, ChevronDown, ChevronUp, Edit3, Check, X } from 'lucide-react';
 
+// --- INTEGRACIÓN CON EL CASCARÓN GLOBAL ---
+// ⚠️ IMPORTANTE PARA TU PROYECTO EN VS CODE ⚠️
+// 1. DESCOMENTA la siguiente línea para conectarlo a tu Contexto Global:
+// import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
+
 // ============================================================================
 // COMPONENTE EXTERNO: GRÁFICA DE DISPERSIÓN (Para evitar errores de React)
 // ============================================================================
@@ -81,6 +86,11 @@ const ScatterPlot = ({ data, title, subtitle, colorClass, maxVentas, maxInv, t }
 // COMPONENTE PRINCIPAL
 // ============================================================================
 export default function Distribucion() {
+  // --- INICIALIZACIÓN DEL CONTEXTO GLOBAL ---
+  const gDispatch = useDispatch ? useDispatch() : null;
+  const gState    = useGlobal ? useGlobal() : null;
+  const otbDisponible = !!gState?.otbData;
+
   const [theme, setTheme] = useState('light'); // Por defecto light para tu layout
   const [activeTab, setActiveTab] = useState(1); 
   const fileInputRef = useRef(null);
@@ -233,7 +243,7 @@ export default function Distribucion() {
   }, [scoreWeights, activeClusters]);
 
 
-  // --- CARGAS Y LECTURAS ---
+  // --- CARGAS Y LECTURAS (Con ISO-8859-1 para Acentos) ---
   const handleStoreCSVUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -630,6 +640,12 @@ export default function Distribucion() {
     const results = [];
     const warnings = []; 
     
+    // Clonar el Inventario (OH) inicial para actualizarlo dinámicamente corrida por corrida
+    const dynamicOH = {};
+    stores.forEach(s => {
+       dynamicOH[s.centerCode] = { ...s.goaOH };
+    });
+    
     chequera.forEach(item => {
       let qtyToDistribute = parseInt(item.qty);
       if (qtyToDistribute <= 0) return;
@@ -676,13 +692,18 @@ export default function Distribucion() {
         let totalNeed = 0;
         const storeNeeds = [];
         
-        const totalSystemOH = eligibleStores.reduce((sum, s) => sum + (s.goaOH[goaName] || 0), 0);
+        // Calculamos usando el OH Dinámico (actualizado por tallas anteriores)
+        let totalSystemOH = 0;
+        eligibleStores.forEach(s => {
+            totalSystemOH += (dynamicOH[s.centerCode][goaName] || 0);
+        });
+        
         const totalPool = totalSystemOH + qtyToDistribute; 
 
         eligibleStores.forEach(store => {
           const share = store.goaScores[goaName] / totalScore;
           const idealTotalQty = share * totalPool;
-          const currentOH = store.goaOH[goaName] || 0;
+          const currentOH = dynamicOH[store.centerCode][goaName] || 0;
           
           let need = idealTotalQty - currentOH;
           if (need < 0) need = 0; 
@@ -729,7 +750,10 @@ export default function Distribucion() {
         allocations.set(storeCenter, (allocations.get(storeCenter) || 0) + 1);
       }
 
+      // IMPORTANTE: Actualizar el OH dinámico para que la SIGUIENTE talla respete la dispersión real
       allocations.forEach((qty, centerCode) => {
+        dynamicOH[centerCode][goaName] = (dynamicOH[centerCode][goaName] || 0) + qty;
+        
         const storeObj = eligibleStores.find(s => s.centerCode === centerCode);
         results.push({
           centro: centerCode,
@@ -756,6 +780,22 @@ export default function Distribucion() {
 
     results.sort((a, b) => a.centro.localeCompare(b.centro) || a.sku.localeCompare(b.sku));
     setDistributionResult(results);
+
+    // --- NUEVA INTEGRACIÓN CON GLOBAL CONTEXT ---
+    try {
+      const finalAllocations = {};
+      results.forEach(r => { finalAllocations[r.centro] = (finalAllocations[r.centro] || 0) + r.qty; });
+      const totalFcst = results.reduce((s, r) => s + r.qty, 0);
+      const totalAlloc = Object.values(finalAllocations).reduce((a, b) => a + b, 0);
+      const fillRate = totalFcst > 0 ? Math.min((totalAlloc / totalFcst) * 100, 100) : 0;
+      
+      if (typeof globalActions !== 'undefined' && gDispatch) {
+        globalActions.publishDistribution(gDispatch, { allocations: finalAllocations, fillRate, result: results });
+      }
+    } catch (error) {
+      console.log("Aviso: GlobalContext no detectado. Esto es normal en entornos aislados.");
+    }
+    // --------------------------------------------
   };
 
   const triggerDownload = (filename, content) => {
