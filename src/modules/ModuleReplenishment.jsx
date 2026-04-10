@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
-import { useDispatch, globalActions } from '../context/GlobalContext';
+import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
 // --- Motores Matemáticos Inteligencia V4 (Restaurados y Blindados) ---
 const engines = {
