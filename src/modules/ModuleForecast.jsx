@@ -3,10 +3,11 @@ import {
   LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
   BarChart, Bar, ComposedChart, Cell, Area
 } from 'recharts';
+
 import { 
-  TrendingUp, Settings2, Trophy, Layers, Plus, Trash2, Edit3, Download, Copy, Check, Plus
+  TrendingUp, Settings2, Trophy, Layers, Plus, Trash2, Edit3, Download, Copy, Check,
   Zap, Save, X, FileSpreadsheet, Calendar, Menu, Sun, Moon, Database, ShoppingCart, Rocket, Upload
-} from 'lucide-react';
+} from '../utils/icons';
 
 import { useGlobal, useDispatch, globalActions } from '../context/GlobalContext';
 
