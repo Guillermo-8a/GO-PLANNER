@@ -1,8 +1,5 @@
 import { useDispatch, globalActions } from '../context/GlobalContext';
 
-  publishForecast: (dispatch, data) => console.log("Datos listos para enviar al GlobalContext:", data)
-};
-
 // --- Motores Matemáticos Inteligencia V4 (Restaurados y Blindados) ---
 const engines = {
   'SES': (data, p, horizon) => {
