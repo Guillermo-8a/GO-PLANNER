@@ -1,11 +1,10 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 
 import * as Icons from '../utils/icons';
-
 import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
 // ============================================================================
-// COMPONENTE EXTERNO: GRÁFICA DE DISPERSIÓN (Para evitar errores de React)
+// COMPONENTE EXTERNO: GRÁFICA DE DISPERSIÓN
 // ============================================================================
 const ScatterPlot = ({ data, title, subtitle, colorClass, maxVentas, maxInv, t }) => {
   let trendline = null;
@@ -85,8 +84,9 @@ const ScatterPlot = ({ data, title, subtitle, colorClass, maxVentas, maxInv, t }
 // ============================================================================
 export default function Distribucion() {
   // --- INICIALIZACIÓN DEL CONTEXTO GLOBAL ---
-  const gDispatch = useDispatch ? useDispatch() : null;
-  const gState    = useGlobal ? useGlobal() : null;
+  const gDispatch = useDispatch();
+  const gState    = useGlobal();
+  const otbDisponible = !!gState?.otbData;
   
   // TEMA GLOBAL SINCRONIZADO DESDE EL SHELL
   const theme = gState?.theme || 'light'; 
@@ -242,7 +242,7 @@ export default function Distribucion() {
   }, [scoreWeights, activeClusters]);
 
 
-  // --- CARGAS Y LECTURAS (Con ISO-8859-1 para Acentos) ---
+  // --- CARGAS Y LECTURAS ---
   const handleStoreCSVUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -778,9 +778,8 @@ export default function Distribucion() {
         globalActions.publishDistribution(gDispatch, { allocations: finalAllocations, fillRate, result: results });
       }
     } catch (error) {
-      console.log("Aviso: GlobalContext no detectado. Esto es normal en entornos aislados.");
+      console.warn("Aviso: GlobalContext no detectado en entorno de previsualización.");
     }
-    // --------------------------------------------
   };
 
   const triggerDownload = (filename, content) => {
@@ -906,7 +905,7 @@ export default function Distribucion() {
           onClick={() => { if (stores.length > 0) setActiveTab(2); }} 
           className={`flex items-center space-x-2 px-4 py-3 font-bold text-sm transition-colors border-b-2 ${activeTab === 2 ? t.tabActive : `border-transparent ${t.textMuted} hover:${t.textMain}`} ${stores.length === 0 ? 'opacity-50 cursor-not-allowed' : ''}`}
         >
-          <Icons.Calculator size={18} /><span>2. Distribución</span>
+          <Icons.BarChart2 size={18} /><span>2. Distribución</span>
         </button>
       </div>
 
@@ -940,7 +939,7 @@ export default function Distribucion() {
                   <p className={`text-xs mb-6 h-12 ${t.textMuted}`}>Opcional. Matriz cruzada para restringir qué tiendas pueden recibir qué marcas.</p>
                   
                   <label className={`cursor-pointer w-full py-3.5 rounded-xl text-sm font-black tracking-wider uppercase transition shadow-lg flex items-center justify-center border border-dashed hover:scale-105 transform duration-200 ${theme==='dark'?'border-zinc-600 text-zinc-300 hover:bg-zinc-800':'border-gray-400 text-gray-600 hover:bg-gray-100'}`}>
-                    <Icons.ListPlus size={18} className="mr-2" /> Subir Matriz (.CSV)
+                    <Icons.FileText size={18} className="mr-2" /> Subir Matriz (.CSV)
                     <input type="file" accept=".csv" onChange={handleBrandMatrixUpload} className="hidden" />
                   </label>
                 </div>
@@ -952,7 +951,7 @@ export default function Distribucion() {
               <div className={`p-4 rounded-xl border flex flex-col transition-all ${theme==='dark'?'bg-blue-900/10 border-blue-900/30':'bg-blue-50 border-blue-200'}`}>
                 <div className="flex justify-between items-center cursor-pointer select-none" onClick={() => setShowGuide(!showGuide)}>
                   <div className="flex items-center">
-                    <Icons.Info size={18} className={`mr-2 ${theme==='dark'?'text-blue-400':'text-blue-600'}`} />
+                    <Icons.AlertCircle size={18} className={`mr-2 ${theme==='dark'?'text-blue-400':'text-blue-600'}`} />
                     <h3 className={`text-sm font-bold ${theme==='dark'?'text-blue-400':'text-blue-700'}`}>Guía Rápida y Formatos (CSV)</h3>
                   </div>
                   {showGuide ? <Icons.ChevronUp size={18} className={theme==='dark'?'text-blue-400':'text-blue-600'}/> : <Icons.ChevronDown size={18} className={theme==='dark'?'text-blue-400':'text-blue-600'}/>}
@@ -1071,7 +1070,7 @@ export default function Distribucion() {
                     </button>
 
                     <label className={`cursor-pointer px-4 py-2 rounded-lg text-xs font-bold flex items-center transition border border-dashed ${theme==='dark'?'border-zinc-600 text-zinc-300 hover:bg-zinc-800':'border-gray-400 text-gray-600 hover:bg-gray-100'}`} title="Opcional: Matriz Cruzada">
-                      <Icons.ListPlus size={14} className="mr-2" /> 
+                      <Icons.FileText size={14} className="mr-2" /> 
                       {Object.keys(brandMatrix).length > 0 ? `Marcas (${Object.keys(brandMatrix).length})` : 'Subir Marcas'}
                       <input type="file" accept=".csv" onChange={handleBrandMatrixUpload} className="hidden" />
                     </label>
@@ -1147,7 +1146,7 @@ export default function Distribucion() {
               <div className="flex justify-between items-start">
                 <div>
                   <h2 className={`text-xl font-bold flex items-center mb-2 ${t.textMain}`}>
-                    <Icons.ListPlus className={`mr-2 ${t.textAccent1}`} size={24} />
+                    <Icons.FileText className={`mr-2 ${t.textAccent1}`} size={24} />
                     Ingreso de Modelos a Distribuir
                   </h2>
                   <p className={`text-sm ${t.textMuted}`}>Agrega los modelos que deseas repartir. Tip: Puedes poner varias cantidades (10,20) para generar corridas de tallas.</p>
@@ -1372,7 +1371,6 @@ export default function Distribucion() {
                 </h3>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                  {/* TOP 10 TIENDAS */}
                   {topStoresData.length > 0 && (
                     <div className={`p-5 rounded-xl border ${t.cardInner}`}>
                       <h4 className={`text-sm font-bold flex items-center mb-4 ${t.textMain}`}><Icons.Store size={16} className="mr-2"/> Top 10 Tiendas Receptoras</h4>
@@ -1392,10 +1390,9 @@ export default function Distribucion() {
                     </div>
                   )}
 
-                  {/* PIEZAS POR ZONA */}
                   {zonesData.length > 0 && (
                     <div className={`p-5 rounded-xl border ${t.cardInner}`}>
-                      <h4 className={`text-sm font-bold flex items-center mb-4 ${t.textMain}`}><Icons.Map size={16} className="mr-2"/> Piezas por Zona</h4>
+                      <h4 className={`text-sm font-bold flex items-center mb-4 ${t.textMain}`}><Icons.MapIcon size={16} className="mr-2"/> Piezas por Zona</h4>
                       <div className="space-y-3 max-h-64 overflow-y-auto custom-scrollbar pr-2">
                         {zonesData.map((d, i) => (
                           <div key={i} className="flex items-center text-xs">
@@ -1411,7 +1408,6 @@ export default function Distribucion() {
                     </div>
                   )}
 
-                  {/* ENVÍO POR MODELO */}
                   {modelsStoreData.stores.length > 0 && (
                     <div className={`p-5 rounded-xl border col-span-1 md:col-span-2 ${t.cardInner}`}>
                       <h4 className={`text-sm font-bold flex items-center mb-4 ${t.textMain}`}><Icons.Package size={16} className="mr-2"/> Envío por Modelo (Top 15 Tiendas)</h4>
@@ -1443,7 +1439,6 @@ export default function Distribucion() {
                     </div>
                   )}
 
-                  {/* GRÁFICAS DE DISPERSIÓN */}
                   {scatterData.pre.length > 0 && (
                     <div className="col-span-1 md:col-span-2 grid grid-cols-1 md:grid-cols-2 gap-6">
                       <ScatterPlot data={scatterData.pre} title="Antes: Físico (OH)" subtitle="OH Original vs Ventas" colorClass="text-blue-400" maxVentas={scatterData.maxVentas} maxInv={scatterData.maxInvPre} t={t} />
@@ -1458,7 +1453,6 @@ export default function Distribucion() {
         )}
 
       </main>
-      <style dangerouslySetInnerHTML={{__html: `.custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; } .custom-scrollbar::-webkit-scrollbar-track { background: transparent; } .custom-scrollbar::-webkit-scrollbar-thumb { background: ${theme === 'dark' ? '#3f3f46' : '#d1d5db'}; border-radius: 4px; } .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: ${theme === 'dark' ? '#52525b' : '#9ca3af'}; } @keyframes fadeInUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } } .animate-fade-in-up { animation: fadeInUp 0.4s ease-out forwards; }`}} />
     </div>
   );
 }
