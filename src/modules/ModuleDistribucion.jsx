@@ -1,7 +1,20 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 
-import * as Icons from '../utils/icons';
-import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
+// ============================================================================
+// ⚠️ IMPORTANTE PARA TU PROYECTO EN VERCEL / VS CODE ⚠️
+// ============================================================================
+// 1. DESCOMENTA estas líneas para conectarlo a tu entorno real:
+// import * as Icons from '../utils/icons';
+// import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
+
+// 2. BORRA ESTAS 4 LÍNEAS (Son mocks para que esta vista previa en la web funcione):
+import * as LucideIcons from 'lucide-react';
+const Icons = LucideIcons; 
+const useDispatch = () => null;
+const useGlobal = () => ({ theme: 'dark', otbData: true });
+const globalActions = { publishDistribution: () => {} };
+// ============================================================================
+
 
 // ============================================================================
 // COMPONENTE EXTERNO: GRÁFICA DE DISPERSIÓN
@@ -83,8 +96,10 @@ const ScatterPlot = ({ data, title, subtitle, colorClass, maxVentas, maxInv, t }
 // COMPONENTE PRINCIPAL
 // ============================================================================
 export default function Distribucion() {
+  // --- INICIALIZACIÓN DEL CONTEXTO GLOBAL ---
   const gDispatch = useDispatch();
   const gState    = useGlobal();
+  const otbDisponible = !!gState?.otbData;
   
   // TEMA GLOBAL SINCRONIZADO DESDE EL SHELL
   const theme = gState?.theme || 'light'; 
@@ -605,6 +620,12 @@ export default function Distribucion() {
     const results = [];
     const warnings = []; 
     
+    // Clonar el Inventario (OH) inicial para actualizarlo dinámicamente corrida por corrida
+    const dynamicOH = {};
+    stores.forEach(s => {
+       dynamicOH[s.centerCode] = { ...s.goaOH };
+    });
+    
     chequera.forEach(item => {
       let qtyToDistribute = parseInt(item.qty);
       if (qtyToDistribute <= 0) return;
@@ -651,13 +672,18 @@ export default function Distribucion() {
         let totalNeed = 0;
         const storeNeeds = [];
         
-        const totalSystemOH = eligibleStores.reduce((sum, s) => sum + (s.goaOH[goaName] || 0), 0);
+        // Calculamos usando el OH Dinámico (actualizado por tallas anteriores)
+        let totalSystemOH = 0;
+        eligibleStores.forEach(s => {
+            totalSystemOH += (dynamicOH[s.centerCode][goaName] || 0);
+        });
+        
         const totalPool = totalSystemOH + qtyToDistribute; 
 
         eligibleStores.forEach(store => {
           const share = store.goaScores[goaName] / totalScore;
           const idealTotalQty = share * totalPool;
-          const currentOH = store.goaOH[goaName] || 0;
+          const currentOH = dynamicOH[store.centerCode][goaName] || 0;
           
           let need = idealTotalQty - currentOH;
           if (need < 0) need = 0; 
@@ -678,7 +704,7 @@ export default function Distribucion() {
             remainders.push({ store, fraction: expectedQty - assignedQty });
           });
         } else {
-            warnings.push(`[${item.sku}]: Las tiendas ya tienen suficiente OH global para este GOA. Usa 'Llenado Push' si quieres forzar envío.`);
+            warnings.push(`[${item.sku}]: Las tiendas ya tienen suficiente OH para este GOA. Se omitió la talla para cuidar dispersión.`);
             return;
         }
       } 
@@ -704,7 +730,10 @@ export default function Distribucion() {
         allocations.set(storeCenter, (allocations.get(storeCenter) || 0) + 1);
       }
 
+      // IMPORTANTE: Actualizar el OH dinámico para que la SIGUIENTE talla respete la dispersión real
       allocations.forEach((qty, centerCode) => {
+        dynamicOH[centerCode][goaName] = (dynamicOH[centerCode][goaName] || 0) + qty;
+        
         const storeObj = eligibleStores.find(s => s.centerCode === centerCode);
         results.push({
           centro: centerCode,
@@ -732,6 +761,7 @@ export default function Distribucion() {
     results.sort((a, b) => a.centro.localeCompare(b.centro) || a.sku.localeCompare(b.sku));
     setDistributionResult(results);
 
+    // --- NUEVA INTEGRACIÓN CON GLOBAL CONTEXT ---
     try {
       const finalAllocations = {};
       results.forEach(r => { finalAllocations[r.centro] = (finalAllocations[r.centro] || 0) + r.qty; });
@@ -781,7 +811,7 @@ export default function Distribucion() {
     triggerDownload(`O9_Distribucion_${new Date().toISOString().split('T')[0]}.csv`, csvContent);
   };
 
-  // --- PREPARACIÓN DE DATOS PARA GRÁFICAS ---
+  // --- PREPARACIÓN DE DATOS PARA GRÁFICAS SIN COMPONENTES ANIDADOS ---
   const topStoresData = useMemo(() => {
     if (distributionResult.length === 0) return [];
     const agg = {};
@@ -791,6 +821,7 @@ export default function Distribucion() {
     });
     return Object.entries(agg).map(([name, val]) => ({ name, qty: val.qty, cluster: val.cluster })).sort((a, b) => b.qty - a.qty).slice(0, 10);
   }, [distributionResult]);
+
   const topStoresMax = Math.max(...topStoresData.map(d => d.qty), 1);
 
   const modelsStoreData = useMemo(() => {
@@ -807,6 +838,7 @@ export default function Distribucion() {
     const sorted = Object.entries(agg).map(([name, val]) => ({ name, ...val })).sort((a, b) => b.total - a.total).slice(0, 15);
     return { stores: sorted, models: Array.from(modelsSet) };
   }, [distributionResult]);
+
   const modelsStoreMax = Math.max(...modelsStoreData.stores.map(d => d.total), 1);
   const modelsColors = ['bg-indigo-500', 'bg-pink-500', 'bg-amber-500', 'bg-teal-500', 'bg-cyan-500', 'bg-rose-500', 'bg-violet-500', 'bg-fuchsia-500'];
 
@@ -818,6 +850,7 @@ export default function Distribucion() {
     });
     return Object.entries(agg).map(([name, qty]) => ({ name, qty })).sort((a, b) => b.qty - a.qty);
   }, [distributionResult]);
+
   const zonesMax = Math.max(...zonesData.map(d => d.qty), 1);
 
   const scatterData = useMemo(() => {
@@ -858,7 +891,7 @@ export default function Distribucion() {
   return (
     <div className={`h-full flex flex-col font-sans transition-colors duration-300 ${t.appBg}`}>
       
-      {/* TABS NATIVAS */}
+      {/* TABS NATIVAS DEL SHELL */}
       <div className="flex space-x-6 px-8 mt-4 border-b border-gray-200 dark:border-zinc-800 overflow-x-auto custom-scrollbar">
         <button onClick={() => setActiveTab(1)} className={`flex items-center space-x-2 px-4 py-3 font-bold text-sm transition-colors border-b-2 ${activeTab === 1 ? t.tabActive : `border-transparent ${t.textMuted} hover:${t.textMain}`}`}>
           <Icons.Store size={18} /><span>1. Tiendas y Clústeres</span>
@@ -1287,10 +1320,10 @@ export default function Distribucion() {
                 <div className="flex flex-col md:flex-row items-center gap-6">
                   <div className={`flex items-center p-2 rounded-lg border ${theme==='dark'?'bg-black/30 border-zinc-800':'bg-gray-100 border-gray-200'}`}>
                     <button onClick={() => setConsiderOH(false)} className={`flex items-center px-3 py-1.5 rounded text-xs font-bold transition-all ${!considerOH ? (theme==='dark'?'bg-zinc-800 text-white shadow':'bg-white text-black shadow') : t.textMuted}`}>
-                      <Icons.Box size={16} className={`mr-1 ${!considerOH ? 'text-red-400' : ''}`} /> Llenado Push
+                      <Icons.ToggleLeft size={16} className={`mr-1 ${!considerOH ? 'text-red-400' : ''}`} /> Llenado Push
                     </button>
                     <button onClick={() => setConsiderOH(true)} className={`flex items-center px-3 py-1.5 rounded text-xs font-bold transition-all ${considerOH ? (theme==='dark'?'bg-zinc-800 text-white shadow':'bg-white text-black shadow') : t.textMuted}`}>
-                      Cuidar Dispersión (OH) <Icons.CheckSquare size={16} className={`ml-1 ${considerOH ? 'text-emerald-400' : ''}`} />
+                      Cuidar Dispersión (OH) <Icons.ToggleRight size={16} className={`ml-1 ${considerOH ? 'text-emerald-400' : ''}`} />
                     </button>
                   </div>
 
@@ -1415,6 +1448,7 @@ export default function Distribucion() {
         )}
 
       </main>
+      <style dangerouslySetInnerHTML={{__html: `.custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; } .custom-scrollbar::-webkit-scrollbar-track { background: transparent; } .custom-scrollbar::-webkit-scrollbar-thumb { background: ${theme === 'dark' ? '#3f3f46' : '#d1d5db'}; border-radius: 4px; } .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: ${theme === 'dark' ? '#52525b' : '#9ca3af'}; } @keyframes fadeInUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } } .animate-fade-in-up { animation: fadeInUp 0.4s ease-out forwards; }`}} />
     </div>
   );
 }
