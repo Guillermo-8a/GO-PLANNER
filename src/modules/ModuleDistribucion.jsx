@@ -1,6 +1,5 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
-import { Menu } from 'lucide-react';
+import React, { useState, useMemo, useEffect,useRef } from 'react';
+import { Menu, Settings, Store, Package, Upload, ArrowUpDown, Sliders, Layers, MoreVertical, Sun, Moon, Info, Map, Database } from 'lucide-react';
 
 // ============================================================================
 // COMPONENTE EXTERNO: GRÁFICA DE DISPERSIÓN (Para evitar errores de React)
