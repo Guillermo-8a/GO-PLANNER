@@ -1,4 +1,5 @@
-import { Settings, Store, Package, Upload, ArrowUpDown, Sliders, Layers, MoreVertical, Sun, Moon, Info, Map, Database, Calculator, ShoppingCart, BarChart3, Plus, Trash2, Save, Download, Zap, DollarSign, Target, FileSpreadsheet, Edit3, Lightbulb, CalendarDays, Compass, Activity, Wand2, RefreshCw, ClipboardList } from 'lucide-react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { Settings, Store, Package, Upload, ArrowUpDown, Sliders, Layers, MoreVertical, Sun, Moon, Info, Map, Database, ShoppingCart, BarChart3, Plus, Trash2, Save, Download, Zap, DollarSign, Target, FileSpreadsheet, Edit3, Lightbulb, CalendarDays, Compass, Activity, Wand2, RefreshCw, ClipboardList, Calculator } from 'lucide-react';
 import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
 export default function App() {
@@ -12,12 +13,11 @@ export default function App() {
   // --- INTEGRACIÓN GLOBAL CONTEXT (CÓDIGO DE CLAUDE) ---
   const gDispatch = useDispatch();
   const gState    = useGlobal();
-  // Saber si hay datos de Forecast disponibles (opcional)
   const forecastDisponible = !!gState?.forecastData;
   
-  // --- 1. ESTADO DE BASE Y CLÚSTERES (Limpio, sin datos falsos) ---
+  // --- ESTADO DE BASE Y CLÚSTERES ---
   const [numClusters, setNumClusters] = useState(6);
-  const [clusterStrategy, setClusterStrategy] = useState('piramide'); // 'piramide' | 'lineal' | 'valor'
+  const [clusterStrategy, setClusterStrategy] = useState('piramide');
   
   const activeClusters = useMemo(() => {
     if (numClusters === 6) return ['AA', 'A', 'B', 'C', 'D', 'E'];
@@ -34,26 +34,21 @@ export default function App() {
   const [storeSortBy, setStoreSortBy] = useState('score'); 
   const [storeSortOrder, setStoreSortOrder] = useState('desc');
 
-  // --- 3. CALCULADORAS ---
+  // --- CALCULADORAS ---
   const [sizeCurves, setSizeCurves] = useState([]);
   const [calcRules, setCalcRules] = useState([]);
 
-  // --- 4. COMPRAS Y ESTADO TEMPORAL ---
+  // --- COMPRAS Y ESTADO TEMPORAL ---
   const [purchases, setPurchases] = useState([]);
-  
   const [newCurve, setNewCurve] = useState({ name: '', sizes: '', weights: '' });
   const [editingCurveId, setEditingCurveId] = useState(null);
-  
   const [newRule, setNewRule] = useState({ name: '' });
   const [editingRuleId, setEditingRuleId] = useState(null);
-  
   const [buyData, setBuyData] = useState({ goaId: '', modelo: '', pvp: '', curveId: '', ruleId: '' });
 
-  // --- 5. REPORTES Y PLANEACIÓN ESTRATÉGICA ---
+  // --- REPORTES Y PLANEACIÓN ESTRATÉGICA ---
   const [reportView, setReportView] = useState('sugerido'); 
   const [suggestedPlans, setSuggestedPlans] = useState([]); 
-
-  const [isSyncing, setIsSyncing] = useState(false);
 
   // --- PUBLICAR OTB AL GLOBAL CONTEXT (CÓDIGO DE CLAUDE) ---
   useEffect(() => {
@@ -81,11 +76,12 @@ export default function App() {
       logoIcon: "bg-purple-600 text-white", logoAccent: "text-yellow-400",
       btnMenu: "bg-zinc-900 text-gray-300 hover:text-white hover:bg-zinc-800 border border-zinc-800",
       menuBg: "bg-zinc-900 border border-zinc-700 shadow-xl", menuItem: "hover:bg-zinc-800 text-gray-200 border-zinc-800",
+      tabActive: "border-yellow-400 text-yellow-400", tabInactive: "border-transparent text-gray-500 hover:text-gray-300",
       card: "bg-zinc-900 border-zinc-800 shadow-lg", cardInner: "bg-zinc-950 border-zinc-800",
       textMain: "text-white", textMuted: "text-gray-400", textAccent1: "text-purple-400", textAccent2: "text-yellow-400",
       iconAccent1: "text-purple-400 bg-purple-900/30", iconAccent2: "text-yellow-400 bg-yellow-500/20",
-      border: "border-zinc-800", input: "bg-zinc-950 border-zinc-700 text-white focus:ring-purple-500",
-      inputYellow: "bg-zinc-950 border-zinc-700 text-yellow-400 font-bold focus:ring-yellow-500",
+      border: "border-zinc-800", input: "bg-zinc-950 border-zinc-700 text-white focus:ring-purple-500 outline-none",
+      inputYellow: "bg-zinc-950 border-zinc-700 text-yellow-400 font-bold focus:ring-yellow-500 outline-none",
       btnPrimary: "bg-yellow-500 text-black hover:bg-yellow-400 shadow-[0_0_15px_rgba(234,179,8,0.2)]",
       btnSecondary: "bg-purple-600 text-white hover:bg-purple-500", btnDanger: "text-gray-400 hover:text-red-400 bg-zinc-900 hover:bg-zinc-800 border-zinc-800",
       btnEdit: "text-gray-400 hover:text-yellow-400 bg-zinc-900 hover:bg-zinc-800 border-zinc-800", btnGhost: "bg-zinc-800 text-gray-300 hover:text-white hover:bg-zinc-700",
@@ -95,19 +91,19 @@ export default function App() {
       successText: "text-green-400", successBg: "bg-green-900/20 border-green-500/50 text-green-300",
       warningText: "text-yellow-400", warningBg: "bg-yellow-900/20 border-yellow-500/50 text-yellow-300",
       dangerText: "text-red-400", dangerBg: "bg-red-900/20 border-red-500/50 text-red-300",
-      toggleActive: "bg-yellow-500 text-black font-black shadow-md", toggleInactive: "bg-zinc-900 text-gray-400 hover:text-white border-zinc-800",
-      tabActive: "border-yellow-400 text-yellow-400", tabInactive: "border-transparent text-gray-500 hover:text-gray-300",
+      toggleActive: "bg-yellow-500 text-black font-black shadow-md", toggleInactive: "bg-zinc-900 text-gray-400 hover:text-white border-zinc-800"
     },
     light: {
       appBg: "bg-gray-50 text-gray-800", header: "bg-white border-gray-200 shadow-sm",
       logoIcon: "bg-blue-600 text-white", logoAccent: "text-blue-600",
       btnMenu: "bg-white text-gray-600 hover:text-gray-900 hover:bg-gray-100 border border-gray-300",
       menuBg: "bg-white border border-gray-200 shadow-xl", menuItem: "hover:bg-gray-50 text-gray-700 border-gray-100",
+      tabActive: "border-blue-600 text-blue-600", tabInactive: "border-transparent text-gray-500 hover:text-gray-700",
       card: "bg-white border-gray-200 shadow-sm", cardInner: "bg-gray-50 border-gray-200",
       textMain: "text-gray-900", textMuted: "text-gray-500", textAccent1: "text-blue-600", textAccent2: "text-indigo-600",
       iconAccent1: "text-blue-600 bg-blue-50", iconAccent2: "text-indigo-600 bg-indigo-50",
-      border: "border-gray-200", input: "bg-white border-gray-300 text-gray-900 focus:ring-blue-500",
-      inputYellow: "bg-white border-gray-300 text-indigo-700 font-bold focus:ring-indigo-500",
+      border: "border-gray-200", input: "bg-white border-gray-300 text-gray-900 focus:ring-blue-500 outline-none",
+      inputYellow: "bg-white border-gray-300 text-indigo-700 font-bold focus:ring-indigo-500 outline-none",
       btnPrimary: "bg-blue-600 text-white hover:bg-blue-700 shadow-md",
       btnSecondary: "bg-indigo-600 text-white hover:bg-indigo-700", btnDanger: "text-gray-400 hover:text-red-500 bg-gray-50 hover:bg-red-50 border-gray-200",
       btnEdit: "text-gray-400 hover:text-blue-500 bg-gray-50 hover:bg-blue-50 border-gray-200", btnGhost: "bg-gray-100 text-gray-600 hover:text-gray-900 hover:bg-gray-200",
@@ -117,11 +113,45 @@ export default function App() {
       successText: "text-green-600", successBg: "bg-green-50 border-green-200 text-green-800",
       warningText: "text-yellow-600", warningBg: "bg-yellow-50 border-yellow-200 text-yellow-800",
       dangerText: "text-red-600", dangerBg: "bg-red-50 border-red-200 text-red-800",
-      toggleActive: "bg-white text-blue-700 font-black shadow-sm border border-blue-200", toggleInactive: "bg-gray-100 text-gray-500 hover:text-gray-800 border-transparent",
-      tabActive: "border-blue-600 text-blue-600", tabInactive: "border-transparent text-gray-500 hover:text-gray-700",
+      toggleActive: "bg-white text-blue-700 font-black shadow-sm border border-blue-200", toggleInactive: "bg-gray-100 text-gray-500 hover:text-gray-800 border-transparent"
     }
   };
   const t = themes[theme];
+
+  // --- FUNCIONES DE ARCHIVOS (JSON) ---
+  const handleExportProject = () => {
+    const data = { stores, goas, sizeCurves, calcRules, purchases, rawStoreData, scoreWeights, numClusters, clusterStrategy, suggestedPlans };
+    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = `GO_PLANNER_Assortment_${new Date().toISOString().slice(0,10)}.json`;
+    link.click();
+  };
+
+  const handleImportProject = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      try {
+        const data = JSON.parse(event.target.result);
+        if(data.stores) setStores(data.stores);
+        if(data.goas) setGoas(data.goas);
+        if(data.sizeCurves) setSizeCurves(data.sizeCurves);
+        if(data.calcRules) setCalcRules(data.calcRules);
+        if(data.purchases) setPurchases(data.purchases);
+        if(data.rawStoreData) setRawStoreData(data.rawStoreData);
+        if(data.scoreWeights) setScoreWeights(data.scoreWeights);
+        if(data.numClusters) setNumClusters(data.numClusters);
+        if(data.clusterStrategy) setClusterStrategy(data.clusterStrategy);
+        if(data.suggestedPlans) setSuggestedPlans(data.suggestedPlans);
+        alert("¡Proyecto cargado con éxito!");
+      } catch (err) { alert("Error al leer el archivo JSON."); }
+    };
+    reader.readAsText(file);
+    e.target.value = null; 
+  };
 
   // --- LÓGICA DE CLUSTERIZACIÓN DINÁMICA ---
   const recalculateClusters = (rawData, weights, currentClusters, strategy) => {
@@ -134,17 +164,12 @@ export default function App() {
       const goa = row.goa;
       if (!dataByGoa[goa]) { dataByGoa[goa] = []; maxVals[goa] = { sales: 0, margin: 0, rotation: 0 }; }
       dataByGoa[goa].push(row);
-      
       if (row.sales > maxVals[goa].sales) maxVals[goa].sales = row.sales;
       if (row.margin > maxVals[goa].margin) maxVals[goa].margin = row.margin;
       if (row.rotation > maxVals[goa].rotation) maxVals[goa].rotation = row.rotation;
 
       if (!storeMap.has(row.centro)) {
-        storeMap.set(row.centro, { 
-          id: row.centro, centerCode: row.centro, name: row.name, 
-          sales: row.sales, margin: row.margin, rotation: row.rotation, 
-          score: 0, clusters: {} 
-        });
+        storeMap.set(row.centro, { id: row.centro, centerCode: row.centro, name: row.name, sales: row.sales, margin: row.margin, rotation: row.rotation, score: 0, clusters: {} });
       } else {
         const existing = storeMap.get(row.centro);
         existing.sales = (existing.sales + row.sales) / 2; 
@@ -162,7 +187,6 @@ export default function App() {
         return { ...item, score };
       });
 
-      // Ordenamiento de tiendas
       storesInGoa.sort((a, b) => b.score - a.score);
       const total = storesInGoa.length;
       const numClust = currentClusters.length;
@@ -174,7 +198,6 @@ export default function App() {
         
         if (strategy === 'piramide') {
           if (numClust === 6) {
-            // Distribución Pirámide Retail: 5% AA | 15% A | 25% B | 30% C | 15% D | 10% E
             if (percentile <= 0.05) clusterIndex = 0;
             else if (percentile <= 0.20) clusterIndex = 1;
             else if (percentile <= 0.45) clusterIndex = 2;
@@ -207,7 +230,7 @@ export default function App() {
       setGoas(prev => {
         if (!prev.find(g => g.name.toUpperCase() === goaName)) {
           const formatted = goaName.charAt(0).toUpperCase() + goaName.slice(1).toLowerCase();
-          return [...prev, { id: Date.now() + Math.random(), name: formatted, budget: 0, historyPzs: 0 }];
+          return [...prev, { id: Date.now() + Math.random(), name: formatted, budget: 0, historyPzs: 0, months: [16.6, 16.6, 16.6, 16.6, 16.6, 17] }];
         }
         return prev;
       });
@@ -219,22 +242,23 @@ export default function App() {
     if (rawStoreData.length > 0) recalculateClusters(rawStoreData, scoreWeights, activeClusters, clusterStrategy);
   }, [scoreWeights, activeClusters, clusterStrategy]);
 
-  // --- CARGAR HISTÓRICOS DESDE FORECASTING (CÓDIGO DE CLAUDE) ---
+  // --- CARGA DE DATOS DESDE CONTEXT GLOBAL ---
   const handleLoadForecast = () => {
     if (forecastDisponible && gState.forecastData.brands) {
       const newGoas = gState.forecastData.brands.map((b, i) => ({
         id: Date.now() + i,
-        name: b.name || b.brand || `GOA ${i+1}`,
-        budget: b.budget || 0,
-        historyPzs: b.historyPzs || 0,
-        months: b.months || [16.6, 16.6, 16.6, 16.6, 16.6, 17]
+        name: String(b.name || b.brand || `GOA ${i+1}`),
+        budget: Number(b.budget) || 0,
+        historyPzs: Number(b.historyPzs) || 0,
+        months: Array.isArray(b.months) ? b.months : [16.6, 16.6, 16.6, 16.6, 16.6, 17]
       }));
       setGoas(newGoas);
       alert("Datos históricos y presupuestos cargados desde GO Forecasting.");
+    } else {
+      alert("No se detectó información en el Contexto de GO Forecasting. Por favor valida la conexión.");
     }
   };
 
-  // --- CARGA DE CSV TIENDAS ---
   const handleStoreCSVUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -273,10 +297,8 @@ export default function App() {
         });
       }
       
-      // Limpiar datos anteriores para empezar fresco
       setGoas([]);
       setStores([]);
-      
       setRawStoreData(extractedRawData);
       recalculateClusters(extractedRawData, scoreWeights, activeClusters, clusterStrategy);
       if(fileInputRef.current) fileInputRef.current.value = '';
@@ -286,59 +308,6 @@ export default function App() {
 
   const handleUpdateStoreCluster = (storeId, goaName, newCluster) => {
     setStores((stores || []).map(s => s.id === storeId ? { ...s, clusters: { ...(s.clusters || {}), [goaName]: newCluster } } : s));
-  };
-
-  // --- SINCRONIZACIÓN CON GO FORECASTING (MOCK LOCALSTORAGE) ---
-  const syncWithForecasting = () => {
-    setIsSyncing(true);
-    setTimeout(() => {
-      const storedForecast = localStorage.getItem('goplanner_forecast_data');
-      if (storedForecast) {
-        try {
-          const parsed = JSON.parse(storedForecast);
-          setGoas(parsed);
-          setIsSyncing(false);
-          return;
-        } catch (e) { console.error("Error leyendo data", e); }
-      }
-      alert("No se encontraron datos en GO Forecasting (Nube local). Por favor sube un archivo CSV base o configura manualmente.");
-      setIsSyncing(false);
-    }, 1500);
-  };
-
-  // --- IMPORTACION EXPORTACION JSON ---
-  const handleExportProject = () => {
-    const data = { stores, goas, sizeCurves, calcRules, purchases, rawStoreData, scoreWeights, numClusters, clusterStrategy, suggestedPlans };
-    const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.href = url;
-    link.download = `GO_PLANNER_Assortment_${new Date().toISOString().slice(0,10)}.json`;
-    link.click();
-  };
-
-  const handleImportProject = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = (event) => {
-      try {
-        const data = JSON.parse(event.target.result);
-        if(data.stores) setStores(data.stores);
-        if(data.goas) setGoas(data.goas);
-        if(data.sizeCurves) setSizeCurves(data.sizeCurves);
-        if(data.calcRules) setCalcRules(data.calcRules);
-        if(data.purchases) setPurchases(data.purchases);
-        if(data.rawStoreData) setRawStoreData(data.rawStoreData);
-        if(data.scoreWeights) setScoreWeights(data.scoreWeights);
-        if(data.numClusters) setNumClusters(data.numClusters);
-        if(data.clusterStrategy) setClusterStrategy(data.clusterStrategy);
-        if(data.suggestedPlans) setSuggestedPlans(data.suggestedPlans);
-        alert("¡Proyecto cargado con éxito!");
-      } catch (err) { alert("Error al leer el archivo JSON."); }
-    };
-    reader.readAsText(file);
-    e.target.value = null; 
   };
 
   const handleBudgetCSVUpload = (e) => {
@@ -485,7 +454,7 @@ export default function App() {
 
   const handleAutoSuggest = (planId) => {
     const plan = (suggestedPlans || []).find(p => p.id === planId);
-    if(!plan || !plan.curveId || !plan.ruleId) { alert("Primero selecciona Curva y Regla."); return; }
+    if(!plan || !plan.curveId || !plan.ruleId) { alert("Selecciona Curva y Regla."); return; }
     
     const goa = (goas || []).find(g => g.id === plan.goaId);
     if(!goa) return;
@@ -741,7 +710,7 @@ export default function App() {
                 desc="Para comenzar a planear, necesitamos calificar tus sucursales."
                 rules={["Centro (Ej. 0953)", "Nombre (Ej. Tienda Norte)", "GOA / Familia (Ej. Chancla)", "Ventas (Numérico)", "Margen (Opcional)", "Rotacion (Opcional)"]}
                 action={
-                  <label className={`cursor-pointer px-6 py-3 rounded-xl text-sm font-black tracking-wider uppercase transition shadow-lg flex items-center ${t.btnPrimary}`}>
+                  <label className={`cursor-pointer px-6 py-3.5 rounded-xl text-sm font-black tracking-wider uppercase transition shadow-lg flex items-center hover:scale-105 transform duration-200 ${t.btnPrimary}`}>
                     <Upload size={18} className="mr-2" /> Subir Archivo Base (.CSV)
                     <input type="file" accept=".csv" onChange={handleStoreCSVUpload} ref={fileInputRef} className="hidden" />
                   </label>
@@ -808,6 +777,13 @@ export default function App() {
                         <button onClick={()=>toggleSort('score')} className={`px-2 py-1 text-[10px] font-bold rounded flex items-center transition ${storeSortBy==='score'? (theme==='dark'?'bg-zinc-800 text-yellow-400':'bg-white shadow text-blue-600') : t.textMuted}`}>Score <ArrowUpDown size={10} className="ml-1"/></button>
                         <button onClick={()=>toggleSort('sales')} className={`px-2 py-1 text-[10px] font-bold rounded flex items-center transition ${storeSortBy==='sales'? (theme==='dark'?'bg-zinc-800 text-yellow-400':'bg-white shadow text-blue-600') : t.textMuted}`}>Vtas <ArrowUpDown size={10} className="ml-1"/></button>
                       </div>
+                      
+                      {forecastDisponible && (
+                        <button onClick={handleLoadForecast} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center transition bg-indigo-600 text-white hover:bg-indigo-500`}>
+                          <Database size={16} className="mr-2" /> Extraer Forecast
+                        </button>
+                      )}
+
                       <label className={`cursor-pointer px-4 py-2 rounded-lg text-sm font-bold flex items-center transition ${t.btnGhost}`}>
                         <Upload size={16} className="mr-2" /> Actualizar CSV
                         <input type="file" accept=".csv" onChange={handleStoreCSVUpload} ref={fileInputRef} className="hidden" />
@@ -956,29 +932,30 @@ export default function App() {
                 desc="En el ecosistema GO PLANNER, tu presupuesto y curvas de vida mensual se definen en el módulo de Forecasting."
                 action={
                   <div className="flex flex-wrap justify-center gap-4">
-                    <button onClick={syncWithForecasting} className={`px-6 py-3 rounded-xl text-sm font-black tracking-wider uppercase transition shadow-lg flex items-center ${t.btnSecondary}`}>
-                      <RefreshCw size={18} className="mr-2" /> Local Sync
-                    </button>
-                    <label className={`cursor-pointer px-6 py-3 rounded-xl text-sm font-black tracking-wider uppercase transition shadow-lg flex items-center ${t.btnPrimary}`}>
-                      <Upload size={18} className="mr-2" /> Importar BET (.CSV)
+                    {forecastDisponible && (
+                      <button onClick={handleLoadForecast} className={`px-6 py-3.5 rounded-xl text-sm font-black tracking-wider uppercase transition shadow-lg flex items-center hover:scale-105 transform duration-200 bg-indigo-600 text-white hover:bg-indigo-500`}>
+                        <Database size={18} className="mr-2" /> Extraer de Forecast
+                      </button>
+                    )}
+                    <label className={`cursor-pointer px-6 py-3.5 rounded-xl text-sm font-black tracking-wider uppercase transition shadow-lg flex items-center hover:scale-105 transform duration-200 ${t.btnGhost}`}>
+                      <Upload size={18} className="mr-2" /> Importar Manual (.CSV)
                       <input type="file" accept=".csv" onChange={handleForecastCSVUpload} ref={forecastFileInputRef} className="hidden" />
                     </label>
                   </div>
                 }
               />
-            ) : isSyncing ? (
-              <div className={`p-10 rounded-2xl border text-center flex flex-col items-center justify-center ${theme==='dark'?'bg-zinc-950 border-zinc-800':'bg-white border-gray-200'}`}>
-                 <RefreshCw size={40} className={`animate-spin mb-4 ${t.textAccent1}`} />
-                 <h3 className={`text-xl font-black mb-2 ${t.textMain}`}>Sincronizando Módulos...</h3>
-                 <p className={`text-sm ${t.textMuted}`}>Buscando información...</p>
-              </div>
             ) : (
               <div className={`p-6 rounded-xl border ${t.card}`}>
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                   <h2 className={`text-xl font-bold flex items-center ${t.textMain}`}><Database className={`mr-3 ${t.textAccent1}`}/> Forecast y Curvas Mensuales (Importado)</h2>
                   <div className="flex space-x-3">
-                    <label className={`cursor-pointer px-4 py-2.5 rounded-lg text-sm font-bold flex items-center transition bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg`}>
-                      <Zap size={16} className="mr-2" /> Importar Forecast BET
+                    {forecastDisponible && (
+                      <button onClick={handleLoadForecast} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center transition bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg`}>
+                        <Database size={16} className="mr-2" /> Extraer de Forecast
+                      </button>
+                    )}
+                    <label className={`cursor-pointer px-4 py-2.5 rounded-lg text-sm font-bold flex items-center transition ${t.btnGhost} shadow-lg`}>
+                      <Upload size={16} className="mr-2" /> Importar BET (.CSV)
                       <input type="file" accept=".csv" onChange={handleForecastCSVUpload} ref={forecastFileInputRef} className="hidden" />
                     </label>
                   </div>
@@ -993,7 +970,7 @@ export default function App() {
                         <th className="p-4 text-right font-bold uppercase tracking-wider text-xs">Historia (Pzs)</th>
                         <th className="p-4 text-center font-bold uppercase tracking-wider text-xs bg-black/10 border-l border-black/10" colSpan="6">Curva Mensual % (Forecast)</th>
                       </tr>
-                      <tr className="bg-black/5 text-[10px] text-gray-500 uppercase">
+                      <tr className={`text-[10px] uppercase ${t.textMuted} ${theme==='dark'?'bg-zinc-950/50':'bg-gray-100'}`}>
                         <th colSpan="3"></th>
                         <th className="p-2 text-center border-l border-black/10">Mes 1</th><th className="p-2 text-center">Mes 2</th><th className="p-2 text-center">Mes 3</th>
                         <th className="p-2 text-center">Mes 4</th><th className="p-2 text-center">Mes 5</th><th className="p-2 text-center">Mes 6</th>
@@ -1031,6 +1008,7 @@ export default function App() {
             ) : (
               <>
                 <div className={`rounded-xl shadow-lg p-6 relative overflow-hidden ${t.gradientCard}`}>
+                  <div className={`absolute top-0 right-0 w-64 h-64 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none ${theme==='dark'?'bg-purple-600/10':'bg-white/10'}`}></div>
                   <h2 className="text-xl font-bold mb-6 flex items-center relative z-10 text-white"><Zap className={`mr-3 ${t.textAccent2}`}/> Captura de Preventa (Real)</h2>
                   
                   <form onSubmit={handleGenerateBuy} className="grid grid-cols-1 md:grid-cols-4 gap-5 items-end relative z-10">
@@ -1065,7 +1043,7 @@ export default function App() {
                         </select>
                       </div>
                       <button type="submit" className={`w-full h-12 self-end font-black uppercase tracking-wider rounded-lg transition flex justify-center items-center ${theme==='dark'? t.btnPrimary : 'bg-yellow-400 text-indigo-900 hover:bg-yellow-300 shadow-xl'}`}>
-                        Agregar al Carrito
+                        <Calculator size={18} className="mr-2" /> Agregar al Carrito
                       </button>
                     </div>
                   </form>
@@ -1399,7 +1377,7 @@ export default function App() {
                               <tr className={`text-[10px] font-bold uppercase tracking-wider border-b ${t.tableHead}`}>
                                 <th className={`p-3 border-r ${t.border}`}>Cluster</th>
                                 <th className={`p-3 border-r ${t.border}`}>Tiendas</th>
-                                <th className={`p-3 border-r ${t.border}`}>Corridas por Mod.</th>
+                                <th className={`p-3 border-r ${t.border}`}>Corridas x Tienda</th>
                                 <th className={`p-3 font-black ${t.textMain} ${t.cardInner}`}>Total Pzs</th>
                               </tr>
                             </thead>
