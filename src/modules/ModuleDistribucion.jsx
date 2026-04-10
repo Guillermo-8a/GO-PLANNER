@@ -4,7 +4,7 @@ import { Settings, Store, Package, Upload, ArrowUpDown, Sliders, Map as MapIcon,
 // --- INTEGRACIÓN CON EL CASCARÓN GLOBAL ---
 // ⚠️ IMPORTANTE PARA TU PROYECTO EN VS CODE ⚠️
 // 1. DESCOMENTA la siguiente línea para conectarlo a tu Contexto Global:
-// import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
+import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
 // ============================================================================
 // COMPONENTE EXTERNO: GRÁFICA DE DISPERSIÓN (Para evitar errores de React)
