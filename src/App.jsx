@@ -16,7 +16,7 @@ import {
   TrendingUp, ShoppingCart, Map, RefreshCw, LayoutDashboard,
 } from 'lucide-react';
 
-// ─── Paletas de tema (pásalas como prop a cada módulo) ───────────────────────
+// ─── Paletas de tema (pásalas como prop a cada móduloo) ───────────────────────
 export const THEMES = {
   dark: {
     app:          'bg-black text-gray-300',
