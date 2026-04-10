@@ -1,16 +1,4 @@
-import React, { useState, useMemo, useEffect } from 'react';
-import {
-  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
-  BarChart, Bar, ComposedChart, Cell, Area
-} from 'recharts';
-import { 
-  TrendingUp, Settings2, Trophy, Layers, Plus, Trash2, Edit3, Download, Copy, Check,
-  Zap, Save, X, FileSpreadsheet, Calendar, Menu, Sun, Moon, Database, ShoppingCart, Rocket, Upload
-} from 'lucide-react';
-
-// Simuladores temporales para que el código funcione en esta vista previa aislada.
-// IMPORTANTE: En tu entorno local, borra estas líneas y descomenta tu import real:
-// import { useDispatch, globalActions } from '../context/GlobalContext';
+import { useDispatch, globalActions } from '../context/GlobalContext';
 const useDispatch = () => ({});
 const globalActions = {
   publishForecast: (dispatch, data) => console.log("Datos listos para enviar al GlobalContext:", data)
