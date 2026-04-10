@@ -1,8 +1,8 @@
-import React, { useState, useMemo, useEffect,useRef } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   TrendingUp, Package, ShoppingCart, BarChart2, Box, Database, RefreshCw,
   Search, Calendar, Filter, CheckCircle2, AlertCircle, Upload, Download,
-  Settings, FileText, Table, Sun, Moon, Menu
+  Settings, FileText, Table
 } from 'lucide-react';
 
 // --- FUNCIONES MATEMÁTICAS ---
@@ -43,17 +43,6 @@ const getJitterX = (i) => (i % 5 - 2) * 1.5;
 const getJitterY = (i) => ((i * 3) % 5 - 2) * 1.5;
 
 export default function App() {
-    // THEME STATE
-    const [theme, setTheme] = useState('dark');
-    
-    useEffect(() => {
-        if (theme === 'dark') {
-            document.documentElement.classList.add('dark');
-        } else {
-            document.documentElement.classList.remove('dark');
-        }
-    }, [theme]);
-
     const [data, setData] = useState([]);
     const [sheetUrl, setSheetUrl] = useState('');
     
@@ -602,12 +591,12 @@ export default function App() {
     return (
         <div className="min-h-screen text-gray-900 dark:text-gray-200 p-4 md:p-6 transition-colors duration-300">
             
-            {/* HEADER UNIFICADO GO PLANNER */}
-            <header className="mb-6 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 bg-white dark:bg-[#0a0a0a] p-4 rounded-xl border border-gray-200 dark:border-[#262626] shadow-sm dark:shadow-none transition-colors">
-                <h1 className="text-xl md:text-2xl font-black tracking-widest text-gray-900 dark:text-white flex items-center gap-3">
+            {/* HEADER UNIFICADO GO PLANNER (Sin bg de tarjeta, con border-b y sombra) */}
+            <header className="mb-6 pb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-gray-200 dark:border-[#262626] shadow-[0_4px_10px_-4px_rgba(0,0,0,0.1)] dark:shadow-[0_4px_10px_-4px_rgba(0,0,0,0.4)] transition-colors">
+                <h1 className="text-xl md:text-2xl font-black tracking-widest text-gray-900 dark:text-white flex items-center gap-3 px-2">
                     GO PLANNER 
                     <span className="text-gray-300 dark:text-[#333] font-light">|</span> 
-                    <span className="text-purple-600 dark:text-purple-500 font-medium text-lg md:text-xl tracking-normal">Replenishment</span>
+                    <span className="text-purple-600 dark:text-purple-500 font-medium text-lg md:text-xl tracking-normal">Resurtido</span>
                 </h1>
                 
                 <div className="w-full md:w-auto flex flex-col sm:flex-row items-center gap-3">
@@ -625,15 +614,6 @@ export default function App() {
                             <span className="sm:hidden">Sincronizar</span>
                         </button>
                     </div>
-
-                    {/* THEME TOGGLE BUTTON */}
-                    <button 
-                        onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
-                        className="w-full sm:w-auto flex items-center justify-center p-3 rounded-lg bg-gray-50 dark:bg-[#141414] border border-gray-200 dark:border-[#333] text-gray-600 dark:text-gray-400 hover:text-purple-600 dark:hover:text-yellow-400 transition-colors shadow-sm"
-                        title={theme === 'dark' ? "Cambiar a Modo Claro" : "Cambiar a Modo Oscuro"}
-                    >
-                        {theme === 'dark' ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-                    </button>
                 </div>
             </header>
 
@@ -1021,9 +1001,7 @@ export default function App() {
 
                                     {/* Gráficos de Dispersión (Antes y Después) LADO A LADO */}
                                     {(() => {
-                                        // La nube de puntos usa enrichedData para que reaccione al filtro global (si el usuario elige una sección o marca). 
-                                        // Pero para el SKU seleccionado se listan TODOS los centros de ese SKU filtrado.
-                                        const skuData = enrichedData.filter(d => d.sku === selectedItem.sku);
+                                        const skuData = computedData.filter(d => d.sku === selectedItem.sku);
                                         
                                         const maxX = Math.max(...skuData.map(d => d.forecast), 1) * 1.1; 
                                         const maxY = Math.max(...skuData.map(d => d.oh + d.oo + d.toBuy), 1) * 1.1;
