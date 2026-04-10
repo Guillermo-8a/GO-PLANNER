@@ -210,7 +210,7 @@ function Shell() {
       case 'forecast':    return <ModuleForecast {...moduleProps} />;
       case 'assortment':  return <ModuleAssortment {...moduleProps} />;
       case 'distribucion':return <ModuleDistribucion {...moduleProps} />;
-      case 'resurtido':   return <ModuleResurtido {...moduleProps} />;
+      case 'resurtido':   return <ModuleReplenishment {...moduleProps} />;
       default:            return <Dashboard {...moduleProps} />;
     }
   };
