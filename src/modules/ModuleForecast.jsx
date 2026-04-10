@@ -1,9 +1,11 @@
-import React, { useState, useMemo, useEffect,useRef } from 'react';
-
+import React, { useState, useMemo, useEffect } from 'react';
+import {
+  LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer,
+  BarChart, Bar, ComposedChart, Cell, Area
+} from 'recharts';
 import { 
-  TrendingUp, Package, ShoppingCart, BarChart2, Box, Database, RefreshCw,
-  Search, Calendar, Filter, CheckCircle2, AlertCircle, Upload, Download,
-  Settings, FileText, Table, Sun, Moon, Menu, Layers, Edit3, Trash2, Rocket, Save, Copy, Check, Trophy, Zap, Settings2
+  TrendingUp, Settings2, Trophy, Layers, Plus, Trash2, Edit3, Download, Copy, Check,
+  Zap, Save, X, FileSpreadsheet, Calendar, Menu, Sun, Moon, Database, ShoppingCart, Rocket, Upload
 } from 'lucide-react';
 
 import { useGlobal, useDispatch, globalActions } from '../context/GlobalContext';
