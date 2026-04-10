@@ -1,6 +1,5 @@
 import { useDispatch, globalActions } from '../context/GlobalContext';
-const useDispatch = () => ({});
-const globalActions = {
+
   publishForecast: (dispatch, data) => console.log("Datos listos para enviar al GlobalContext:", data)
 };
 
