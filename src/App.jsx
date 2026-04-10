@@ -9,7 +9,7 @@ import { GlobalProvider, useGlobal, useDispatch, globalActions } from './context
 import ModuleForecast     from './modules/ModuleForecast';
 import ModuleAssortment   from './modules/ModuleAssortment';
 import ModuleDistribución from './modules/ModuleDistribucion';
-import ModuleResurtido    from './modules/ModuleReplenishment';
+import ModuleReplenishment   from './modules/ModuleReplenishment';
 
 import {
   Layers, Menu, Bell, Sun, Moon,
