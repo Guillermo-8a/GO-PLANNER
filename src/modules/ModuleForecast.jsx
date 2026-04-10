@@ -3,7 +3,7 @@ import React, { useState, useMemo, useEffect,useRef } from 'react';
 import { 
   TrendingUp, Package, ShoppingCart, BarChart2, Box, Database, RefreshCw,
   Search, Calendar, Filter, CheckCircle2, AlertCircle, Upload, Download,
-  Settings, FileText, Table, Sun, Moon, Menu
+  Settings, FileText, Table, Sun, Moon, Menu, Layers, Edit3, Trash2, Rocket, Save, Copy, Check, Trophy, Zap, Settings2
 } from 'lucide-react';
 
 import { useGlobal, useDispatch, globalActions } from '../context/GlobalContext';
