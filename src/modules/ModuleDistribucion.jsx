@@ -1,20 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 
-// ============================================================================
-// ⚠️ IMPORTANTE PARA TU PROYECTO EN VERCEL / VS CODE ⚠️
-// ============================================================================
-// 1. DESCOMENTA estas líneas para conectarlo a tu entorno real:
-// import * as Icons from '../utils/icons';
-// import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
-
-// 2. BORRA ESTAS 4 LÍNEAS (Son mocks para que esta vista previa en la web funcione):
-import * as LucideIcons from 'lucide-react';
-const Icons = LucideIcons; 
-const useDispatch = () => null;
-const useGlobal = () => ({ theme: 'dark', otbData: true });
-const globalActions = { publishDistribution: () => {} };
-// ============================================================================
-
+import * as Icons from '../utils/icons';
+import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
 // ============================================================================
 // COMPONENTE EXTERNO: GRÁFICA DE DISPERSIÓN
