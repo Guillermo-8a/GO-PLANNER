@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+
 import * as Icons from '../utils/icons';
 import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
@@ -84,7 +85,9 @@ const ScatterPlot = ({ data, title, subtitle, colorClass, maxVentas, maxInv, t }
 export default function Distribucion() {
   const gDispatch = useDispatch();
   const gState    = useGlobal();
-  const theme     = gState?.theme || 'light'; 
+  
+  // TEMA GLOBAL SINCRONIZADO DESDE EL SHELL
+  const theme = gState?.theme || 'light'; 
 
   const [activeTab, setActiveTab] = useState(1); 
   const fileInputRef = useRef(null);
@@ -237,7 +240,7 @@ export default function Distribucion() {
   }, [scoreWeights, activeClusters]);
 
 
-  // --- CARGAS Y LECTURAS ---
+  // --- CARGAS Y LECTURAS (Con ISO-8859-1 para Acentos) ---
   const handleStoreCSVUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -729,7 +732,6 @@ export default function Distribucion() {
     results.sort((a, b) => a.centro.localeCompare(b.centro) || a.sku.localeCompare(b.sku));
     setDistributionResult(results);
 
-    // --- NUEVA INTEGRACIÓN CON GLOBAL CONTEXT ---
     try {
       const finalAllocations = {};
       results.forEach(r => { finalAllocations[r.centro] = (finalAllocations[r.centro] || 0) + r.qty; });
@@ -778,7 +780,6 @@ export default function Distribucion() {
     
     triggerDownload(`O9_Distribucion_${new Date().toISOString().split('T')[0]}.csv`, csvContent);
   };
-
 
   // --- PREPARACIÓN DE DATOS PARA GRÁFICAS ---
   const topStoresData = useMemo(() => {
