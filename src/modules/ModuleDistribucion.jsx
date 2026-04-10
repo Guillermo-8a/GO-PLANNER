@@ -315,7 +315,7 @@ export default function Distribucion() {
           marcaCol = rowUpper.indexOf('MARCA');
           nomMarcaCol = rowUpper.indexOf('NOM_MARCA');
           seccionCol = rowUpper.indexOf('SECCIÓN') > -1 ? rowUpper.indexOf('SECCIÓN') : rowUpper.indexOf('SECCION');
-          nomSeccionCol = rowUpper.indexOf('NOM_SECCIÓN') > -1 ? rowUpper.indexOf('NOM_SECCIÓN') : rowUpper.indexOf('NOM_SECCION');
+          nomSeccionCol = rowUpper.indexOf('NOM_SECCIÓN') > -1 ? rowUpper.indexOf('NOM_SECCIÓN') : rowUpper.indexOf('NOM_SECCIÓN');
           break;
         }
       }
@@ -690,7 +690,7 @@ export default function Distribucion() {
             remainders.push({ store, fraction: expectedQty - assignedQty });
           });
         } else {
-            warnings.push(`[${item.sku}]: Las tiendas ya tienen suficiente OH para este GOA. Se omitió la talla para cuidar dispersión.`);
+            warnings.push(`[${item.sku}]: Las tiendas ya tienen suficiente OH global para este GOA. Usa 'Llenado Push' si quieres forzar envío.`);
             return;
         }
       } 
@@ -716,7 +716,6 @@ export default function Distribucion() {
         allocations.set(storeCenter, (allocations.get(storeCenter) || 0) + 1);
       }
 
-      // IMPORTANTE: Actualizar el OH dinámico para que la SIGUIENTE talla respete la dispersión real
       allocations.forEach((qty, centerCode) => {
         dynamicOH[centerCode][goaName] = (dynamicOH[centerCode][goaName] || 0) + qty;
         
@@ -747,7 +746,6 @@ export default function Distribucion() {
     results.sort((a, b) => a.centro.localeCompare(b.centro) || a.sku.localeCompare(b.sku));
     setDistributionResult(results);
 
-    // --- NUEVA INTEGRACIÓN CON GLOBAL CONTEXT ---
     try {
       const finalAllocations = {};
       results.forEach(r => { finalAllocations[r.centro] = (finalAllocations[r.centro] || 0) + r.qty; });
@@ -877,7 +875,7 @@ export default function Distribucion() {
   return (
     <div className={`h-full flex flex-col font-sans transition-colors duration-300 ${t.appBg}`}>
       
-      {/* TABS NATIVAS DEL SHELL */}
+      {/* TABS NATIVAS */}
       <div className="flex space-x-6 px-8 mt-4 border-b border-gray-200 dark:border-zinc-800 overflow-x-auto custom-scrollbar">
         <button onClick={() => setActiveTab(1)} className={`flex items-center space-x-2 px-4 py-3 font-bold text-sm transition-colors border-b-2 ${activeTab === 1 ? t.tabActive : `border-transparent ${t.textMuted} hover:${t.textMain}`}`}>
           <Icons.Store size={18} /><span>1. Tiendas y Clústeres</span>
