@@ -875,6 +875,15 @@ export default function Distribucion() {
   return (
     <div className={`h-full flex flex-col font-sans transition-colors duration-300 ${t.appBg}`}>
       
+      {/* ENCABEZADO HOMOLOGADO */}
+      <div className="px-8 pt-8 pb-2 flex items-center justify-between">
+        <div className="flex items-center">
+          <h1 className={`text-2xl font-black tracking-widest flex items-center ${t.textMain}`}>
+            GO <span className="mx-3 text-gray-500 font-light">|</span> <Icons.MapIcon size={28} className={t.textAccent1} />
+          </h1>
+        </div>
+      </div>
+
       {/* TABS NATIVAS */}
       <div className="flex space-x-6 px-8 mt-4 border-b border-gray-200 dark:border-zinc-800 overflow-x-auto custom-scrollbar">
         <button onClick={() => setActiveTab(1)} className={`flex items-center space-x-2 px-4 py-3 font-bold text-sm transition-colors border-b-2 ${activeTab === 1 ? t.tabActive : `border-transparent ${t.textMuted} hover:${t.textMain}`}`}>
@@ -895,11 +904,44 @@ export default function Distribucion() {
           stores.length === 0 ? (
             <div className={`p-10 md:p-16 rounded-2xl border text-center flex flex-col items-center justify-center ${theme==='dark'?'bg-zinc-900/50 border-zinc-800':'bg-white border-gray-200 shadow-sm'}`}>
               <div className={`p-5 rounded-full mb-6 ${theme==='dark'?'bg-purple-900/20 text-purple-400':'bg-blue-50 text-blue-600'}`}>
-                <Icons.Store size={48} strokeWidth={1.5} />
+                <Icons.MapIcon size={48} strokeWidth={1.5} />
               </div>
               <h3 className={`text-2xl font-black mb-3 tracking-wide ${t.textMain}`}>Configura tu Matriz de Distribución</h3>
               <p className={`text-sm max-w-lg mb-8 leading-relaxed ${t.textMuted}`}>Para comenzar, necesitamos conocer el historial de ventas de tus sucursales para crear el clustering dinámico.</p>
               
+              <div className={`w-full max-w-2xl text-left mb-8 p-4 rounded-xl border flex flex-col transition-all ${theme==='dark'?'bg-blue-900/10 border-blue-900/30':'bg-blue-50 border-blue-200'}`}>
+                <div className="flex justify-between items-center cursor-pointer select-none" onClick={() => setShowGuide(!showGuide)}>
+                  <div className="flex items-center">
+                    <Icons.AlertCircle size={18} className={`mr-2 ${theme==='dark'?'text-blue-400':'text-blue-600'}`} />
+                    <h3 className={`text-sm font-bold ${theme==='dark'?'text-blue-400':'text-blue-700'}`}>Guía Rápida y Formatos (CSV)</h3>
+                  </div>
+                  {showGuide ? <Icons.ChevronUp size={18} className={theme==='dark'?'text-blue-400':'text-blue-600'}/> : <Icons.ChevronDown size={18} className={theme==='dark'?'text-blue-400':'text-blue-600'}/>}
+                </div>
+                
+                {showGuide && (
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-4 mt-3 border-t border-blue-500/20">
+                    <div>
+                      <h4 className={`text-[10px] font-black uppercase tracking-wider mb-2 ${theme==='dark'?'text-blue-300':'text-blue-800'}`}>1. Layout Base de Tiendas (.CSV)</h4>
+                      <ul className={`text-xs space-y-1.5 ${theme==='dark'?'text-blue-200/80':'text-blue-900/80'} font-mono`}>
+                        <li><span className="font-bold text-blue-500">CENTRO</span>: Obligatorio (Ej. 0953)</li>
+                        <li><span className="font-bold text-blue-500">GOA</span>: Obligatorio (Familia, Ej. TENIS)</li>
+                        <li><span className="font-bold text-blue-500">VENTAS</span>: Obligatorio ($ o unidades)</li>
+                        <li><span className="font-bold text-blue-500">OH</span>: Inventario Actual (Recomendado)</li>
+                        <li><span className="font-bold text-blue-500">NOMBRE / ZONA / MARGEN / ROTACION</span>: Opcionales</li>
+                      </ul>
+                    </div>
+                    <div>
+                      <h4 className={`text-[10px] font-black uppercase tracking-wider mb-2 ${theme==='dark'?'text-blue-300':'text-blue-800'}`}>2. Matriz y Chequera</h4>
+                      <ul className={`text-xs space-y-1.5 ${theme==='dark'?'text-blue-200/80':'text-blue-900/80'} font-mono`}>
+                        <li><span className="font-bold text-blue-500">MATRIZ DE MARCAS</span>: Fila superior con códigos de tienda. Columna MARCA o NOM_MARCA (Obligatoria).</li>
+                        <li><span className="font-bold text-blue-500">CHEQUERA</span>: Columnas recomendadas: SECCION | GOA | MARCA | MODELO | SKU | COLOR | TALLA | CANTIDAD</li>
+                        <li><span className="font-bold text-blue-500">TIP TALLAS</span>: En cantidad puedes separar varias por coma (10,15,20) y el sistema generará corridas enteras para las tallas que le pongas (25,26,27).</li>
+                      </ul>
+                    </div>
+                  </div>
+                )}
+              </div>
+
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-2xl text-left">
                 <div className={`p-6 rounded-xl border relative overflow-hidden group ${theme==='dark'?'bg-zinc-900 border-zinc-700':'bg-gray-50 border-gray-200'}`}>
                   <div className={`absolute top-0 right-0 w-24 h-24 bg-purple-500/10 rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110`}></div>
