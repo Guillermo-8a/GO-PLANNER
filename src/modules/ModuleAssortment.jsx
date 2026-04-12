@@ -35,6 +35,37 @@ import {
 } from 'lucide-react';
 import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
+// --- COMPONENTES AUXILIARES EXTRAÍDOS PARA EVITAR RE-RENDER BUGS ---
+function TabButton({ id, label, icon: Icon, activeTab, setActiveTab, t }) {
+  return (
+    <button onClick={() => setActiveTab(id)} className={`flex items-center space-x-2 px-4 py-3 font-bold text-sm transition-colors border-b-2 ${activeTab === id ? t.tabActive : t.tabInactive}`}>
+      <Icon size={18} /><span>{label}</span>
+    </button>
+  );
+}
+
+function EmptyState({ icon: Icon, title, desc, rules, action, theme, t }) {
+  return (
+    <div className={`p-12 rounded-2xl border text-center flex flex-col items-center justify-center ${theme==='dark'?'bg-zinc-900/50 border-zinc-800':'bg-white border-gray-200 shadow-sm'}`}>
+      <div className={`p-5 rounded-full mb-6 ${theme==='dark'?'bg-purple-900/20 text-purple-400':'bg-blue-50 text-blue-600'}`}>
+        <Icon size={48} strokeWidth={1.5} />
+      </div>
+      <h3 className={`text-2xl font-black mb-3 tracking-wide ${t.textMain}`}>{title}</h3>
+      <p className={`text-sm max-w-lg mb-6 leading-relaxed ${t.textMuted}`}>{desc}</p>
+      
+      {rules && rules.length > 0 && (
+        <div className={`text-left max-w-lg w-full mb-8 p-4 rounded-xl border ${t.cardInner}`}>
+          <p className={`text-[10px] font-black uppercase tracking-widest mb-3 ${t.textAccent2}`}>Formato Requerido (CSV)</p>
+          <ul className={`space-y-2 text-xs font-mono ${t.textMuted}`}>
+            {rules.map((r, i) => <li key={`rule-${i}`} className="flex items-start"><span className={`mr-2 ${t.textAccent1}`}>•</span> {r}</li>)}
+          </ul>
+        </div>
+      )}
+      <div className="flex flex-wrap justify-center gap-4">{action}</div>
+    </div>
+  );
+}
+
 export default function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const fileInputRef = useRef(null);
@@ -45,7 +76,8 @@ export default function App() {
   // --- INTEGRACIÓN GLOBAL CONTEXT ---
   const gDispatch = useDispatch();
   const gState    = useGlobal();
-  const theme = gState?.theme || 'dark'; // El tema ahora viaja desde el contexto global
+  const theme = gState?.theme || 'dark'; 
+  const forecastDisponible = !!gState?.forecastData;
   
   // --- ESTADO DE BASE Y CLÚSTERES ---
   const [numClusters, setNumClusters] = useState(6);
@@ -101,7 +133,7 @@ export default function App() {
   }, [goas, purchases, suggestedPlans, gDispatch]);
 
 
-  // --- MOTOR DE TEMAS (Dark/Light) ---
+  // --- MOTOR DE TEMAS ---
   const themes = {
     dark: {
       appBg: "bg-black text-gray-100", header: "bg-zinc-950 border-purple-900/50 shadow-md",
@@ -150,7 +182,7 @@ export default function App() {
   };
   const t = themes[theme];
 
-  // --- FUNCIONES DE ARCHIVOS (JSON) ---
+  // --- EXPORTAR / IMPORTAR PROYECTO ---
   const handleExportProject = () => {
     const data = { stores, goas, sizeCurves, calcRules, purchases, rawStoreData, scoreWeights, numClusters, clusterStrategy, suggestedPlans };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
@@ -182,7 +214,6 @@ export default function App() {
       } catch (err) { alert("Error al leer el archivo JSON."); }
     };
     reader.readAsText(file);
-    e.target.value = null; 
   };
 
   // --- LÓGICA DE CLUSTERIZACIÓN DINÁMICA ---
@@ -274,33 +305,20 @@ export default function App() {
     if (rawStoreData.length > 0) recalculateClusters(rawStoreData, scoreWeights, activeClusters, clusterStrategy);
   }, [scoreWeights, activeClusters, clusterStrategy]);
 
-  // --- CARGA DE DATOS DESDE CONTEXT GLOBAL ---
-  const handleLoadForecast = () => {
-    if (gState?.forecastData?.brands) {
-      const newGoas = gState.forecastData.brands.map((b, i) => ({
-        id: Date.now() + i,
-        name: String(b.name || b.brand || `GOA ${i+1}`),
-        budget: Number(b.budget) || 0,
-        historyPzs: Number(b.historyPzs) || 0,
-        months: Array.isArray(b.months) ? b.months : [16.6, 16.6, 16.6, 16.6, 16.6, 17]
-      }));
-      setGoas(newGoas);
-      alert("Datos históricos y presupuestos cargados desde GO Forecasting.");
-    } else {
-      alert("No se detectó información en el Contexto de GO Forecasting. Por favor valida la conexión o carga un archivo manual.");
-    }
-  };
-
+  // --- CARGA DE CSV TIENDAS (MEJORADO PARA COMPATIBILIDAD) ---
   const handleStoreCSVUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target.result;
-      const rows = text.split('\n').map(row => row.split(',').map(cell => cell?.trim().replace(/^"|"$/g, '') || ''));
-      if (rows.length < 2) { if(fileInputRef.current) fileInputRef.current.value = ''; return; }
+      // Auto-detectar si el CSV viene con punto y coma (;) en vez de coma (,) por defecto de Excel
+      const separator = text.indexOf(';') > -1 ? ';' : (text.indexOf('\t') > -1 ? '\t' : ',');
+      const rows = text.split(/\r?\n/).map(row => row.split(separator).map(cell => cell?.trim().replace(/^"|"$/g, '') || ''));
+      if (rows.length < 2) return;
 
-      const headers = rows[0].map(h => h.toUpperCase());
+      // Limpiar BOM (carácter invisible) del primer encabezado si existe
+      const headers = rows[0].map(h => h.replace(/^\uFEFF/, '').trim().toUpperCase());
       const idxCentro = headers.findIndex(h => h === 'CENTRO' || h === 'ID');
       const idxNombre = headers.findIndex(h => h === 'NOMBRE' || h === 'TIENDA' || h === 'DESC CENTRO');
       const idxGoa = headers.findIndex(h => h === 'GOA' || h === 'FAMILIA');
@@ -309,13 +327,13 @@ export default function App() {
       const idxRotacion = headers.findIndex(h => h === 'ROTACION' || h === 'ROT' || h.includes('SELL'));
 
       if (idxCentro === -1 || idxGoa === -1 || idxVentas === -1) {
-        alert("El CSV debe tener mínimamente las columnas: Centro, GOA, Ventas"); 
-        if(fileInputRef.current) fileInputRef.current.value = ''; return;
+        alert(`Error de Formato CSV.\n\nSe detectaron las siguientes columnas: [${headers.join(', ')}]\nSe requieren al menos: Centro, GOA, Ventas.`); 
+        return;
       }
 
       const extractedRawData = [];
       for (let i = 1; i < rows.length; i++) {
-        if (!rows[i][idxCentro] || !rows[i][idxGoa]) continue;
+        if (!rows[i] || !rows[i][idxCentro] || !rows[i][idxGoa]) continue;
         const rawVentas = rows[i][idxVentas] ? String(rows[i][idxVentas]).replace(/[^0-9.-]+/g, "") : "0";
         const rawMargen = idxMargen !== -1 && rows[i][idxMargen] ? String(rows[i][idxMargen]).replace(/[^0-9.-]+/g, "") : "0";
         const rawRotacion = idxRotacion !== -1 && rows[i][idxRotacion] ? String(rows[i][idxRotacion]).replace(/[^0-9.-]+/g, "") : "1";
@@ -333,13 +351,29 @@ export default function App() {
       setStores([]);
       setRawStoreData(extractedRawData);
       recalculateClusters(extractedRawData, scoreWeights, activeClusters, clusterStrategy);
-      if(fileInputRef.current) fileInputRef.current.value = '';
     };
-    reader.readAsText(file, 'ISO-8859-1'); // Soporte para acentos y caracteres de MS Excel
+    reader.readAsText(file, 'ISO-8859-1'); // Soporte para acentos y caracteres especiales de Excel
   };
 
   const handleUpdateStoreCluster = (storeId, goaName, newCluster) => {
     setStores((stores || []).map(s => s.id === storeId ? { ...s, clusters: { ...(s.clusters || {}), [goaName]: newCluster } } : s));
+  };
+
+  // --- SINCRONIZACIÓN Y CARGA FORECAST ---
+  const handleLoadForecastFromContext = () => {
+    if (forecastDisponible && gState.forecastData.brands) {
+      const newGoas = gState.forecastData.brands.map((b, i) => ({
+        id: Date.now() + i,
+        name: String(b.name || b.brand || `GOA ${i+1}`),
+        budget: Number(b.budget) || 0,
+        historyPzs: Number(b.historyPzs) || 0,
+        months: Array.isArray(b.months) ? b.months : [16.6, 16.6, 16.6, 16.6, 16.6, 17]
+      }));
+      setGoas(newGoas);
+      alert("Datos históricos y presupuestos cargados desde GO Forecasting.");
+    } else {
+      alert("No se detectó información en el Contexto Global. Sube un archivo CSV.");
+    }
   };
 
   const handleBudgetCSVUpload = (e) => {
@@ -348,8 +382,9 @@ export default function App() {
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target.result;
-      const rows = text.split('\n').map(row => row.split(',').map(cell => cell?.trim().replace(/^"|"$/g, '') || ''));
-      if (rows.length < 2) { if(budgetFileInputRef.current) budgetFileInputRef.current.value = ''; return; }
+      const separator = text.indexOf(';') > -1 ? ';' : ',';
+      const rows = text.split(/\r?\n/).map(row => row.split(separator).map(cell => cell?.trim().replace(/^"|"$/g, '') || ''));
+      if (rows.length < 2) return;
       
       const newGoas = [];
       for (let i = 1; i < rows.length; i++) {
@@ -362,7 +397,6 @@ export default function App() {
       }
       setGoas(newGoas);
       alert("Presupuestos Básicos actualizados.");
-      if(budgetFileInputRef.current) budgetFileInputRef.current.value = '';
     };
     reader.readAsText(file, 'ISO-8859-1');
   };
@@ -373,8 +407,9 @@ export default function App() {
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target.result;
-      const rows = text.split('\n').map(row => row.split(',').map(cell => cell?.trim().replace(/^"|"$/g, '') || ''));
-      if (rows.length < 2) { if(forecastFileInputRef.current) forecastFileInputRef.current.value = ''; return; }
+      const separator = text.indexOf(';') > -1 ? ';' : ',';
+      const rows = text.split(/\r?\n/).map(row => row.split(separator).map(cell => cell?.trim().replace(/^"|"$/g, '') || ''));
+      if (rows.length < 2) return;
       
       const newGoas = [];
       for (let i = 1; i < rows.length; i++) {
@@ -390,8 +425,7 @@ export default function App() {
         });
       }
       setGoas(newGoas);
-      alert("Forecast y Presupuestos Mensuales importados desde CSV con éxito.");
-      if(forecastFileInputRef.current) forecastFileInputRef.current.value = '';
+      alert("Forecast y Presupuestos Mensuales importados con éxito.");
     };
     reader.readAsText(file, 'ISO-8859-1');
   };
@@ -664,35 +698,6 @@ export default function App() {
     }
   };
 
-  const TabButton = ({ id, label, icon: Icon }) => (
-    <button onClick={() => setActiveTab(id)} className={`flex items-center space-x-2 px-4 py-3 font-bold text-sm transition-colors border-b-2 ${activeTab === id ? t.tabActive : t.tabInactive}`}>
-      <Icon size={18} /><span>{label}</span>
-    </button>
-  );
-
-  const EmptyState = ({ icon: Icon, title, desc, rules, action }) => (
-    <div className={`p-12 rounded-2xl border text-center flex flex-col items-center justify-center ${theme==='dark'?'bg-zinc-900/50 border-zinc-800':'bg-white border-gray-200 shadow-sm'}`}>
-      <div className={`p-5 rounded-full mb-6 ${theme==='dark'?'bg-purple-900/20 text-purple-400':'bg-blue-50 text-blue-600'}`}>
-        <Icon size={48} strokeWidth={1.5} />
-      </div>
-      <h3 className={`text-2xl font-black mb-3 tracking-wide ${t.textMain}`}>{title}</h3>
-      <p className={`text-sm max-w-lg mb-6 leading-relaxed ${t.textMuted}`}>{desc}</p>
-      
-      {rules && rules.length > 0 && (
-        <div className={`text-left max-w-lg w-full mb-8 p-4 rounded-xl border ${t.cardInner}`}>
-          <p className={`text-[10px] font-black uppercase tracking-widest mb-3 ${t.textAccent2}`}>Formato Requerido (CSV)</p>
-          <ul className={`space-y-2 text-xs font-mono ${t.textMuted}`}>
-            {rules.map((r, i) => <li key={`rule-${i}`} className="flex items-start"><span className={`mr-2 ${t.textAccent1}`}>•</span> {r}</li>)}
-          </ul>
-        </div>
-      )}
-      
-      <div className="flex flex-wrap justify-center gap-4">
-        {action}
-      </div>
-    </div>
-  );
-
   return (
     <div className={`min-h-screen font-sans pb-12 transition-colors duration-300 ${t.appBg}`}>
       
@@ -716,7 +721,7 @@ export default function App() {
                     <div className={`px-4 py-2 text-[10px] font-black tracking-widest uppercase border-b ${theme==='dark'?'bg-zinc-950 border-zinc-800 text-gray-500':'bg-gray-50 border-gray-200 text-gray-400'}`}>Ajustes de Herramienta</div>
                     <label className={`w-full flex items-center px-4 py-3 text-sm font-bold cursor-pointer border-b transition-colors ${t.menuItem}`}>
                       <Upload size={16} className={`mr-3 ${t.textAccent1}`}/> Cargar Sesión (.json)
-                      <input type="file" accept=".json" onChange={(e) => { handleImportProject(e); setIsMenuOpen(false); }} className="hidden" />
+                      <input type="file" accept=".json" onClick={(e) => e.target.value = null} onChange={(e) => { handleImportProject(e); setIsMenuOpen(false); }} className="hidden" />
                     </label>
                     <button onClick={() => { handleExportProject(); setIsMenuOpen(false); }} className={`w-full flex items-center px-4 py-3 text-sm font-bold transition-colors ${t.menuItem}`}>
                       <Download size={16} className={`mr-3 ${t.textAccent2}`}/> Guardar Sesión
@@ -727,11 +732,11 @@ export default function App() {
             </div>
           </div>
           <div className="flex space-x-6 mt-2 overflow-x-auto custom-scrollbar">
-            <TabButton id="data" label="1. Tiendas y Clústeres" icon={Store} />
-            <TabButton id="calc" label="2. Curvas y Reglas" icon={ClipboardList} />
-            <TabButton id="budget" label="3. Forecast GO Planner" icon={Database} />
-            <TabButton id="assortment" label="4. Ejecutar Preventa" icon={Package} />
-            <TabButton id="reports" label="5. Reportes / Plan OTB" icon={Compass} />
+            <TabButton id="data" label="1. Tiendas y Clústeres" icon={Store} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
+            <TabButton id="calc" label="2. Curvas y Reglas" icon={ClipboardList} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
+            <TabButton id="budget" label="3. Forecast GO Planner" icon={Database} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
+            <TabButton id="assortment" label="4. Ejecutar Preventa" icon={Package} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
+            <TabButton id="reports" label="5. Reportes / Plan OTB" icon={Compass} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
           </div>
         </div>
       </header>
@@ -746,10 +751,11 @@ export default function App() {
                 icon={Store} title="Configura la Base de Tiendas" 
                 desc="Para comenzar a planear, necesitamos calificar tus sucursales."
                 rules={["Centro (Ej. 0953)", "Nombre (Ej. Tienda Norte)", "GOA / Familia (Ej. Chancla)", "Ventas (Numérico)", "Margen (Opcional)", "Rotacion (Opcional)"]}
+                theme={theme} t={t}
                 action={
                   <label className={`cursor-pointer px-6 py-3.5 rounded-xl text-sm font-black tracking-wider uppercase transition shadow-lg flex items-center hover:scale-105 transform duration-200 ${t.btnPrimary}`}>
                     <Upload size={18} className="mr-2" /> Subir Archivo Base (.CSV)
-                    <input type="file" accept=".csv" onChange={handleStoreCSVUpload} ref={fileInputRef} className="hidden" />
+                    <input type="file" accept=".csv" onClick={(e) => e.target.value = null} onChange={handleStoreCSVUpload} ref={fileInputRef} className="hidden" />
                   </label>
                 }
               />
@@ -817,7 +823,7 @@ export default function App() {
                       
                       <label className={`cursor-pointer px-4 py-2 rounded-lg text-sm font-bold flex items-center transition ${t.btnGhost}`}>
                         <Upload size={16} className="mr-2" /> Actualizar CSV
-                        <input type="file" accept=".csv" onChange={handleStoreCSVUpload} ref={fileInputRef} className="hidden" />
+                        <input type="file" accept=".csv" onClick={(e) => e.target.value = null} onChange={handleStoreCSVUpload} className="hidden" />
                       </label>
                     </div>
                   </div>
@@ -957,51 +963,73 @@ export default function App() {
         {activeTab === 'budget' && (
           <div className="space-y-6">
             
-            <div className={`p-6 rounded-xl border ${t.card}`}>
-              <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-                <h2 className={`text-xl font-bold flex items-center ${t.textMain}`}><Database className={`mr-3 ${t.textAccent1}`}/> Forecast y Curvas Mensuales (Importado)</h2>
-                <div className="flex space-x-3">
-                  <button onClick={handleLoadForecast} className={`px-4 py-2.5 rounded-lg text-sm font-bold flex items-center transition bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg`}>
-                    <Database size={16} className="mr-2" /> Extraer de Forecast
-                  </button>
-                  <label className={`cursor-pointer px-4 py-2.5 rounded-lg text-sm font-bold flex items-center transition ${t.btnGhost} shadow-lg`}>
-                    <Upload size={16} className="mr-2" /> Importar Manual (.CSV)
-                    <input type="file" accept=".csv" onChange={handleForecastCSVUpload} ref={forecastFileInputRef} className="hidden" />
-                  </label>
+            {(goas || []).length === 0 ? (
+              <EmptyState 
+                icon={Database} title="Conectar con GO Forecasting" 
+                desc="En el ecosistema GO PLANNER, tu presupuesto y curvas de vida mensual se definen en el módulo de Forecasting."
+                theme={theme} t={t}
+                action={
+                  <div className="flex flex-wrap justify-center gap-4">
+                    {forecastDisponible && (
+                      <button onClick={handleLoadForecast} className={`px-6 py-3.5 rounded-xl text-sm font-black tracking-wider uppercase transition shadow-lg flex items-center hover:scale-105 transform duration-200 bg-indigo-600 text-white hover:bg-indigo-500`}>
+                        <Database size={18} className="mr-2" /> Extraer de Forecast
+                      </button>
+                    )}
+                    <label className={`cursor-pointer px-6 py-3.5 rounded-xl text-sm font-black tracking-wider uppercase transition shadow-lg flex items-center hover:scale-105 transform duration-200 ${t.btnGhost}`}>
+                      <Upload size={18} className="mr-2" /> Importar Manual (.CSV)
+                      <input type="file" accept=".csv" onClick={(e) => e.target.value = null} onChange={handleBudgetCSVUpload} className="hidden" />
+                    </label>
+                  </div>
+                }
+              />
+            ) : (
+              <div className={`p-6 rounded-xl border ${t.card}`}>
+                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                  <h2 className={`text-xl font-bold flex items-center ${t.textMain}`}><Database className={`mr-3 ${t.textAccent1}`}/> Forecast y Curvas Mensuales (Importado)</h2>
+                  <div className="flex space-x-3">
+                    {forecastDisponible && (
+                      <button onClick={handleLoadForecast} className={`px-4 py-2.5 rounded-lg text-sm font-bold flex items-center transition bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg`}>
+                        <Database size={16} className="mr-2" /> Extraer de Forecast
+                      </button>
+                    )}
+                    <label className={`cursor-pointer px-4 py-2.5 rounded-lg text-sm font-bold flex items-center transition ${t.btnGhost} shadow-lg`}>
+                      <Upload size={16} className="mr-2" /> Importar Manual (.CSV)
+                      <input type="file" accept=".csv" onClick={(e) => e.target.value = null} onChange={handleBudgetCSVUpload} className="hidden" />
+                    </label>
+                  </div>
+                </div>
+                
+                <div className={`overflow-x-auto rounded-xl border ${t.border}`}>
+                  <table className="w-full text-left text-sm border-collapse">
+                    <thead className={`border-b ${t.tableHead}`}>
+                      <tr>
+                        <th className="p-4 font-bold uppercase tracking-wider text-xs">GOA</th>
+                        <th className="p-4 text-right font-bold uppercase tracking-wider text-xs">Ppto OTB ($)</th>
+                        <th className="p-4 text-right font-bold uppercase tracking-wider text-xs">Historia (Pzs)</th>
+                        <th className="p-4 text-center font-bold uppercase tracking-wider text-xs bg-black/10 border-l border-black/10" colSpan="6">Curva Mensual % (Forecast)</th>
+                      </tr>
+                      <tr className={`text-[10px] uppercase ${t.textMuted} ${theme==='dark'?'bg-zinc-950/50':'bg-gray-100'}`}>
+                        <th colSpan="3"></th>
+                        <th className="p-2 text-center border-l border-black/10">Mes 1</th><th className="p-2 text-center">Mes 2</th><th className="p-2 text-center">Mes 3</th>
+                        <th className="p-2 text-center">Mes 4</th><th className="p-2 text-center">Mes 5</th><th className="p-2 text-center">Mes 6</th>
+                      </tr>
+                    </thead>
+                    <tbody className={`divide-y ${t.border} ${theme==='dark'?'bg-zinc-900':'bg-white'}`}>
+                      {goas.map(g => (
+                        <tr key={g.id} className={`transition ${t.tableRow}`}>
+                          <td className={`p-4 font-bold ${t.textMain}`}>{g.name}</td>
+                          <td className={`p-4 text-right font-black tracking-wide ${t.textAccent2}`}>${(g.budget || 0).toLocaleString()}</td>
+                          <td className={`p-4 text-right font-bold ${t.textMuted}`}>{(g.historyPzs || 0).toLocaleString()} pzs</td>
+                          {(g.months || [16.6,16.6,16.6,16.6,16.6,17]).map((m, i) => (
+                             <td key={`mes-${g.id}-${i}`} className={`p-3 text-center text-xs font-mono border-l border-black/5 ${t.textMain}`}>{m}%</td>
+                          ))}
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </div>
-              
-              <div className={`overflow-x-auto rounded-xl border ${t.border}`}>
-                <table className="w-full text-left text-sm border-collapse">
-                  <thead className={`border-b ${t.tableHead}`}>
-                    <tr>
-                      <th className="p-4 font-bold uppercase tracking-wider text-xs">GOA</th>
-                      <th className="p-4 text-right font-bold uppercase tracking-wider text-xs">Ppto OTB ($)</th>
-                      <th className="p-4 text-right font-bold uppercase tracking-wider text-xs">Historia (Pzs)</th>
-                      <th className="p-4 text-center font-bold uppercase tracking-wider text-xs bg-black/10 border-l border-black/10" colSpan="6">Curva Mensual % (Forecast)</th>
-                    </tr>
-                    <tr className={`text-[10px] uppercase ${t.textMuted} ${theme==='dark'?'bg-zinc-950/50':'bg-gray-100'}`}>
-                      <th colSpan="3"></th>
-                      <th className="p-2 text-center border-l border-black/10">Mes 1</th><th className="p-2 text-center">Mes 2</th><th className="p-2 text-center">Mes 3</th>
-                      <th className="p-2 text-center">Mes 4</th><th className="p-2 text-center">Mes 5</th><th className="p-2 text-center">Mes 6</th>
-                    </tr>
-                  </thead>
-                  <tbody className={`divide-y ${t.border} ${theme==='dark'?'bg-zinc-900':'bg-white'}`}>
-                    {(goas || []).length === 0 && <tr><td colSpan="9" className={`p-8 text-center ${t.textMuted}`}>Aún no hay datos de forecast disponibles.</td></tr>}
-                    {goas.map(g => (
-                      <tr key={g.id} className={`transition ${t.tableRow}`}>
-                        <td className={`p-4 font-bold ${t.textMain}`}>{g.name}</td>
-                        <td className={`p-4 text-right font-black tracking-wide ${t.textAccent2}`}>${(g.budget || 0).toLocaleString()}</td>
-                        <td className={`p-4 text-right font-bold ${t.textMuted}`}>{(g.historyPzs || 0).toLocaleString()} pzs</td>
-                        {(g.months || [16.6,16.6,16.6,16.6,16.6,17]).map((m, i) => (
-                           <td key={`mes-${g.id}-${i}`} className={`p-3 text-center text-xs font-mono border-l border-black/5 ${t.textMain}`}>{m}%</td>
-                        ))}
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
-            </div>
+            )}
           </div>
         )}
 
@@ -1013,6 +1041,7 @@ export default function App() {
               <EmptyState 
                 icon={Package} title="Sin Presupuestos Base" 
                 desc="Importa el Forecast en la pestaña 3 antes de capturar."
+                theme={theme} t={t}
                 action={<button onClick={()=>setActiveTab('budget')} className={`px-6 py-3 rounded-xl text-sm font-black uppercase transition ${t.btnPrimary}`}>Ir al paso 3</button>}
               />
             ) : (
@@ -1106,6 +1135,7 @@ export default function App() {
                <EmptyState 
                  icon={Compass} title="Aún no hay Presupuestos" 
                  desc="Importa el Forecast de GO PLANNER en la pestaña 3."
+                 theme={theme} t={t}
                  action={<button onClick={()=>setActiveTab('budget')} className={`px-6 py-3 rounded-xl text-sm font-black uppercase transition ${t.btnPrimary}`}>Ir al paso 3</button>}
                />
             ) : (
