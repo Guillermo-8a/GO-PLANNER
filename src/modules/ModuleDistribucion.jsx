@@ -218,7 +218,8 @@ export default function Distribucion() {
       setGoas(prev => {
         if (!prev.find(g => g.name.toUpperCase() === goaName)) {
           const formatted = goaName.charAt(0).toUpperCase() + goaName.slice(1).toLowerCase();
-          return [...prev, { id: Date.now() + Math.random(), name: formatted }];
+          const uniqueId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `goa-${Date.now()}-${Math.random().toString(36).substring(2)}`;
+          return [...prev, { id: uniqueId, name: formatted }];
         }
         return prev;
       });
@@ -315,7 +316,7 @@ export default function Distribucion() {
           marcaCol = rowUpper.indexOf('MARCA');
           nomMarcaCol = rowUpper.indexOf('NOM_MARCA');
           seccionCol = rowUpper.indexOf('SECCIÓN') > -1 ? rowUpper.indexOf('SECCIÓN') : rowUpper.indexOf('SECCION');
-          nomSeccionCol = rowUpper.indexOf('NOM_SECCIÓN') > -1 ? rowUpper.indexOf('NOM_SECCIÓN') : rowUpper.indexOf('NOM_SECCIÓN');
+          nomSeccionCol = rowUpper.indexOf('NOM_SECCIÓN') > -1 ? rowUpper.indexOf('NOM_SECCIÓN') : rowUpper.indexOf('NOM_SECCION');
           break;
         }
       }
@@ -393,6 +394,57 @@ export default function Distribucion() {
   };
 
 
+  // ============================================================================
+  // CÁLCULOS VISUALES Y ORDENAMIENTO (¡BLOQUE RESTAURADO Y BLINDADO!)
+  // ============================================================================
+  const storeStats = useMemo(() => {
+    const stats = {
+      total: (stores || []).length,
+      goas:  (goas  || []).length,
+      clusters: { 'Sin Asignar': 0 },
+    };
+    (activeClusters || []).forEach(c => { stats.clusters[c] = 0; });
+    (stores || []).forEach(s => {
+      const clusterValues = Object.values(s.clusters || {});
+      if (clusterValues.length === 0) {
+        stats.clusters['Sin Asignar']++;
+      } else {
+        const primary = clusterValues[0];
+        if (stats.clusters[primary] !== undefined) stats.clusters[primary]++;
+      }
+    });
+    return stats;
+  }, [stores, goas, activeClusters]);
+
+  const sortedStores = useMemo(() => {
+    return [...(stores || [])].sort((a, b) => {
+      let valA = a[storeSortBy];
+      let valB = b[storeSortBy];
+      if (typeof valA === 'string') {
+        valA = valA.toLowerCase();
+        valB = valB.toLowerCase();
+      }
+      if (valA < valB) return storeSortOrder === 'asc' ? -1 : 1;
+      if (valA > valB) return storeSortOrder === 'asc' ?  1 : -1;
+      return 0;
+    });
+  }, [stores, storeSortBy, storeSortOrder]);
+
+  const toggleSort = (field) => {
+    if (storeSortBy === field) {
+      setStoreSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setStoreSortBy(field);
+      setStoreSortOrder('desc');
+    }
+  };
+
+  const displayedStores = useMemo(() => {
+    if (selectedGoaFilter === 'ALL') return sortedStores;
+    return sortedStores.filter(s => s.clusters[selectedGoaFilter]);
+  }, [sortedStores, selectedGoaFilter]);
+
+
   const downloadClusterMatrix = () => {
     if (stores.length === 0) return;
     const rows = [['CENTRO', 'NOMBRE', 'ZONA', 'CLUSTER_GLOBAL', 'SCORE_GLOBAL', 'GOA', 'CLUSTER_GOA', 'SCORE_GOA', 'VENTAS', 'OH', 'ROTACION']];
@@ -439,7 +491,12 @@ export default function Distribucion() {
              finalSku = `${finalModelo}${extColor}${extTalla}`.replace(/\s+/g, '');
           }
 
-          return { ...baseItem, id: Date.now() + Math.random() + i, talla: t, qty: q, sku: finalSku, modelo: finalModelo };
+          // FIX: Generación de identificador verdaderamente único para React (previniendo error de duplicados en CSV)
+          const uniqueId = typeof crypto !== 'undefined' && crypto.randomUUID 
+             ? crypto.randomUUID() 
+             : `item-${Date.now()}-${Math.random().toString(36).substring(2, 9)}-${i}`;
+
+          return { ...baseItem, id: uniqueId, talla: t, qty: q, sku: finalSku, modelo: finalModelo };
       });
   };
 
@@ -716,6 +773,7 @@ export default function Distribucion() {
         allocations.set(storeCenter, (allocations.get(storeCenter) || 0) + 1);
       }
 
+      // IMPORTANTE: Actualizar el OH dinámico para que la SIGUIENTE talla respete la dispersión real
       allocations.forEach((qty, centerCode) => {
         dynamicOH[centerCode][goaName] = (dynamicOH[centerCode][goaName] || 0) + qty;
         
@@ -746,6 +804,7 @@ export default function Distribucion() {
     results.sort((a, b) => a.centro.localeCompare(b.centro) || a.sku.localeCompare(b.sku));
     setDistributionResult(results);
 
+    // --- NUEVA INTEGRACIÓN CON GLOBAL CONTEXT ---
     try {
       const finalAllocations = {};
       results.forEach(r => { finalAllocations[r.centro] = (finalAllocations[r.centro] || 0) + r.qty; });
@@ -1092,8 +1151,13 @@ export default function Distribucion() {
 
                     <label className={`cursor-pointer px-4 py-2 rounded-lg text-xs font-bold flex items-center transition border border-dashed ${theme==='dark'?'border-zinc-600 text-zinc-300 hover:bg-zinc-800':'border-gray-400 text-gray-600 hover:bg-gray-100'}`} title="Opcional: Matriz Cruzada">
                       <Icons.FileText size={14} className="mr-2" /> 
-                      {Object.keys(brandMatrix).length > 0 ? `Marcas (${Object.keys(brandMatrix).length})` : 'Subir Marcas'}
-                      <input type="file" accept=".csv" onChange={handleBrandMatrixUpload} className="hidden" />
+                      {Object.keys(brandMatrix).length > 0 ? (
+                        <div className="flex items-center gap-2">
+                          <span className="text-emerald-500">Matriz Fija</span>
+                          <button onClick={clearBrandMatrix} className="hover:text-red-500" title="Borrar Matriz Fija"><Icons.X size={14}/></button>
+                        </div>
+                      ) : 'Subir Marcas'}
+                      {Object.keys(brandMatrix).length === 0 && <input type="file" accept=".csv" onChange={handleBrandMatrixUpload} className="hidden" />}
                     </label>
 
                     <label className={`cursor-pointer px-4 py-2 rounded-lg text-xs font-bold flex items-center transition ${t.btnGhost}`}>
@@ -1346,10 +1410,10 @@ export default function Distribucion() {
                 <div className="flex flex-col md:flex-row items-center gap-6">
                   <div className={`flex items-center p-2 rounded-lg border ${theme==='dark'?'bg-black/30 border-zinc-800':'bg-gray-100 border-gray-200'}`}>
                     <button onClick={() => setConsiderOH(false)} className={`flex items-center px-3 py-1.5 rounded text-xs font-bold transition-all ${!considerOH ? (theme==='dark'?'bg-zinc-800 text-white shadow':'bg-white text-black shadow') : t.textMuted}`}>
-                      <Icons.ToggleLeft size={16} className={`mr-1 ${!considerOH ? 'text-red-400' : ''}`} /> Llenado Push
+                      <Icons.Box size={16} className={`mr-1 ${!considerOH ? 'text-red-400' : ''}`} /> Llenado Push
                     </button>
                     <button onClick={() => setConsiderOH(true)} className={`flex items-center px-3 py-1.5 rounded text-xs font-bold transition-all ${considerOH ? (theme==='dark'?'bg-zinc-800 text-white shadow':'bg-white text-black shadow') : t.textMuted}`}>
-                      Cuidar Dispersión (OH) <Icons.ToggleRight size={16} className={`ml-1 ${considerOH ? 'text-emerald-400' : ''}`} />
+                      Cuidar Dispersión (OH) <Icons.CheckSquare size={16} className={`ml-1 ${considerOH ? 'text-emerald-400' : ''}`} />
                     </button>
                   </div>
 
