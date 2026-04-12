@@ -6,10 +6,10 @@ FileSpreadsheet, ArrowUpDown, Edit3, Lightbulb,
 MoreVertical, Sun, Moon, Sliders, CalendarDays, Compass,
 Activity, Wand2, Database, RefreshCw, Layers, ClipboardList,
 } from 'lucide-react';
+import { Settings, Store, Package, Upload, ArrowUpDown, Sliders, Layers, MoreVertical, Sun, Moon, Info, Map, Database, ShoppingCart, BarChart3, Plus, Trash2, Save, Download, Zap, DollarSign, Target, FileSpreadsheet, Edit3, Lightbulb, CalendarDays, Compass, Activity, Wand2, RefreshCw, ClipboardList, Calculator } from 'lucide-react';
 import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
 export default function App() {
-  const [theme, setTheme] = useState('dark'); 
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const fileInputRef = useRef(null);
   const budgetFileInputRef = useRef(null);
@@ -19,7 +19,7 @@ export default function App() {
   // --- INTEGRACIÓN GLOBAL CONTEXT ---
   const gDispatch = useDispatch();
   const gState    = useGlobal();
-  const forecastDisponible = !!gState?.forecastData;
+  const theme = gState?.theme || 'dark'; // El tema ahora viaja desde el contexto global
   
   // --- ESTADO DE BASE Y CLÚSTERES ---
   const [numClusters, setNumClusters] = useState(6);
@@ -170,7 +170,6 @@ export default function App() {
       const goa = row.goa;
       if (!dataByGoa[goa]) { dataByGoa[goa] = []; maxVals[goa] = { sales: 0, margin: 0, rotation: 0 }; }
       dataByGoa[goa].push(row);
-      
       if (row.sales > maxVals[goa].sales) maxVals[goa].sales = row.sales;
       if (row.margin > maxVals[goa].margin) maxVals[goa].margin = row.margin;
       if (row.rotation > maxVals[goa].rotation) maxVals[goa].rotation = row.rotation;
@@ -251,7 +250,7 @@ export default function App() {
 
   // --- CARGA DE DATOS DESDE CONTEXT GLOBAL ---
   const handleLoadForecast = () => {
-    if (forecastDisponible && gState.forecastData.brands) {
+    if (gState?.forecastData?.brands) {
       const newGoas = gState.forecastData.brands.map((b, i) => ({
         id: Date.now() + i,
         name: String(b.name || b.brand || `GOA ${i+1}`),
@@ -262,7 +261,7 @@ export default function App() {
       setGoas(newGoas);
       alert("Datos históricos y presupuestos cargados desde GO Forecasting.");
     } else {
-      alert("No se detectó información en el Contexto de GO Forecasting. Por favor valida la conexión.");
+      alert("No se detectó información en el Contexto de GO Forecasting. Por favor valida la conexión o carga un archivo manual.");
     }
   };
 
@@ -310,14 +309,13 @@ export default function App() {
       recalculateClusters(extractedRawData, scoreWeights, activeClusters, clusterStrategy);
       if(fileInputRef.current) fileInputRef.current.value = '';
     };
-    reader.readAsText(file);
+    reader.readAsText(file, 'ISO-8859-1'); // Soporte para acentos y caracteres de MS Excel
   };
 
   const handleUpdateStoreCluster = (storeId, goaName, newCluster) => {
     setStores((stores || []).map(s => s.id === storeId ? { ...s, clusters: { ...(s.clusters || {}), [goaName]: newCluster } } : s));
   };
 
-  // --- CARGA DE CSV PRESUPUESTOS (NUEVA FUNCIÓN RESTAURADA) ---
   const handleBudgetCSVUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -340,10 +338,9 @@ export default function App() {
       alert("Presupuestos Básicos actualizados.");
       if(budgetFileInputRef.current) budgetFileInputRef.current.value = '';
     };
-    reader.readAsText(file);
+    reader.readAsText(file, 'ISO-8859-1');
   };
 
-  // --- CARGA DE CSV FORECAST BET ---
   const handleForecastCSVUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -367,10 +364,10 @@ export default function App() {
         });
       }
       setGoas(newGoas);
-      alert("Forecast y Presupuestos Mensuales importados desde BET con éxito.");
+      alert("Forecast y Presupuestos Mensuales importados desde CSV con éxito.");
       if(forecastFileInputRef.current) forecastFileInputRef.current.value = '';
     };
-    reader.readAsText(file);
+    reader.readAsText(file, 'ISO-8859-1');
   };
 
   // --- CRUD CALCULADORAS ---
@@ -600,29 +597,45 @@ export default function App() {
   }, [purchases, stores, goas, activeClusters, reportView, suggestedPlans, calcRules, sizeCurves]);
 
   const storeStats = useMemo(() => {
-    const stats = { total: (stores || []).length, goas: (goas || []).length, clusters: { 'Sin Asignar': 0 } };
-    (activeClusters || []).forEach(c => stats.clusters[c] = 0);
+    const stats = {
+      total: (stores || []).length,
+      goas:  (goas  || []).length,
+      clusters: { 'Sin Asignar': 0 },
+    };
+    (activeClusters || []).forEach(c => { stats.clusters[c] = 0; });
     (stores || []).forEach(s => {
       const clusterValues = Object.values(s.clusters || {});
-      if(clusterValues.length === 0) stats.clusters['Sin Asignar']++;
-      else { const primaryCluster = clusterValues[0]; if(stats.clusters[primaryCluster] !== undefined) stats.clusters[primaryCluster]++; }
+      if (clusterValues.length === 0) {
+        stats.clusters['Sin Asignar']++;
+      } else {
+        const primary = clusterValues[0];
+        if (stats.clusters[primary] !== undefined) stats.clusters[primary]++;
+      }
     });
     return stats;
   }, [stores, goas, activeClusters]);
 
   const sortedStores = useMemo(() => {
     return [...(stores || [])].sort((a, b) => {
-      let valA = a[storeSortBy]; let valB = b[storeSortBy];
-      if (typeof valA === 'string') { valA = valA.toLowerCase(); valB = valB.toLowerCase(); }
+      let valA = a[storeSortBy];
+      let valB = b[storeSortBy];
+      if (typeof valA === 'string') {
+        valA = valA.toLowerCase();
+        valB = valB.toLowerCase();
+      }
       if (valA < valB) return storeSortOrder === 'asc' ? -1 : 1;
-      if (valA > valB) return storeSortOrder === 'asc' ? 1 : -1;
+      if (valA > valB) return storeSortOrder === 'asc' ?  1 : -1;
       return 0;
     });
   }, [stores, storeSortBy, storeSortOrder]);
 
   const toggleSort = (field) => {
-    if (storeSortBy === field) setStoreSortOrder(storeSortOrder === 'asc' ? 'desc' : 'asc');
-    else { setStoreSortBy(field); setStoreSortOrder('desc'); }
+    if (storeSortBy === field) {
+      setStoreSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
+    } else {
+      setStoreSortBy(field);
+      setStoreSortOrder('desc');
+    }
   };
 
   const TabButton = ({ id, label, icon: Icon }) => (
@@ -650,13 +663,6 @@ export default function App() {
       
       <div className="flex flex-wrap justify-center gap-4">
         {action}
-        
-        {/* BOTÓN OPCIONAL DE FORECASTING */}
-        {forecastDisponible && (
-          <button onClick={handleLoadForecast} className={`px-6 py-3.5 rounded-xl text-sm font-black tracking-wider uppercase transition shadow-lg flex items-center hover:scale-105 transform duration-200 bg-indigo-600 text-white hover:bg-indigo-500`}>
-            <Database size={18} className="mr-2" /> Extraer de Forecast
-          </button>
-        )}
       </div>
     </div>
   );
@@ -667,9 +673,10 @@ export default function App() {
       <header className={`border-b sticky top-0 z-20 transition-colors duration-300 ${t.header}`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            <div className="flex items-center space-x-3">
-              <div className={`p-2 rounded-lg ${t.logoIcon}`}><Layers size={24} /></div>
-              <h1 className={`text-xl font-black tracking-wide ${t.textMain}`}>GO PLANNER <span className={`font-medium ${t.logoAccent}`}>| Assortment OTB</span></h1>
+            <div className="flex items-center">
+              <h1 className={`text-2xl font-black tracking-widest flex items-center ${t.textMain}`}>
+                GO <span className="mx-3 text-gray-500 font-light">|</span> <ShoppingCart size={28} className={t.textAccent1} />
+              </h1>
             </div>
             
             <div className="relative">
@@ -680,11 +687,7 @@ export default function App() {
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setIsMenuOpen(false)}></div>
                   <div className={`absolute right-0 mt-2 w-56 rounded-xl z-50 overflow-hidden transition-all shadow-2xl border ${t.menuBg}`}>
-                    <div className={`px-4 py-2 text-[10px] font-black tracking-widest uppercase border-b ${theme==='dark'?'bg-zinc-950 border-zinc-800 text-gray-500':'bg-gray-50 border-gray-200 text-gray-400'}`}>Ajustes</div>
-                    <button onClick={() => { setTheme(theme === 'dark' ? 'light' : 'dark'); setIsMenuOpen(false); }} className={`w-full flex items-center px-4 py-3 text-sm font-bold border-b transition-colors ${t.menuItem}`}>
-                      {theme === 'dark' ? <Sun size={16} className={`mr-3 ${t.textAccent2}`}/> : <Moon size={16} className={`mr-3 ${t.textAccent1}`}/>}
-                      {theme === 'dark' ? 'Cambiar a Claro' : 'Cambiar a Oscuro'}
-                    </button>
+                    <div className={`px-4 py-2 text-[10px] font-black tracking-widest uppercase border-b ${theme==='dark'?'bg-zinc-950 border-zinc-800 text-gray-500':'bg-gray-50 border-gray-200 text-gray-400'}`}>Ajustes de Herramienta</div>
                     <label className={`w-full flex items-center px-4 py-3 text-sm font-bold cursor-pointer border-b transition-colors ${t.menuItem}`}>
                       <Upload size={16} className={`mr-3 ${t.textAccent1}`}/> Cargar Sesión (.json)
                       <input type="file" accept=".json" onChange={(e) => { handleImportProject(e); setIsMenuOpen(false); }} className="hidden" />
@@ -749,9 +752,9 @@ export default function App() {
                       <span className={`text-xs font-bold ${t.textMain}`}>Peso del Score (Total: {scoreWeights.sales + scoreWeights.margin + scoreWeights.rotation}%)</span>
                     </div>
                     <div className="flex flex-wrap gap-4">
-                      <div className="flex flex-col"><label className={`text-[10px] font-bold uppercase ${t.textMuted}`}>Venta ({scoreWeights.sales}%)</label><input type="range" min="0" max="100" value={scoreWeights.sales} onChange={e=>setScoreWeights({...scoreWeights, sales: Number(e.target.value)})} className="w-24 accent-purple-500" /></div>
-                      <div className="flex flex-col"><label className={`text-[10px] font-bold uppercase ${t.textMuted}`}>Margen ({scoreWeights.margin}%)</label><input type="range" min="0" max="100" value={scoreWeights.margin} onChange={e=>setScoreWeights({...scoreWeights, margin: Number(e.target.value)})} className="w-24 accent-yellow-500" /></div>
-                      <div className="flex flex-col"><label className={`text-[10px] font-bold uppercase ${t.textMuted}`}>Rotación ({scoreWeights.rotation}%)</label><input type="range" min="0" max="100" value={scoreWeights.rotation} onChange={e=>setScoreWeights({...scoreWeights, rotation: Number(e.target.value)})} className="w-24 accent-blue-500" /></div>
+                      <div className="flex flex-col"><label className={`text-[10px] font-bold uppercase ${t.textMuted}`}>Venta ({scoreWeights.sales}%)</label><input type="range" min="0" max="100" value={scoreWeights.sales} onChange={e=>setScoreWeights({...scoreWeights, sales: Number(e.target.value)})} className="w-24 accent-purple-500 cursor-pointer" /></div>
+                      <div className="flex flex-col"><label className={`text-[10px] font-bold uppercase ${t.textMuted}`}>Margen ({scoreWeights.margin}%)</label><input type="range" min="0" max="100" value={scoreWeights.margin} onChange={e=>setScoreWeights({...scoreWeights, margin: Number(e.target.value)})} className="w-24 accent-yellow-500 cursor-pointer" /></div>
+                      <div className="flex flex-col"><label className={`text-[10px] font-bold uppercase ${t.textMuted}`}>Rotación ({scoreWeights.rotation}%)</label><input type="range" min="0" max="100" value={scoreWeights.rotation} onChange={e=>setScoreWeights({...scoreWeights, rotation: Number(e.target.value)})} className="w-24 accent-blue-500 cursor-pointer" /></div>
                     </div>
                   </div>
                 </div>
@@ -928,62 +931,51 @@ export default function App() {
         {activeTab === 'budget' && (
           <div className="space-y-6">
             
-            {(goas || []).length === 0 ? (
-              <EmptyState 
-                icon={Database} title="Conectar con GO Forecasting" 
-                desc="En el ecosistema GO PLANNER, tu presupuesto y curvas de vida mensual se definen en el módulo de Forecasting."
-                action={
-                  <div className="flex flex-wrap justify-center gap-4">
-                    <label className={`cursor-pointer px-6 py-3.5 rounded-xl text-sm font-black tracking-wider uppercase transition shadow-lg flex items-center hover:scale-105 transform duration-200 ${t.btnGhost}`}>
-                      <Upload size={18} className="mr-2" /> Importar Manual (.CSV)
-                      <input type="file" accept=".csv" onChange={handleBudgetCSVUpload} ref={budgetFileInputRef} className="hidden" />
-                    </label>
-                  </div>
-                }
-              />
-            ) : (
-              <div className={`p-6 rounded-xl border ${t.card}`}>
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-                  <h2 className={`text-xl font-bold flex items-center ${t.textMain}`}><Database className={`mr-3 ${t.textAccent1}`}/> Forecast y Curvas Mensuales (Importado)</h2>
-                  <div className="flex space-x-3">
-                    <label className={`cursor-pointer px-4 py-2.5 rounded-lg text-sm font-bold flex items-center transition ${t.btnGhost} shadow-lg`}>
-                      <Upload size={16} className="mr-2" /> Importar Manual (.CSV)
-                      <input type="file" accept=".csv" onChange={handleBudgetCSVUpload} ref={budgetFileInputRef} className="hidden" />
-                    </label>
-                  </div>
-                </div>
-                
-                <div className={`overflow-x-auto rounded-xl border ${t.border}`}>
-                  <table className="w-full text-left text-sm border-collapse">
-                    <thead className={`border-b ${t.tableHead}`}>
-                      <tr>
-                        <th className="p-4 font-bold uppercase tracking-wider text-xs">GOA</th>
-                        <th className="p-4 text-right font-bold uppercase tracking-wider text-xs">Ppto OTB ($)</th>
-                        <th className="p-4 text-right font-bold uppercase tracking-wider text-xs">Historia (Pzs)</th>
-                        <th className="p-4 text-center font-bold uppercase tracking-wider text-xs bg-black/10 border-l border-black/10" colSpan="6">Curva Mensual % (Forecast)</th>
-                      </tr>
-                      <tr className={`text-[10px] uppercase ${t.textMuted} ${theme==='dark'?'bg-zinc-950/50':'bg-gray-100'}`}>
-                        <th colSpan="3"></th>
-                        <th className="p-2 text-center border-l border-black/10">Mes 1</th><th className="p-2 text-center">Mes 2</th><th className="p-2 text-center">Mes 3</th>
-                        <th className="p-2 text-center">Mes 4</th><th className="p-2 text-center">Mes 5</th><th className="p-2 text-center">Mes 6</th>
-                      </tr>
-                    </thead>
-                    <tbody className={`divide-y ${t.border} ${theme==='dark'?'bg-zinc-900':'bg-white'}`}>
-                      {goas.map(g => (
-                        <tr key={g.id} className={`transition ${t.tableRow}`}>
-                          <td className={`p-4 font-bold ${t.textMain}`}>{g.name}</td>
-                          <td className={`p-4 text-right font-black tracking-wide ${t.textAccent2}`}>${(g.budget || 0).toLocaleString()}</td>
-                          <td className={`p-4 text-right font-bold ${t.textMuted}`}>{(g.historyPzs || 0).toLocaleString()} pzs</td>
-                          {(g.months || [16.6,16.6,16.6,16.6,16.6,17]).map((m, i) => (
-                             <td key={`mes-${g.id}-${i}`} className={`p-3 text-center text-xs font-mono border-l border-black/5 ${t.textMain}`}>{m}%</td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+            <div className={`p-6 rounded-xl border ${t.card}`}>
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                <h2 className={`text-xl font-bold flex items-center ${t.textMain}`}><Database className={`mr-3 ${t.textAccent1}`}/> Forecast y Curvas Mensuales (Importado)</h2>
+                <div className="flex space-x-3">
+                  <button onClick={handleLoadForecast} className={`px-4 py-2.5 rounded-lg text-sm font-bold flex items-center transition bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg`}>
+                    <Database size={16} className="mr-2" /> Extraer de Forecast
+                  </button>
+                  <label className={`cursor-pointer px-4 py-2.5 rounded-lg text-sm font-bold flex items-center transition ${t.btnGhost} shadow-lg`}>
+                    <Upload size={16} className="mr-2" /> Importar Manual (.CSV)
+                    <input type="file" accept=".csv" onChange={handleForecastCSVUpload} ref={forecastFileInputRef} className="hidden" />
+                  </label>
                 </div>
               </div>
-            )}
+              
+              <div className={`overflow-x-auto rounded-xl border ${t.border}`}>
+                <table className="w-full text-left text-sm border-collapse">
+                  <thead className={`border-b ${t.tableHead}`}>
+                    <tr>
+                      <th className="p-4 font-bold uppercase tracking-wider text-xs">GOA</th>
+                      <th className="p-4 text-right font-bold uppercase tracking-wider text-xs">Ppto OTB ($)</th>
+                      <th className="p-4 text-right font-bold uppercase tracking-wider text-xs">Historia (Pzs)</th>
+                      <th className="p-4 text-center font-bold uppercase tracking-wider text-xs bg-black/10 border-l border-black/10" colSpan="6">Curva Mensual % (Forecast)</th>
+                    </tr>
+                    <tr className={`text-[10px] uppercase ${t.textMuted} ${theme==='dark'?'bg-zinc-950/50':'bg-gray-100'}`}>
+                      <th colSpan="3"></th>
+                      <th className="p-2 text-center border-l border-black/10">Mes 1</th><th className="p-2 text-center">Mes 2</th><th className="p-2 text-center">Mes 3</th>
+                      <th className="p-2 text-center">Mes 4</th><th className="p-2 text-center">Mes 5</th><th className="p-2 text-center">Mes 6</th>
+                    </tr>
+                  </thead>
+                  <tbody className={`divide-y ${t.border} ${theme==='dark'?'bg-zinc-900':'bg-white'}`}>
+                    {(goas || []).length === 0 && <tr><td colSpan="9" className={`p-8 text-center ${t.textMuted}`}>Aún no hay datos de forecast disponibles.</td></tr>}
+                    {goas.map(g => (
+                      <tr key={g.id} className={`transition ${t.tableRow}`}>
+                        <td className={`p-4 font-bold ${t.textMain}`}>{g.name}</td>
+                        <td className={`p-4 text-right font-black tracking-wide ${t.textAccent2}`}>${(g.budget || 0).toLocaleString()}</td>
+                        <td className={`p-4 text-right font-bold ${t.textMuted}`}>{(g.historyPzs || 0).toLocaleString()} pzs</td>
+                        {(g.months || [16.6,16.6,16.6,16.6,16.6,17]).map((m, i) => (
+                           <td key={`mes-${g.id}-${i}`} className={`p-3 text-center text-xs font-mono border-l border-black/5 ${t.textMain}`}>{m}%</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         )}
 
