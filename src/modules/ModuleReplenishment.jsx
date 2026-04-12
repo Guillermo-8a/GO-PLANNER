@@ -38,7 +38,6 @@ const calculateRegression = (data) => {
 };
 
 // --- ALGORITMO JITTER PARA EVITAR OVERLAP DE PUNTOS EN SCATTER PLOT ---
-// Crea un desfase determinístico sutil para visualizar tiendas apiladas en el mismo valor
 const getJitterX = (i) => (i % 5 - 2) * 1.5; 
 const getJitterY = (i) => ((i * 3) % 5 - 2) * 1.5;
 
@@ -219,7 +218,6 @@ export default function App() {
             setError("Error al leer el archivo local.");
             setIsSyncing(false);
         };
-        // UTF-8 Por defecto (asegura acentos y "Ñ")
         reader.readAsText(file);
     };
 
@@ -236,7 +234,7 @@ export default function App() {
         }
     };
 
-    // BASE DE DATOS PRE-FILTROS DE UI (Para calcular la Nube de Puntos global y Jerarquías Top-Down)
+    // BASE DE DATOS PRE-FILTROS DE UI
     const computedData = useMemo(() => {
         if (!data || data.length === 0) return [];
         
@@ -591,13 +589,13 @@ export default function App() {
     return (
         <div className="min-h-screen text-gray-900 dark:text-gray-200 p-4 md:p-6 transition-colors duration-300">
             
-            {/* HEADER UNIFICADO GO PLANNER (Sin bg de tarjeta, con border-b y sombra) */}
+            {/* HEADER UNIFICADO GO PLANNER (Con borde inferior y sombra) */}
             <header className="mb-6 pb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-gray-200 dark:border-[#262626] shadow-[0_4px_10px_-4px_rgba(0,0,0,0.1)] dark:shadow-[0_4px_10px_-4px_rgba(0,0,0,0.4)] transition-colors">
-                <h1 className="text-xl md:text-2xl font-black tracking-widest text-gray-900 dark:text-white flex items-center gap-3 px-2">
-                    GO PLANNER 
-                    <span className="text-gray-300 dark:text-[#333] font-light">|</span> 
-                    <span className="text-purple-600 dark:text-purple-500 font-medium text-lg md:text-xl tracking-normal">Resurtido</span>
-                </h1>
+                <div className="flex items-center px-2">
+                    <h1 className="text-2xl font-black tracking-widest flex items-center text-gray-900 dark:text-white">
+                        GO <span className="mx-3 text-gray-500 font-light">|</span> <RefreshCw size={28} className="text-purple-600 dark:text-purple-500" />
+                    </h1>
+                </div>
                 
                 <div className="w-full md:w-auto flex flex-col sm:flex-row items-center gap-3">
                     <div className="flex flex-col sm:flex-row items-center gap-3 bg-gray-50 dark:bg-[#141414] p-2 rounded-lg border border-gray-200 dark:border-[#333] transition-colors w-full sm:w-auto">
