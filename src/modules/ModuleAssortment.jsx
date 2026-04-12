@@ -77,7 +77,6 @@ export default function App() {
   const gDispatch = useDispatch();
   const gState    = useGlobal();
   const theme = gState?.theme || 'dark'; 
-  const forecastDisponible = !!gState?.forecastData;
   
   // --- ESTADO DE BASE Y CLÚSTERES ---
   const [numClusters, setNumClusters] = useState(6);
@@ -214,6 +213,7 @@ export default function App() {
       } catch (err) { alert("Error al leer el archivo JSON."); }
     };
     reader.readAsText(file);
+    e.target.value = null; 
   };
 
   // --- LÓGICA DE CLUSTERIZACIÓN DINÁMICA ---
@@ -305,19 +305,33 @@ export default function App() {
     if (rawStoreData.length > 0) recalculateClusters(rawStoreData, scoreWeights, activeClusters, clusterStrategy);
   }, [scoreWeights, activeClusters, clusterStrategy]);
 
-  // --- CARGA DE CSV TIENDAS (MEJORADO PARA COMPATIBILIDAD) ---
+  // --- CARGA DE DATOS DESDE CONTEXT GLOBAL ---
+  const handleLoadForecast = () => {
+    if (gState?.forecastData?.brands) {
+      const newGoas = gState.forecastData.brands.map((b, i) => ({
+        id: Date.now() + i,
+        name: String(b.name || b.brand || `GOA ${i+1}`),
+        budget: Number(b.budget) || 0,
+        historyPzs: Number(b.historyPzs) || 0,
+        months: Array.isArray(b.months) ? b.months : [16.6, 16.6, 16.6, 16.6, 16.6, 17]
+      }));
+      setGoas(newGoas);
+      alert("Datos históricos y presupuestos cargados desde GO Forecasting.");
+    } else {
+      alert("No se detectó información en el Contexto de GO Forecasting. Por favor valida la conexión o carga un archivo manual.");
+    }
+  };
+
   const handleStoreCSVUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (event) => {
       const text = event.target.result;
-      // Auto-detectar si el CSV viene con punto y coma (;) en vez de coma (,) por defecto de Excel
       const separator = text.indexOf(';') > -1 ? ';' : (text.indexOf('\t') > -1 ? '\t' : ',');
       const rows = text.split(/\r?\n/).map(row => row.split(separator).map(cell => cell?.trim().replace(/^"|"$/g, '') || ''));
-      if (rows.length < 2) return;
+      if (rows.length < 2) { if(fileInputRef.current) fileInputRef.current.value = ''; return; }
 
-      // Limpiar BOM (carácter invisible) del primer encabezado si existe
       const headers = rows[0].map(h => h.replace(/^\uFEFF/, '').trim().toUpperCase());
       const idxCentro = headers.findIndex(h => h === 'CENTRO' || h === 'ID');
       const idxNombre = headers.findIndex(h => h === 'NOMBRE' || h === 'TIENDA' || h === 'DESC CENTRO');
@@ -352,28 +366,11 @@ export default function App() {
       setRawStoreData(extractedRawData);
       recalculateClusters(extractedRawData, scoreWeights, activeClusters, clusterStrategy);
     };
-    reader.readAsText(file, 'ISO-8859-1'); // Soporte para acentos y caracteres especiales de Excel
+    reader.readAsText(file, 'UTF-8');
   };
 
   const handleUpdateStoreCluster = (storeId, goaName, newCluster) => {
     setStores((stores || []).map(s => s.id === storeId ? { ...s, clusters: { ...(s.clusters || {}), [goaName]: newCluster } } : s));
-  };
-
-  // --- SINCRONIZACIÓN Y CARGA FORECAST ---
-  const handleLoadForecastFromContext = () => {
-    if (forecastDisponible && gState.forecastData.brands) {
-      const newGoas = gState.forecastData.brands.map((b, i) => ({
-        id: Date.now() + i,
-        name: String(b.name || b.brand || `GOA ${i+1}`),
-        budget: Number(b.budget) || 0,
-        historyPzs: Number(b.historyPzs) || 0,
-        months: Array.isArray(b.months) ? b.months : [16.6, 16.6, 16.6, 16.6, 16.6, 17]
-      }));
-      setGoas(newGoas);
-      alert("Datos históricos y presupuestos cargados desde GO Forecasting.");
-    } else {
-      alert("No se detectó información en el Contexto Global. Sube un archivo CSV.");
-    }
   };
 
   const handleBudgetCSVUpload = (e) => {
@@ -384,7 +381,7 @@ export default function App() {
       const text = event.target.result;
       const separator = text.indexOf(';') > -1 ? ';' : ',';
       const rows = text.split(/\r?\n/).map(row => row.split(separator).map(cell => cell?.trim().replace(/^"|"$/g, '') || ''));
-      if (rows.length < 2) return;
+      if (rows.length < 2) { if(budgetFileInputRef.current) budgetFileInputRef.current.value = ''; return; }
       
       const newGoas = [];
       for (let i = 1; i < rows.length; i++) {
@@ -398,7 +395,7 @@ export default function App() {
       setGoas(newGoas);
       alert("Presupuestos Básicos actualizados.");
     };
-    reader.readAsText(file, 'ISO-8859-1');
+    reader.readAsText(file, 'UTF-8');
   };
 
   const handleForecastCSVUpload = (e) => {
@@ -409,7 +406,7 @@ export default function App() {
       const text = event.target.result;
       const separator = text.indexOf(';') > -1 ? ';' : ',';
       const rows = text.split(/\r?\n/).map(row => row.split(separator).map(cell => cell?.trim().replace(/^"|"$/g, '') || ''));
-      if (rows.length < 2) return;
+      if (rows.length < 2) { if(forecastFileInputRef.current) forecastFileInputRef.current.value = ''; return; }
       
       const newGoas = [];
       for (let i = 1; i < rows.length; i++) {
@@ -425,9 +422,9 @@ export default function App() {
         });
       }
       setGoas(newGoas);
-      alert("Forecast y Presupuestos Mensuales importados con éxito.");
+      alert("Forecast y Presupuestos Mensuales importados desde CSV con éxito.");
     };
-    reader.readAsText(file, 'ISO-8859-1');
+    reader.readAsText(file, 'UTF-8');
   };
 
   // --- CRUD CALCULADORAS ---
@@ -572,33 +569,6 @@ export default function App() {
       return { ...g, boughtPzs, spentValue, otb: budget - spentValue, historyDiff: boughtPzs - historyPzs };
     });
 
-    const storeSummary = (stores || []).map(store => {
-      let storeTotalPzs = 0; let storeTotalValue = 0;
-      if (isSug) {
-        (suggestedPlans || []).forEach(plan => {
-          const goa = (goas || []).find(g => g.id === plan.goaId);
-          if (goa) {
-            const c = (store.clusters || {})[goa.name] || (store.clusters || {})[(goa.name || '').toUpperCase()] || activeClusters[activeClusters.length - 1];
-            const rule = (calcRules || []).find(r => r.id === Number(plan.ruleId));
-            const curve = (sizeCurves || []).find(cv => cv.id === Number(plan.curveId));
-            if (rule && curve) {
-              const runs = (rule.corridas || {})[c] || 0;
-              const pzsPerRun = (curve.weights || '').split(',').reduce((a, b) => a + Number(b), 0);
-              const pzsInStore = runs * pzsPerRun;
-              storeTotalPzs += pzsInStore * (Number(plan.models) || 0);
-              storeTotalValue += pzsInStore * (Number(plan.models) || 0) * (Number(plan.pvp) || 0);
-            }
-          }
-        });
-      } else {
-        (purchases || []).forEach(p => {
-          const demand = (p.storeDemands || {})[store.id];
-          if (demand) { storeTotalPzs += demand.totalPieces || 0; storeTotalValue += ((demand.totalPieces || 0) * (p.pvp || 0)); }
-        });
-      }
-      return { ...store, storeTotalPzs, storeTotalValue };
-    }).sort((a, b) => (b.storeTotalPzs || 0) - (a.storeTotalPzs || 0));
-
     const matrixByGoa = {};
     (goas || []).forEach(g => {
       const matrix = {};
@@ -653,7 +623,7 @@ export default function App() {
       });
     });
 
-    return { goaMetrics, storeSummary, matrixByGoa };
+    return { goaMetrics, matrixByGoa };
   }, [purchases, stores, goas, activeClusters, reportView, suggestedPlans, calcRules, sizeCurves]);
 
   const storeStats = useMemo(() => {
@@ -697,6 +667,37 @@ export default function App() {
       setStoreSortOrder('desc');
     }
   };
+
+  // --- OBTENER RESUMEN POR TIENDA (DINÁMICO) ---
+  const storeSummaryData = useMemo(() => {
+    const isSug = reportView === 'sugerido';
+    return (stores || []).map(store => {
+      let storeTotalPzs = 0; let storeTotalValue = 0;
+      if (isSug) {
+        (suggestedPlans || []).forEach(plan => {
+          const goa = (goas || []).find(g => g.id === plan.goaId);
+          if (goa) {
+            const c = (store.clusters || {})[goa.name] || (store.clusters || {})[(goa.name || '').toUpperCase()] || activeClusters[activeClusters.length - 1];
+            const rule = (calcRules || []).find(r => r.id === Number(plan.ruleId));
+            const curve = (sizeCurves || []).find(cv => cv.id === Number(plan.curveId));
+            if (rule && curve) {
+              const runs = (rule.corridas || {})[c] || 0;
+              const pzsPerRun = (curve.weights || '').split(',').reduce((a, b) => a + Number(b), 0);
+              const pzsInStore = runs * pzsPerRun;
+              storeTotalPzs += pzsInStore * (Number(plan.models) || 0);
+              storeTotalValue += pzsInStore * (Number(plan.models) || 0) * (Number(plan.pvp) || 0);
+            }
+          }
+        });
+      } else {
+        (purchases || []).forEach(p => {
+          const demand = (p.storeDemands || {})[store.id];
+          if (demand) { storeTotalPzs += demand.totalPieces || 0; storeTotalValue += ((demand.totalPieces || 0) * (p.pvp || 0)); }
+        });
+      }
+      return { ...store, storeTotalPzs, storeTotalValue };
+    }).sort((a, b) => (b.storeTotalPzs || 0) - (a.storeTotalPzs || 0));
+  }, [stores, suggestedPlans, purchases, goas, activeClusters, calcRules, sizeCurves, reportView]);
 
   return (
     <div className={`min-h-screen font-sans pb-12 transition-colors duration-300 ${t.appBg}`}>
@@ -963,73 +964,51 @@ export default function App() {
         {activeTab === 'budget' && (
           <div className="space-y-6">
             
-            {(goas || []).length === 0 ? (
-              <EmptyState 
-                icon={Database} title="Conectar con GO Forecasting" 
-                desc="En el ecosistema GO PLANNER, tu presupuesto y curvas de vida mensual se definen en el módulo de Forecasting."
-                theme={theme} t={t}
-                action={
-                  <div className="flex flex-wrap justify-center gap-4">
-                    {forecastDisponible && (
-                      <button onClick={handleLoadForecast} className={`px-6 py-3.5 rounded-xl text-sm font-black tracking-wider uppercase transition shadow-lg flex items-center hover:scale-105 transform duration-200 bg-indigo-600 text-white hover:bg-indigo-500`}>
-                        <Database size={18} className="mr-2" /> Extraer de Forecast
-                      </button>
-                    )}
-                    <label className={`cursor-pointer px-6 py-3.5 rounded-xl text-sm font-black tracking-wider uppercase transition shadow-lg flex items-center hover:scale-105 transform duration-200 ${t.btnGhost}`}>
-                      <Upload size={18} className="mr-2" /> Importar Manual (.CSV)
-                      <input type="file" accept=".csv" onClick={(e) => e.target.value = null} onChange={handleBudgetCSVUpload} className="hidden" />
-                    </label>
-                  </div>
-                }
-              />
-            ) : (
-              <div className={`p-6 rounded-xl border ${t.card}`}>
-                <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
-                  <h2 className={`text-xl font-bold flex items-center ${t.textMain}`}><Database className={`mr-3 ${t.textAccent1}`}/> Forecast y Curvas Mensuales (Importado)</h2>
-                  <div className="flex space-x-3">
-                    {forecastDisponible && (
-                      <button onClick={handleLoadForecast} className={`px-4 py-2.5 rounded-lg text-sm font-bold flex items-center transition bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg`}>
-                        <Database size={16} className="mr-2" /> Extraer de Forecast
-                      </button>
-                    )}
-                    <label className={`cursor-pointer px-4 py-2.5 rounded-lg text-sm font-bold flex items-center transition ${t.btnGhost} shadow-lg`}>
-                      <Upload size={16} className="mr-2" /> Importar Manual (.CSV)
-                      <input type="file" accept=".csv" onClick={(e) => e.target.value = null} onChange={handleBudgetCSVUpload} className="hidden" />
-                    </label>
-                  </div>
-                </div>
-                
-                <div className={`overflow-x-auto rounded-xl border ${t.border}`}>
-                  <table className="w-full text-left text-sm border-collapse">
-                    <thead className={`border-b ${t.tableHead}`}>
-                      <tr>
-                        <th className="p-4 font-bold uppercase tracking-wider text-xs">GOA</th>
-                        <th className="p-4 text-right font-bold uppercase tracking-wider text-xs">Ppto OTB ($)</th>
-                        <th className="p-4 text-right font-bold uppercase tracking-wider text-xs">Historia (Pzs)</th>
-                        <th className="p-4 text-center font-bold uppercase tracking-wider text-xs bg-black/10 border-l border-black/10" colSpan="6">Curva Mensual % (Forecast)</th>
-                      </tr>
-                      <tr className={`text-[10px] uppercase ${t.textMuted} ${theme==='dark'?'bg-zinc-950/50':'bg-gray-100'}`}>
-                        <th colSpan="3"></th>
-                        <th className="p-2 text-center border-l border-black/10">Mes 1</th><th className="p-2 text-center">Mes 2</th><th className="p-2 text-center">Mes 3</th>
-                        <th className="p-2 text-center">Mes 4</th><th className="p-2 text-center">Mes 5</th><th className="p-2 text-center">Mes 6</th>
-                      </tr>
-                    </thead>
-                    <tbody className={`divide-y ${t.border} ${theme==='dark'?'bg-zinc-900':'bg-white'}`}>
-                      {goas.map(g => (
-                        <tr key={g.id} className={`transition ${t.tableRow}`}>
-                          <td className={`p-4 font-bold ${t.textMain}`}>{g.name}</td>
-                          <td className={`p-4 text-right font-black tracking-wide ${t.textAccent2}`}>${(g.budget || 0).toLocaleString()}</td>
-                          <td className={`p-4 text-right font-bold ${t.textMuted}`}>{(g.historyPzs || 0).toLocaleString()} pzs</td>
-                          {(g.months || [16.6,16.6,16.6,16.6,16.6,17]).map((m, i) => (
-                             <td key={`mes-${g.id}-${i}`} className={`p-3 text-center text-xs font-mono border-l border-black/5 ${t.textMain}`}>{m}%</td>
-                          ))}
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+            <div className={`p-6 rounded-xl border ${t.card}`}>
+              <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
+                <h2 className={`text-xl font-bold flex items-center ${t.textMain}`}><Database className={`mr-3 ${t.textAccent1}`}/> Forecast y Curvas Mensuales</h2>
+                <div className="flex space-x-3">
+                  <button onClick={handleLoadForecast} className={`px-4 py-2.5 rounded-lg text-sm font-bold flex items-center transition bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg`}>
+                    <Database size={16} className="mr-2" /> Extraer de Forecast
+                  </button>
+                  <label className={`cursor-pointer px-4 py-2.5 rounded-lg text-sm font-bold flex items-center transition ${t.btnGhost} shadow-lg`}>
+                    <Upload size={16} className="mr-2" /> Importar Manual (.CSV)
+                    <input type="file" accept=".csv" onClick={(e) => e.target.value = null} onChange={handleBudgetCSVUpload} className="hidden" />
+                  </label>
                 </div>
               </div>
-            )}
+              
+              <div className={`overflow-x-auto rounded-xl border ${t.border}`}>
+                <table className="w-full text-left text-sm border-collapse">
+                  <thead className={`border-b ${t.tableHead}`}>
+                    <tr>
+                      <th className="p-4 font-bold uppercase tracking-wider text-xs">GOA</th>
+                      <th className="p-4 text-right font-bold uppercase tracking-wider text-xs">Ppto OTB ($)</th>
+                      <th className="p-4 text-right font-bold uppercase tracking-wider text-xs">Historia (Pzs)</th>
+                      <th className="p-4 text-center font-bold uppercase tracking-wider text-xs bg-black/10 border-l border-black/10" colSpan="6">Curva Mensual % (Forecast)</th>
+                    </tr>
+                    <tr className={`text-[10px] uppercase ${t.textMuted} ${theme==='dark'?'bg-zinc-950/50':'bg-gray-100'}`}>
+                      <th colSpan="3"></th>
+                      <th className="p-2 text-center border-l border-black/10">Mes 1</th><th className="p-2 text-center">Mes 2</th><th className="p-2 text-center">Mes 3</th>
+                      <th className="p-2 text-center">Mes 4</th><th className="p-2 text-center">Mes 5</th><th className="p-2 text-center">Mes 6</th>
+                    </tr>
+                  </thead>
+                  <tbody className={`divide-y ${t.border} ${theme==='dark'?'bg-zinc-900':'bg-white'}`}>
+                    {(goas || []).length === 0 && <tr><td colSpan="9" className={`p-8 text-center ${t.textMuted}`}>Aún no hay datos de forecast disponibles.</td></tr>}
+                    {goas.map(g => (
+                      <tr key={g.id} className={`transition ${t.tableRow}`}>
+                        <td className={`p-4 font-bold ${t.textMain}`}>{g.name}</td>
+                        <td className={`p-4 text-right font-black tracking-wide ${t.textAccent2}`}>${(g.budget || 0).toLocaleString()}</td>
+                        <td className={`p-4 text-right font-bold ${t.textMuted}`}>{(g.historyPzs || 0).toLocaleString()} pzs</td>
+                        {(g.months || [16.6,16.6,16.6,16.6,16.6,17]).map((m, i) => (
+                           <td key={`mes-${g.id}-${i}`} className={`p-3 text-center text-xs font-mono border-l border-black/5 ${t.textMain}`}>{m}%</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
           </div>
         )}
 
