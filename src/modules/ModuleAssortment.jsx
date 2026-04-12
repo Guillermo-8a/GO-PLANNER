@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
 Settings, ShoppingCart, BarChart3, Plus, Trash2, Store,
-Package, Save, Upload, Download, Zap, DollarSign,
+Package, Save, Upload, Download, Zap, DollarSign, Calculator, 
 FileSpreadsheet, ArrowUpDown, Edit3, Lightbulb,
 MoreVertical, Sun, Moon, Sliders, CalendarDays, Compass,
 Activity, Wand2, Database, RefreshCw, Layers, ClipboardList,
