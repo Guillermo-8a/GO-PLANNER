@@ -1,3 +1,11 @@
+import React, { useState, useMemo, useEffect, useRef } from 'react';
+import {
+Settings, ShoppingCart, BarChart3, Plus, Trash2, Store,
+Package, Save, Upload, Download, Zap, DollarSign,
+FileSpreadsheet, ArrowUpDown, Edit3, Lightbulb,
+MoreVertical, Sun, Moon, Sliders, CalendarDays, Compass,
+Activity, Wand2, Database, RefreshCw, Layers, ClipboardList,
+} from 'lucide-react';
 import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
 export default function App() {
