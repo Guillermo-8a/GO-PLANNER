@@ -1,12 +1,38 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react';
 import {
-Settings, ShoppingCart, BarChart3, Plus, Trash2, Store,
-Package, Save, Upload, Download, Zap, DollarSign, Calculator, 
-FileSpreadsheet, ArrowUpDown, Edit3, Lightbulb,
-MoreVertical, Sun, Moon, Sliders, CalendarDays, Compass,
-Activity, Wand2, Database, RefreshCw, Layers, ClipboardList,
+  Settings,
+  ShoppingCart,
+  BarChart3,
+  Plus,
+  Trash2,
+  Store,
+  Package,
+  Save,
+  Upload,
+  Download,
+  Zap,
+  DollarSign,
+  Calculator,
+  FileSpreadsheet,
+  ArrowUpDown,
+  Edit3,
+  Lightbulb,
+  MoreVertical,
+  Sun,
+  Moon,
+  Sliders,
+  CalendarDays,
+  Compass,
+  Activity,
+  Wand2,
+  Database,
+  RefreshCw,
+  Layers,
+  ClipboardList,
+  Info,
+  Map,
+  Target
 } from 'lucide-react';
-import { Settings, Store, Package, Upload, ArrowUpDown, Sliders, Layers, MoreVertical, Sun, Moon, Info, Map, Database, ShoppingCart, BarChart3, Plus, Trash2, Save, Download, Zap, DollarSign, Target, FileSpreadsheet, Edit3, Lightbulb, CalendarDays, Compass, Activity, Wand2, RefreshCw, ClipboardList, Calculator } from 'lucide-react';
 import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
 export default function App() {
