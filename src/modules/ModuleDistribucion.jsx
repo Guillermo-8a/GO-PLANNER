@@ -2,7 +2,6 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import * as Icons from '../utils/icons';
 import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
-// ============================================================================
 // COMPONENTE EXTERNO: GRÁFICA DE DISPERSIÓN
 // ============================================================================
 const ScatterPlot = ({ data, title, subtitle, colorClass, maxVentas, maxInv, t }) => {
@@ -112,6 +111,44 @@ export default function Distribucion() {
   const [brandMatrix, setBrandMatrix] = useState({}); 
   const [matrixMetadata, setMatrixMetadata] = useState({ sections: [], brandsBySection: {}, allBrands: [] });
   const [selectedGoaFilter, setSelectedGoaFilter] = useState('ALL'); 
+
+  // --- NUEVOS ESTADOS: MODAL DE PARAMETRIZACIÓN ---
+  const [showParamModal, setShowParamModal] = useState(false);
+  const [paramForm, setParamForm] = useState({
+    etiquetaAP: '',
+    stockMin: '',
+    stockMax: '',
+    leadTime: '',
+    min: '',
+    max: '',
+    th: '',
+    tipoDistribucion: ''
+  });
+
+  // --- PERSISTENCIA DE MATRIZ DE MARCAS (Se queda fija en el navegador) ---
+  useEffect(() => {
+    try {
+      const savedMatrix = localStorage.getItem('goplanner_brand_matrix');
+      const savedMeta = localStorage.getItem('goplanner_brand_meta');
+      if (savedMatrix && savedMeta) {
+        setBrandMatrix(JSON.parse(savedMatrix));
+        setMatrixMetadata(JSON.parse(savedMeta));
+      }
+    } catch (e) {
+      console.warn("No se pudo cargar la matriz guardada.");
+    }
+  }, []);
+
+  const clearBrandMatrix = (e) => {
+    if (e) {
+      e.preventDefault();
+      e.stopPropagation();
+    }
+    setBrandMatrix({});
+    setMatrixMetadata({ sections: [], brandsBySection: {}, allBrands: [] });
+    localStorage.removeItem('goplanner_brand_matrix');
+    localStorage.removeItem('goplanner_brand_meta');
+  };
 
   // --- 2. ESTADO DE CHEQUERA Y SURTIDO ---
   const [entryMode, setEntryMode] = useState('MANUAL'); 
@@ -380,14 +417,22 @@ export default function Distribucion() {
         });
       }
       
-      setBrandMatrix(matrix);
-      setMatrixMetadata({
+      const newMeta = {
          sections: Array.from(metaSections).sort(),
          brandsBySection: Object.fromEntries(Object.entries(metaBrandsBySection).map(([k, v]) => [k, Array.from(v).sort()])),
          allBrands: Array.from(metaAllBrands).sort()
-      });
+      };
 
-      alert(`Matriz Dinámica cargada con éxito.\nSe detectaron ${storeCols.length} Tiendas y se registraron sus Marcas/Secciones permitidas.`);
+      setBrandMatrix(matrix);
+      setMatrixMetadata(newMeta);
+
+      // Guardado Local (Inviolable desde el exterior)
+      try {
+        localStorage.setItem('goplanner_brand_matrix', JSON.stringify(matrix));
+        localStorage.setItem('goplanner_brand_meta', JSON.stringify(newMeta));
+      } catch(err) {}
+
+      alert(`Matriz Dinámica cargada con éxito y FIJADA de forma segura.\nSe detectaron ${storeCols.length} Tiendas y se registraron sus Marcas/Secciones permitidas.`);
       e.target.value = '';
     };
     reader.readAsText(file, 'ISO-8859-1'); 
@@ -395,26 +440,35 @@ export default function Distribucion() {
 
 
   // ============================================================================
-  // CÁLCULOS VISUALES Y ORDENAMIENTO (¡BLOQUE RESTAURADO Y BLINDADO!)
+  // CÁLCULOS VISUALES Y ORDENAMIENTO
   // ============================================================================
   const storeStats = useMemo(() => {
+    const filteredStores = selectedGoaFilter === 'ALL' 
+      ? (stores || []) 
+      : (stores || []).filter(s => s.clusters && s.clusters[selectedGoaFilter]);
+
     const stats = {
-      total: (stores || []).length,
+      total: filteredStores.length,
       goas:  (goas  || []).length,
       clusters: { 'Sin Asignar': 0 },
     };
+    
     (activeClusters || []).forEach(c => { stats.clusters[c] = 0; });
-    (stores || []).forEach(s => {
-      const clusterValues = Object.values(s.clusters || {});
-      if (clusterValues.length === 0) {
+    
+    filteredStores.forEach(s => {
+      const clusterVal = selectedGoaFilter === 'ALL' ? s.globalCluster : (s.clusters ? s.clusters[selectedGoaFilter] : undefined);
+      
+      if (!clusterVal) {
         stats.clusters['Sin Asignar']++;
       } else {
-        const primary = clusterValues[0];
-        if (stats.clusters[primary] !== undefined) stats.clusters[primary]++;
+        if (stats.clusters[clusterVal] !== undefined) {
+          stats.clusters[clusterVal]++;
+        }
       }
     });
+    
     return stats;
-  }, [stores, goas, activeClusters]);
+  }, [stores, goas, activeClusters, selectedGoaFilter]);
 
   const sortedStores = useMemo(() => {
     return [...(stores || [])].sort((a, b) => {
@@ -491,7 +545,7 @@ export default function Distribucion() {
              finalSku = `${finalModelo}${extColor}${extTalla}`.replace(/\s+/g, '');
           }
 
-          // FIX: Generación de identificador verdaderamente único para React (previniendo error de duplicados en CSV)
+          // Generación de identificador verdaderamente único para React
           const uniqueId = typeof crypto !== 'undefined' && crypto.randomUUID 
              ? crypto.randomUUID() 
              : `item-${Date.now()}-${Math.random().toString(36).substring(2, 9)}-${i}`;
@@ -531,27 +585,30 @@ export default function Distribucion() {
       const hasTabs = line.includes('\t');
       let parts = hasTabs ? line.split('\t').map(p => p.trim()) : line.split(/[,;]+/).map(p => p.trim());
       
-      if (parts.length < 3) parts = line.split(/\s{2,}/).map(p => p.trim()); 
-      if (parts.length < 3) { errores++; return; }
+      // Limpiar columnas vacías al final (comas extra)
+      while (parts.length > 0 && parts[parts.length - 1] === '') {
+          parts.pop();
+      }
+
+      if (parts.length < 3) { if (parts.length > 0 && parts[0] !== '') errores++; return; }
       if (parts[0].toUpperCase() === 'GOA' || parts[0].toUpperCase() === 'SECCION' || parts[0].toUpperCase() === 'SECCIÓN') return;
 
       let seccion = 'N/A', goa = 'N/A', marca = 'N/A', modelo = 'N/A', sku = '', color = 'N/A', talla = 'N/A', qty = '';
 
       const n = parts.length;
-      qty = parts[n - 1];
-
+      
       if (n >= 8) {
-        seccion = parts[0]; goa = parts[1]; marca = parts[2]; modelo = parts[3]; sku = parts[4]; color = parts[5]; talla = parts[6];
+        seccion = parts[0]; goa = parts[1]; marca = parts[2]; modelo = parts[3]; sku = parts[4]; color = parts[5]; talla = parts[6]; qty = parts[7];
       } else if (n === 7) {
-        goa = parts[0]; marca = parts[1]; modelo = parts[2]; sku = parts[3]; color = parts[4]; talla = parts[5];
+        goa = parts[0]; marca = parts[1]; modelo = parts[2]; sku = parts[3]; color = parts[4]; talla = parts[5]; qty = parts[6];
       } else if (n === 6) {
-        goa = parts[0]; modelo = parts[1]; sku = parts[2]; color = parts[3]; talla = parts[4];
+        goa = parts[0]; modelo = parts[1]; sku = parts[2]; color = parts[3]; talla = parts[4]; qty = parts[5];
       } else if (n === 5) {
-        goa = parts[0]; modelo = parts[1]; sku = parts[2]; talla = parts[3];
+        goa = parts[0]; modelo = parts[1]; sku = parts[2]; talla = parts[3]; qty = parts[4];
       } else if (n === 4) {
-        goa = parts[0]; modelo = parts[1]; sku = parts[2];
+        goa = parts[0]; modelo = parts[1]; sku = parts[2]; qty = parts[3];
       } else {
-        goa = parts[0]; sku = parts[1]; modelo = parts[1];
+        goa = parts[0]; sku = parts[1]; modelo = parts[1]; qty = parts[2];
       }
 
       if (qty && goa && (sku || modelo)) {
@@ -591,27 +648,39 @@ export default function Distribucion() {
       }
 
       for (let i = startIndex; i < rows.length; i++) {
-        const parts = rows[i];
+        let parts = [...rows[i]];
+        
+        // LIMPIEZA CLAVE: Remover elementos vacíos al final que Excel añade como comas extra
+        while (parts.length > 0 && parts[parts.length - 1].trim() === "") {
+           parts.pop();
+        }
+
         if (parts.length >= 3) {
            let seccion = 'N/A', goa = 'N/A', marca = 'N/A', modelo = 'N/A', sku = '', color = 'N/A', talla = 'N/A', qty = '';
            const n = parts.length;
-           qty = parts[n - 1];
-
+           
            if (n >= 8) {
-             seccion = parts[0]; goa = parts[1]; marca = parts[2]; modelo = parts[3]; sku = parts[4]; color = parts[5]; talla = parts[6];
+             seccion = parts[0] || 'N/A'; 
+             goa = parts[1] || 'N/A'; 
+             marca = parts[2] || 'N/A'; 
+             modelo = parts[3] || 'N/A'; 
+             sku = parts[4] || ''; 
+             color = parts[5] || 'N/A'; 
+             talla = parts[6] || 'N/A'; 
+             qty = parts[7]; // Siempre tomar la columna 8 para la cantidad
            } else if (n === 7) {
-             goa = parts[0]; marca = parts[1]; modelo = parts[2]; sku = parts[3]; color = parts[4]; talla = parts[5];
+             goa = parts[0]; marca = parts[1]; modelo = parts[2]; sku = parts[3]; color = parts[4]; talla = parts[5]; qty = parts[6];
            } else if (n === 6) {
-             goa = parts[0]; modelo = parts[1]; sku = parts[2]; color = parts[3]; talla = parts[4];
+             goa = parts[0]; modelo = parts[1]; sku = parts[2]; color = parts[3]; talla = parts[4]; qty = parts[5];
            } else if (n === 5) {
-             goa = parts[0]; modelo = parts[1]; sku = parts[2]; talla = parts[3];
+             goa = parts[0]; modelo = parts[1]; sku = parts[2]; talla = parts[3]; qty = parts[4];
            } else if (n === 4) {
-             goa = parts[0]; modelo = parts[1]; sku = parts[2];
+             goa = parts[0]; modelo = parts[1]; sku = parts[2]; qty = parts[3];
            } else {
-             goa = parts[0]; sku = parts[1]; modelo = parts[1];
+             goa = parts[0]; sku = parts[1]; modelo = parts[1]; qty = parts[2];
            }
 
-           if (qty && goa && (sku || modelo)) {
+           if (qty && goa && goa !== 'N/A' && (sku || modelo)) {
               const baseItem = { seccion: seccion.toUpperCase(), goa: goa.toUpperCase(), marca: marca.toUpperCase(), modelo: modelo.toUpperCase(), sku, color: color.toUpperCase() };
               newItems.push(...createSizeRuns(baseItem, talla, qty));
            } else {
@@ -625,8 +694,11 @@ export default function Distribucion() {
       if (newItems.length > 0) {
          setChequera(prev => [...prev, ...newItems]);
          setDistributionResult([]);
+         if (errores > 0) {
+             alert(`Se cargó el CSV con éxito, pero se omitieron ${errores} filas por formato incorrecto o falta de datos.`);
+         }
       } else {
-         alert("No se detectaron datos válidos. Revisa las columnas.");
+         alert("No se detectaron datos válidos. Revisa que las columnas coincidan con el formato requerido.");
       }
       if(chequeraFileInputRef.current) chequeraFileInputRef.current.value = '';
     };
@@ -830,6 +902,17 @@ export default function Distribucion() {
     link.click();
     document.body.removeChild(link);
   };
+  
+  const triggerDownloadTXT = (filename, content) => {
+    const blob = new Blob([content], { type: 'text/plain;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.setAttribute('href', url);
+    link.setAttribute('download', filename);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
 
   const downloadSAP = () => {
     if (distributionResult.length === 0) return;
@@ -852,6 +935,18 @@ export default function Distribucion() {
     }).join('\n');
     
     triggerDownload(`O9_Distribucion_${new Date().toISOString().split('T')[0]}.csv`, csvContent);
+  };
+
+  const downloadParamTXT = () => {
+    if (distributionResult.length === 0) return;
+    const rows = distributionResult.map(r => {
+        // Formato: SKU | CENTRO | ETIQUETA AP | STOCK MIN | STOCK MAX | LEAD TIME | min | max | TH | Tipo de distribucion
+        const centroPad = String(r.centro).padStart(4, '0');
+        return `${r.sku}\t${centroPad}\t${paramForm.etiquetaAP}\t${paramForm.stockMin}\t${paramForm.stockMax}\t${paramForm.leadTime}\t${paramForm.min}\t${paramForm.max}\t${paramForm.th}\t${paramForm.tipoDistribucion}`;
+    });
+    const txtContent = rows.join('\n');
+    triggerDownloadTXT(`Parametrizacion_${new Date().toISOString().split('T')[0]}.txt`, txtContent);
+    setShowParamModal(false);
   };
 
   // --- PREPARACIÓN DE DATOS PARA GRÁFICAS SIN COMPONENTES ANIDADOS ---
@@ -956,8 +1051,61 @@ export default function Distribucion() {
         </button>
       </div>
 
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 transition-colors duration-300">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 transition-colors duration-300 relative">
         
+        {/* MODAL DE PARAMETRIZACIÓN FLOTANTE */}
+        {showParamModal && (
+          <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+            <div className={`w-full max-w-lg rounded-2xl border shadow-2xl p-6 ${t.menuBg}`}>
+              <div className="flex justify-between items-center mb-4">
+                <h3 className={`text-lg font-black ${t.textMain}`}>Parametrización de Descarga</h3>
+                <button onClick={() => setShowParamModal(false)} className="text-gray-500 hover:text-red-500 transition-colors">
+                  <Icons.X size={20} />
+                </button>
+              </div>
+              
+              <div className="grid grid-cols-2 gap-4 mb-6">
+                <div className="flex flex-col">
+                  <label className={`text-[10px] font-bold uppercase mb-1 ${t.textMuted}`}>Etiqueta AP</label>
+                  <input type="text" value={paramForm.etiquetaAP} onChange={e=>setParamForm({...paramForm, etiquetaAP: e.target.value})} className={`p-2 rounded-lg border text-sm outline-none ${t.input}`} placeholder="Ej. AP_2026"/>
+                </div>
+                <div className="flex flex-col">
+                  <label className={`text-[10px] font-bold uppercase mb-1 ${t.textMuted}`}>Stock Min</label>
+                  <input type="text" value={paramForm.stockMin} onChange={e=>setParamForm({...paramForm, stockMin: e.target.value})} className={`p-2 rounded-lg border text-sm outline-none ${t.input}`} placeholder="0"/>
+                </div>
+                <div className="flex flex-col">
+                  <label className={`text-[10px] font-bold uppercase mb-1 ${t.textMuted}`}>Stock Max</label>
+                  <input type="text" value={paramForm.stockMax} onChange={e=>setParamForm({...paramForm, stockMax: e.target.value})} className={`p-2 rounded-lg border text-sm outline-none ${t.input}`} placeholder="10"/>
+                </div>
+                <div className="flex flex-col">
+                  <label className={`text-[10px] font-bold uppercase mb-1 ${t.textMuted}`}>Lead Time</label>
+                  <input type="text" value={paramForm.leadTime} onChange={e=>setParamForm({...paramForm, leadTime: e.target.value})} className={`p-2 rounded-lg border text-sm outline-none ${t.input}`} placeholder="7"/>
+                </div>
+                <div className="flex flex-col">
+                  <label className={`text-[10px] font-bold uppercase mb-1 ${t.textMuted}`}>Min</label>
+                  <input type="text" value={paramForm.min} onChange={e=>setParamForm({...paramForm, min: e.target.value})} className={`p-2 rounded-lg border text-sm outline-none ${t.input}`} placeholder="1"/>
+                </div>
+                <div className="flex flex-col">
+                  <label className={`text-[10px] font-bold uppercase mb-1 ${t.textMuted}`}>Max</label>
+                  <input type="text" value={paramForm.max} onChange={e=>setParamForm({...paramForm, max: e.target.value})} className={`p-2 rounded-lg border text-sm outline-none ${t.input}`} placeholder="5"/>
+                </div>
+                <div className="flex flex-col">
+                  <label className={`text-[10px] font-bold uppercase mb-1 ${t.textMuted}`}>TH</label>
+                  <input type="text" value={paramForm.th} onChange={e=>setParamForm({...paramForm, th: e.target.value})} className={`p-2 rounded-lg border text-sm outline-none ${t.input}`} placeholder="0"/>
+                </div>
+                <div className="flex flex-col">
+                  <label className={`text-[10px] font-bold uppercase mb-1 ${t.textMuted}`}>Tipo de Distribución</label>
+                  <input type="text" value={paramForm.tipoDistribucion} onChange={e=>setParamForm({...paramForm, tipoDistribucion: e.target.value})} className={`p-2 rounded-lg border text-sm outline-none ${t.input}`} placeholder="Push / Pull"/>
+                </div>
+              </div>
+              
+              <button onClick={downloadParamTXT} className={`w-full py-3 rounded-xl font-black uppercase tracking-wider transition-all flex items-center justify-center shadow-lg hover:scale-105 transform duration-200 ${t.btnPrimary}`}>
+                <Icons.Download size={18} className="mr-2" /> Descargar TXT (Sin Títulos)
+              </button>
+            </div>
+          </div>
+        )}
+
         {/* TAB 1 */}
         {activeTab === 1 && (
           stores.length === 0 ? (
@@ -1019,8 +1167,16 @@ export default function Distribucion() {
                   <p className={`text-xs mb-6 h-12 ${t.textMuted}`}>Opcional. Matriz cruzada para restringir qué tiendas pueden recibir qué marcas.</p>
                   
                   <label className={`cursor-pointer w-full py-3.5 rounded-xl text-sm font-black tracking-wider uppercase transition shadow-lg flex items-center justify-center border border-dashed hover:scale-105 transform duration-200 ${theme==='dark'?'border-zinc-600 text-zinc-300 hover:bg-zinc-800':'border-gray-400 text-gray-600 hover:bg-gray-100'}`}>
-                    <Icons.FileText size={18} className="mr-2" /> Subir Matriz (.CSV)
-                    <input type="file" accept=".csv" onChange={handleBrandMatrixUpload} className="hidden" />
+                    <Icons.FileText size={18} className="mr-2" /> 
+                    {Object.keys(brandMatrix).length > 0 ? (
+                      <div className="flex items-center gap-2">
+                        <span className="text-emerald-500">Matriz Fija Activa ({Object.keys(brandMatrix).length})</span>
+                        <button onClick={clearBrandMatrix} className="p-1 hover:bg-red-500/20 hover:text-red-500 rounded-full transition-colors" title="Borrar Matriz Fija">
+                          <Icons.X size={16} />
+                        </button>
+                      </div>
+                    ) : 'Subir Matriz (.CSV)'}
+                    {Object.keys(brandMatrix).length === 0 && <input type="file" accept=".csv" onChange={handleBrandMatrixUpload} className="hidden" />}
                   </label>
                 </div>
               </div>
@@ -1440,6 +1596,9 @@ export default function Distribucion() {
                     </div>
 
                     <div className="flex flex-col sm:flex-row gap-3">
+                      <button onClick={() => setShowParamModal(true)} className="px-5 py-2.5 rounded-lg font-bold text-sm tracking-wide transition-all flex items-center justify-center shadow-md bg-violet-600 text-white hover:bg-violet-500 hover:scale-105">
+                        <Icons.Settings size={16} className="mr-2" /> Parametrización
+                      </button>
                       <button onClick={downloadSAP} className="px-5 py-2.5 rounded-lg font-bold text-sm tracking-wide transition-all flex items-center justify-center shadow-md bg-blue-600 text-white hover:bg-blue-500 hover:scale-105">
                         <Icons.FileSpreadsheet size={16} className="mr-2" /> Descargar SAP
                       </button>
@@ -1538,7 +1697,6 @@ export default function Distribucion() {
         )}
 
       </main>
-      <style dangerouslySetInnerHTML={{__html: `.custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; } .custom-scrollbar::-webkit-scrollbar-track { background: transparent; } .custom-scrollbar::-webkit-scrollbar-thumb { background: ${theme === 'dark' ? '#3f3f46' : '#d1d5db'}; border-radius: 4px; } .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: ${theme === 'dark' ? '#52525b' : '#9ca3af'}; } @keyframes fadeInUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } } .animate-fade-in-up { animation: fadeInUp 0.4s ease-out forwards; }`}} />
     </div>
   );
 }
