@@ -1,41 +1,32 @@
-import React, { useState, useMemo, useEffect, useRef } from 'react';
-import {
-  Settings,
-  ShoppingCart,
-  BarChart3,
-  Plus,
-  Trash2,
-  Store,
-  Package,
-  Save,
-  Upload,
-  Download,
-  Zap,
-  DollarSign,
-  Calculator,
-  FileSpreadsheet,
-  ArrowUpDown,
-  Edit3,
-  Lightbulb,
-  MoreVertical,
-  Sun,
-  Moon,
-  Sliders,
-  CalendarDays,
-  Compass,
-  Activity,
-  Wand2,
-  Database,
-  RefreshCw,
-  Layers,
-  ClipboardList,
-  Info,
-  Map,
-  Target
-} from 'lucide-react';
+import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { Settings, Store, Package, Upload, ArrowUpDown, Sliders, Layers, MoreVertical, Sun, Moon, Info, Map as MapIcon, Database, ShoppingCart, BarChart3, Plus, Trash2, Save, Download, Zap, DollarSign, Target, FileSpreadsheet, Edit3, Lightbulb, CalendarDays, Compass, Activity, Wand2, RefreshCw, ClipboardList, Calculator, ChevronDown, ChevronRight } from 'lucide-react';
 import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
-// --- COMPONENTES AUXILIARES EXTRAÍDOS PARA EVITAR RE-RENDER BUGS ---
+// --- MOTOR INTELIGENTE PARA LEER CSV (Ignora comas dentro de comillas) ---
+const parseCSV = (text) => {
+  const separator = text.indexOf(';') > -1 ? ';' : (text.indexOf('\t') > -1 ? '\t' : ',');
+  const lines = text.split(/\r?\n/);
+  return lines.map(line => {
+    const result = [];
+    let current = "";
+    let inQuotes = false;
+    for(let i=0; i<line.length; i++) {
+      const char = line[i];
+      if(char === '"') {
+        inQuotes = !inQuotes;
+      } else if(char === separator && !inQuotes) {
+        result.push(current.trim().replace(/^"|"$/g, ''));
+        current = "";
+      } else {
+        current += char;
+      }
+    }
+    result.push(current.trim().replace(/^"|"$/g, ''));
+    return result;
+  }).filter(row => row.length > 0 && row.some(cell => cell !== ""));
+};
+
+// --- COMPONENTES AUXILIARES ---
 function TabButton({ id, label, icon: Icon, activeTab, setActiveTab, t }) {
   return (
     <button onClick={() => setActiveTab(id)} className={`flex items-center space-x-2 px-4 py-3 font-bold text-sm transition-colors border-b-2 ${activeTab === id ? t.tabActive : t.tabInactive}`}>
@@ -73,14 +64,22 @@ export default function App() {
   const forecastFileInputRef = useRef(null);
   const [activeTab, setActiveTab] = useState('data');
 
+  // --- ESTADOS PARA GUARDAR SESIÓN ---
+  const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
+  const [saveFileName, setSaveFileName] = useState('');
+
+  // --- ESTADOS PARA ACORDEÓN DE REPORTES ---
+  const [collapsedGoas, setCollapsedGoas] = useState({});
+
   // --- INTEGRACIÓN GLOBAL CONTEXT ---
   const gDispatch = useDispatch();
   const gState    = useGlobal();
   const theme = gState?.theme || 'dark'; 
+  const forecastDisponible = !!gState?.forecastData;
   
   // --- ESTADO DE BASE Y CLÚSTERES ---
   const [numClusters, setNumClusters] = useState(6);
-  const [clusterStrategy, setClusterStrategy] = useState('piramide');
+  const [clusterStrategy, setClusterStrategy] = useState('valor'); // Modificado a 'valor' (Absoluta) por defecto
   
   const activeClusters = useMemo(() => {
     if (numClusters === 6) return ['AA', 'A', 'B', 'C', 'D', 'E'];
@@ -89,13 +88,16 @@ export default function App() {
   }, [numClusters]);
 
   const [rawStoreData, setRawStoreData] = useState([]);
-  const [scoreWeights, setScoreWeights] = useState({ sales: 50, margin: 30, rotation: 20 });
+  
+  // Modificado a 50% venta, 50% mg, 0% rotación por defecto
+  const [scoreWeights, setScoreWeights] = useState({ sales: 50, margin: 50, rotation: 0 });
 
   const [stores, setStores] = useState([]);
   const [goas, setGoas] = useState([]);
   
   const [storeSortBy, setStoreSortBy] = useState('score'); 
   const [storeSortOrder, setStoreSortOrder] = useState('desc');
+  const [filterGoa, setFilterGoa] = useState('ALL'); // FILTRO DE GOA
 
   // --- CALCULADORAS ---
   const [sizeCurves, setSizeCurves] = useState([]);
@@ -115,15 +117,19 @@ export default function App() {
 
   // --- PUBLICAR OTB AL GLOBAL CONTEXT ---
   useEffect(() => {
-    if (goas.length > 0) {
-      const totalBudget = goas.reduce((s, g) => s + (g.budget || 0), 0);
-      const totalSpent  = purchases.reduce((s, p) => s + (p.totalRetailValue || 0), 0);
+    const currentGoas = goas || [];
+    const currentPurchases = purchases || [];
+    const currentPlans = suggestedPlans || [];
+    
+    if (currentGoas.length > 0) {
+      const totalBudget = currentGoas.reduce((s, g) => s + (Number(g.budget) || 0), 0);
+      const totalSpent  = currentPurchases.reduce((s, p) => s + (Number(p.totalRetailValue) || 0), 0);
       
       if (globalActions && globalActions.publishOTB) {
         globalActions.publishOTB(gDispatch, {
-          goas,
-          purchases,
-          suggestedPlans,
+          goas: currentGoas,
+          purchases: currentPurchases,
+          suggestedPlans: currentPlans,
           budget: totalBudget,
           spent:  totalSpent,
         });
@@ -179,17 +185,24 @@ export default function App() {
       toggleActive: "bg-white text-blue-700 font-black shadow-sm border border-blue-200", toggleInactive: "bg-gray-100 text-gray-500 hover:text-gray-800 border-transparent"
     }
   };
-  const t = themes[theme];
+  const t = themes[theme] || themes.dark;
 
   // --- EXPORTAR / IMPORTAR PROYECTO ---
   const handleExportProject = () => {
+    setIsSaveModalOpen(true);
+    setSaveFileName(`GO_PLANNER_Assortment_${new Date().toISOString().slice(0,10)}`);
+  };
+
+  const confirmExportProject = () => {
     const data = { stores, goas, sizeCurves, calcRules, purchases, rawStoreData, scoreWeights, numClusters, clusterStrategy, suggestedPlans };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
     link.href = url;
-    link.download = `GO_PLANNER_Assortment_${new Date().toISOString().slice(0,10)}.json`;
+    const finalName = saveFileName.endsWith('.json') ? saveFileName : `${saveFileName}.json`;
+    link.download = finalName;
     link.click();
+    setIsSaveModalOpen(false);
   };
 
   const handleImportProject = (e) => {
@@ -199,16 +212,16 @@ export default function App() {
     reader.onload = (event) => {
       try {
         const data = JSON.parse(event.target.result);
-        if(data.stores) setStores(data.stores);
-        if(data.goas) setGoas(data.goas);
-        if(data.sizeCurves) setSizeCurves(data.sizeCurves);
-        if(data.calcRules) setCalcRules(data.calcRules);
-        if(data.purchases) setPurchases(data.purchases);
-        if(data.rawStoreData) setRawStoreData(data.rawStoreData);
+        if(Array.isArray(data.stores)) setStores(data.stores);
+        if(Array.isArray(data.goas)) setGoas(data.goas);
+        if(Array.isArray(data.sizeCurves)) setSizeCurves(data.sizeCurves);
+        if(Array.isArray(data.calcRules)) setCalcRules(data.calcRules);
+        if(Array.isArray(data.purchases)) setPurchases(data.purchases);
+        if(Array.isArray(data.rawStoreData)) setRawStoreData(data.rawStoreData);
         if(data.scoreWeights) setScoreWeights(data.scoreWeights);
         if(data.numClusters) setNumClusters(data.numClusters);
         if(data.clusterStrategy) setClusterStrategy(data.clusterStrategy);
-        if(data.suggestedPlans) setSuggestedPlans(data.suggestedPlans);
+        if(Array.isArray(data.suggestedPlans)) setSuggestedPlans(data.suggestedPlans);
         alert("¡Proyecto cargado con éxito!");
       } catch (err) { alert("Error al leer el archivo JSON."); }
     };
@@ -216,38 +229,83 @@ export default function App() {
     e.target.value = null; 
   };
 
+  // --- DESCARGAR MATRIZ A EXCEL ---
+  const handleDownloadMatrix = () => {
+    if ((stores || []).length === 0) {
+      alert("No hay tiendas para exportar.");
+      return;
+    }
+    
+    const allGoas = goas.map(g => g.name);
+    let csv = "Centro,Nombre,Ventas (Pzs),Utilidad ($),Rotacion,Score Promedio,Cluster Global";
+    allGoas.forEach(g => { csv += `,Cluster ${g}`; });
+    csv += "\r\n";
+
+    stores.forEach(s => {
+      let row = `"${s.centerCode}","${s.name}",${s.sales},${s.margin},${s.rotation},${(s.score || 0).toFixed(2)},"${s.globalCluster || '-'}"`;
+      allGoas.forEach(g => {
+        const realKey = Object.keys(s.clusters || {}).find(k => k.toUpperCase() === g.toUpperCase());
+        const clusterVal = realKey ? s.clusters[realKey] : 'Sin Asignar';
+        row += `,"${clusterVal}"`;
+      });
+      csv += row + "\r\n";
+    });
+
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" }); // BOM for Excel
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.setAttribute("href", url);
+    link.setAttribute("download", `Matriz_Tiendas_${new Date().toISOString().slice(0,10)}.csv`);
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   // --- LÓGICA DE CLUSTERIZACIÓN DINÁMICA ---
   const recalculateClusters = (rawData, weights, currentClusters, strategy) => {
     if(!rawData || rawData.length === 0) return;
     const dataByGoa = {};
     const storeMap = new Map();
-    const maxVals = {}; 
 
     rawData.forEach(row => {
-      const goa = row.goa;
-      if (!dataByGoa[goa]) { dataByGoa[goa] = []; maxVals[goa] = { sales: 0, margin: 0, rotation: 0 }; }
-      dataByGoa[goa].push(row);
-      if (row.sales > maxVals[goa].sales) maxVals[goa].sales = row.sales;
-      if (row.margin > maxVals[goa].margin) maxVals[goa].margin = row.margin;
-      if (row.rotation > maxVals[goa].rotation) maxVals[goa].rotation = row.rotation;
-
       if (!storeMap.has(row.centro)) {
-        storeMap.set(row.centro, { id: row.centro, centerCode: row.centro, name: row.name, sales: row.sales, margin: row.margin, rotation: row.rotation, score: 0, clusters: {} });
-      } else {
-        const existing = storeMap.get(row.centro);
-        existing.sales = (existing.sales + row.sales) / 2; 
-        existing.margin = (existing.margin + row.margin) / 2;
-        existing.rotation = (existing.rotation + row.rotation) / 2;
+        storeMap.set(row.centro, { id: row.centro, centerCode: row.centro, name: row.name, sales: 0, margin: 0, rotation: 0, score: 0, clusters: {}, globalCluster: '-', goaCount: 0, totalScoreAcum: 0 });
       }
+      
+      if (!dataByGoa[row.goa]) dataByGoa[row.goa] = {};
+      if (!dataByGoa[row.goa][row.centro]) {
+        dataByGoa[row.goa][row.centro] = { sales: 0, margin: 0, rotation: 0, count: 0 };
+      }
+      
+      const sg = dataByGoa[row.goa][row.centro];
+      sg.sales += row.sales;
+      sg.margin += row.margin; 
+      sg.rotation += row.rotation;
+      sg.count += 1;
+
+      const s = storeMap.get(row.centro);
+      s.sales += row.sales;
+      s.margin += row.margin;
     });
 
     Object.keys(dataByGoa).forEach(goaName => {
-      const storesInGoa = dataByGoa[goaName].map(item => {
-        const nSales = maxVals[goaName].sales > 0 ? item.sales / maxVals[goaName].sales : 0;
-        const nMargin = maxVals[goaName].margin > 0 ? item.margin / maxVals[goaName].margin : 0;
-        const nRot = maxVals[goaName].rotation > 0 ? item.rotation / maxVals[goaName].rotation : 0;
-        const score = (nSales * weights.sales) + (nMargin * weights.margin) + (nRot * weights.rotation);
-        return { ...item, score };
+      const storesInGoa = Object.keys(dataByGoa[goaName]).map(centroId => {
+        const d = dataByGoa[goaName][centroId];
+        return { centro: centroId, sales: d.sales, margin: d.margin, rotation: d.rotation / d.count };
+      });
+
+      let maxSales = 0, maxMargin = 0, maxRot = 0;
+      storesInGoa.forEach(item => {
+        if (item.sales > maxSales) maxSales = item.sales;
+        if (item.margin > maxMargin) maxMargin = item.margin;
+        if (item.rotation > maxRot) maxRot = item.rotation;
+      });
+
+      storesInGoa.forEach(item => {
+        const nSales = maxSales > 0 ? item.sales / maxSales : 0;
+        const nMargin = maxMargin > 0 ? item.margin / maxMargin : 0;
+        const nRot = maxRot > 0 ? item.rotation / maxRot : 0;
+        item.score = (nSales * weights.sales) + (nMargin * weights.margin) + (nRot * weights.rotation);
       });
 
       storesInGoa.sort((a, b) => b.score - a.score);
@@ -286,35 +344,88 @@ export default function App() {
         }
         
         const store = storeMap.get(item.centro);
-        store.clusters[goaName] = currentClusters[clusterIndex];
-        store.score = (store.score + item.score) / 2;
+        if(store) {
+          store.clusters[goaName] = currentClusters[clusterIndex];
+          store.totalScoreAcum += item.score;
+          store.goaCount += 1;
+          store.score = store.totalScoreAcum / store.goaCount;
+          store.rotation = (store.rotation + item.rotation) / 2; 
+        }
       });
 
       setGoas(prev => {
-        if (!prev.find(g => g.name.toUpperCase() === goaName)) {
+        if (!(prev || []).find(g => g.name.toUpperCase() === goaName)) {
           const formatted = goaName.charAt(0).toUpperCase() + goaName.slice(1).toLowerCase();
-          return [...prev, { id: Date.now() + Math.random(), name: formatted, budget: 0, historyPzs: 0, months: [16.6, 16.6, 16.6, 16.6, 16.6, 17] }];
+          return [...(prev || []), { id: Date.now() + Math.random(), name: formatted, budget: 0, historyPzs: 0, months: [16.6, 16.6, 16.6, 16.6, 16.6, 17] }];
         }
-        return prev;
+        return prev || [];
       });
     });
-    setStores(Array.from(storeMap.values()));
+
+    // 3. CALCULAR CLÚSTER GLOBAL PARA LA TIENDA
+    const finalStores = Array.from(storeMap.values());
+    finalStores.sort((a, b) => b.score - a.score);
+    const totalS = finalStores.length;
+    const maxSScore = totalS > 0 ? finalStores[0].score : 1;
+    const numClust = currentClusters.length;
+
+    finalStores.forEach((store, index) => {
+      const percentile = index / totalS;
+      let clusterIndex = numClust - 1;
+      
+      if (strategy === 'piramide') {
+        if (numClust === 6) {
+          if (percentile <= 0.05) clusterIndex = 0;
+          else if (percentile <= 0.20) clusterIndex = 1;
+          else if (percentile <= 0.45) clusterIndex = 2;
+          else if (percentile <= 0.75) clusterIndex = 3;
+          else if (percentile <= 0.90) clusterIndex = 4;
+          else clusterIndex = 5;
+        } else {
+          let assigned = false;
+          for(let i=0; i<numClust; i++) {
+            let threshold = Math.pow((i+1)/numClust, 2);
+            if (percentile <= threshold) { clusterIndex = i; assigned = true; break; }
+          }
+          if(!assigned) clusterIndex = numClust - 1;
+        }
+      } else if (strategy === 'lineal') {
+        clusterIndex = Math.min(Math.floor(percentile * numClust), numClust - 1);
+      } else if (strategy === 'valor') {
+        const scoreRatio = store.score / maxSScore; 
+        const invertedPercentile = 1.0 - scoreRatio; 
+        clusterIndex = Math.min(Math.floor(invertedPercentile * numClust), numClust - 1);
+      }
+      
+      store.globalCluster = currentClusters[clusterIndex];
+    });
+
+    setStores(finalStores);
   };
 
   useEffect(() => {
-    if (rawStoreData.length > 0) recalculateClusters(rawStoreData, scoreWeights, activeClusters, clusterStrategy);
+    if ((rawStoreData || []).length > 0) recalculateClusters(rawStoreData, scoreWeights, activeClusters, clusterStrategy);
   }, [scoreWeights, activeClusters, clusterStrategy]);
 
   // --- CARGA DE DATOS DESDE CONTEXT GLOBAL ---
-  const handleLoadForecast = () => {
-    if (gState?.forecastData?.brands) {
-      const newGoas = gState.forecastData.brands.map((b, i) => ({
-        id: Date.now() + i,
-        name: String(b.name || b.brand || `GOA ${i+1}`),
-        budget: Number(b.budget) || 0,
-        historyPzs: Number(b.historyPzs) || 0,
-        months: Array.isArray(b.months) ? b.months : [16.6, 16.6, 16.6, 16.6, 16.6, 17]
-      }));
+  const handleLoadForecastFromContext = () => {
+    if (forecastDisponible && gState?.forecastData?.brands) {
+      const newGoas = gState.forecastData.brands.map((b, i) => {
+        let parsedMonths = [16.6, 16.6, 16.6, 16.6, 16.6, 17];
+        if (Array.isArray(b.months)) {
+           parsedMonths = b.months.map(m => {
+              if (typeof m === 'object' && m !== null) return Number(m.value || m.porcentaje || 0);
+              return Number(m) || 0;
+           });
+        }
+        return {
+          id: Date.now() + i,
+          name: String(b.name || b.brand || `GOA ${i+1}`),
+          budget: Number(b.budget) || 0,
+          historyPzs: Number(b.historyPzs) || 0,
+          months: parsedMonths
+        };
+      });
       setGoas(newGoas);
       alert("Datos históricos y presupuestos cargados desde GO Forecasting.");
     } else {
@@ -327,17 +438,16 @@ export default function App() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (event) => {
-      const text = event.target.result;
-      const separator = text.indexOf(';') > -1 ? ';' : (text.indexOf('\t') > -1 ? '\t' : ',');
-      const rows = text.split(/\r?\n/).map(row => row.split(separator).map(cell => cell?.trim().replace(/^"|"$/g, '') || ''));
+      const text = event.target.result.replace(/^\uFEFF/, ''); 
+      const rows = parseCSV(text);
       if (rows.length < 2) { if(fileInputRef.current) fileInputRef.current.value = ''; return; }
 
-      const headers = rows[0].map(h => h.replace(/^\uFEFF/, '').trim().toUpperCase());
+      const headers = rows[0].map(h => h.toUpperCase());
       const idxCentro = headers.findIndex(h => h === 'CENTRO' || h === 'ID');
       const idxNombre = headers.findIndex(h => h === 'NOMBRE' || h === 'TIENDA' || h === 'DESC CENTRO');
       const idxGoa = headers.findIndex(h => h === 'GOA' || h === 'FAMILIA');
-      const idxVentas = headers.findIndex(h => h === 'VENTAS' || h === 'VTA' || h.includes('VTAS. $'));
-      const idxMargen = headers.findIndex(h => h === 'MARGEN' || h === 'MG' || h.includes('%GM'));
+      const idxVentas = headers.findIndex(h => h === 'VENTAS' || h === 'VTA' || h.includes('VTAS. $') || h.includes('UNIDADES'));
+      const idxMargen = headers.findIndex(h => h === 'MARGEN' || h === 'MG' || h.includes('%GM') || h.includes('UTILIDAD'));
       const idxRotacion = headers.findIndex(h => h === 'ROTACION' || h === 'ROT' || h.includes('SELL'));
 
       if (idxCentro === -1 || idxGoa === -1 || idxVentas === -1) {
@@ -352,8 +462,9 @@ export default function App() {
         const rawMargen = idxMargen !== -1 && rows[i][idxMargen] ? String(rows[i][idxMargen]).replace(/[^0-9.-]+/g, "") : "0";
         const rawRotacion = idxRotacion !== -1 && rows[i][idxRotacion] ? String(rows[i][idxRotacion]).replace(/[^0-9.-]+/g, "") : "1";
         
-        let ventas = parseFloat(rawVentas) || 0; let margen = parseFloat(rawMargen) || 0; let rotacion = parseFloat(rawRotacion) || 0;
-        if (margen > 1 && margen <= 100) margen = margen / 100; 
+        let ventas = parseFloat(rawVentas) || 0; 
+        let margen = parseFloat(rawMargen) || 0; 
+        let rotacion = parseFloat(rawRotacion) || 0;
 
         extractedRawData.push({
           centro: rows[i][idxCentro], name: idxNombre !== -1 ? rows[i][idxNombre] : rows[i][idxCentro],
@@ -366,11 +477,25 @@ export default function App() {
       setRawStoreData(extractedRawData);
       recalculateClusters(extractedRawData, scoreWeights, activeClusters, clusterStrategy);
     };
-    reader.readAsText(file, 'UTF-8');
+    reader.readAsText(file, 'Windows-1252'); 
   };
 
   const handleUpdateStoreCluster = (storeId, goaName, newCluster) => {
     setStores((stores || []).map(s => s.id === storeId ? { ...s, clusters: { ...(s.clusters || {}), [goaName]: newCluster } } : s));
+  };
+
+  const handleUpdateGoaField = (goaId, field, value, monthIndex = null) => {
+    setGoas(prev => prev.map(g => {
+      if (g.id === goaId) {
+        if (monthIndex !== null) {
+          const newMonths = [...g.months];
+          newMonths[monthIndex] = Number(value) || 0;
+          return { ...g, months: newMonths };
+        }
+        return { ...g, [field]: Number(value) || 0 };
+      }
+      return g;
+    }));
   };
 
   const handleBudgetCSVUpload = (e) => {
@@ -378,24 +503,25 @@ export default function App() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (event) => {
-      const text = event.target.result;
-      const separator = text.indexOf(';') > -1 ? ';' : ',';
-      const rows = text.split(/\r?\n/).map(row => row.split(separator).map(cell => cell?.trim().replace(/^"|"$/g, '') || ''));
+      const text = event.target.result.replace(/^\uFEFF/, '');
+      const rows = parseCSV(text);
       if (rows.length < 2) { if(budgetFileInputRef.current) budgetFileInputRef.current.value = ''; return; }
       
       const newGoas = [];
       for (let i = 1; i < rows.length; i++) {
         if (!rows[i][0]) continue;
         newGoas.push({ 
-          id: Date.now() + i, name: rows[i][0], 
-          budget: parseFloat(rows[i][1]) || 0, historyPzs: parseInt(rows[i][2]) || 0,
+          id: Date.now() + i, name: String(rows[i][0]), 
+          budget: parseFloat(String(rows[i][1]).replace(/[^0-9.-]+/g, '')) || 0, 
+          historyPzs: parseInt(String(rows[i][2]).replace(/[^0-9.-]+/g, '')) || 0,
           months: [16.6, 16.6, 16.6, 16.6, 16.6, 17] 
         });
       }
       setGoas(newGoas);
       alert("Presupuestos Básicos actualizados.");
+      if(budgetFileInputRef.current) budgetFileInputRef.current.value = '';
     };
-    reader.readAsText(file, 'UTF-8');
+    reader.readAsText(file, 'Windows-1252');
   };
 
   const handleForecastCSVUpload = (e) => {
@@ -403,28 +529,32 @@ export default function App() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (event) => {
-      const text = event.target.result;
-      const separator = text.indexOf(';') > -1 ? ';' : ',';
-      const rows = text.split(/\r?\n/).map(row => row.split(separator).map(cell => cell?.trim().replace(/^"|"$/g, '') || ''));
+      const text = event.target.result.replace(/^\uFEFF/, '');
+      const rows = parseCSV(text);
       if (rows.length < 2) { if(forecastFileInputRef.current) forecastFileInputRef.current.value = ''; return; }
       
       const newGoas = [];
       for (let i = 1; i < rows.length; i++) {
         if (!rows[i][0]) continue;
-        const m1 = parseFloat(rows[i][3]) || 16.6; const m2 = parseFloat(rows[i][4]) || 16.6;
-        const m3 = parseFloat(rows[i][5]) || 16.6; const m4 = parseFloat(rows[i][6]) || 16.6;
-        const m5 = parseFloat(rows[i][7]) || 16.6; const m6 = parseFloat(rows[i][8]) || 17.0;
+        const m1 = parseFloat(String(rows[i][3]).replace(/[^0-9.-]+/g, '')) || 16.6; 
+        const m2 = parseFloat(String(rows[i][4]).replace(/[^0-9.-]+/g, '')) || 16.6;
+        const m3 = parseFloat(String(rows[i][5]).replace(/[^0-9.-]+/g, '')) || 16.6; 
+        const m4 = parseFloat(String(rows[i][6]).replace(/[^0-9.-]+/g, '')) || 16.6;
+        const m5 = parseFloat(String(rows[i][7]).replace(/[^0-9.-]+/g, '')) || 16.6; 
+        const m6 = parseFloat(String(rows[i][8]).replace(/[^0-9.-]+/g, '')) || 17.0;
 
         newGoas.push({ 
-          id: Date.now() + i, name: rows[i][0], 
-          budget: parseFloat(rows[i][1]) || 0, historyPzs: parseInt(rows[i][2]) || 0,
+          id: Date.now() + i, name: String(rows[i][0]), 
+          budget: parseFloat(String(rows[i][1]).replace(/[^0-9.-]+/g, '')) || 0, 
+          historyPzs: parseInt(String(rows[i][2]).replace(/[^0-9.-]+/g, '')) || 0,
           months: [m1, m2, m3, m4, m5, m6]
         });
       }
       setGoas(newGoas);
       alert("Forecast y Presupuestos Mensuales importados desde CSV con éxito.");
+      if(forecastFileInputRef.current) forecastFileInputRef.current.value = '';
     };
-    reader.readAsText(file, 'UTF-8');
+    reader.readAsText(file, 'Windows-1252');
   };
 
   // --- CRUD CALCULADORAS ---
@@ -449,7 +579,7 @@ export default function App() {
   };
   const editRule = (r) => { 
     const editObj = { name: r.name };
-    (activeClusters || []).forEach(c => editObj[c] = r.corridas[c] || 0);
+    (activeClusters || []).forEach(c => editObj[c] = (r.corridas || {})[c] || 0);
     setNewRule(editObj); setEditingRuleId(r.id); 
   };
 
@@ -480,7 +610,7 @@ export default function App() {
     if (totalPieces === 0) { alert("La regla seleccionada no genera compras."); return; }
 
     setPurchases([...(purchases || []), {
-      id: Date.now(), goaId: goa.id, goaName: goa.name, modelo: modelo.toUpperCase(),
+      id: Date.now(), goaId: goa.id, goaName: goa.name, modelo: String(modelo).toUpperCase(),
       pvp: Number(pvp), curveId: curve.id, curveName: curve.name, ruleId: rule.id, ruleName: rule.name,
       totalPieces, totalRetailValue: totalPieces * Number(pvp), storeDemands
     }]);
@@ -490,6 +620,7 @@ export default function App() {
   // --- MOTOR MÁGICO DE SUGERENCIAS ---
   const handleAddSuggestion = (goaId) => {
     setSuggestedPlans([...(suggestedPlans || []), { id: Date.now(), goaId, curveId: '', ruleId: '', pvp: '', models: '' }]);
+    setCollapsedGoas(prev => ({...prev, [goaId]: false}));
   };
   const handleUpdateSuggestion = (id, field, value) => {
     setSuggestedPlans((suggestedPlans || []).map(p => p.id === id ? { ...p, [field]: value } : p));
@@ -505,7 +636,7 @@ export default function App() {
     if (!curve || !rule) return 0;
 
     const totalPzsPerRun = (curve.weights || '').split(',').map(w => Number(w.trim())).reduce((a, b) => a + b, 0);
-    const goaNameUpper = goaName.toUpperCase();
+    const goaNameUpper = String(goaName).toUpperCase();
     let pzs = 0;
     (stores || []).forEach(store => {
       let c = (store.clusters || {})[goaName] || (store.clusters || {})[goaNameUpper] || activeClusters[activeClusters.length - 1];
@@ -515,36 +646,106 @@ export default function App() {
     return pzs;
   };
 
-  const handleAutoSuggest = (planId) => {
-    const plan = (suggestedPlans || []).find(p => p.id === planId);
-    if(!plan || !plan.curveId || !plan.ruleId) { alert("Selecciona Curva y Regla."); return; }
-    
+  const processPlanLogic = (plan, allPlansToUpdate) => {
+    if(!plan.curveId || !plan.ruleId) return "Falta seleccionar Curva y Regla.";
     const goa = (goas || []).find(g => g.id === plan.goaId);
-    if(!goa) return;
+    if(!goa) return "GOA no encontrado.";
     
     const singleModelPzs = getPiecesForOneModel(goa.name, plan.curveId, plan.ruleId);
+    if(singleModelPzs <= 0) return "La regla y curva combinadas generan 0 piezas para las tiendas de este GOA. Valida la asignación de clústeres en Tab 1.";
     
-    if(singleModelPzs > 0) {
-      const otherPlans = (suggestedPlans || []).filter(p => p.goaId === goa.id && p.id !== planId);
-      let usedPzs = 0; let usedBudget = 0;
-      otherPlans.forEach(op => {
-         const opPzs = getPiecesForOneModel(goa.name, op.curveId, op.ruleId);
-         usedPzs += opPzs * (Number(op.models)||0);
-         usedBudget += opPzs * (Number(op.models)||0) * (Number(op.pvp)||0);
-      });
-      
-      const remainingPzs = Math.max(0, (goa.historyPzs || 0) - usedPzs);
-      const remainingBudget = Math.max(0, (goa.budget || 0) - usedBudget);
-      
-      const suggestedModels = remainingPzs > 0 ? Math.round(remainingPzs / singleModelPzs) : 1;
+    const otherPlans = allPlansToUpdate.filter(p => p.goaId === goa.id && p.id !== plan.id);
+    let usedPzs = 0; let usedBudget = 0;
+    otherPlans.forEach(op => {
+       const opPzs = getPiecesForOneModel(goa.name, op.curveId, op.ruleId);
+       usedPzs += opPzs * (Number(op.models)||0);
+       usedBudget += opPzs * (Number(op.models)||0) * (Number(op.pvp)||0);
+    });
+    
+    const remainingPzs = Math.max(0, (goa.historyPzs || 0) - usedPzs);
+    const remainingBudget = Math.max(0, (goa.budget || 0) - usedBudget);
+    
+    let suggestedModels = Number(plan.models) || 0;
+    let suggestedPvp = Number(plan.pvp) || 0;
+
+    if (suggestedPvp > 0 && suggestedModels === 0) {
+      const costPerModel = singleModelPzs * suggestedPvp;
+      suggestedModels = costPerModel > 0 ? Math.floor(remainingBudget / costPerModel) : 1;
+    } 
+    else if (suggestedModels > 0 && suggestedPvp === 0) {
       const actualPzs = suggestedModels * singleModelPzs;
-      const suggestedPvp = actualPzs > 0 ? (remainingBudget / actualPzs).toFixed(0) : 0;
-      
-      setSuggestedPlans((suggestedPlans || []).map(p => p.id === planId ? { ...p, models: suggestedModels || 1, pvp: suggestedPvp } : p));
+      suggestedPvp = actualPzs > 0 ? Math.round(remainingBudget / actualPzs) : 0;
+    } 
+    else {
+      if (remainingPzs > 0) {
+        suggestedModels = Math.round(remainingPzs / singleModelPzs) || 1;
+      } else {
+        const defaultPvp = 299;
+        const costPerModel = singleModelPzs * defaultPvp;
+        suggestedModels = costPerModel > 0 ? Math.floor(remainingBudget / costPerModel) : 1;
+      }
+      const actualPzs = suggestedModels * singleModelPzs;
+      suggestedPvp = actualPzs > 0 ? Math.round(remainingBudget / actualPzs) : 0;
+    }
+    
+    plan.models = suggestedModels || 1;
+    plan.pvp = suggestedPvp;
+    return null; 
+  };
+
+  const handleAutoSuggest = (planId) => {
+    const plansCopy = [...(suggestedPlans || [])];
+    const planIndex = plansCopy.findIndex(p => p.id === planId);
+    if(planIndex === -1) return;
+    
+    const errorMsg = processPlanLogic(plansCopy[planIndex], plansCopy);
+    if(errorMsg) alert(`⚠️ Imposible Resolver:\n\n${errorMsg}`);
+    else setSuggestedPlans(plansCopy);
+  };
+
+  const handleResolveAll = () => {
+    const plansCopy = [...(suggestedPlans || [])];
+    let resolvedCount = 0;
+    let errors = [];
+
+    const validGoasIds = goas.filter(g => g.budget > 0).map(g => g.id);
+    const plansToResolve = plansCopy.filter(p => validGoasIds.includes(p.goaId));
+
+    if (plansToResolve.length === 0) {
+      alert("No hay estrategias pendientes en los GOAs con Presupuesto activo.");
+      return;
+    }
+
+    plansToResolve.forEach(plan => {
+      const errorMsg = processPlanLogic(plan, plansCopy);
+      if (errorMsg) {
+        const goaName = goas.find(g => g.id === plan.goaId)?.name || 'GOA';
+        errors.push(`- ${goaName}: ${errorMsg}`);
+      } else {
+        resolvedCount++;
+      }
+    });
+
+    if (resolvedCount > 0) setSuggestedPlans(plansCopy);
+
+    if (errors.length > 0) {
+      alert(`✅ Se resolvieron ${resolvedCount} planes.\n\n⚠️ No se pudieron resolver los siguientes:\n${errors.slice(0,5).join('\n')}${errors.length>5?'\n... y otros más.':''}`);
+    } else {
+      alert(`✅ ¡Se resolvieron los ${resolvedCount} planes correctamente!`);
     }
   };
 
-  // --- REPORTES CONSOLIDADOS ---
+  const toggleGoaCollapse = (id) => {
+    setCollapsedGoas(prev => ({...prev, [id]: !prev[id]}));
+  };
+
+  // --- FILTROS TAB 1 Y REPORTES CONSOLIDADOS ---
+  const filteredStores = useMemo(() => {
+    if (filterGoa === 'ALL') return stores || [];
+    const filterUpper = filterGoa.toUpperCase();
+    return (stores || []).filter(s => Object.keys(s.clusters || {}).some(k => k.toUpperCase() === filterUpper));
+  }, [stores, filterGoa]);
+
   const reportData = useMemo(() => {
     const isSug = reportView === 'sugerido';
     
@@ -564,8 +765,8 @@ export default function App() {
         boughtPzs = p.reduce((acc, curr) => acc + (curr.totalPieces || 0), 0);
         spentValue = p.reduce((acc, curr) => acc + (curr.totalRetailValue || 0), 0);
       }
-      const budget = g.budget || 0;
-      const historyPzs = g.historyPzs || 0;
+      const budget = Number(g.budget) || 0;
+      const historyPzs = Number(g.historyPzs) || 0;
       return { ...g, boughtPzs, spentValue, otb: budget - spentValue, historyDiff: boughtPzs - historyPzs };
     });
 
@@ -575,7 +776,7 @@ export default function App() {
       (activeClusters || []).forEach(c => matrix[c] = { stores: 0, ruleRunsAvg: 0, pzs: 0, totalStoreInstances: 0 });
 
       (stores || []).forEach(store => {
-        const c = (store.clusters || {})[g.name] || (store.clusters || {})[(g.name || '').toUpperCase()] || activeClusters[activeClusters.length - 1];
+        const c = (store.clusters || {})[g.name] || (store.clusters || {})[String(g.name || '').toUpperCase()] || activeClusters[activeClusters.length - 1];
         if(matrix[c]) matrix[c].stores += 1;
       });
 
@@ -626,27 +827,32 @@ export default function App() {
     return { goaMetrics, matrixByGoa };
   }, [purchases, stores, goas, activeClusters, reportView, suggestedPlans, calcRules, sizeCurves]);
 
+  // --- CÓDIGO DE AGREGACIÓN EXTERNO ---
   const storeStats = useMemo(() => {
     const stats = {
-      total: (stores || []).length,
-      goas:  (goas  || []).length,
+      total: (filteredStores || []).length,
+      goas:  filterGoa === 'ALL' ? (goas || []).length : 1,
       clusters: { 'Sin Asignar': 0 },
     };
     (activeClusters || []).forEach(c => { stats.clusters[c] = 0; });
-    (stores || []).forEach(s => {
+    (filteredStores || []).forEach(s => {
       const clusterValues = Object.values(s.clusters || {});
       if (clusterValues.length === 0) {
         stats.clusters['Sin Asignar']++;
       } else {
-        const primary = clusterValues[0];
-        if (stats.clusters[primary] !== undefined) stats.clusters[primary]++;
+        const filterUpper = filterGoa.toUpperCase();
+        const realKey = Object.keys(s.clusters || {}).find(k => k.toUpperCase() === filterUpper);
+        const primary = filterGoa === 'ALL' ? s.globalCluster : (realKey ? s.clusters[realKey] : undefined);
+        
+        if (primary && stats.clusters[primary] !== undefined) stats.clusters[primary]++;
+        else stats.clusters['Sin Asignar']++;
       }
     });
     return stats;
-  }, [stores, goas, activeClusters]);
+  }, [filteredStores, goas, activeClusters, filterGoa]);
 
   const sortedStores = useMemo(() => {
-    return [...(stores || [])].sort((a, b) => {
+    return [...(filteredStores || [])].sort((a, b) => {
       let valA = a[storeSortBy];
       let valB = b[storeSortBy];
       if (typeof valA === 'string') {
@@ -657,7 +863,7 @@ export default function App() {
       if (valA > valB) return storeSortOrder === 'asc' ?  1 : -1;
       return 0;
     });
-  }, [stores, storeSortBy, storeSortOrder]);
+  }, [filteredStores, storeSortBy, storeSortOrder]);
 
   const toggleSort = (field) => {
     if (storeSortBy === field) {
@@ -668,7 +874,6 @@ export default function App() {
     }
   };
 
-  // --- OBTENER RESUMEN POR TIENDA (DINÁMICO) ---
   const storeSummaryData = useMemo(() => {
     const isSug = reportView === 'sugerido';
     return (stores || []).map(store => {
@@ -677,7 +882,7 @@ export default function App() {
         (suggestedPlans || []).forEach(plan => {
           const goa = (goas || []).find(g => g.id === plan.goaId);
           if (goa) {
-            const c = (store.clusters || {})[goa.name] || (store.clusters || {})[(goa.name || '').toUpperCase()] || activeClusters[activeClusters.length - 1];
+            const c = (store.clusters || {})[goa.name] || (store.clusters || {})[String(goa.name || '').toUpperCase()] || activeClusters[activeClusters.length - 1];
             const rule = (calcRules || []).find(r => r.id === Number(plan.ruleId));
             const curve = (sizeCurves || []).find(cv => cv.id === Number(plan.curveId));
             if (rule && curve) {
@@ -702,6 +907,7 @@ export default function App() {
   return (
     <div className={`min-h-screen font-sans pb-12 transition-colors duration-300 ${t.appBg}`}>
       
+      {/* HEADER Y MINI MENU */}
       <header className={`border-b sticky top-0 z-20 transition-colors duration-300 ${t.header}`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
@@ -751,7 +957,7 @@ export default function App() {
               <EmptyState 
                 icon={Store} title="Configura la Base de Tiendas" 
                 desc="Para comenzar a planear, necesitamos calificar tus sucursales."
-                rules={["Centro (Ej. 0953)", "Nombre (Ej. Tienda Norte)", "GOA / Familia (Ej. Chancla)", "Ventas (Numérico)", "Margen (Opcional)", "Rotacion (Opcional)"]}
+                rules={["Centro (Ej. 0953)", "Nombre (Ej. Tienda Norte)", "GOA / Familia (Ej. Chancla)", "Ventas en Unidades (Numérico)", "Utilidad en $ (Opcional)", "Rotacion (Opcional)"]}
                 theme={theme} t={t}
                 action={
                   <label className={`cursor-pointer px-6 py-3.5 rounded-xl text-sm font-black tracking-wider uppercase transition shadow-lg flex items-center hover:scale-105 transform duration-200 ${t.btnPrimary}`}>
@@ -786,7 +992,7 @@ export default function App() {
                     </div>
                     <div className="flex flex-wrap gap-4">
                       <div className="flex flex-col"><label className={`text-[10px] font-bold uppercase ${t.textMuted}`}>Venta ({scoreWeights.sales}%)</label><input type="range" min="0" max="100" value={scoreWeights.sales} onChange={e=>setScoreWeights({...scoreWeights, sales: Number(e.target.value)})} className="w-24 accent-purple-500 cursor-pointer" /></div>
-                      <div className="flex flex-col"><label className={`text-[10px] font-bold uppercase ${t.textMuted}`}>Margen ({scoreWeights.margin}%)</label><input type="range" min="0" max="100" value={scoreWeights.margin} onChange={e=>setScoreWeights({...scoreWeights, margin: Number(e.target.value)})} className="w-24 accent-yellow-500 cursor-pointer" /></div>
+                      <div className="flex flex-col"><label className={`text-[10px] font-bold uppercase ${t.textMuted}`}>Utilidad ({scoreWeights.margin}%)</label><input type="range" min="0" max="100" value={scoreWeights.margin} onChange={e=>setScoreWeights({...scoreWeights, margin: Number(e.target.value)})} className="w-24 accent-yellow-500 cursor-pointer" /></div>
                       <div className="flex flex-col"><label className={`text-[10px] font-bold uppercase ${t.textMuted}`}>Rotación ({scoreWeights.rotation}%)</label><input type="range" min="0" max="100" value={scoreWeights.rotation} onChange={e=>setScoreWeights({...scoreWeights, rotation: Number(e.target.value)})} className="w-24 accent-blue-500 cursor-pointer" /></div>
                     </div>
                   </div>
@@ -795,14 +1001,14 @@ export default function App() {
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                   <div className={`p-4 rounded-xl border flex items-center space-x-4 border-l-4 border-l-purple-500 relative overflow-hidden ${t.card}`}>
                     <div className={`p-3 rounded-full relative z-10 ${t.iconAccent1}`}><Store size={24}/></div>
-                    <div className="relative z-10"><p className={`text-xs font-bold uppercase tracking-wider ${t.textMuted}`}>Total Tiendas</p><p className={`text-3xl font-black ${t.textMain}`}>{storeStats.total || 0}</p></div>
+                    <div className="relative z-10"><p className={`text-xs font-bold uppercase tracking-wider ${t.textMuted}`}>Total Tiendas {filterGoa !== 'ALL' && '(En GOA)'}</p><p className={`text-3xl font-black ${t.textMain}`}>{storeStats.total || 0}</p></div>
                   </div>
                   <div className={`p-4 rounded-xl border flex items-center space-x-4 border-l-4 border-l-blue-500 relative overflow-hidden ${t.card}`}>
                     <div className={`p-3 rounded-full relative z-10 ${t.iconAccent2}`}><Package size={24}/></div>
                     <div className="relative z-10"><p className={`text-xs font-bold uppercase tracking-wider ${t.textMuted}`}>Categorías (GOAs)</p><p className={`text-3xl font-black ${t.textMain}`}>{storeStats.goas || 0}</p></div>
                   </div>
                   <div className={`p-4 rounded-xl border border-l-4 border-l-gray-500 ${t.card}`}>
-                    <p className={`text-xs font-bold uppercase tracking-wider mb-2 ${t.textMuted}`}>Distribución Global</p>
+                    <p className={`text-xs font-bold uppercase tracking-wider mb-2 ${t.textMuted}`}>Distribución {filterGoa !== 'ALL' ? filterGoa : 'Global'}</p>
                     <div className="flex justify-between items-end px-2 overflow-x-auto custom-scrollbar pb-1">
                       {activeClusters.map(c => (
                         <div key={`clust-stat-${c}`} className="flex flex-col items-center mx-1"><span className={`text-[10px] font-black mb-1 ${c === activeClusters[0] ? t.textAccent1 : c === activeClusters[1] ? t.textAccent2 : t.textMuted}`}>{c}</span><span className={`text-sm font-bold ${t.textMain}`}>{storeStats.clusters[c] || 0}</span></div>
@@ -816,11 +1022,24 @@ export default function App() {
                     <div>
                       <h2 className={`text-xl font-bold ${t.textMain}`}>Base de Tiendas y Calificación</h2>
                     </div>
-                    <div className="flex flex-wrap gap-2">
+                    <div className="flex flex-wrap gap-2 items-center">
+                      
+                      {/* FILTRO POR GOA */}
+                      <div className={`flex rounded-lg p-1 border ${t.cardInner}`}>
+                        <select value={filterGoa} onChange={(e) => setFilterGoa(e.target.value)} className={`bg-transparent outline-none text-[10px] font-bold ${t.textMain} px-2 py-1`}>
+                          <option value="ALL">Todos los GOAs</option>
+                          {(goas || []).map(g => <option key={g.id} value={g.name}>{g.name}</option>)}
+                        </select>
+                      </div>
+
                       <div className={`flex rounded-lg p-1 border ${t.cardInner}`}>
                         <button onClick={()=>toggleSort('score')} className={`px-2 py-1 text-[10px] font-bold rounded flex items-center transition ${storeSortBy==='score'? (theme==='dark'?'bg-zinc-800 text-yellow-400':'bg-white shadow text-blue-600') : t.textMuted}`}>Score <ArrowUpDown size={10} className="ml-1"/></button>
                         <button onClick={()=>toggleSort('sales')} className={`px-2 py-1 text-[10px] font-bold rounded flex items-center transition ${storeSortBy==='sales'? (theme==='dark'?'bg-zinc-800 text-yellow-400':'bg-white shadow text-blue-600') : t.textMuted}`}>Vtas <ArrowUpDown size={10} className="ml-1"/></button>
                       </div>
+
+                      <button onClick={handleDownloadMatrix} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center transition ${t.btnGhost}`}>
+                        <Download size={16} className="mr-2" /> Exportar Matriz
+                      </button>
                       
                       <label className={`cursor-pointer px-4 py-2 rounded-lg text-sm font-bold flex items-center transition ${t.btnGhost}`}>
                         <Upload size={16} className="mr-2" /> Actualizar CSV
@@ -831,27 +1050,35 @@ export default function App() {
                   <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
                     {sortedStores.map(store => (
                       <div key={store.id} className={`p-4 rounded-xl shadow-sm transition-colors group border hover:border-purple-500/50 ${t.cardInner}`}>
-                        <div className="flex justify-between items-center mb-2"><p className={`text-sm font-bold truncate ${t.textMain}`} title={store.name}>{store.name}</p><span className={`text-[10px] px-2 py-0.5 rounded border font-mono ${t.badgeOther}`}>{store.centerCode}</span></div>
+                        <div className="flex justify-between items-center mb-2">
+                          <p className={`text-sm font-bold truncate ${t.textMain}`} title={store.name}>{store.name}</p>
+                          <div className="flex flex-col items-end">
+                            <span className={`text-[10px] px-2 py-0.5 rounded border font-mono ${t.badgeOther}`}>{store.centerCode}</span>
+                            <span className={`text-[8px] mt-1 font-black px-1.5 py-0.5 rounded ${store.globalCluster === activeClusters[0] ? t.badgeAA : store.globalCluster === activeClusters[1] ? t.badgeA : t.badgeOther}`}>GBL: {store.globalCluster || '-'}</span>
+                          </div>
+                        </div>
                         <div className={`rounded-lg p-2 mb-4 mt-3 grid grid-cols-3 gap-2 text-center divide-x border ${theme==='dark'?'divide-zinc-800 bg-zinc-900 border-zinc-800':'divide-gray-200 bg-white border-gray-100'}`}>
-                          <div><p className={`text-[8px] uppercase font-bold tracking-wider ${t.textMuted}`}>Ventas</p><p className={`text-[10px] font-bold ${t.textMain}`}>${(store.sales || 0).toLocaleString()}</p></div>
-                          <div><p className={`text-[8px] uppercase font-bold tracking-wider ${t.textMuted}`}>Mg</p><p className={`text-[10px] font-bold ${t.textMain}`}>{(store.margin || 0).toFixed(1)}%</p></div>
-                          <div><p className={`text-[8px] uppercase font-bold tracking-wider ${t.textMuted}`}>Rot</p><p className={`text-[10px] font-bold ${t.textMain}`}>{(store.rotation || 0).toFixed(1)}</p></div>
+                          <div><p className={`text-[8px] uppercase font-bold tracking-wider ${t.textMuted}`}>Ventas (Pzs)</p><p className={`text-[10px] font-bold ${t.textMain}`}>{(store.sales || 0).toLocaleString()}</p></div>
+                          <div><p className={`text-[8px] uppercase font-bold tracking-wider ${t.textMuted}`}>Mg (%)</p><p className={`text-[10px] font-bold ${t.textMain}`}>{Math.round(store.margin || 0)}%</p></div>
+                          <div><p className={`text-[8px] uppercase font-bold tracking-wider ${t.textMuted}`}>Rotación</p><p className={`text-[10px] font-bold ${t.textMain}`}>{(store.rotation || 0).toFixed(1)}</p></div>
                           <div className={`col-span-3 pt-2 border-t divide-none mt-1 flex justify-between px-2 items-center ${theme==='dark'?'border-zinc-800':'border-gray-100'}`}>
-                             <p className={`text-[9px] uppercase font-black tracking-widest ${t.textAccent2}`}>Score Calificación:</p>
+                             <p className={`text-[9px] uppercase font-black tracking-widest ${t.textAccent2}`}>Score Promedio:</p>
                              <p className={`text-sm font-black leading-tight ${t.textAccent2}`}>{Math.round(store.score || 0).toLocaleString()}</p>
                           </div>
                         </div>
                         <div className="space-y-1.5">
                           <p className={`text-[10px] uppercase font-bold tracking-wider ${t.textMuted}`}>Asignación por GOA:</p>
-                          {Object.keys(store.clusters || {}).length === 0 && <span className="text-xs text-red-500">Sin clúster asignado</span>}
-                          {Object.entries(store.clusters || {}).map(([goa, cluster]) => (
-                            <div key={`goa-${goa}`} className={`flex justify-between items-center text-xs border-b pb-1.5 ${t.border}`}>
-                              <span className={`truncate max-w-[120px] font-medium ${t.textMuted}`} title={goa}>{goa}</span>
-                              <select value={cluster} onChange={(e) => handleUpdateStoreCluster(store.id, goa, e.target.value)} className={`font-black p-1 rounded outline-none cursor-pointer border ${cluster === activeClusters[0] ? t.badgeAA : cluster === activeClusters[1] ? t.badgeA : t.badgeOther}`}>
-                                {activeClusters.map(c => <option key={`opt-${c}`} value={c} className={theme==='dark'?'bg-zinc-900 text-white':''}>{c}</option>)}
-                              </select>
-                            </div>
-                          ))}
+                          <div className="max-h-32 overflow-y-auto custom-scrollbar pr-1">
+                            {Object.keys(store.clusters || {}).length === 0 && <span className="text-xs text-red-500">Sin clúster asignado</span>}
+                            {Object.entries(store.clusters || {}).map(([goa, cluster]) => (
+                              <div key={`goa-${goa}`} className={`flex justify-between items-center text-xs border-b pb-1.5 ${t.border} mb-1.5`}>
+                                <span className={`truncate max-w-[120px] font-medium ${t.textMuted}`} title={goa}>{goa}</span>
+                                <select value={cluster} onChange={(e) => handleUpdateStoreCluster(store.id, goa, e.target.value)} className={`font-black p-1 rounded outline-none cursor-pointer border ${cluster === activeClusters[0] ? t.badgeAA : cluster === activeClusters[1] ? t.badgeA : t.badgeOther}`}>
+                                  {activeClusters.map(c => <option key={`opt-${c}`} value={c} className={theme==='dark'?'bg-zinc-900 text-white':''}>{c}</option>)}
+                                </select>
+                              </div>
+                            ))}
+                          </div>
                         </div>
                       </div>
                     ))}
@@ -968,12 +1195,12 @@ export default function App() {
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                 <h2 className={`text-xl font-bold flex items-center ${t.textMain}`}><Database className={`mr-3 ${t.textAccent1}`}/> Forecast y Curvas Mensuales</h2>
                 <div className="flex space-x-3">
-                  <button onClick={handleLoadForecast} className={`px-4 py-2.5 rounded-lg text-sm font-bold flex items-center transition bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg`}>
+                  <button onClick={handleLoadForecastFromContext} className={`px-4 py-2.5 rounded-lg text-sm font-bold flex items-center transition bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg`}>
                     <Database size={16} className="mr-2" /> Extraer de Forecast
                   </button>
                   <label className={`cursor-pointer px-4 py-2.5 rounded-lg text-sm font-bold flex items-center transition ${t.btnGhost} shadow-lg`}>
-                    <Upload size={16} className="mr-2" /> Importar Manual (.CSV)
-                    <input type="file" accept=".csv" onClick={(e) => e.target.value = null} onChange={handleBudgetCSVUpload} className="hidden" />
+                    <Upload size={16} className="mr-2" /> Importar CSV
+                    <input type="file" accept=".csv" onClick={(e) => e.target.value = null} onChange={handleForecastCSVUpload} className="hidden" />
                   </label>
                 </div>
               </div>
@@ -998,10 +1225,18 @@ export default function App() {
                     {goas.map(g => (
                       <tr key={g.id} className={`transition ${t.tableRow}`}>
                         <td className={`p-4 font-bold ${t.textMain}`}>{g.name}</td>
-                        <td className={`p-4 text-right font-black tracking-wide ${t.textAccent2}`}>${(g.budget || 0).toLocaleString()}</td>
-                        <td className={`p-4 text-right font-bold ${t.textMuted}`}>{(g.historyPzs || 0).toLocaleString()} pzs</td>
+                        <td className={`p-2 text-right font-black tracking-wide ${t.textAccent2}`}>
+                          <div className="flex items-center justify-end">
+                            $<input type="number" value={g.budget} onChange={(e) => handleUpdateGoaField(g.id, 'budget', e.target.value)} className={`w-24 text-right bg-transparent outline-none border-b border-transparent focus:border-yellow-500 ${t.textAccent2}`} />
+                          </div>
+                        </td>
+                        <td className={`p-2 text-right font-bold ${t.textMuted}`}>
+                          <input type="number" value={g.historyPzs} onChange={(e) => handleUpdateGoaField(g.id, 'historyPzs', e.target.value)} className={`w-20 text-right bg-transparent outline-none border-b border-transparent focus:border-purple-500`} /> pzs
+                        </td>
                         {(g.months || [16.6,16.6,16.6,16.6,16.6,17]).map((m, i) => (
-                           <td key={`mes-${g.id}-${i}`} className={`p-3 text-center text-xs font-mono border-l border-black/5 ${t.textMain}`}>{m}%</td>
+                           <td key={`mes-${g.id}-${i}`} className={`p-2 text-center text-xs font-mono border-l border-black/5 ${t.textMain}`}>
+                             <input type="number" value={Number(m?.value ?? m) || 0} onChange={(e) => handleUpdateGoaField(g.id, 'months', e.target.value, i)} className={`w-12 text-center bg-transparent outline-none border-b border-transparent focus:border-gray-400`} />%
+                           </td>
                         ))}
                       </tr>
                     ))}
@@ -1146,10 +1381,14 @@ export default function App() {
                           <p className={`text-xs mt-1 ${t.textMuted}`}>Crea "combos" de compras por GOA.</p>
                         </div>
                       </div>
+                      <button onClick={handleResolveAll} className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition flex items-center shadow-lg bg-indigo-600 hover:bg-indigo-500 text-white`}>
+                        <Wand2 size={14} className="mr-2"/> Resolver Todos
+                      </button>
                     </div>
                     
-                    <div className="p-6 space-y-8">
-                      {goas.map(goa => {
+                    <div className="p-6 space-y-4">
+                      {/* FILTRAMOS SOLO LOS QUE TIENEN PRESUPUESTO */}
+                      {goas.filter(g => g.budget > 0).map(goa => {
                         const goaPlans = (suggestedPlans || []).filter(p => p.goaId === goa.id);
                         let goaPzs = 0; let goaSpent = 0;
                         goaPlans.forEach(plan => {
@@ -1159,13 +1398,19 @@ export default function App() {
                         });
                         const diffHist = goaPzs - (goa.historyPzs || 0);
                         const otbRestante = (goa.budget || 0) - goaSpent;
+                        const isCollapsed = collapsedGoas[goa.id];
 
                         return (
                           <div key={goa.id} className={`rounded-xl border overflow-hidden ${theme==='dark'?'border-zinc-800 bg-zinc-950':'border-gray-200 bg-white shadow-sm'}`}>
-                            <div className={`p-4 flex justify-between items-center border-b ${theme==='dark'?'border-zinc-800 bg-zinc-900/50':'border-gray-200 bg-gray-50'}`}>
-                              <div>
-                                <h3 className={`font-black text-lg tracking-wide ${t.textMain}`}>{goa.name}</h3>
-                                <p className={`text-xs font-bold mt-1 ${t.textMuted}`}>Ppto Inicial: <span className={t.textAccent2}>${(goa.budget || 0).toLocaleString()}</span> | Hist: {(goa.historyPzs || 0).toLocaleString()} pzs</p>
+                            <div className={`p-4 flex justify-between items-center border-b cursor-pointer transition hover:bg-black/5 ${theme==='dark'?'border-zinc-800 bg-zinc-900/50':'border-gray-200 bg-gray-50'}`} onClick={() => toggleGoaCollapse(goa.id)}>
+                              <div className="flex items-center">
+                                <button className={`p-1 mr-2 rounded-md ${t.btnGhost}`}>
+                                  {isCollapsed ? <ChevronRight size={18}/> : <ChevronDown size={18}/>}
+                                </button>
+                                <div>
+                                  <h3 className={`font-black text-lg tracking-wide ${t.textMain}`}>{goa.name}</h3>
+                                  <p className={`text-xs font-bold mt-1 ${t.textMuted}`}>Ppto Inicial: <span className={t.textAccent2}>${(goa.budget || 0).toLocaleString()}</span> | Hist: {(goa.historyPzs || 0).toLocaleString()} pzs</p>
+                                </div>
                               </div>
                               <div className="flex gap-4 text-right">
                                 <div>
@@ -1179,61 +1424,63 @@ export default function App() {
                               </div>
                             </div>
 
-                            <div className="p-4">
-                              {goaPlans.length > 0 ? (
-                                <table className="w-full text-sm text-left">
-                                  <thead className={`text-[10px] uppercase tracking-wider ${t.textMuted}`}>
-                                    <tr>
-                                      <th className="pb-2">Estrategia</th>
-                                      <th className="pb-2 text-center w-32">Automático</th>
-                                      <th className="pb-2 w-24 text-center">Modelos</th>
-                                      <th className="pb-2 w-24 text-center">PVP ($)</th>
-                                      <th className="pb-2 text-right">Total Pzs</th>
-                                      <th className="pb-2 text-right">Inversión</th>
-                                      <th className="pb-2"></th>
-                                    </tr>
-                                  </thead>
-                                  <tbody className="space-y-2">
-                                    {goaPlans.map(plan => {
-                                      const singleModelPzs = getPiecesForOneModel(goa.name, plan.curveId, plan.ruleId);
-                                      const totalPzs = singleModelPzs * (Number(plan.models) || 0);
-                                      const totalCost = totalPzs * (Number(plan.pvp) || 0);
-                                      
-                                      return (
-                                        <tr key={plan.id} className={`group ${theme==='dark'?'bg-black':'bg-gray-50'} rounded-lg border-b border-transparent hover:border-zinc-800`}>
-                                          <td className="py-2 pr-2">
-                                            <div className="flex space-x-2">
-                                              <select value={plan.curveId} onChange={e=>handleUpdateSuggestion(plan.id, 'curveId', e.target.value)} className={`w-1/2 p-2 rounded text-xs outline-none ${t.input}`}>
-                                                <option value="">Curva...</option>{sizeCurves.map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
-                                              </select>
-                                              <select value={plan.ruleId} onChange={e=>handleUpdateSuggestion(plan.id, 'ruleId', e.target.value)} className={`w-1/2 p-2 rounded text-xs outline-none ${t.input}`}>
-                                                <option value="">Regla...</option>{calcRules.map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
-                                              </select>
-                                            </div>
-                                          </td>
-                                          <td className="py-2 px-2 text-center">
-                                            <button onClick={()=>handleAutoSuggest(plan.id)} className={`px-2 py-1.5 rounded text-[10px] uppercase font-black tracking-widest transition flex items-center justify-center w-full shadow-sm ${t.btnPrimary}`}>
-                                              <Wand2 size={12} className="mr-1"/> Resolver
-                                            </button>
-                                          </td>
-                                          <td className="py-2 px-2"><input type="number" min="1" value={plan.models} onChange={e=>handleUpdateSuggestion(plan.id, 'models', e.target.value)} className={`w-full p-2 rounded text-xs text-center font-bold outline-none ${t.input}`} /></td>
-                                          <td className="py-2 px-2"><input type="number" value={plan.pvp} onChange={e=>handleUpdateSuggestion(plan.id, 'pvp', e.target.value)} placeholder="0.00" className={`w-full p-2 rounded text-xs font-bold text-center outline-none ${t.inputYellow}`} /></td>
-                                          
-                                          <td className={`py-2 px-2 text-right font-bold ${t.textMain}`}>{totalPzs > 0 ? totalPzs.toLocaleString() : '-'}</td>
-                                          <td className={`py-2 px-2 text-right font-bold ${t.textAccent2}`}>{totalCost > 0 ? `$${totalCost.toLocaleString()}` : '-'}</td>
-                                          <td className="py-2 pl-2 text-right"><button onClick={()=>removeSuggestion(plan.id)} className={`p-1.5 rounded transition opacity-0 group-hover:opacity-100 ${t.btnDanger}`}><Trash2 size={14}/></button></td>
-                                        </tr>
-                                      )
-                                    })}
-                                  </tbody>
-                                </table>
-                              ) : (
-                                 <p className={`text-sm italic text-center py-4 ${t.textMuted}`}>No hay estrategias en este GOA.</p>
-                              )}
-                              <button onClick={()=>handleAddSuggestion(goa.id)} className={`mt-3 w-full py-2.5 border border-dashed rounded-lg text-xs font-bold uppercase tracking-widest transition flex items-center justify-center ${theme==='dark'?'border-zinc-700 text-zinc-500 hover:text-purple-400 hover:border-purple-500':'border-gray-300 text-gray-400 hover:text-blue-500 hover:border-blue-300'}`}>
-                                <Plus size={14} className="mr-1"/> Agregar Estrategia
-                              </button>
-                            </div>
+                            {!isCollapsed && (
+                              <div className="p-4">
+                                {goaPlans.length > 0 ? (
+                                  <table className="w-full text-sm text-left">
+                                    <thead className={`text-[10px] uppercase tracking-wider ${t.textMuted}`}>
+                                      <tr>
+                                        <th className="pb-2">Estrategia</th>
+                                        <th className="pb-2 text-center w-32">Automático</th>
+                                        <th className="pb-2 w-24 text-center">Modelos</th>
+                                        <th className="pb-2 w-24 text-center">PVP ($)</th>
+                                        <th className="pb-2 text-right">Total Pzs</th>
+                                        <th className="pb-2 text-right">Inversión</th>
+                                        <th className="pb-2"></th>
+                                      </tr>
+                                    </thead>
+                                    <tbody className="space-y-2">
+                                      {goaPlans.map(plan => {
+                                        const singleModelPzs = getPiecesForOneModel(goa.name, plan.curveId, plan.ruleId);
+                                        const totalPzs = singleModelPzs * (Number(plan.models) || 0);
+                                        const totalCost = totalPzs * (Number(plan.pvp) || 0);
+                                        
+                                        return (
+                                          <tr key={plan.id} className={`group ${theme==='dark'?'bg-black':'bg-gray-50'} rounded-lg border-b border-transparent hover:border-zinc-800`}>
+                                            <td className="py-2 pr-2">
+                                              <div className="flex space-x-2">
+                                                <select value={plan.curveId} onChange={e=>handleUpdateSuggestion(plan.id, 'curveId', e.target.value)} className={`w-1/2 p-2 rounded text-xs outline-none ${t.input}`}>
+                                                  <option value="">Curva...</option>{(sizeCurves || []).map(c=><option key={c.id} value={c.id}>{c.name}</option>)}
+                                                </select>
+                                                <select value={plan.ruleId} onChange={e=>handleUpdateSuggestion(plan.id, 'ruleId', e.target.value)} className={`w-1/2 p-2 rounded text-xs outline-none ${t.input}`}>
+                                                  <option value="">Regla...</option>{(calcRules || []).map(r=><option key={r.id} value={r.id}>{r.name}</option>)}
+                                                </select>
+                                              </div>
+                                            </td>
+                                            <td className="py-2 px-2 text-center">
+                                              <button onClick={()=>handleAutoSuggest(plan.id)} className={`px-2 py-1.5 rounded text-[10px] uppercase font-black tracking-widest transition flex items-center justify-center w-full shadow-sm ${t.btnPrimary}`}>
+                                                <Wand2 size={12} className="mr-1"/> Resolver
+                                              </button>
+                                            </td>
+                                            <td className="py-2 px-2"><input type="number" min="1" value={plan.models} onChange={e=>handleUpdateSuggestion(plan.id, 'models', e.target.value)} className={`w-full p-2 rounded text-xs text-center font-bold outline-none ${t.input}`} /></td>
+                                            <td className="py-2 px-2"><input type="number" value={plan.pvp} onChange={e=>handleUpdateSuggestion(plan.id, 'pvp', e.target.value)} placeholder="0.00" className={`w-full p-2 rounded text-xs font-bold text-center outline-none ${t.inputYellow}`} /></td>
+                                            
+                                            <td className={`py-2 px-2 text-right font-bold ${t.textMain}`}>{totalPzs > 0 ? totalPzs.toLocaleString() : '-'}</td>
+                                            <td className={`py-2 px-2 text-right font-bold ${t.textAccent2}`}>{totalCost > 0 ? `$${totalCost.toLocaleString()}` : '-'}</td>
+                                            <td className="py-2 pl-2 text-right"><button onClick={()=>removeSuggestion(plan.id)} className={`p-1.5 rounded transition opacity-0 group-hover:opacity-100 ${t.btnDanger}`}><Trash2 size={14}/></button></td>
+                                          </tr>
+                                        )
+                                      })}
+                                    </tbody>
+                                  </table>
+                                ) : (
+                                   <p className={`text-sm italic text-center py-4 ${t.textMuted}`}>No hay estrategias en este GOA.</p>
+                                )}
+                                <button onClick={()=>handleAddSuggestion(goa.id)} className={`mt-3 w-full py-2.5 border border-dashed rounded-lg text-xs font-bold uppercase tracking-widest transition flex items-center justify-center ${theme==='dark'?'border-zinc-700 text-zinc-500 hover:text-purple-400 hover:border-purple-500':'border-gray-300 text-gray-400 hover:text-blue-500 hover:border-blue-300'}`}>
+                                  <Plus size={14} className="mr-1"/> Agregar Estrategia
+                                </button>
+                              </div>
+                            )}
                           </div>
                         )
                       })}
@@ -1310,8 +1557,8 @@ export default function App() {
                             <td className={`p-3 font-black border-r ${t.border} ${t.textAccent2}`}>{(g.boughtPzs || 0).toLocaleString()} pzs</td>
                             {(g.months || [16.6,16.6,16.6,16.6,16.6,17]).map((w, i) => (
                                <td key={`mes-sug-${g.id}-${i}`} className={`p-3 border-r font-medium ${t.border} ${theme==='dark'?'text-gray-300':'text-gray-700'}`}>
-                                  <span className={`block text-[9px] mb-1 font-mono ${t.textMuted}`}>{w}%</span>
-                                  {Math.round((g.boughtPzs || 0) * (w / 100)).toLocaleString()}
+                                  <span className={`block text-[9px] mb-1 font-mono ${t.textMuted}`}>{Number(w?.value ?? w) || 0}%</span>
+                                  {Math.round((g.boughtPzs || 0) * ((Number(w?.value ?? w) || 0) / 100)).toLocaleString()}
                                </td>
                             ))}
                           </tr>
@@ -1339,10 +1586,10 @@ export default function App() {
                         </tr>
                       </thead>
                       <tbody className={`divide-y ${t.border}`}>
-                        {reportData.storeSummary.length === 0 && (
+                        {(storeSummaryData || []).length === 0 && (
                           <tr><td colSpan="4" className={`p-8 text-center text-xs italic ${t.textMuted}`}>Aún no hay datos en esta vista.</td></tr>
                         )}
-                        {reportData.storeSummary.map(s => {
+                        {(storeSummaryData || []).map(s => {
                           if((s.storeTotalPzs || 0) === 0) return null;
                           return (
                             <tr key={s.id} className={`transition ${t.tableRow}`}>
@@ -1375,13 +1622,13 @@ export default function App() {
                       Matriz de Distribución ({reportView === 'sugerido' ? 'Sugerida' : 'Real'})
                     </h2>
                     
-                    {Object.keys(reportData.matrixByGoa || {}).length === 0 || Object.values(reportData.matrixByGoa).every(d => d.reduce((acc, row) => acc + row.totalPzs, 0) === 0) ? (
+                    {Object.keys(reportData?.matrixByGoa || {}).length === 0 || Object.values(reportData?.matrixByGoa || {}).every(d => (d || []).reduce((acc, row) => acc + (row.totalPzs || 0), 0) === 0) ? (
                       <p className={`text-sm italic p-4 text-center ${t.textMuted}`}>No hay modelos suficientes para graficar la matriz en esta vista.</p>
                     ) : null}
                     
-                    {Object.entries(reportData.matrixByGoa || {}).map(([goaName, data]) => {
-                      const totalTiendas = data.reduce((acc, row) => acc + (row.numStores || 0), 0);
-                      const totalPiezas = data.reduce((acc, row) => acc + (row.totalPzs || 0), 0);
+                    {Object.entries(reportData?.matrixByGoa || {}).map(([goaName, data]) => {
+                      const totalTiendas = (data || []).reduce((acc, row) => acc + (row.numStores || 0), 0);
+                      const totalPiezas = (data || []).reduce((acc, row) => acc + (row.totalPzs || 0), 0);
                       
                       if(totalPiezas === 0) return null;
 
@@ -1401,7 +1648,7 @@ export default function App() {
                               </tr>
                             </thead>
                             <tbody className={`divide-y ${t.border}`}>
-                              {data.map(row => (
+                              {(data || []).map(row => (
                                 <tr key={`row-${row.cluster}`} className={`transition ${t.tableRow}`}>
                                   <td className={`p-3 font-black border-r ${t.border} ${row.cluster===activeClusters[0]?t.textAccent1:row.cluster===activeClusters[1]?t.textAccent2:t.textMuted}`}>{row.cluster}</td>
                                   <td className={`p-3 border-r ${t.border} ${t.textMuted}`}>{row.numStores}</td>
@@ -1429,6 +1676,29 @@ export default function App() {
         )}
 
       </main>
+
+      {/* MODAL PARA GUARDAR SESIÓN */}
+      {isSaveModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className={`w-96 p-6 rounded-2xl shadow-2xl border ${theme==='dark'?'bg-zinc-900 border-zinc-700':'bg-white border-gray-200'}`}>
+            <h3 className={`text-lg font-bold mb-4 ${t.textMain}`}>Guardar Sesión</h3>
+            <p className={`text-xs mb-4 ${t.textMuted}`}>Ingresa un nombre para identificar este escenario o GOA.</p>
+            <input
+              type="text"
+              placeholder="Ej. Escenario_Verano_2026"
+              value={saveFileName}
+              onChange={e => setSaveFileName(e.target.value)}
+              className={`w-full p-3 rounded-lg mb-6 text-sm font-bold ${t.input}`}
+              autoFocus
+            />
+            <div className="flex space-x-3">
+              <button onClick={() => setIsSaveModalOpen(false)} className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition ${t.btnGhost}`}>Cancelar</button>
+              <button onClick={confirmExportProject} className={`flex-1 py-2.5 rounded-lg text-sm font-black transition ${t.btnPrimary}`}>Descargar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <style dangerouslySetInnerHTML={{__html: `.custom-scrollbar::-webkit-scrollbar { width: 8px; height: 8px; } .custom-scrollbar::-webkit-scrollbar-track { background: transparent; } .custom-scrollbar::-webkit-scrollbar-thumb { background: ${theme === 'dark' ? '#3f3f46' : '#d1d5db'}; border-radius: 4px; } .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: ${theme === 'dark' ? '#52525b' : '#9ca3af'}; }`}} />
     </div>
   );
