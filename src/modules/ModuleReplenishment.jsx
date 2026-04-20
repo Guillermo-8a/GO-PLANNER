@@ -37,9 +37,14 @@ const calculateRegression = (data) => {
     return { m, b, r2 };
 };
 
-// --- ALGORITMO JITTER PARA EVITAR OVERLAP DE PUNTOS EN SCATTER PLOT ---
-const getJitterX = (i) => (i % 5 - 2) * 1.5; 
-const getJitterY = (i) => ((i * 3) % 5 - 2) * 1.5;
+// --- MEJOR ALGORITMO JITTER PARA EVITAR PATRONES DE LÍNEAS (NUBE ORGÁNICA) ---
+const pseudoRandom = (seed, salt) => {
+    // Función hash determinista más caótica para evitar "banding" (líneas)
+    let x = Math.sin(seed * 12.9898 + salt * 78.233) * 43758.5453123;
+    return x - Math.floor(x);
+};
+const getJitterX = (seed) => (pseudoRandom(seed, 1) - 0.5) * 22; // Dispersión de 22px
+const getJitterY = (seed) => (pseudoRandom(seed, 2) - 0.5) * 22;
 
 export default function App() {
     const [data, setData] = useState([]);
@@ -53,6 +58,9 @@ export default function App() {
     const [filterModelo, setFilterModelo] = useState('');
     const [filterNorma, setFilterNorma] = useState('');
     const [filterSku, setFilterSku] = useState('');
+    
+    // ORDENAMIENTO
+    const [sortBy, setSortBy] = useState('toBuy_desc');
     
     // DEFAULT A MES ACTUAL + 2
     const currentMonth = new Date().getMonth() + 1;
@@ -91,8 +99,9 @@ export default function App() {
 
         const firstLineCols = splitCSVLine(lines[0]).map(h => h.toLowerCase());
         
+        // Se agregaron meccion, vta acum y tend1 para detección robusta del header
         const isHeaderRow = firstLineCols.some(col => 
-            ['centro', 'tienda', 'seccion', 'sección', 'marca', 'proveedor', 'goa', 'modelo', 'sku', 'nombre', 'articulo', 'artículo', 'norma', 'oh', 'oo', 'm1_a1', 's1_a1', 'venta'].includes(col)
+            ['centro', 'tienda', 'seccion', 'sección', 'meccion', 'marca', 'proveedor', 'goa', 'modelo', 'sku', 'nombre', 'articulo', 'artículo', 'norma', 'oh', 'oo', 'm1_a1', 's1_a1', 'venta', 'vta acum', 'tend1'].includes(col)
         );
         
         if (isHeaderRow) {
@@ -140,16 +149,21 @@ export default function App() {
 
             const processedData = rawData.map((row, index) => {
                 const monthlySales = [];
+                let sumTotalY2 = 0; 
+                
                 for (let p = 1; p <= 52; p++) {
                     const val1 = row[`m${p}_a1`] ?? row[`mes${p}_a1`] ?? row[`s${p}_a1`]; 
                     const val2 = row[`m${p}_a2`] ?? row[`mes${p}_a2`] ?? row[`s${p}_a2`]; 
                     
                     if (val1 !== undefined || val2 !== undefined) {
+                        const y1 = Number(val1) || 0;
+                        const y2 = Number(val2) || 0;
                         monthlySales.push({
                             period: p,
-                            y1: Number(val1) || 0,
-                            y2: Number(val2) || 0
+                            y1: y1,
+                            y2: y2
                         });
+                        sumTotalY2 += y2;
                     }
                 }
 
@@ -157,15 +171,27 @@ export default function App() {
                     const v1 = findCol(row, ['venta', 'vta', 'año 1', 'ant']);
                     const v2 = findCol(row, ['año 2', 'act', 'año2']);
                     if (v1 !== undefined || v2 !== undefined) {
-                        monthlySales.push({ period: 1, y1: Number(v1) || 0, y2: Number(v2) || 0 });
+                        const y1 = Number(v1) || 0;
+                        const y2 = Number(v2) || 0;
+                        monthlySales.push({ period: 1, y1: y1, y2: y2 });
+                        sumTotalY2 += y2;
                     }
                 }
+                
+                // LÓGICA CORREGIDA PARA VTA ACUM: Toma estrictamente la columna de tu CSV
+                const vtaAcumCol = findCol(row, ['vta acum', 'vta_acumulada_act', 'vta act']);
+                const vtaAcumAct = (vtaAcumCol !== undefined && vtaAcumCol !== '') ? Number(vtaAcumCol) : sumTotalY2;
+
+                // LÓGICA PARA EXTRAER COLUMNAS tend1, tend2, tend3 SI EXISTEN
+                const tend1Val = findCol(row, ['tend1']);
+                const tend2Val = findCol(row, ['tend2']);
+                const tend3Val = findCol(row, ['tend3']);
 
                 return {
                     id: index + 1,
                     centro: row.centro || (isHeaderRow && findCol(row, ['centro', 'tienda', 'sucursal'])) || 'Sin Centro',
                     centro_num: row.centro_num || (isHeaderRow && findCol(row, ['centro_num', 'id_centro', 'num_centro', 'nodo'])) || '',
-                    seccion: row.seccion || (isHeaderRow && findCol(row, ['seccion', 'sección', 'dpto'])) || 'Sin Sección',
+                    seccion: row.seccion || (isHeaderRow && findCol(row, ['seccion', 'sección', 'meccion', 'dpto'])) || 'Sin Sección',
                     marca: row.marca || (isHeaderRow && findCol(row, ['marca', 'proveedor', 'vendor'])) || 'Sin Marca',
                     goa: row.goa || (isHeaderRow && findCol(row, ['goa', 'familia', 'subfamilia'])) || 'Sin GOA',
                     modelo: row.modelo || (isHeaderRow && findCol(row, ['modelo', 'estilo'])) || 'Sin Modelo',
@@ -174,6 +200,10 @@ export default function App() {
                     sku_nombre: row.sku_nombre || (isHeaderRow && findCol(row, ['sku_nombre', 'nombre', 'descripción', 'desc'])) || 'Sin Nombre',
                     oh: Number(row.oh || (isHeaderRow && findCol(row, ['oh', 'inv', 'físico', 'stock']))) || 0,
                     oo: Number(row.oo || (isHeaderRow && findCol(row, ['oo', 'transito', 'tránsito', 'pedido']))) || 0,
+                    vtaAcumAct: vtaAcumAct,
+                    tend1: tend1Val !== undefined && tend1Val !== '' ? Number(tend1Val) : null,
+                    tend2: tend2Val !== undefined && tend2Val !== '' ? Number(tend2Val) : null,
+                    tend3: tend3Val !== undefined && tend3Val !== '' ? Number(tend3Val) : null,
                     monthlySales: monthlySales.length > 0 ? monthlySales : [{period: 1, y1: 0, y2: 0}]
                 };
             });
@@ -218,7 +248,7 @@ export default function App() {
             setError("Error al leer el archivo local.");
             setIsSyncing(false);
         };
-        reader.readAsText(file);
+        reader.readAsText(file, 'ISO-8859-1');
     };
 
     const handleSync = async () => {
@@ -240,63 +270,92 @@ export default function App() {
         
         const goaAgg = {};
         const gcAgg = {};
+        const centroSalesMap = {};
+
+        const currentM = new Date().getMonth() + 1;
+        // Obtenemos los últimos 3 meses naturales anteriores al actual (Ej. Si estamos en Abril 4, usamos 1, 2, 3)
+        let actualRecentPeriods = [currentM - 3, currentM - 2, currentM - 1].filter(m => m > 0);
+        if (actualRecentPeriods.length === 0) actualRecentPeriods = [1];
+
+        data.forEach(row => {
+            const relevantPeriods = row.monthlySales.filter(m => m.period >= periodStart && m.period <= periodEnd);
+            const sumY2_base = relevantPeriods.reduce((acc, curr) => acc + curr.y2, 0);
+            centroSalesMap[row.centro] = (centroSalesMap[row.centro] || 0) + sumY2_base;
+        });
+        
+        const sortedCentros = Object.entries(centroSalesMap).sort((a, b) => b[1] - a[1]).map(e => e[0]);
+        const top15Centros = new Set(sortedCentros.slice(0, 15));
 
         if (calcMode === 'TD') {
             data.forEach(row => {
                 const relevantPeriods = row.monthlySales.filter(m => m.period >= periodStart && m.period <= periodEnd);
-                const sumY1 = relevantPeriods.reduce((acc, curr) => acc + curr.y1, 0);
-                const sumY2 = relevantPeriods.reduce((acc, curr) => acc + curr.y2, 0);
+                const sumY1_base = relevantPeriods.reduce((acc, curr) => acc + curr.y1, 0);
+                const sumY2_base = relevantPeriods.reduce((acc, curr) => acc + curr.y2, 0);
                 
-                if (!goaAgg[row.goa]) goaAgg[row.goa] = { sumY1: 0, sumY2: 0, baseSales: 0, forecast: 0, rawTrend: 0, cappedTrend: 0 };
-                goaAgg[row.goa].sumY1 += sumY1;
-                goaAgg[row.goa].sumY2 += sumY2;
+                // Extraer venta reciente histórica para sacar tendencia real (Últimos 3 meses vs Año anterior)
+                let sumY1_recent = 0;
+                let sumY2_recent = 0;
+                row.monthlySales.forEach(m => {
+                    if (actualRecentPeriods.includes(m.period)) {
+                        sumY1_recent += m.y1;
+                        sumY2_recent += m.y2;
+                    }
+                });
+
+                // Si existen las columnas tend1, tend2, tend3 dadas por el usuario, las usa como la Venta Reciente Real Y2
+                if (row.tend1 !== null || row.tend2 !== null || row.tend3 !== null) {
+                    sumY2_recent = (row.tend1 || 0) + (row.tend2 || 0) + (row.tend3 || 0);
+                }
+                
+                if (!goaAgg[row.goa]) goaAgg[row.goa] = { sumY1_recent: 0, sumY2_recent: 0, baseSales: 0, forecast: 0, rawTrend: 0, cappedTrend: 0 };
+                goaAgg[row.goa].sumY1_recent += sumY1_recent;
+                goaAgg[row.goa].sumY2_recent += sumY2_recent;
 
                 const gcKey = `${row.goa}|${row.centro}`;
-                if (!gcAgg[gcKey]) gcAgg[gcKey] = { sumY1: 0, sumY2: 0, baseSales: 0 };
-                gcAgg[gcKey].sumY1 += sumY1;
-                gcAgg[gcKey].sumY2 += sumY2;
+                if (!gcAgg[gcKey]) gcAgg[gcKey] = { baseSales: 0 };
+                
+                const base = sumY2_base > 0 ? sumY2_base : sumY1_base;
+                goaAgg[row.goa].baseSales += base;
+                gcAgg[gcKey].baseSales += base;
             });
 
             Object.values(goaAgg).forEach(g => {
-                if (g.sumY1 > 0 && g.sumY2 > 0) {
-                    g.baseSales = g.sumY2;
-                    g.rawTrend = ((g.sumY2 - g.sumY1) / g.sumY1) * 100;
-                } else if (g.sumY1 > 0 && g.sumY2 === 0) {
-                    g.baseSales = g.sumY1;
-                    g.rawTrend = 0;
+                if (g.sumY1_recent > 0) {
+                    g.rawTrend = ((g.sumY2_recent - g.sumY1_recent) / g.sumY1_recent) * 100;
+                } else if (g.sumY2_recent > 0) {
+                    g.rawTrend = maxGrowth;
                 } else {
-                    g.baseSales = g.sumY2;
                     g.rawTrend = 0;
                 }
                 g.cappedTrend = Math.min(Math.max(g.rawTrend, -maxDecline), maxGrowth);
                 g.forecast = g.baseSales * (1 + (g.cappedTrend / 100));
             });
-
-            Object.values(gcAgg).forEach(gc => {
-                if (gc.sumY1 > 0 && gc.sumY2 > 0) gc.baseSales = gc.sumY2;
-                else if (gc.sumY1 > 0 && gc.sumY2 === 0) gc.baseSales = gc.sumY1;
-                else gc.baseSales = gc.sumY2;
-            });
         }
 
         return data.map(row => {
             const relevantPeriods = row.monthlySales.filter(m => m.period >= periodStart && m.period <= periodEnd);
-            const sumY1 = relevantPeriods.reduce((acc, curr) => acc + curr.y1, 0);
-            const sumY2 = relevantPeriods.reduce((acc, curr) => acc + curr.y2, 0);
-            const activeYears = (sumY1 > 0 ? 1 : 0) + (sumY2 > 0 ? 1 : 0);
+            const sumY1_base = relevantPeriods.reduce((acc, curr) => acc + curr.y1, 0);
+            const sumY2_base = relevantPeriods.reduce((acc, curr) => acc + curr.y2, 0);
+            
+            let sumY1_recent = 0;
+            let sumY2_recent = 0;
+            row.monthlySales.forEach(m => {
+                if (actualRecentPeriods.includes(m.period)) {
+                    sumY1_recent += m.y1;
+                    sumY2_recent += m.y2;
+                }
+            });
 
-            let baseSales = 0;
+            if (row.tend1 !== null || row.tend2 !== null || row.tend3 !== null) {
+                sumY2_recent = (row.tend1 || 0) + (row.tend2 || 0) + (row.tend3 || 0);
+            }
+
+            let baseSales = sumY2_base > 0 ? sumY2_base : sumY1_base;
             let rawTrend = 0;
             let cappedTrend = 0;
             let forecast = 0;
 
-            let skuBaseRA = 0;
-            if (sumY1 > 0 && sumY2 > 0) skuBaseRA = sumY2;
-            else if (sumY1 > 0 && sumY2 === 0) skuBaseRA = sumY1;
-            else skuBaseRA = sumY2;
-
             if (calcMode === 'TD') {
-                baseSales = skuBaseRA;
                 const g = goaAgg[row.goa];
                 const gc = gcAgg[`${row.goa}|${row.centro}`];
 
@@ -308,38 +367,35 @@ export default function App() {
                 rawTrend = g.rawTrend;
                 cappedTrend = g.cappedTrend;
 
-            } else if (calcMode === 'RA') {
-                baseSales = skuBaseRA;
-                if (sumY1 > 0 && sumY2 > 0) rawTrend = ((sumY2 - sumY1) / sumY1) * 100;
-                cappedTrend = Math.min(Math.max(rawTrend, -maxDecline), maxGrowth);
-                forecast = Math.round(baseSales * (1 + (cappedTrend / 100)));
-
             } else {
-                baseSales = activeYears > 0 ? (sumY1 + sumY2) / activeYears : 0;
-                if (relevantPeriods.length > 0) {
-                    const maxP = Math.max(...relevantPeriods.map(p => p.period));
-                    const last3 = relevantPeriods.filter(p => p.period > maxP - 3 && p.period <= maxP);
-                    const sumY1_3M = last3.reduce((acc, curr) => acc + curr.y1, 0);
-                    const sumY2_3M = last3.reduce((acc, curr) => acc + curr.y2, 0);
-                    if (sumY1_3M > 0 && sumY2_3M > 0) rawTrend = ((sumY2_3M - sumY1_3M) / sumY1_3M) * 100;
+                if (sumY1_recent > 0) {
+                    rawTrend = ((sumY2_recent - sumY1_recent) / sumY1_recent) * 100;
+                } else if (sumY2_recent > 0) {
+                    rawTrend = maxGrowth;
                 }
                 cappedTrend = Math.min(Math.max(rawTrend, -maxDecline), maxGrowth);
                 forecast = Math.round(baseSales * (1 + (cappedTrend / 100)));
             }
             
             const totalInventory = row.oh + row.oo;
-            const toBuy = Math.max(0, forecast - totalInventory);
+            
+            const isTop15 = top15Centros.has(row.centro);
+            const minStockRule = isTop15 ? 2 : 1;
+            const targetTotalInventory = Math.max(forecast, minStockRule);
+            const toBuy = Math.max(0, targetTotalInventory - totalInventory);
+            
             const coverage = forecast > 0 ? (totalInventory / forecast) * 100 : (totalInventory > 0 ? 999 : 0);
 
-            const trendMult = 1 + (cappedTrend / 100);
+            const activeYears = (sumY1_base > 0 ? 1 : 0) + (sumY2_base > 0 ? 1 : 0);
+
             const periodsWithFcst = relevantPeriods.map(p => {
                 let pBase = 0;
                 if (calcMode === 'RA' || calcMode === 'TD') {
-                    if (sumY1 > 0 && sumY2 > 0) pBase = p.y2;
-                    else if (sumY1 > 0 && sumY2 === 0) pBase = p.y1;
+                    if (sumY1_base > 0 && sumY2_base > 0) pBase = p.y2;
+                    else if (sumY1_base > 0 && sumY2_base === 0) pBase = p.y1;
                     else pBase = p.y2;
                 } else {
-                    pBase = activeYears > 0 ? ((sumY1 > 0 ? p.y1 : 0) + (sumY2 > 0 ? p.y2 : 0)) / activeYears : 0;
+                    pBase = activeYears > 0 ? ((sumY1_base > 0 ? p.y1 : 0) + (sumY2_base > 0 ? p.y2 : 0)) / activeYears : 0;
                 }
                 return { ...p, rawBase: pBase };
             });
@@ -411,7 +467,7 @@ export default function App() {
         return [...new Set(filtered.map(d => d.sku))].sort();
     }, [computedData, filterCentro, filterSeccion, filterMarca, filterGoa, filterModelo, filterNorma]);
 
-    // APLICACIÓN DE FILTROS EN TABLA
+    // APLICACIÓN DE FILTROS EN TABLA CON ORDENAMIENTO
     const enrichedData = useMemo(() => {
         let result = computedData;
         if (filterCentro) result = result.filter(d => d.centro === filterCentro);
@@ -421,8 +477,98 @@ export default function App() {
         if (filterModelo) result = result.filter(d => d.modelo === filterModelo);
         if (filterNorma) result = result.filter(d => d.norma === filterNorma);
         if (filterSku) result = result.filter(d => d.sku === filterSku);
-        return result.sort((a, b) => b.toBuy - a.toBuy);
-    }, [computedData, filterCentro, filterSeccion, filterMarca, filterGoa, filterModelo, filterNorma, filterSku]);
+        
+        return result.sort((a, b) => {
+            if (sortBy === 'toBuy_desc') return b.toBuy - a.toBuy;
+            if (sortBy === 'toBuy_asc') return a.toBuy - b.toBuy;
+            // Ordena por la suma real del inventario OH + OO
+            if (sortBy === 'oh_desc') return (b.oh + b.oo) - (a.oh + a.oo);
+            if (sortBy === 'oh_asc') return (a.oh + a.oo) - (b.oh + b.oo);
+            // Ordena por el forecast
+            if (sortBy === 'fcst_desc') return b.forecast - a.forecast;
+            if (sortBy === 'fcst_asc') return a.forecast - b.forecast;
+            return b.toBuy - a.toBuy;
+        });
+    }, [computedData, filterCentro, filterSeccion, filterMarca, filterGoa, filterModelo, filterNorma, filterSku, sortBy]);
+
+    // INSIGHTS (TARJETAS DE RESUMEN)
+    const insights = useMemo(() => {
+        let beforeZeroes = 0;
+        let afterZeroes = 0;
+        const skuScores = {};
+        const sizeScores = {};
+
+        enrichedData.forEach(row => {
+            // Contabilizar stockouts antes y después
+            if (row.oh + row.oo === 0) beforeZeroes++;
+            if (row.oh + row.oo + row.toBuy === 0) afterZeroes++;
+
+            // Sumar forecast por SKU para encontrar la "mejor apuesta"
+            if (!skuScores[row.sku_nombre]) skuScores[row.sku_nombre] = 0;
+            skuScores[row.sku_nombre] += row.forecast;
+
+            // Intentar extraer la talla del nombre (asume que la talla está después de la primer coma)
+            let size = "N/A";
+            const parts = row.sku_nombre.split(',');
+            if (parts.length > 1) {
+                const potentialSize = parts[1].trim();
+                // Verifica si lo que está después de la coma es un número o un número con decimal (ej. "25" o "25.5")
+                if (/^\d+(\.\d+)?$/.test(potentialSize)) {
+                    size = potentialSize;
+                }
+            }
+            // Fallback si no había coma o no encontró el número exacto, buscar cualquier número suelto de 2 dígitos.
+            if (size === "N/A") {
+                const match = row.sku_nombre.match(/(?:^|\s)(\d{2}(\.5)?)(\s|,|$)/);
+                if (match) size = match[1];
+            }
+
+            if (size !== "N/A") {
+                if (!sizeScores[size]) sizeScores[size] = 0;
+                sizeScores[size] += row.forecast;
+            }
+        });
+
+        // Ordenar para encontrar a los mejores
+        const bestSku = Object.entries(skuScores).sort((a, b) => b[1] - a[1])[0] || ["Ninguno", 0];
+        const sortedSizes = Object.entries(sizeScores).sort((a, b) => b[1] - a[1]).slice(0, 5);
+        const maxSizeScore = sortedSizes.length > 0 ? sortedSizes[0][1] : 1;
+        const topSizes = sortedSizes.map(s => ({ size: s[0], score: s[1], percent: (s[1] / maxSizeScore) * 100 }));
+
+        return { beforeZeroes, afterZeroes, bestSku: bestSku[0], topSizes };
+    }, [enrichedData]);
+
+    // ITEM GLOBAL PARA GRÁFICAS CUANDO NO HAY SELECCIÓN
+    const globalAggregatedItem = useMemo(() => {
+        if (enrichedData.length === 0) return null;
+        const agg = {
+            centro: filterCentro || 'TODOS LOS CENTROS',
+            marca: filterMarca || 'FILTROS ACTUALES',
+            sku_nombre: 'Resumen Acumulado (Global)',
+            sku: 'Múltiples',
+            toBuy: 0,
+            oh: 0,
+            oo: 0,
+            relevantPeriods: []
+        };
+        const periodMap = {};
+        enrichedData.forEach(row => {
+            agg.toBuy += row.toBuy;
+            agg.oh += row.oh;
+            agg.oo += row.oo;
+            row.relevantPeriods.forEach(p => {
+                if (!periodMap[p.period]) periodMap[p.period] = { period: p.period, y1: 0, y2: 0, fcst: 0 };
+                periodMap[p.period].y1 += p.y1;
+                periodMap[p.period].y2 += p.y2;
+                periodMap[p.period].fcst += p.fcst;
+            });
+        });
+        agg.relevantPeriods = Object.values(periodMap).sort((a,b) => a.period - b.period);
+        return agg;
+    }, [enrichedData, filterCentro, filterMarca]);
+
+    // Item Activo para las gráficas
+    const activeItem = selectedItem || globalAggregatedItem;
 
     const kpis = useMemo(() => {
         return enrichedData.reduce((acc, curr) => ({
@@ -554,7 +700,7 @@ export default function App() {
     useEffect(() => {
         if (enrichedData.length > 0) {
             const stillExists = enrichedData.find(d => d.id === selectedItem?.id);
-            if (!stillExists) setSelectedItem(enrichedData[0]);
+            if (!stillExists) setSelectedItem(null); 
         } else {
             setSelectedItem(null);
         }
@@ -674,7 +820,7 @@ export default function App() {
                             <label className="text-xs text-gray-500 dark:text-gray-400">Tope Crecimiento (+%):</label>
                             <input type="number" value={maxGrowth} onChange={e => setMaxGrowth(Number(e.target.value))} className="bg-gray-50 dark:bg-[#0a0a0a] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs font-bold rounded-lg w-16 px-2 py-1 outline-none focus:border-purple-500 text-center transition-colors" />
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 border-r border-gray-200 dark:border-[#333] pr-4">
                             <label className="text-xs text-gray-500 dark:text-gray-400">Tope Decremento (-%):</label>
                             <input type="number" value={maxDecline} onChange={e => setMaxDecline(Number(e.target.value))} className="bg-gray-50 dark:bg-[#0a0a0a] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs font-bold rounded-lg w-16 px-2 py-1 outline-none focus:border-purple-500 text-center transition-colors" />
                         </div>
@@ -752,21 +898,21 @@ export default function App() {
                             <div className="bg-gray-100 dark:bg-gray-800 p-2.5 rounded-lg hidden sm:block"><BarChart2 className="w-5 h-5 text-gray-500 dark:text-gray-300" /></div>
                             <div>
                                 <p className="text-[10px] md:text-xs text-gray-500 uppercase font-semibold">Pronóstico (P{periodStart}-P{periodEnd})</p>
-                                <p className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white mt-0.5">{kpis.forecast.toLocaleString()} <span className="text-xs font-normal text-gray-400 dark:text-gray-500">uds</span></p>
+                                <p className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white mt-0.5">{kpis.forecast.toLocaleString()} <span className="text-xs font-normal text-gray-400 dark:text-gray-500">PZS</span></p>
                             </div>
                         </div>
                         <div className="bg-white dark:bg-[#141414] border border-gray-200 dark:border-[#262626] shadow-sm dark:shadow-none rounded-xl p-4 flex items-center gap-4 transition-colors">
                             <div className="bg-yellow-50 dark:bg-yellow-500/10 p-2.5 rounded-lg border border-yellow-200 dark:border-yellow-500/20 hidden sm:block"><Box className="w-5 h-5 text-yellow-600 dark:text-yellow-500" /></div>
                             <div>
                                 <p className="text-[10px] md:text-xs text-gray-500 uppercase font-semibold">Inventario (OH)</p>
-                                <p className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white mt-0.5">{kpis.oh.toLocaleString()} <span className="text-xs font-normal text-gray-400 dark:text-gray-500">uds</span></p>
+                                <p className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white mt-0.5">{kpis.oh.toLocaleString()} <span className="text-xs font-normal text-gray-400 dark:text-gray-500">PZS</span></p>
                             </div>
                         </div>
                         <div className="bg-white dark:bg-[#141414] border border-gray-200 dark:border-[#262626] shadow-sm dark:shadow-none rounded-xl p-4 flex items-center gap-4 transition-colors">
                             <div className="bg-purple-50 dark:bg-purple-500/10 p-2.5 rounded-lg border border-purple-200 dark:border-purple-500/20 hidden sm:block"><Package className="w-5 h-5 text-purple-600 dark:text-purple-500" /></div>
                             <div>
                                 <p className="text-[10px] md:text-xs text-gray-500 uppercase font-semibold">En Tránsito (OO)</p>
-                                <p className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white mt-0.5">{kpis.oo.toLocaleString()} <span className="text-xs font-normal text-gray-400 dark:text-gray-500">uds</span></p>
+                                <p className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white mt-0.5">{kpis.oo.toLocaleString()} <span className="text-xs font-normal text-gray-400 dark:text-gray-500">PZS</span></p>
                             </div>
                         </div>
                         <div className="bg-white dark:bg-[#141414] border border-gray-200 dark:border-[#262626] shadow-sm dark:shadow-none rounded-xl p-4 flex items-center gap-4 relative overflow-hidden transition-colors">
@@ -774,7 +920,7 @@ export default function App() {
                             <div className="bg-purple-600 p-2.5 rounded-lg shadow-md dark:shadow-[0_0_15px_rgba(147,51,234,0.3)] hidden sm:block"><ShoppingCart className="w-5 h-5 text-white" /></div>
                             <div>
                                 <p className="text-[10px] md:text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold">Sugerido Compra</p>
-                                <p className="text-xl md:text-2xl font-bold text-yellow-600 dark:text-yellow-400 mt-0.5">{kpis.toBuy.toLocaleString()} <span className="text-xs font-normal text-gray-400 dark:text-gray-500">uds</span></p>
+                                <p className="text-xl md:text-2xl font-bold text-yellow-600 dark:text-yellow-400 mt-0.5">{kpis.toBuy.toLocaleString()} <span className="text-xs font-normal text-gray-400 dark:text-gray-500">PZS</span></p>
                             </div>
                         </div>
                     </div>
@@ -787,23 +933,45 @@ export default function App() {
                                     <h2 className="font-semibold text-gray-900 dark:text-white text-sm">Detalle de Combinación (Centro-SKU)</h2>
                                     <span className="text-[10px] bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-300 px-2 py-1 rounded-md">{enrichedData.length} reg.</span>
                                 </div>
-                                <div className="flex gap-2">
-                                    <button 
-                                        onClick={handleExportO9}
-                                        className="flex items-center gap-1.5 bg-white dark:bg-[#2a2a2a] border border-gray-300 dark:border-[#444] hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-700 dark:text-white text-[11px] px-3 py-1.5 rounded-md transition-colors font-medium shadow-sm"
-                                        title="Descarga Nodo, SKU y Cantidad sin títulos"
-                                    >
-                                        <FileText className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
-                                        Exportar O9
-                                    </button>
-                                    <button 
-                                        onClick={handleExportRegular}
-                                        className="flex items-center gap-1.5 bg-white dark:bg-[#2a2a2a] border border-gray-300 dark:border-[#444] hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-700 dark:text-white text-[11px] px-3 py-1.5 rounded-md transition-colors font-medium shadow-sm"
-                                        title="Descarga Nodo, Centro, SKU y Cantidad sin títulos"
-                                    >
-                                        <Download className="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
-                                        Exportar Regular
-                                    </button>
+                                <div className="flex gap-4 items-center">
+                                    <div className="flex items-center bg-gray-200 dark:bg-[#1e1e1e] rounded-lg p-0.5 shadow-inner">
+                                        <button 
+                                            onClick={() => setSortBy(sortBy === 'toBuy_desc' ? 'toBuy_asc' : 'toBuy_desc')}
+                                            className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-bold transition-all ${sortBy.startsWith('toBuy') ? 'bg-white dark:bg-[#333] text-yellow-600 dark:text-yellow-400 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
+                                        >
+                                            Sugerido <Filter className="w-3 h-3" />
+                                        </button>
+                                        <button 
+                                            onClick={() => setSortBy(sortBy === 'oh_desc' ? 'oh_asc' : 'oh_desc')}
+                                            className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-bold transition-all ${sortBy.startsWith('oh') ? 'bg-white dark:bg-[#333] text-yellow-600 dark:text-yellow-400 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
+                                        >
+                                            OH+OO <Filter className="w-3 h-3" />
+                                        </button>
+                                        <button 
+                                            onClick={() => setSortBy(sortBy === 'fcst_desc' ? 'fcst_asc' : 'fcst_desc')}
+                                            className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-bold transition-all ${sortBy.startsWith('fcst') ? 'bg-white dark:bg-[#333] text-yellow-600 dark:text-yellow-400 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
+                                        >
+                                            Forecast <Filter className="w-3 h-3" />
+                                        </button>
+                                    </div>
+                                    <div className="flex gap-2">
+                                        <button 
+                                            onClick={handleExportO9}
+                                            className="flex items-center gap-1.5 bg-white dark:bg-[#2a2a2a] border border-gray-300 dark:border-[#444] hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-700 dark:text-white text-[11px] px-3 py-1.5 rounded-md transition-colors font-medium shadow-sm"
+                                            title="Descarga Nodo, SKU y Cantidad sin títulos"
+                                        >
+                                            <FileText className="w-3.5 h-3.5 text-blue-600 dark:text-blue-400" />
+                                            Exportar O9
+                                        </button>
+                                        <button 
+                                            onClick={handleExportRegular}
+                                            className="flex items-center gap-1.5 bg-white dark:bg-[#2a2a2a] border border-gray-300 dark:border-[#444] hover:bg-gray-50 dark:hover:bg-gray-800 text-gray-700 dark:text-white text-[11px] px-3 py-1.5 rounded-md transition-colors font-medium shadow-sm"
+                                            title="Descarga Nodo, Centro, SKU y Cantidad sin títulos"
+                                        >
+                                            <Download className="w-3.5 h-3.5 text-green-600 dark:text-green-400" />
+                                            Exportar SAP
+                                        </button>
+                                    </div>
                                 </div>
                             </div>
                             <div className="overflow-auto flex-1 custom-scrollbar">
@@ -873,19 +1041,24 @@ export default function App() {
                             </div>
                         </div>
 
-                        {/* PANEL DE GRÁFICAS DE ITEM SELECCIONADO */}
+                        {/* PANEL DE GRÁFICAS DE ITEM SELECCIONADO O GLOBAL */}
                         <div className="bg-white dark:bg-[#141414] border border-gray-200 dark:border-[#262626] shadow-sm dark:shadow-none rounded-xl p-4 flex flex-col h-[750px] transition-colors">
-                            {selectedItem ? (
+                            {activeItem ? (
                                 <div className="flex-1 flex flex-col h-full overflow-y-auto custom-scrollbar pr-2">
                                     <div className="mb-4 bg-gray-50 dark:bg-[#0a0a0a] p-3 rounded-lg border border-gray-200 dark:border-[#262626] flex justify-between items-center shrink-0 transition-colors">
                                         <div className="flex-1 min-w-0 pr-2">
-                                            <p className="text-[10px] text-gray-500 uppercase truncate font-semibold">{selectedItem.centro} • {selectedItem.marca}</p>
-                                            <p className="text-sm font-bold text-gray-900 dark:text-white truncate" title={selectedItem.sku_nombre}>{selectedItem.sku_nombre}</p>
-                                            <p className="text-[10px] text-purple-600 dark:text-purple-400 mt-0.5 font-mono">{selectedItem.sku}</p>
+                                            <p className="text-[10px] text-gray-500 uppercase truncate font-semibold">{activeItem.centro} • {activeItem.marca}</p>
+                                            <p className="text-sm font-bold text-gray-900 dark:text-white truncate" title={activeItem.sku_nombre}>{activeItem.sku_nombre}</p>
+                                            <p className="text-[10px] text-purple-600 dark:text-purple-400 mt-0.5 font-mono">{activeItem.sku}</p>
+                                            {selectedItem && (
+                                                <button onClick={() => setSelectedItem(null)} className="text-[10px] text-gray-500 hover:text-purple-600 dark:hover:text-purple-400 underline mt-1 transition-colors">
+                                                    Ver Total Acumulado (Global)
+                                                </button>
+                                            )}
                                         </div>
                                         <div className="text-right shrink-0">
-                                            <p className="text-[10px] text-gray-500 uppercase font-semibold">Sugerido</p>
-                                            <p className="text-lg font-bold text-yellow-600 dark:text-yellow-400">+{selectedItem.toBuy}</p>
+                                            <p className="text-[10px] text-gray-500 uppercase font-semibold">Sugerido Total</p>
+                                            <p className="text-lg font-bold text-yellow-600 dark:text-yellow-400">+{activeItem.toBuy}</p>
                                         </div>
                                     </div>
 
@@ -894,14 +1067,14 @@ export default function App() {
                                         <h3 className="text-xs text-gray-500 dark:text-gray-400 uppercase font-bold mb-2">Ventas & Stockout (P{periodStart}-P{periodEnd})</h3>
                                         <div className="flex-1 relative w-full h-full mt-2 pb-6">
                                             {(() => {
-                                                const periods = selectedItem.relevantPeriods;
+                                                const periods = activeItem.relevantPeriods;
                                                 if (!periods || periods.length === 0) return <p className="text-xs text-gray-500 text-center mt-10">Sin ventas</p>;
                                                 
-                                                const baseInventory = selectedItem.oh + selectedItem.oo;
+                                                const baseInventory = activeItem.oh + activeItem.oo;
                                                 let runningInv = baseInventory;
                                                 const projectedInv = periods.map((p, idx) => {
                                                     if (idx === 1) {
-                                                        runningInv += selectedItem.toBuy; 
+                                                        runningInv += activeItem.toBuy; 
                                                     }
                                                     runningInv -= p.fcst;
                                                     return runningInv;
@@ -963,8 +1136,8 @@ export default function App() {
                                                                 const inv = projectedInv[i];
                                                                 return (
                                                                     <React.Fragment key={i}>
-                                                                        <div className="absolute w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full" style={{ left: `calc(${x}% - 4px)`, top: `calc(${getY(p.y1)}% - 4px)` }} title={`Año 1 P${p.period}: ${p.y1}`}></div>
-                                                                        <div className="absolute w-2 h-2 bg-purple-500 dark:bg-purple-600 rounded-full" style={{ left: `calc(${x}% - 4px)`, top: `calc(${getY(p.y2)}% - 4px)` }} title={`Año 2 P${p.period}: ${p.y2}`}></div>
+                                                                        <div className="absolute w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full" style={{ left: `calc(${x}% - 4px)`, top: `calc(${getY(p.y1)}% - 4px)` }} title={`Año 1 P${p.period}: ${p.y1.toFixed(1)}`}></div>
+                                                                        <div className="absolute w-2 h-2 bg-purple-500 dark:bg-purple-600 rounded-full" style={{ left: `calc(${x}% - 4px)`, top: `calc(${getY(p.y2)}% - 4px)` }} title={`Año 2 P${p.period}: ${p.y2.toFixed(1)}`}></div>
                                                                         <div className="absolute w-2 h-2 bg-yellow-500 dark:bg-yellow-400 rounded-sm rotate-45 z-10" style={{ left: `calc(${x}% - 4px)`, top: `calc(${getY(p.fcst)}% - 4px)` }} title={`Forecast P${p.period}: ${p.fcst.toFixed(1)}`}></div>
                                                                         
                                                                         {/* Nodos del Inventario */}
@@ -999,19 +1172,23 @@ export default function App() {
 
                                     {/* Gráficos de Dispersión (Antes y Después) LADO A LADO */}
                                     {(() => {
-                                        const skuData = computedData.filter(d => d.sku === selectedItem.sku);
-                                        
-                                        const maxX = Math.max(...skuData.map(d => d.forecast), 1) * 1.1; 
-                                        const maxY = Math.max(...skuData.map(d => d.oh + d.oo + d.toBuy), 1) * 1.1;
+                                        const scatterSourceData = enrichedData.slice(0, 3000); // Limitado a 3000 para no trabar el navegador si hay demasiados
 
-                                        const beforeData = skuData.map(d => ({ x: d.forecast, y: d.oh + d.oo, label: d.centro }));
-                                        const afterData = skuData.map(d => ({ x: d.forecast, y: d.oh + d.oo + d.toBuy, label: d.centro }));
+                                        const maxXBefore = Math.max(...scatterSourceData.map(d => d.vtaAcumAct), 1) * 1.1; 
+                                        const maxXAfter = Math.max(...scatterSourceData.map(d => d.forecast), 1) * 1.1; 
+                                        const maxYBefore = Math.max(...scatterSourceData.map(d => d.oh + d.oo), 1) * 1.1;
+                                        const maxYAfter = Math.max(...scatterSourceData.map(d => d.oh + d.oo + d.toBuy), 1) * 1.1;
+
+                                        const beforeData = scatterSourceData.map(d => ({ x: d.vtaAcumAct, y: d.oh + d.oo, label: `${d.centro} - ${d.sku}`, id: d.id }));
+                                        const afterData = scatterSourceData.map(d => ({ x: d.forecast, y: d.oh + d.oo + d.toBuy, label: `${d.centro} - ${d.sku}`, id: d.id }));
 
                                         const regBefore = calculateRegression(beforeData);
                                         const regAfter = calculateRegression(afterData);
 
-                                        const getX = x => (x / maxX) * 100;
-                                        const getY = y => 100 - (y / maxY) * 100;
+                                        const getXBefore = x => (x / maxXBefore) * 100;
+                                        const getYBefore = y => 100 - (y / maxYBefore) * 100;
+                                        const getXAfter = x => (x / maxXAfter) * 100;
+                                        const getYAfter = y => 100 - (y / maxYAfter) * 100;
 
                                         return (
                                             <div className="flex-none flex flex-col sm:flex-row gap-4 min-h-[250px] mb-4">
@@ -1020,8 +1197,8 @@ export default function App() {
                                                 <div className="flex-1 border border-gray-200 dark:border-[#262626] bg-gray-50 dark:bg-[#0a0a0a] rounded-lg p-3 flex flex-col relative transition-colors overflow-hidden">
                                                     <div className="flex justify-between items-start z-10 mb-2">
                                                         <div>
-                                                            <h3 className="text-[10px] text-gray-500 dark:text-gray-400 uppercase font-bold">Antes (Inv. Inicial)</h3>
-                                                            <p className="text-[8px] text-gray-400 italic">Puntos superpuestos se oscurecen</p>
+                                                            <h3 className="text-[10px] text-gray-500 dark:text-gray-400 uppercase font-bold">Antes (Inv. Inicial vs Vta Act)</h3>
+                                                            <p className="text-[8px] text-gray-400 italic">Dependiente de los filtros actuales</p>
                                                         </div>
                                                         <span className="text-[9px] text-red-600 dark:text-red-500 font-bold bg-white dark:bg-[#141414] px-1.5 py-0.5 rounded border border-red-200 dark:border-red-900/50" title="1.0 = Distribución Perfecta">R²: {regBefore.r2.toFixed(4)}</span>
                                                     </div>
@@ -1030,14 +1207,21 @@ export default function App() {
                                                         <div className="absolute bottom-0 left-0 right-0 border-b border-gray-400 dark:border-gray-600"></div>
                                                         
                                                         <svg className="absolute inset-0 w-full h-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
-                                                            <line x1={0} y1={getY(regBefore.b)} x2={100} y2={getY(regBefore.m * maxX + regBefore.b)} className="stroke-red-500" strokeWidth="1.5" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />
+                                                            <line x1={0} y1={getYBefore(regBefore.b)} x2={100} y2={getYBefore(regBefore.m * maxXBefore + regBefore.b)} className="stroke-red-500" strokeWidth="1.5" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />
                                                         </svg>
                                                         
-                                                        {beforeData.map((p, i) => (
-                                                            <div key={i} className="absolute w-2.5 h-2.5 bg-blue-600/40 dark:bg-blue-400/50 rounded-full cursor-pointer hover:scale-150 hover:bg-blue-500 transition-transform z-10 mix-blend-multiply dark:mix-blend-screen" style={{ left: `calc(${getX(p.x)}% - 5px + ${getJitterX(i)}px)`, top: `calc(${getY(p.y)}% - 5px + ${getJitterY(i)}px)` }} title={`Centro: ${p.label}\nDemanda (Fcst): ${p.x}\nInv Inicial (OH+OO): ${p.y}`}></div>
-                                                        ))}
+                                                        {beforeData.map((p) => {
+                                                            const isSelected = selectedItem && selectedItem.id === p.id;
+                                                            return (
+                                                                <div key={p.id} 
+                                                                     className={`absolute rounded-full cursor-pointer transition-transform z-10 ${isSelected ? 'w-4 h-4 bg-yellow-400 border-2 border-black z-30 shadow-lg' : 'w-2.5 h-2.5 bg-blue-600/40 dark:bg-blue-400/50 hover:scale-150 hover:bg-blue-500 mix-blend-multiply dark:mix-blend-screen'}`} 
+                                                                     style={{ left: `calc(${getXBefore(p.x)}% - ${isSelected ? 8 : 5}px + ${getJitterX(p.id)}px)`, top: `calc(${getYBefore(p.y)}% - ${isSelected ? 8 : 5}px + ${getJitterY(p.id)}px)` }} 
+                                                                     title={`Combinación: ${p.label}\nVta Acum. Actual: ${p.x}\nInv Inicial (OH+OO): ${p.y}`}>
+                                                                </div>
+                                                            );
+                                                        })}
                                                     </div>
-                                                    <div className="absolute bottom-1 right-2 text-[8px] text-gray-500 dark:text-gray-400 font-bold">Demanda</div>
+                                                    <div className="absolute bottom-1 right-2 text-[8px] text-gray-500 dark:text-gray-400 font-bold">Vta Acumulada</div>
                                                     <div className="absolute top-[40%] -left-3 text-[8px] text-gray-500 dark:text-gray-400 -rotate-90 font-bold tracking-widest">Inv. Inicial</div>
                                                 </div>
 
@@ -1045,8 +1229,8 @@ export default function App() {
                                                 <div className="flex-1 border border-gray-200 dark:border-[#262626] bg-gray-50 dark:bg-[#0a0a0a] rounded-lg p-3 flex flex-col relative transition-colors overflow-hidden">
                                                     <div className="flex justify-between items-start z-10 mb-2">
                                                         <div>
-                                                            <h3 className="text-[10px] text-gray-500 dark:text-gray-400 uppercase font-bold">Después (Inv. + Compra)</h3>
-                                                            <p className="text-[8px] text-gray-400 italic">Puntos superpuestos se oscurecen</p>
+                                                            <h3 className="text-[10px] text-gray-500 dark:text-gray-400 uppercase font-bold">Después (Inv. Final vs Demanda)</h3>
+                                                            <p className="text-[8px] text-gray-400 italic">Punto amarillo: Selección actual</p>
                                                         </div>
                                                         <span className="text-[9px] text-red-600 dark:text-red-500 font-bold bg-white dark:bg-[#141414] px-1.5 py-0.5 rounded border border-red-200 dark:border-red-900/50" title="1.0 = Distribución Perfecta">R²: {regAfter.r2.toFixed(4)}</span>
                                                     </div>
@@ -1055,14 +1239,21 @@ export default function App() {
                                                         <div className="absolute bottom-0 left-0 right-0 border-b border-gray-400 dark:border-gray-600"></div>
 
                                                         <svg className="absolute inset-0 w-full h-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
-                                                            <line x1={0} y1={getY(regAfter.b)} x2={100} y2={getY(regAfter.m * maxX + regAfter.b)} className="stroke-red-500" strokeWidth="1.5" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />
+                                                            <line x1={0} y1={getYAfter(regAfter.b)} x2={100} y2={getYAfter(regAfter.m * maxXAfter + regAfter.b)} className="stroke-red-500" strokeWidth="1.5" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />
                                                         </svg>
                                                         
-                                                        {afterData.map((p, i) => (
-                                                            <div key={i} className="absolute w-2.5 h-2.5 bg-green-600/40 dark:bg-green-400/50 rounded-full cursor-pointer hover:scale-150 hover:bg-green-500 transition-transform z-10 mix-blend-multiply dark:mix-blend-screen" style={{ left: `calc(${getX(p.x)}% - 5px + ${getJitterX(i)}px)`, top: `calc(${getY(p.y)}% - 5px + ${getJitterY(i)}px)` }} title={`Centro: ${p.label}\nDemanda (Fcst): ${p.x}\nInv Final: ${p.y}`}></div>
-                                                        ))}
+                                                        {afterData.map((p) => {
+                                                            const isSelected = selectedItem && selectedItem.id === p.id;
+                                                            return (
+                                                                <div key={p.id} 
+                                                                     className={`absolute rounded-full cursor-pointer transition-transform z-10 ${isSelected ? 'w-4 h-4 bg-yellow-400 border-2 border-black z-30 shadow-lg' : 'w-2.5 h-2.5 bg-green-600/40 dark:bg-green-400/50 hover:scale-150 hover:bg-green-500 mix-blend-multiply dark:mix-blend-screen'}`} 
+                                                                     style={{ left: `calc(${getXAfter(p.x)}% - ${isSelected ? 8 : 5}px + ${getJitterX(p.id)}px)`, top: `calc(${getYAfter(p.y)}% - ${isSelected ? 8 : 5}px + ${getJitterY(p.id)}px)` }} 
+                                                                     title={`Combinación: ${p.label}\nDemanda (Fcst): ${p.x}\nInv Final: ${p.y}`}>
+                                                                </div>
+                                                            );
+                                                        })}
                                                     </div>
-                                                    <div className="absolute bottom-1 right-2 text-[8px] text-gray-500 dark:text-gray-400 font-bold">Demanda</div>
+                                                    <div className="absolute bottom-1 right-2 text-[8px] text-gray-500 dark:text-gray-400 font-bold">Demanda (Fcst)</div>
                                                     <div className="absolute top-[40%] -left-3 text-[8px] text-gray-500 dark:text-gray-400 -rotate-90 font-bold tracking-widest">Inv. Final</div>
                                                 </div>
                                                 
@@ -1073,9 +1264,53 @@ export default function App() {
                             ) : (
                                 <div className="flex-1 flex flex-col items-center justify-center text-gray-400 dark:text-gray-600">
                                     <BarChart2 className="w-10 h-10 mb-2 opacity-20" />
-                                    <p className="text-xs text-center px-4 font-medium">Selecciona un registro</p>
+                                    <p className="text-xs text-center px-4 font-medium">Cargando gráficos</p>
                                 </div>
                             )}
+                        </div>
+                    </div>
+
+                    {/* TARJETAS DE INSIGHTS */}
+                    <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6 transition-colors">
+                        {/* Tarjeta 1: Stockouts */}
+                        <div className="bg-white dark:bg-[#141414] border border-gray-200 dark:border-[#262626] shadow-sm dark:shadow-none rounded-xl p-5 flex flex-col justify-center transition-colors">
+                            <h3 className="text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold mb-3 flex items-center gap-1.5"><Box className="w-4 h-4 text-red-500" /> Stockouts (Combinaciones en 0)</h3>
+                            <div className="flex items-end gap-6">
+                                <div>
+                                    <p className="text-[10px] text-gray-400 dark:text-gray-500 font-medium">Antes de Distribuir</p>
+                                    <p className="text-2xl font-black text-red-500 dark:text-red-400">{insights.beforeZeroes}</p>
+                                </div>
+                                <div className="pb-1 text-gray-300 dark:text-gray-600 text-xl font-light">➔</div>
+                                <div>
+                                    <p className="text-[10px] text-gray-400 dark:text-gray-500 font-medium">Después (Final)</p>
+                                    <p className="text-2xl font-black text-green-500 dark:text-green-400">{insights.afterZeroes}</p>
+                                </div>
+                            </div>
+                        </div>
+
+                        {/* Tarjeta 2: Mejor Desempeño */}
+                        <div className="bg-white dark:bg-[#141414] border border-gray-200 dark:border-[#262626] shadow-sm dark:shadow-none rounded-xl p-5 flex flex-col justify-center transition-colors">
+                            <h3 className="text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold mb-2 flex items-center gap-1.5"><TrendingUp className="w-4 h-4 text-purple-500" /> Mejor Desempeño</h3>
+                            <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-1">Recomendación apostarle a:</p>
+                            <p className="text-sm font-bold text-gray-900 dark:text-white truncate" title={insights.bestSku}>
+                                {insights.bestSku}
+                            </p>
+                        </div>
+
+                        {/* Tarjeta 3: Ranking de Tallas */}
+                        <div className="bg-white dark:bg-[#141414] border border-gray-200 dark:border-[#262626] shadow-sm dark:shadow-none rounded-xl p-5 flex flex-col justify-center transition-colors">
+                            <h3 className="text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold mb-2 flex items-center gap-1.5"><BarChart2 className="w-4 h-4 text-blue-500" /> Ranking de Tallas (Fcst)</h3>
+                            <div className="flex flex-col gap-2.5 mt-2 w-full">
+                                {insights.topSizes.length > 0 ? insights.topSizes.map((t, i) => (
+                                    <div key={i} className="flex items-center gap-2 text-xs">
+                                        <span className="w-8 font-bold text-gray-700 dark:text-gray-300">{t.size}</span>
+                                        <div className="flex-1 bg-gray-100 dark:bg-[#2a2a2a] h-2 rounded-full overflow-hidden flex">
+                                            <div className="bg-blue-500 h-full rounded-full" style={{ width: `${t.percent}%` }}></div>
+                                        </div>
+                                        <span className="w-8 text-right font-medium text-gray-500">{t.score}</span>
+                                    </div>
+                                )) : <span className="text-xs text-gray-500">N/D</span>}
+                            </div>
                         </div>
                     </div>
 
