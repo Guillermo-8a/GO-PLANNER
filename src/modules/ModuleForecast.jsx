@@ -233,7 +233,6 @@ import {
                                 <h1 className="text-2xl font-black tracking-tighter text-white leading-none uppercase">GO | </h1>
                                 <div className="flex items-center gap-3">
                                     <Icon name="trending-up" className="text-violet-500 w-6 h-6" />
-                                    <span className="text-lg font-black uppercase tracking-tighter text-white">Forecasting</span>
                                 </div>
                             </div>
                         </div>
