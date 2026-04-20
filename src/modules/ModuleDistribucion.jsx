@@ -2,20 +2,28 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import * as Icons from '../utils/icons';
 import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
-// ============================================================================
-// COMPONENTE EXTERNO: GRÁFICA DE DISPERSIÓN
+// COMPONENTE EXTERNO: GRÁFICA DE DISPERSIÓN (Con cálculo de R²)
 // ============================================================================
 const ScatterPlot = ({ data, title, subtitle, colorClass, maxVentas, maxInv, t }) => {
   let trendline = null;
+  let rSquared = 0;
   const n = data.length;
   
   if (n > 1) {
-    let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0;
-    data.forEach(d => { sumX += d.x; sumY += d.y; sumXY += d.x * d.y; sumXX += d.x * d.x; });
-    const denominator = (n * sumXX - sumX * sumX);
+    let sumX = 0, sumY = 0, sumXY = 0, sumXX = 0, sumYY = 0;
+    data.forEach(d => { 
+      sumX += d.x; 
+      sumY += d.y; 
+      sumXY += d.x * d.y; 
+      sumXX += d.x * d.x; 
+      sumYY += d.y * d.y; 
+    });
     
-    if (denominator !== 0) {
-        const slope = (n * sumXY - sumX * sumY) / denominator;
+    const denominatorX = (n * sumXX - sumX * sumX);
+    const denominatorY = (n * sumYY - sumY * sumY);
+    
+    if (denominatorX !== 0) {
+        const slope = (n * sumXY - sumX * sumY) / denominatorX;
         const intercept = (sumY - slope * sumX) / n;
         const y1 = slope * 0 + intercept;
         const y2 = slope * maxVentas + intercept;
@@ -23,6 +31,12 @@ const ScatterPlot = ({ data, title, subtitle, colorClass, maxVentas, maxInv, t }
           y1: 100 - (y1 / maxInv) * 100, 
           y2: 100 - (y2 / maxInv) * 100 
         };
+    }
+
+    if (denominatorX !== 0 && denominatorY !== 0) {
+        rSquared = Math.pow(n * sumXY - sumX * sumY, 2) / (denominatorX * denominatorY);
+    } else if (denominatorX === 0 && denominatorY === 0) {
+        rSquared = 1;
     }
   }
 
@@ -34,7 +48,9 @@ const ScatterPlot = ({ data, title, subtitle, colorClass, maxVentas, maxInv, t }
           <p className={`text-[10px] ${t.textMuted}`}>{subtitle}</p>
         </div>
         <div className="flex flex-col items-end text-[9px] gap-1">
-           <div className="flex items-center"><span className="w-6 border-t-2 border-dashed border-red-500 mr-1"></span> R² Tendencia</div>
+           <div className="flex items-center font-mono">
+             <span className="w-6 border-t-2 border-dashed border-red-500 mr-1"></span> R²: {rSquared.toFixed(4)}
+           </div>
            <div className="flex items-center"><span className={`w-2 h-2 rounded-full ${colorClass.replace('text-', 'bg-')} mr-1`}></span> Tiendas</div>
         </div>
       </div>
@@ -56,7 +72,7 @@ const ScatterPlot = ({ data, title, subtitle, colorClass, maxVentas, maxInv, t }
             return (
               <g key={i} className="group cursor-crosshair">
                 <circle cx={cx} cy={cy} r="4" className={`opacity-60 hover:opacity-100 transition-all hover:r-6 fill-current ${colorClass}`} />
-                <title>{`${d.name}\nVentas Históricas: $${d.x.toLocaleString()}\nOH Antes: ${d.oh}\nEnvío Nuevo: ${d.env}\nInventario Total: ${d.oh + d.env}`}</title>
+                <title>{`${d.name}\nVentas Históricas: ${d.x.toLocaleString()} u\nOH Antes: ${d.oh}\nEnvío Nuevo: ${d.env}\nInventario Total: ${d.oh + d.env}`}</title>
               </g>
             );
           })}
@@ -98,7 +114,7 @@ export default function Distribucion() {
   }, [numClusters]);
 
   const [rawStoreData, setRawStoreData] = useState([]);
-  const [scoreWeights, setScoreWeights] = useState({ sales: 50, margin: 30, rotation: 20 });
+  const [scoreWeights, setScoreWeights] = useState({ sales: 50, margin: 50, rotation: 0 }); // Ajuste de calibración por default
   const [stores, setStores] = useState([]);
   const [goas, setGoas] = useState([]);
   const [storeSortBy, setStoreSortBy] = useState('score'); 
@@ -186,7 +202,7 @@ export default function Distribucion() {
           id: row.centro, centerCode: row.centro, name: row.name, zona: row.zona,
           sales: 0, margin: 0, rotation: row.rotation, totalOH: 0,
           score: 0, goaScores: {}, goaSales: {}, goaMargin: {}, goaOH: {}, clusters: {},
-          skuSales: {}, skuOH: {}, goaSizeSales: {} // <-- NUEVO: Control Talla + GOA 
+          skuSales: {}, skuOH: {}, goaSizeSales: {} 
         });
       }
       
@@ -200,7 +216,6 @@ export default function Distribucion() {
         existing.skuOH[row.sku] = (existing.skuOH[row.sku] || 0) + row.oh;
       }
       
-      // MAGIA SIZE-LEVEL: Acumular la venta por TALLA DENTRO DEL GOA
       if (row.talla && row.talla !== 'N/A') {
         const goaTallaKey = `${row.goa.toUpperCase()}|${row.talla}`;
         existing.goaSizeSales[goaTallaKey] = (existing.goaSizeSales[goaTallaKey] || 0) + row.sales;
@@ -282,7 +297,6 @@ export default function Distribucion() {
     if (rawStoreData.length > 0) recalculateClusters(rawStoreData, scoreWeights, activeClusters);
   }, [scoreWeights, activeClusters]);
 
-
   const handleStoreCSVUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -304,7 +318,7 @@ export default function Distribucion() {
       const idxOH = headers.findIndex(h => h === 'OH' || h === 'INV' || h === 'INVENTARIO' || h === 'STOCK');
       const idxZona = headers.findIndex(h => h === 'ZONA' || h === 'REGION' || h === 'DISTRITO');
       const idxSku = headers.findIndex(h => h === 'SKU' || h === 'ARTICULO' || h === 'MATERIAL' || h === 'ITEM');
-      const idxTalla = headers.findIndex(h => h === 'TALLA' || h === 'SIZE' || h === 'NUMERO'); // TALLA OBLIGATORIA PARA INSIGHTS
+      const idxTalla = headers.findIndex(h => h === 'TALLA' || h === 'SIZE' || h === 'NUMERO');
 
       if (idxCentro === -1 || idxGoa === -1 || idxVentas === -1) {
         alert("El CSV debe tener mínimamente las columnas: Centro, GOA, Ventas"); 
@@ -488,6 +502,22 @@ export default function Distribucion() {
     if (selectedGoaFilter === 'ALL') return sortedStores;
     return sortedStores.filter(s => s.clusters[selectedGoaFilter]);
   }, [sortedStores, selectedGoaFilter]);
+  
+  // LÓGICA DE OVERRIDE MANUAL PARA CLÚSTERES (MEJORA VISUAL)
+  const handleManualClusterChange = (storeCenterCode, goaName, newCluster) => {
+    setStores(prev => prev.map(s => {
+      if (s.centerCode === storeCenterCode) {
+        return {
+          ...s,
+          clusters: {
+            ...s.clusters,
+            [goaName]: newCluster
+          }
+        };
+      }
+      return s;
+    }));
+  };
 
   const downloadClusterMatrix = () => {
     if (stores.length === 0) return;
@@ -744,18 +774,15 @@ export default function Distribucion() {
          }
       }
 
-      // --- LOGICA: DISTRIBUCIÓN SIZE-LEVEL (TALLA EN EL GOA ESPECÍFICO) ---
       let isSkuModeActive = false;
       let isGoaSizeModeActive = false;
 
       if (distMode === 'SKU') {
-          // Intento 1: Ventas de ese SKU exacto
           const storesWithSkuSales = eligibleStores.filter(s => s.skuSales && s.skuSales[item.sku] > 0);
           if (storesWithSkuSales.length > 0) {
               eligibleStores = storesWithSkuSales; 
               isSkuModeActive = true;
           } else {
-              // Intento 2 (FALLBACK MAGICO): Ventas de esa TALLA DENTRO DEL GOA
               const goaTallaKey = `${goaName}|${item.talla}`;
               const storesWithGoaSizeSales = eligibleStores.filter(s => s.goaSizeSales && s.goaSizeSales[goaTallaKey] > 0);
               if (storesWithGoaSizeSales.length > 0) {
@@ -931,13 +958,11 @@ export default function Distribucion() {
     setShowParamModal(false);
   };
 
-  // --- FILTRO DINÁMICO PARA EL DASHBOARD ---
   const filteredDistResult = useMemo(() => {
     if (dashGoaFilter === 'ALL') return distributionResult;
     return distributionResult.filter(r => r.goa === dashGoaFilter);
   }, [distributionResult, dashGoaFilter]);
 
-  // --- GRÁFICAS (USANDO DATOS FILTRADOS) ---
   const topStoresData = useMemo(() => {
     if (filteredDistResult.length === 0) return [];
     const agg = {};
@@ -1005,7 +1030,6 @@ export default function Distribucion() {
     return { pre: pre, post: post, maxInvPre: preMax, maxInvPost: postMax, maxVentas: maxVentasVal };
   }, [filteredDistResult]);
 
-  // --- LÓGICA DE INSIGHTS (Comparando histórico vs distribuido a nivel talla) ---
   const buyInsights = useMemo(() => {
     if (distributionResult.length === 0 || rawStoreData.length === 0) return { suggestions: [], hasTalla: false };
     
@@ -1058,6 +1082,73 @@ export default function Distribucion() {
     return { suggestions: suggestions.sort((a, b) => b.diff - a.diff).slice(0, 5), hasTalla: true };
   }, [distributionResult, rawStoreData]);
 
+  // --- DATOS MATRIZ SKU ---
+  const matrixData = useMemo(() => {
+    if (filteredDistResult.length === 0) return null;
+
+    const skusMap = new Map();
+    const sMap = new Map();
+
+    filteredDistResult.forEach(r => {
+      if (!skusMap.has(r.sku)) {
+        skusMap.set(r.sku, { sku: r.sku, talla: r.talla, modelo: r.modelo, goa: r.goa });
+      }
+      if (!sMap.has(r.centro)) {
+        sMap.set(r.centro, { centro: r.centro, nombre: r.nombre, total: 0 });
+      }
+    });
+
+    const skuCols = Array.from(skusMap.values()).sort((a, b) => a.sku.localeCompare(b.sku));
+    const storesList = Array.from(sMap.values()).sort((a, b) => a.nombre.localeCompare(b.nombre));
+
+    const mData = {};
+    const totals = { global: 0 };
+    skuCols.forEach(c => totals[c.sku] = 0);
+
+    storesList.forEach(s => {
+       mData[s.centro] = {};
+       skuCols.forEach(c => mData[s.centro][c.sku] = 0);
+    });
+
+    filteredDistResult.forEach(r => {
+       mData[r.centro][r.sku] += r.qty;
+       sMap.get(r.centro).total += r.qty;
+       totals[r.sku] += r.qty;
+       totals.global += r.qty;
+    });
+
+    return { storesList, skuCols, mData, totals };
+  }, [filteredDistResult]);
+
+  // --- DESCARGA EXCEL MATRIZ SKU ---
+  const downloadSkuMatrixCSV = () => {
+    if (!matrixData || matrixData.storesList.length === 0) return;
+    
+    const { storesList, skuCols, mData, totals } = matrixData;
+    const rows = [];
+    
+    rows.push(['TIENDA', ...skuCols.map(c => c.goa), 'TOTAL']);
+    rows.push(['', ...skuCols.map(c => c.modelo), '']);
+    rows.push(['', ...skuCols.map(c => c.talla !== 'N/A' ? `T-${c.talla}` : c.sku), '']);
+    
+    storesList.forEach(s => {
+      const row = [`${s.centro} ${s.nombre}`];
+      skuCols.forEach(c => {
+        row.push(mData[s.centro][c.sku] || 0);
+      });
+      row.push(s.total);
+      rows.push(row);
+    });
+    
+    const footer = ['TOTAL GENERAL'];
+    skuCols.forEach(c => footer.push(totals[c.sku]));
+    footer.push(totals.global);
+    rows.push(footer);
+
+    const csvContent = rows.map(e => e.join(",")).join("\n");
+    triggerDownload(`Matriz_Surtido_SKU_${new Date().toISOString().split('T')[0]}.csv`, csvContent);
+  };
+
 
   return (
     <div className={`h-full flex flex-col font-sans transition-colors duration-300 ${t.appBg}`}>
@@ -1089,7 +1180,7 @@ export default function Distribucion() {
         {/* MODAL DE PARAMETRIZACIÓN FLOTANTE */}
         {showParamModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-            <div className={`w-full max-w-lg rounded-2xl border shadow-2xl p-6 ${t.menuBg}`}>
+            <div className={`w-full max-w-lg rounded-2xl border shadow-2xl p-6 ${theme==='dark'?'bg-zinc-900 border-zinc-800':'bg-white border-gray-200'}`}>
               <div className="flex justify-between items-center mb-4">
                 <h3 className={`text-lg font-black ${t.textMain}`}>Parametrización de Descarga</h3>
                 <button onClick={() => setShowParamModal(false)} className="text-gray-500 hover:text-red-500 transition-colors">
@@ -1375,16 +1466,27 @@ export default function Distribucion() {
                           </div>
                           <div className="flex flex-col items-end">
                             <span className={`text-[10px] px-2 py-0.5 mb-1 rounded border font-mono ${t.badgeOther}`}>{store.centerCode}</span>
-                            <span className={`text-[10px] px-2 py-0.5 rounded border font-black ${activeCluster === activeClusters[0] ? t.badgeAA : activeCluster === activeClusters[1] ? t.badgeA : t.badgeOther}`}>
-                              {activeCluster || '-'}
-                            </span>
+                            {isFiltered ? (
+                              <select
+                                value={activeCluster || ''}
+                                onChange={(e) => handleManualClusterChange(store.centerCode, selectedGoaFilter, e.target.value)}
+                                className={`text-[10px] px-2 py-0.5 rounded border font-black outline-none cursor-pointer appearance-none text-center bg-transparent ${activeCluster === activeClusters[0] ? t.badgeAA : activeCluster === activeClusters[1] ? t.badgeA : t.badgeOther}`}
+                                style={{ textAlignLast: 'center' }}
+                              >
+                                {activeClusters.map(c => <option key={c} value={c}>{c}</option>)}
+                              </select>
+                            ) : (
+                              <span className={`text-[10px] px-2 py-0.5 rounded border font-black ${activeCluster === activeClusters[0] ? t.badgeAA : activeCluster === activeClusters[1] ? t.badgeA : t.badgeOther}`}>
+                                {activeCluster || '-'}
+                              </span>
+                            )}
                           </div>
                         </div>
                         
                         <div className={`rounded-lg p-3 mb-4 mt-auto grid grid-cols-3 gap-2 text-center divide-x border ${theme==='dark'?'divide-zinc-800 bg-zinc-900 border-zinc-800':'divide-gray-200 bg-white border-gray-100'}`}>
-                          <div><p className={`text-[8px] uppercase font-bold tracking-wider ${t.textMuted}`}>Ventas</p><p className={`text-[10px] font-bold ${t.textMain}`}>${activeSales?.toLocaleString()} u</p></div>
+                          <div><p className={`text-[8px] uppercase font-bold tracking-wider ${t.textMuted}`}>Ventas</p><p className={`text-[10px] font-bold ${t.textMain}`}>{activeSales?.toLocaleString()} u</p></div>
                           <div><p className={`text-[8px] uppercase font-bold tracking-wider ${t.textMuted}`}>OH</p><p className={`text-[10px] font-bold ${t.textMain}`}>{activeOH?.toLocaleString()}</p></div>
-                          <div><p className={`text-[8px] uppercase font-bold tracking-wider ${t.textMuted}`}>Mg</p><p className={`text-[10px] font-bold ${t.textMain}`}>${activeMargin?.toLocaleString()}</p></div>
+                          <div><p className={`text-[8px] uppercase font-bold tracking-wider ${t.textMuted}`}>Mg</p><p className={`text-[10px] font-bold ${t.textMain}`}>{activeMargin?.toLocaleString()}%</p></div>
                           <div className={`col-span-3 pt-3 border-t divide-none mt-2 flex justify-between px-2 items-center ${theme==='dark'?'border-zinc-800':'border-gray-100'}`}>
                              <p className={`text-[9px] uppercase font-black tracking-widest ${t.textAccent2}`}>Score {isFiltered ? 'GOA' : 'Global'}:</p>
                              <p className={`text-base font-black leading-tight ${t.textAccent2}`}>{Math.round(activeScore || 0).toLocaleString()}</p>
@@ -1398,9 +1500,14 @@ export default function Distribucion() {
                             {Object.entries(store.clusters).map(([goa, cluster]) => (
                               <div key={`store-${store.id}-goa-${goa}`} className={`flex justify-between items-center text-xs py-0.5`}>
                                 <span className={`truncate max-w-[120px] font-medium ${t.textMuted}`} title={goa}>{goa}</span>
-                                <span className={`font-black px-2 py-0.5 rounded border ${cluster === activeClusters[0] ? t.badgeAA : cluster === activeClusters[1] ? t.badgeA : t.badgeOther}`}>
-                                  {cluster}
-                                </span>
+                                <select
+                                  value={cluster}
+                                  onChange={(e) => handleManualClusterChange(store.centerCode, goa, e.target.value)}
+                                  className={`font-black px-2 py-0.5 rounded border outline-none cursor-pointer appearance-none bg-transparent text-center ${cluster === activeClusters[0] ? t.badgeAA : cluster === activeClusters[1] ? t.badgeA : t.badgeOther}`}
+                                  style={{ textAlignLast: 'center' }}
+                                >
+                                  {activeClusters.map(c => <option key={c} value={c}>{c}</option>)}
+                                </select>
                               </div>
                             ))}
                           </div>
@@ -1785,6 +1892,70 @@ export default function Distribucion() {
                   </div>
                 )}
 
+                {/* MATRIZ DE SKU (NUEVA) MOVIDA DEBAJO DE LOS INSIGHTS */}
+                {matrixData && matrixData.storesList.length > 0 && (
+                  <div className={`p-5 rounded-xl border col-span-1 md:col-span-2 ${t.cardInner} overflow-hidden flex flex-col mt-6`}>
+                    <div className="flex items-center justify-between mb-4">
+                      <div>
+                        <h4 className={`text-sm font-bold flex items-center ${t.textMain}`}>
+                          <Icons.Table size={16} className="mr-2"/> Resumen de Envío por Tienda y Talla (Matriz SKU)
+                          <button onClick={downloadSkuMatrixCSV} className="ml-4 px-2 py-1 bg-green-600/20 text-green-500 hover:bg-green-600 hover:text-white rounded flex items-center text-[10px] transition-colors" title="Descargar Matriz Excel">
+                            <Icons.Download size={12} className="mr-1" /> Excel
+                          </button>
+                        </h4>
+                        <p className={`text-xs mt-1 ${t.textMuted}`}>Revisa la dispersión exacta de piezas por cada talla/SKU hacia cada sucursal.</p>
+                      </div>
+                    </div>
+                    <div className="overflow-auto max-h-[60vh] custom-scrollbar flex-1 relative">
+                      <table className="w-full text-left border-collapse min-w-max">
+                        <thead>
+                          <tr className={`text-[9px] uppercase font-black tracking-widest ${theme==='dark'?'text-gray-400':'text-gray-500'}`}>
+                            <th className={`p-2 sticky left-0 top-0 z-30 ${theme==='dark'?'bg-zinc-950':'bg-gray-50'} shadow-[2px_2px_5px_-2px_rgba(0,0,0,0.3)] border-b ${theme==='dark'?'border-zinc-800':'border-gray-200'}`}>Tienda</th>
+                            {matrixData.skuCols.map(c => (
+                              <th key={c.sku} className={`p-2 text-center sticky top-0 z-10 ${theme==='dark'?'bg-zinc-950':'bg-gray-50'} border-b ${theme==='dark'?'border-zinc-800':'border-gray-200'}`} title={`GOA: ${c.goa} | Modelo: ${c.modelo} | SKU: ${c.sku}`}>
+                                <div className="flex flex-col items-center">
+                                  <span className="text-[9px] font-black text-gray-500 mb-0.5">{c.goa}</span>
+                                  <span className="text-violet-500 text-xs">{c.talla !== 'N/A' ? `T-${c.talla}` : 'SKU'}</span>
+                                  <span className="text-[8px] font-normal opacity-70 truncate max-w-[70px]">{c.sku}</span>
+                                </div>
+                              </th>
+                            ))}
+                            <th className={`p-2 text-right text-emerald-500 sticky right-0 top-0 z-30 ${theme==='dark'?'bg-zinc-950':'bg-gray-50'} shadow-[-2px_2px_5px_-2px_rgba(0,0,0,0.3)] border-b ${theme==='dark'?'border-zinc-800':'border-gray-200'}`}>Total</th>
+                          </tr>
+                        </thead>
+                        <tbody className={`divide-y ${theme==='dark'?'divide-zinc-800/50':'divide-gray-200'}`}>
+                          {matrixData.storesList.map(s => (
+                            <tr key={s.centro} className={`hover:${theme==='dark'?'bg-zinc-800/50':'bg-white'}`}>
+                              <td className={`p-2 text-xs font-bold sticky left-0 z-10 ${theme==='dark'?'bg-zinc-950':'bg-gray-50'} shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)] truncate max-w-[200px]`} title={s.nombre}>
+                                <span className="text-[9px] text-zinc-500 mr-2 font-mono">{s.centro}</span>
+                                <span className={t.textMain}>{s.nombre}</span>
+                              </td>
+                              {matrixData.skuCols.map(c => {
+                                const qty = matrixData.mData[s.centro][c.sku];
+                                return (
+                                  <td key={c.sku} className={`p-2 text-xs text-center font-mono ${qty > 0 ? t.textMain + ' font-bold bg-violet-500/5' : t.textMuted + ' opacity-30'}`}>
+                                    {qty > 0 ? qty : '-'}
+                                  </td>
+                                );
+                              })}
+                              <td className={`p-2 text-xs text-right font-black text-emerald-500 sticky right-0 z-10 ${theme==='dark'?'bg-zinc-950':'bg-gray-50'} shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.3)]`}>{s.total}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                        <tfoot>
+                          <tr className={`font-black text-xs`}>
+                            <td className={`p-2 sticky left-0 bottom-0 z-30 ${theme==='dark'?'bg-zinc-900 border-t border-zinc-700':'bg-gray-100 border-t border-gray-300'} shadow-[2px_-2px_5px_-2px_rgba(0,0,0,0.3)] ${t.textMain}`}>TOTAL GENERAL</td>
+                            {matrixData.skuCols.map(c => (
+                              <td key={`tot-${c.sku}`} className={`p-2 text-center font-mono text-violet-500 sticky bottom-0 z-20 ${theme==='dark'?'bg-zinc-900 border-t border-zinc-700':'bg-gray-100 border-t border-gray-300'}`}>{matrixData.totals[c.sku]}</td>
+                            ))}
+                            <td className={`p-2 text-right font-mono text-emerald-500 sticky right-0 bottom-0 z-30 ${theme==='dark'?'bg-zinc-900 border-t border-zinc-700':'bg-gray-100 border-t border-gray-300'} shadow-[-2px_-2px_5px_-2px_rgba(0,0,0,0.3)]`}>{matrixData.totals.global}</td>
+                          </tr>
+                        </tfoot>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
               </div>
             )}
 
@@ -1792,6 +1963,15 @@ export default function Distribucion() {
         )}
 
       </main>
+      <style dangerouslySetInnerHTML={{__html: `
+        * { scrollbar-width: thin; scrollbar-color: ${theme === 'dark' ? 'rgba(156, 163, 175, 0.5) transparent' : 'rgba(156, 163, 175, 0.5) transparent'}; }
+        *::-webkit-scrollbar { width: 6px; height: 6px; }
+        *::-webkit-scrollbar-track { background: transparent; }
+        *::-webkit-scrollbar-thumb { background-color: rgba(156, 163, 175, 0.4); border-radius: 10px; }
+        *::-webkit-scrollbar-thumb:hover { background-color: rgba(156, 163, 175, 0.7); }
+        @keyframes fadeInUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        .animate-fade-in-up { animation: fadeInUp 0.4s ease-out forwards; }
+      `}} />
     </div>
   );
 }
