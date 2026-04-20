@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import * as Icons from '../utils/icons';
 import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
+// ============================================================================
 // COMPONENTE EXTERNO: GRÁFICA DE DISPERSIÓN
 // ============================================================================
 const ScatterPlot = ({ data, title, subtitle, colorClass, maxVentas, maxInv, t }) => {
@@ -67,9 +68,9 @@ const ScatterPlot = ({ data, title, subtitle, colorClass, maxVentas, maxInv, t }
           <span>0</span>
         </div>
         <div className="absolute -bottom-5 left-0 right-0 flex justify-between text-[8px] text-zinc-500 px-1">
-          <span>$0</span>
+          <span>0 u</span>
           <span>Ventas</span>
-          <span>${Math.round(maxVentas).toLocaleString()}</span>
+          <span>{Math.round(maxVentas).toLocaleString()} u</span>
         </div>
       </div>
     </div>
@@ -81,19 +82,14 @@ const ScatterPlot = ({ data, title, subtitle, colorClass, maxVentas, maxInv, t }
 // COMPONENTE PRINCIPAL
 // ============================================================================
 export default function Distribucion() {
-  // --- INICIALIZACIÓN DEL CONTEXTO GLOBAL ---
   const gDispatch = useDispatch();
   const gState    = useGlobal();
-  const otbDisponible = !!gState?.otbData;
-  
-  // TEMA GLOBAL SINCRONIZADO DESDE EL SHELL
   const theme = gState?.theme || 'light'; 
 
   const [activeTab, setActiveTab] = useState(1); 
   const fileInputRef = useRef(null);
   const chequeraFileInputRef = useRef(null);
   
-  // --- 1. ESTADO DE BASE Y CLÚSTERES ---
   const [numClusters, setNumClusters] = useState(6);
   const activeClusters = useMemo(() => {
     if (numClusters === 6) return ['AA', 'A', 'B', 'C', 'D', 'E'];
@@ -111,21 +107,11 @@ export default function Distribucion() {
   const [brandMatrix, setBrandMatrix] = useState({}); 
   const [matrixMetadata, setMatrixMetadata] = useState({ sections: [], brandsBySection: {}, allBrands: [] });
   const [selectedGoaFilter, setSelectedGoaFilter] = useState('ALL'); 
+  const [dashGoaFilter, setDashGoaFilter] = useState('ALL'); 
 
-  // --- NUEVOS ESTADOS: MODAL DE PARAMETRIZACIÓN ---
   const [showParamModal, setShowParamModal] = useState(false);
-  const [paramForm, setParamForm] = useState({
-    etiquetaAP: '',
-    stockMin: '',
-    stockMax: '',
-    leadTime: '',
-    min: '',
-    max: '',
-    th: '',
-    tipoDistribucion: ''
-  });
+  const [paramForm, setParamForm] = useState({ etiquetaAP: '', stockMin: '', stockMax: '', leadTime: '', min: '', max: '', th: '', tipoDistribucion: '' });
 
-  // --- PERSISTENCIA DE MATRIZ DE MARCAS (Se queda fija en el navegador) ---
   useEffect(() => {
     try {
       const savedMatrix = localStorage.getItem('goplanner_brand_matrix');
@@ -134,23 +120,17 @@ export default function Distribucion() {
         setBrandMatrix(JSON.parse(savedMatrix));
         setMatrixMetadata(JSON.parse(savedMeta));
       }
-    } catch (e) {
-      console.warn("No se pudo cargar la matriz guardada.");
-    }
+    } catch (e) { }
   }, []);
 
   const clearBrandMatrix = (e) => {
-    if (e) {
-      e.preventDefault();
-      e.stopPropagation();
-    }
+    if (e) { e.preventDefault(); e.stopPropagation(); }
     setBrandMatrix({});
     setMatrixMetadata({ sections: [], brandsBySection: {}, allBrands: [] });
     localStorage.removeItem('goplanner_brand_matrix');
     localStorage.removeItem('goplanner_brand_meta');
   };
 
-  // --- 2. ESTADO DE CHEQUERA Y SURTIDO ---
   const [entryMode, setEntryMode] = useState('MANUAL'); 
   const [modelsInputText, setModelsInputText] = useState('');
   const [manualEntry, setManualEntry] = useState({ seccion: '', goa: '', marca: '', modelo: '', sku: '', color: '', talla: '', qty: '' });
@@ -159,10 +139,9 @@ export default function Distribucion() {
   const [editingItem, setEditingItem] = useState(null); 
   const [distributionResult, setDistributionResult] = useState([]);
   
-  const [considerOH, setConsiderOH] = useState(true);
+  const [distMode, setDistMode] = useState('SKU');
   const [showGuide, setShowGuide] = useState(false);
 
-  // --- MOTOR DE TEMAS ---
   const themes = {
     dark: {
       appBg: "bg-transparent text-gray-100", 
@@ -191,39 +170,63 @@ export default function Distribucion() {
   };
   const t = themes[theme] || themes.light;
 
-  // --- LÓGICA CORE Y PARSERS ---
   const parseCSVRow = (row, sep) => {
     return row.split(new RegExp(`\\${sep}(?=(?:(?:[^"]*"){2})*[^"]*$)`)).map(c => c.replace(/^"|"$/g, '').trim());
   };
 
   const recalculateClusters = (rawData, weights, currentClusters) => {
     if(!rawData || rawData.length === 0) return;
-    const dataByGoa = {};
+    
     const storeMap = new Map();
-    const maxVals = {}; 
+    const storeGoaAgg = {}; 
 
     rawData.forEach(row => {
-      const goa = row.goa;
-      if (!dataByGoa[goa]) { dataByGoa[goa] = []; maxVals[goa] = { sales: 0, margin: 0, rotation: 0 }; }
-      dataByGoa[goa].push(row);
-      
-      if (row.sales > maxVals[goa].sales) maxVals[goa].sales = row.sales;
-      if (row.margin > maxVals[goa].margin) maxVals[goa].margin = row.margin;
-      if (row.rotation > maxVals[goa].rotation) maxVals[goa].rotation = row.rotation;
-
       if (!storeMap.has(row.centro)) {
         storeMap.set(row.centro, { 
           id: row.centro, centerCode: row.centro, name: row.name, zona: row.zona,
-          sales: row.sales, margin: row.margin, rotation: row.rotation, totalOH: row.oh,
-          score: 0, goaScores: {}, goaSales: {}, goaOH: {}, clusters: {} 
+          sales: 0, margin: 0, rotation: row.rotation, totalOH: 0,
+          score: 0, goaScores: {}, goaSales: {}, goaMargin: {}, goaOH: {}, clusters: {},
+          skuSales: {}, skuOH: {}, goaSizeSales: {} // <-- NUEVO: Control Talla + GOA 
         });
-      } else {
-        const existing = storeMap.get(row.centro);
-        existing.sales = (existing.sales + row.sales) / 2; 
-        existing.margin = (existing.margin + row.margin) / 2;
-        existing.rotation = (existing.rotation + row.rotation) / 2;
-        existing.totalOH += row.oh;
       }
+      
+      const existing = storeMap.get(row.centro);
+      existing.sales += row.sales; 
+      existing.margin += row.margin; 
+      existing.totalOH += row.oh;
+
+      if (row.sku && row.sku !== 'N/A') {
+        existing.skuSales[row.sku] = (existing.skuSales[row.sku] || 0) + row.sales;
+        existing.skuOH[row.sku] = (existing.skuOH[row.sku] || 0) + row.oh;
+      }
+      
+      // MAGIA SIZE-LEVEL: Acumular la venta por TALLA DENTRO DEL GOA
+      if (row.talla && row.talla !== 'N/A') {
+        const goaTallaKey = `${row.goa.toUpperCase()}|${row.talla}`;
+        existing.goaSizeSales[goaTallaKey] = (existing.goaSizeSales[goaTallaKey] || 0) + row.sales;
+      }
+
+      const key = `${row.centro}|${row.goa}`;
+      if (!storeGoaAgg[key]) {
+        storeGoaAgg[key] = { centro: row.centro, goa: row.goa, sales: 0, margin: 0, rotation: row.rotation, oh: 0 };
+      }
+      storeGoaAgg[key].sales += row.sales;
+      storeGoaAgg[key].margin += row.margin;
+      storeGoaAgg[key].oh += row.oh;
+    });
+
+    const maxVals = {}; 
+    const dataByGoa = {};
+    
+    Object.values(storeGoaAgg).forEach(agg => {
+      if (!dataByGoa[agg.goa]) { 
+          dataByGoa[agg.goa] = []; 
+          maxVals[agg.goa] = { sales: 0, margin: 0, rotation: 0 }; 
+      }
+      dataByGoa[agg.goa].push(agg);
+      if (agg.sales > maxVals[agg.goa].sales) maxVals[agg.goa].sales = agg.sales;
+      if (agg.margin > maxVals[agg.goa].margin) maxVals[agg.goa].margin = agg.margin;
+      if (agg.rotation > maxVals[agg.goa].rotation) maxVals[agg.goa].rotation = agg.rotation;
     });
 
     Object.keys(dataByGoa).forEach(goaName => {
@@ -248,7 +251,8 @@ export default function Distribucion() {
         store.clusters[goaName] = currentClusters[clusterIndex];
         store.goaScores[goaName] = item.score; 
         store.goaSales[goaName] = item.sales; 
-        store.goaOH[goaName] = (store.goaOH[goaName] || 0) + item.oh; 
+        store.goaMargin[goaName] = item.margin; 
+        store.goaOH[goaName] = item.oh; 
         store.score = (store.score + item.score) / 2; 
       });
 
@@ -279,7 +283,6 @@ export default function Distribucion() {
   }, [scoreWeights, activeClusters]);
 
 
-  // --- CARGAS Y LECTURAS (Con ISO-8859-1 para Acentos) ---
   const handleStoreCSVUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -296,10 +299,12 @@ export default function Distribucion() {
       const idxNombre = headers.findIndex(h => h === 'NOMBRE' || h === 'TIENDA' || h === 'DESC CENTRO');
       const idxGoa = headers.findIndex(h => h === 'GOA' || h === 'FAMILIA');
       const idxVentas = headers.findIndex(h => h === 'VENTAS' || h === 'VTA' || h.includes('VTAS'));
-      const idxMargen = headers.findIndex(h => h === 'MARGEN' || h === 'MG' || h.includes('%GM'));
+      const idxMargen = headers.findIndex(h => h === 'MARGEN' || h === 'MG' || h.includes('%GM') || h === 'UTILIDAD');
       const idxRotacion = headers.findIndex(h => h === 'ROTACION' || h === 'ROT' || h.includes('SELL'));
       const idxOH = headers.findIndex(h => h === 'OH' || h === 'INV' || h === 'INVENTARIO' || h === 'STOCK');
       const idxZona = headers.findIndex(h => h === 'ZONA' || h === 'REGION' || h === 'DISTRITO');
+      const idxSku = headers.findIndex(h => h === 'SKU' || h === 'ARTICULO' || h === 'MATERIAL' || h === 'ITEM');
+      const idxTalla = headers.findIndex(h => h === 'TALLA' || h === 'SIZE' || h === 'NUMERO'); // TALLA OBLIGATORIA PARA INSIGHTS
 
       if (idxCentro === -1 || idxGoa === -1 || idxVentas === -1) {
         alert("El CSV debe tener mínimamente las columnas: Centro, GOA, Ventas"); 
@@ -313,15 +318,19 @@ export default function Distribucion() {
         const rawMargen = idxMargen !== -1 && rows[i][idxMargen] ? String(rows[i][idxMargen]).replace(/[^0-9.-]+/g, "") : "0";
         const rawRotacion = idxRotacion !== -1 && rows[i][idxRotacion] ? String(rows[i][idxRotacion]).replace(/[^0-9.-]+/g, "") : "1";
         const rawOH = idxOH !== -1 && rows[i][idxOH] ? String(rows[i][idxOH]).replace(/[^0-9.-]+/g, "") : "0";
+        const rawSku = idxSku !== -1 && rows[i][idxSku] ? String(rows[i][idxSku]).trim() : 'N/A';
+        const rawTalla = idxTalla !== -1 && rows[i][idxTalla] ? String(rows[i][idxTalla]).trim() : 'N/A';
+        const rawModelo = headers.includes('MODELO') ? String(rows[i][headers.indexOf('MODELO')]).trim() : 'N/A';
         
         let ventas = parseFloat(rawVentas) || 0; let margen = parseFloat(rawMargen) || 0; let rotacion = parseFloat(rawRotacion) || 0;
         let oh = parseFloat(rawOH) || 0;
-        if (margen > 1 && margen <= 100) margen = margen / 100; 
+        if (margen > 1 && margen <= 100 && idxMargen !== -1 && String(rows[0][idxMargen]).includes('%')) margen = margen / 100; 
 
         extractedRawData.push({
           centro: rows[i][idxCentro], name: idxNombre !== -1 ? rows[i][idxNombre] : rows[i][idxCentro],
           zona: idxZona !== -1 && rows[i][idxZona] ? rows[i][idxZona] : 'General',
-          goa: rows[i][idxGoa].toUpperCase(), sales: ventas, margin: margen, rotation: rotacion, oh: oh
+          goa: rows[i][idxGoa].toUpperCase(), sales: ventas, margin: margen, rotation: rotacion, oh: oh,
+          sku: rawSku, modelo: rawModelo, talla: rawTalla
         });
       }
       
@@ -426,7 +435,6 @@ export default function Distribucion() {
       setBrandMatrix(matrix);
       setMatrixMetadata(newMeta);
 
-      // Guardado Local (Inviolable desde el exterior)
       try {
         localStorage.setItem('goplanner_brand_matrix', JSON.stringify(matrix));
         localStorage.setItem('goplanner_brand_meta', JSON.stringify(newMeta));
@@ -438,10 +446,6 @@ export default function Distribucion() {
     reader.readAsText(file, 'ISO-8859-1'); 
   };
 
-
-  // ============================================================================
-  // CÁLCULOS VISUALES Y ORDENAMIENTO
-  // ============================================================================
   const storeStats = useMemo(() => {
     const filteredStores = selectedGoaFilter === 'ALL' 
       ? (stores || []) 
@@ -457,14 +461,8 @@ export default function Distribucion() {
     
     filteredStores.forEach(s => {
       const clusterVal = selectedGoaFilter === 'ALL' ? s.globalCluster : (s.clusters ? s.clusters[selectedGoaFilter] : undefined);
-      
-      if (!clusterVal) {
-        stats.clusters['Sin Asignar']++;
-      } else {
-        if (stats.clusters[clusterVal] !== undefined) {
-          stats.clusters[clusterVal]++;
-        }
-      }
+      if (!clusterVal) { stats.clusters['Sin Asignar']++; } 
+      else { if (stats.clusters[clusterVal] !== undefined) stats.clusters[clusterVal]++; }
     });
     
     return stats;
@@ -474,10 +472,7 @@ export default function Distribucion() {
     return [...(stores || [])].sort((a, b) => {
       let valA = a[storeSortBy];
       let valB = b[storeSortBy];
-      if (typeof valA === 'string') {
-        valA = valA.toLowerCase();
-        valB = valB.toLowerCase();
-      }
+      if (typeof valA === 'string') { valA = valA.toLowerCase(); valB = valB.toLowerCase(); }
       if (valA < valB) return storeSortOrder === 'asc' ? -1 : 1;
       if (valA > valB) return storeSortOrder === 'asc' ?  1 : -1;
       return 0;
@@ -485,19 +480,14 @@ export default function Distribucion() {
   }, [stores, storeSortBy, storeSortOrder]);
 
   const toggleSort = (field) => {
-    if (storeSortBy === field) {
-      setStoreSortOrder(prev => prev === 'asc' ? 'desc' : 'asc');
-    } else {
-      setStoreSortBy(field);
-      setStoreSortOrder('desc');
-    }
+    if (storeSortBy === field) { setStoreSortOrder(prev => prev === 'asc' ? 'desc' : 'asc'); } 
+    else { setStoreSortBy(field); setStoreSortOrder('desc'); }
   };
 
   const displayedStores = useMemo(() => {
     if (selectedGoaFilter === 'ALL') return sortedStores;
     return sortedStores.filter(s => s.clusters[selectedGoaFilter]);
   }, [sortedStores, selectedGoaFilter]);
-
 
   const downloadClusterMatrix = () => {
     if (stores.length === 0) return;
@@ -518,8 +508,6 @@ export default function Distribucion() {
     triggerDownload(`Matriz_Clusters_${selectedGoaFilter}_${new Date().toISOString().split('T')[0]}.csv`, csvContent);
   };
 
-
-  // --- LÓGICA DE CORRIDAS DE TALLAS Y CHEQUERA ---
   const createSizeRuns = (baseItem, tallaStr, qtyStr) => {
       const qtys = qtyStr.toString().split(/[,|/;\t-]+/).map(q => parseInt(q.trim())).filter(q => !isNaN(q) && q > 0);
       if (qtys.length === 0) return [];
@@ -545,11 +533,7 @@ export default function Distribucion() {
              finalSku = `${finalModelo}${extColor}${extTalla}`.replace(/\s+/g, '');
           }
 
-          // Generación de identificador verdaderamente único para React
-          const uniqueId = typeof crypto !== 'undefined' && crypto.randomUUID 
-             ? crypto.randomUUID() 
-             : `item-${Date.now()}-${Math.random().toString(36).substring(2, 9)}-${i}`;
-
+          const uniqueId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `item-${Date.now()}-${Math.random().toString(36).substring(2, 9)}-${i}`;
           return { ...baseItem, id: uniqueId, talla: t, qty: q, sku: finalSku, modelo: finalModelo };
       });
   };
@@ -569,7 +553,6 @@ export default function Distribucion() {
 
     const newRuns = createSizeRuns(baseItem, talla, qty);
     setChequera(prev => [...prev, ...newRuns]);
-
     setManualEntry(prev => ({...prev, sku: '', color: '', talla: '', qty: ''}));
     setDistributionResult([]);
   };
@@ -585,10 +568,7 @@ export default function Distribucion() {
       const hasTabs = line.includes('\t');
       let parts = hasTabs ? line.split('\t').map(p => p.trim()) : line.split(/[,;]+/).map(p => p.trim());
       
-      // Limpiar columnas vacías al final (comas extra)
-      while (parts.length > 0 && parts[parts.length - 1] === '') {
-          parts.pop();
-      }
+      while (parts.length > 0 && parts[parts.length - 1] === '') { parts.pop(); }
 
       if (parts.length < 3) { if (parts.length > 0 && parts[0] !== '') errores++; return; }
       if (parts[0].toUpperCase() === 'GOA' || parts[0].toUpperCase() === 'SECCION' || parts[0].toUpperCase() === 'SECCIÓN') return;
@@ -649,25 +629,16 @@ export default function Distribucion() {
 
       for (let i = startIndex; i < rows.length; i++) {
         let parts = [...rows[i]];
-        
-        // LIMPIEZA CLAVE: Remover elementos vacíos al final que Excel añade como comas extra
-        while (parts.length > 0 && parts[parts.length - 1].trim() === "") {
-           parts.pop();
-        }
+        while (parts.length > 0 && parts[parts.length - 1].trim() === "") { parts.pop(); }
 
         if (parts.length >= 3) {
            let seccion = 'N/A', goa = 'N/A', marca = 'N/A', modelo = 'N/A', sku = '', color = 'N/A', talla = 'N/A', qty = '';
            const n = parts.length;
            
            if (n >= 8) {
-             seccion = parts[0] || 'N/A'; 
-             goa = parts[1] || 'N/A'; 
-             marca = parts[2] || 'N/A'; 
-             modelo = parts[3] || 'N/A'; 
-             sku = parts[4] || ''; 
-             color = parts[5] || 'N/A'; 
-             talla = parts[6] || 'N/A'; 
-             qty = parts[7]; // Siempre tomar la columna 8 para la cantidad
+             seccion = parts[0] || 'N/A'; goa = parts[1] || 'N/A'; marca = parts[2] || 'N/A'; 
+             modelo = parts[3] || 'N/A'; sku = parts[4] || ''; color = parts[5] || 'N/A'; 
+             talla = parts[6] || 'N/A'; qty = parts[7]; 
            } else if (n === 7) {
              goa = parts[0]; marca = parts[1]; modelo = parts[2]; sku = parts[3]; color = parts[4]; talla = parts[5]; qty = parts[6];
            } else if (n === 6) {
@@ -694,9 +665,7 @@ export default function Distribucion() {
       if (newItems.length > 0) {
          setChequera(prev => [...prev, ...newItems]);
          setDistributionResult([]);
-         if (errores > 0) {
-             alert(`Se cargó el CSV con éxito, pero se omitieron ${errores} filas por formato incorrecto o falta de datos.`);
-         }
+         if (errores > 0) alert(`Se cargó el CSV con éxito, pero se omitieron ${errores} filas por formato incorrecto o falta de datos.`);
       } else {
          alert("No se detectaron datos válidos. Revisa que las columnas coincidan con el formato requerido.");
       }
@@ -735,10 +704,11 @@ export default function Distribucion() {
     const results = [];
     const warnings = []; 
     
-    // Clonar el Inventario (OH) inicial para actualizarlo dinámicamente corrida por corrida
     const dynamicOH = {};
+    const dynamicSkuOH = {};
     stores.forEach(s => {
        dynamicOH[s.centerCode] = { ...s.goaOH };
+       dynamicSkuOH[s.centerCode] = { ...s.skuOH };
     });
     
     chequera.forEach(item => {
@@ -749,26 +719,22 @@ export default function Distribucion() {
       let eligibleStores = stores.filter(s => s.goaScores && s.goaScores[goaName] > 0);
       
       if (eligibleStores.length === 0) {
-         warnings.push(`[${item.sku}]: No hay tiendas con ventas o score > 0 para el GOA '${goaName}'.`);
+         warnings.push(`[${item.sku}]: No hay tiendas con ventas para el GOA '${goaName}'.`);
          return;
       }
 
       if (Object.keys(brandMatrix).length > 0) {
-         const preFilterCount = eligibleStores.length;
          eligibleStores = eligibleStores.filter(s => {
             const normStoreId = parseInt(s.centerCode).toString();
             const authBrands = brandMatrix[normStoreId] || [];
-            
             const reqSeccion = item.seccion?.toUpperCase() || 'N/A';
             const reqMarca = item.marca?.toUpperCase() || 'N/A';
             
             if (reqSeccion === 'N/A' && reqMarca === 'N/A') return true;
-
             if (authBrands.includes(`${reqSeccion}|${reqMarca}`)) return true;
             if (reqSeccion === 'N/A' && authBrands.some(auth => auth.endsWith(`|${reqMarca}`))) return true;
             if (reqMarca === 'N/A' && authBrands.some(auth => auth.startsWith(`${reqSeccion}|`))) return true;
             if (authBrands.includes(`N/A|${reqMarca}`)) return true;
-
             return false;
          });
 
@@ -778,27 +744,58 @@ export default function Distribucion() {
          }
       }
 
-      const totalScore = eligibleStores.reduce((sum, s) => sum + s.goaScores[goaName], 0);
+      // --- LOGICA: DISTRIBUCIÓN SIZE-LEVEL (TALLA EN EL GOA ESPECÍFICO) ---
+      let isSkuModeActive = false;
+      let isGoaSizeModeActive = false;
+
+      if (distMode === 'SKU') {
+          // Intento 1: Ventas de ese SKU exacto
+          const storesWithSkuSales = eligibleStores.filter(s => s.skuSales && s.skuSales[item.sku] > 0);
+          if (storesWithSkuSales.length > 0) {
+              eligibleStores = storesWithSkuSales; 
+              isSkuModeActive = true;
+          } else {
+              // Intento 2 (FALLBACK MAGICO): Ventas de esa TALLA DENTRO DEL GOA
+              const goaTallaKey = `${goaName}|${item.talla}`;
+              const storesWithGoaSizeSales = eligibleStores.filter(s => s.goaSizeSales && s.goaSizeSales[goaTallaKey] > 0);
+              if (storesWithGoaSizeSales.length > 0) {
+                  eligibleStores = storesWithGoaSizeSales;
+                  isGoaSizeModeActive = true;
+              } else {
+                  warnings.push(`[${item.sku}]: La talla ${item.talla} no tiene ventas históricas en el GOA ${goaName}. Se usará el perfil general del GOA para no dejar el lote huérfano.`);
+              }
+          }
+      }
+
+      const totalScore = eligibleStores.reduce((sum, s) => {
+          if (isSkuModeActive) return sum + s.skuSales[item.sku];
+          if (isGoaSizeModeActive) return sum + s.goaSizeSales[`${goaName}|${item.talla}`];
+          return sum + s.goaScores[goaName];
+      }, 0);
+
       const allocations = new Map();
       const remainders = [];
       let remainingQty = qtyToDistribute;
 
-      if (considerOH) {
+      if (distMode === 'OH' || distMode === 'SKU') {
         let totalNeed = 0;
         const storeNeeds = [];
         
-        // Calculamos usando el OH Dinámico (actualizado por tallas anteriores)
         let totalSystemOH = 0;
         eligibleStores.forEach(s => {
-            totalSystemOH += (dynamicOH[s.centerCode][goaName] || 0);
+            totalSystemOH += isSkuModeActive ? (dynamicSkuOH[s.centerCode]?.[item.sku] || 0) : (dynamicOH[s.centerCode]?.[goaName] || 0);
         });
         
         const totalPool = totalSystemOH + qtyToDistribute; 
 
         eligibleStores.forEach(store => {
-          const share = store.goaScores[goaName] / totalScore;
+          let share = 0;
+          if (isSkuModeActive) { share = store.skuSales[item.sku] / totalScore; }
+          else if (isGoaSizeModeActive) { share = store.goaSizeSales[`${goaName}|${item.talla}`] / totalScore; }
+          else { share = store.goaScores[goaName] / totalScore; }
+
           const idealTotalQty = share * totalPool;
-          const currentOH = dynamicOH[store.centerCode][goaName] || 0;
+          const currentOH = isSkuModeActive ? (dynamicSkuOH[store.centerCode]?.[item.sku] || 0) : (dynamicOH[store.centerCode]?.[goaName] || 0);
           
           let need = idealTotalQty - currentOH;
           if (need < 0) need = 0; 
@@ -811,29 +808,24 @@ export default function Distribucion() {
           storeNeeds.forEach(({ store, need }) => {
             const expectedQty = (need / totalNeed) * qtyToDistribute;
             const assignedQty = Math.floor(expectedQty);
-            
-            if (assignedQty > 0) {
-              allocations.set(store.centerCode, assignedQty);
-              remainingQty -= assignedQty;
-            }
+            if (assignedQty > 0) { allocations.set(store.centerCode, assignedQty); remainingQty -= assignedQty; }
             remainders.push({ store, fraction: expectedQty - assignedQty });
           });
         } else {
-            warnings.push(`[${item.sku}]: Las tiendas ya tienen suficiente OH global para este GOA. Usa 'Llenado Push' si quieres forzar envío.`);
-            return;
+            warnings.push(`[${item.sku}]: Inventario OH lleno. Se forzará reparto Proporcional (Push).`);
         }
       } 
       
-      if (!considerOH || allocations.size === 0) {
+      if (distMode === 'PUSH' || allocations.size === 0) {
         eligibleStores.forEach(store => {
-          const share = store.goaScores[goaName] / totalScore;
+          let share = 0;
+          if (isSkuModeActive) { share = store.skuSales[item.sku] / totalScore; }
+          else if (isGoaSizeModeActive) { share = store.goaSizeSales[`${goaName}|${item.talla}`] / totalScore; }
+          else { share = store.goaScores[goaName] / totalScore; }
+
           const expectedQty = share * qtyToDistribute;
           const assignedQty = Math.floor(expectedQty);
-          
-          if (assignedQty > 0) {
-            allocations.set(store.centerCode, assignedQty);
-            remainingQty -= assignedQty;
-          }
+          if (assignedQty > 0) { allocations.set(store.centerCode, assignedQty); remainingQty -= assignedQty; }
           remainders.push({ store, fraction: expectedQty - assignedQty });
         });
       }
@@ -845,9 +837,10 @@ export default function Distribucion() {
         allocations.set(storeCenter, (allocations.get(storeCenter) || 0) + 1);
       }
 
-      // IMPORTANTE: Actualizar el OH dinámico para que la SIGUIENTE talla respete la dispersión real
       allocations.forEach((qty, centerCode) => {
         dynamicOH[centerCode][goaName] = (dynamicOH[centerCode][goaName] || 0) + qty;
+        if (!dynamicSkuOH[centerCode]) dynamicSkuOH[centerCode] = {};
+        dynamicSkuOH[centerCode][item.sku] = (dynamicSkuOH[centerCode][item.sku] || 0) + qty;
         
         const storeObj = eligibleStores.find(s => s.centerCode === centerCode);
         results.push({
@@ -858,38 +851,28 @@ export default function Distribucion() {
           score: storeObj ? storeObj.goaScores[goaName] : 0,
           globalCluster: storeObj ? storeObj.globalCluster : '',
           initialOH: storeObj ? (storeObj.goaOH[goaName] || 0) : 0,
-          sku: item.sku,
-          modelo: item.modelo,
-          goa: goaName,
-          marca: item.marca,
-          color: item.color,
-          talla: item.talla,
-          qty: qty
+          sku: item.sku, modelo: item.modelo, goa: goaName, marca: item.marca, color: item.color, talla: item.talla, qty: qty
         });
       });
     });
     
     if (warnings.length > 0) {
-       alert("ATENCIÓN: Algunos modelos tuvieron bloqueos:\n\n" + warnings.join("\n\n"));
+       alert("ATENCIÓN: Alertas del sistema durante la corrida:\n\n" + warnings.join("\n\n"));
     }
 
     results.sort((a, b) => a.centro.localeCompare(b.centro) || a.sku.localeCompare(b.sku));
     setDistributionResult(results);
 
-    // --- NUEVA INTEGRACIÓN CON GLOBAL CONTEXT ---
     try {
       const finalAllocations = {};
       results.forEach(r => { finalAllocations[r.centro] = (finalAllocations[r.centro] || 0) + r.qty; });
       const totalFcst = results.reduce((s, r) => s + r.qty, 0);
       const totalAlloc = Object.values(finalAllocations).reduce((a, b) => a + b, 0);
       const fillRate = totalFcst > 0 ? Math.min((totalAlloc / totalFcst) * 100, 100) : 0;
-      
       if (typeof globalActions !== 'undefined' && gDispatch) {
         globalActions.publishDistribution(gDispatch, { allocations: finalAllocations, fillRate, result: results });
       }
-    } catch (error) {
-      console.warn("Aviso: GlobalContext no detectado en entorno de previsualización.");
-    }
+    } catch (error) {}
   };
 
   const triggerDownload = (filename, content) => {
@@ -940,7 +923,6 @@ export default function Distribucion() {
   const downloadParamTXT = () => {
     if (distributionResult.length === 0) return;
     const rows = distributionResult.map(r => {
-        // Formato: SKU | CENTRO | ETIQUETA AP | STOCK MIN | STOCK MAX | LEAD TIME | min | max | TH | Tipo de distribucion
         const centroPad = String(r.centro).padStart(4, '0');
         return `${r.sku}\t${centroPad}\t${paramForm.etiquetaAP}\t${paramForm.stockMin}\t${paramForm.stockMax}\t${paramForm.leadTime}\t${paramForm.min}\t${paramForm.max}\t${paramForm.th}\t${paramForm.tipoDistribucion}`;
     });
@@ -949,24 +931,29 @@ export default function Distribucion() {
     setShowParamModal(false);
   };
 
-  // --- PREPARACIÓN DE DATOS PARA GRÁFICAS SIN COMPONENTES ANIDADOS ---
+  // --- FILTRO DINÁMICO PARA EL DASHBOARD ---
+  const filteredDistResult = useMemo(() => {
+    if (dashGoaFilter === 'ALL') return distributionResult;
+    return distributionResult.filter(r => r.goa === dashGoaFilter);
+  }, [distributionResult, dashGoaFilter]);
+
+  // --- GRÁFICAS (USANDO DATOS FILTRADOS) ---
   const topStoresData = useMemo(() => {
-    if (distributionResult.length === 0) return [];
+    if (filteredDistResult.length === 0) return [];
     const agg = {};
-    distributionResult.forEach(r => {
+    filteredDistResult.forEach(r => {
       if (!agg[r.nombre]) agg[r.nombre] = { qty: 0, cluster: r.globalCluster };
       agg[r.nombre].qty += r.qty;
     });
     return Object.entries(agg).map(([name, val]) => ({ name, qty: val.qty, cluster: val.cluster })).sort((a, b) => b.qty - a.qty).slice(0, 10);
-  }, [distributionResult]);
-
+  }, [filteredDistResult]);
   const topStoresMax = Math.max(...topStoresData.map(d => d.qty), 1);
 
   const modelsStoreData = useMemo(() => {
-    if (distributionResult.length === 0) return { stores: [], models: [] };
+    if (filteredDistResult.length === 0) return { stores: [], models: [] };
     const agg = {};
     const modelsSet = new Set();
-    distributionResult.forEach(r => {
+    filteredDistResult.forEach(r => {
       if (!agg[r.nombre]) agg[r.nombre] = { total: 0, models: {} };
       agg[r.nombre].total += r.qty;
       const dispModelo = r.modelo !== 'N/A' ? r.modelo : r.sku;
@@ -975,29 +962,25 @@ export default function Distribucion() {
     });
     const sorted = Object.entries(agg).map(([name, val]) => ({ name, ...val })).sort((a, b) => b.total - a.total).slice(0, 15);
     return { stores: sorted, models: Array.from(modelsSet) };
-  }, [distributionResult]);
-
+  }, [filteredDistResult]);
   const modelsStoreMax = Math.max(...modelsStoreData.stores.map(d => d.total), 1);
   const modelsColors = ['bg-indigo-500', 'bg-pink-500', 'bg-amber-500', 'bg-teal-500', 'bg-cyan-500', 'bg-rose-500', 'bg-violet-500', 'bg-fuchsia-500'];
 
   const zonesData = useMemo(() => {
-    if (distributionResult.length === 0) return [];
+    if (filteredDistResult.length === 0) return [];
     const agg = {};
-    distributionResult.forEach(r => {
+    filteredDistResult.forEach(r => {
       agg[r.zona] = (agg[r.zona] || 0) + r.qty;
     });
     return Object.entries(agg).map(([name, qty]) => ({ name, qty })).sort((a, b) => b.qty - a.qty);
-  }, [distributionResult]);
-
+  }, [filteredDistResult]);
   const zonesMax = Math.max(...zonesData.map(d => d.qty), 1);
 
   const scatterData = useMemo(() => {
-    if (distributionResult.length === 0) return { pre: [], post: [], maxInvPre: 10, maxInvPost: 10, maxVentas: 100 };
+    if (filteredDistResult.length === 0) return { pre: [], post: [], maxInvPre: 10, maxInvPost: 10, maxVentas: 100 };
     const agg = {};
-    distributionResult.forEach(r => {
-      if(!agg[r.centro]) {
-          agg[r.centro] = { name: r.nombre, env: 0, ohByGoa: {}, ventasByGoa: {} };
-      }
+    filteredDistResult.forEach(r => {
+      if(!agg[r.centro]) { agg[r.centro] = { name: r.nombre, env: 0, ohByGoa: {}, ventasByGoa: {} }; }
       agg[r.centro].ohByGoa[r.goa] = r.initialOH;
       agg[r.centro].ventasByGoa[r.goa] = r.ventas;
       agg[r.centro].env += r.qty;
@@ -1009,21 +992,71 @@ export default function Distribucion() {
     Object.values(agg).forEach(d => {
         const totalOH = Object.values(d.ohByGoa).reduce((sum, val) => sum + val, 0);
         const totalVentas = Object.values(d.ventasByGoa).reduce((sum, val) => sum + val, 0);
-        
         pre.push({ x: totalVentas, y: totalOH, name: d.name, oh: totalOH, env: 0 });
         post.push({ x: totalVentas, y: totalOH + d.env, name: d.name, oh: totalOH, env: d.env });
     });
     
     let preMax = Math.max(...pre.map(d => d.y), 5) * 1.1; 
     if (preMax === 0 || isNaN(preMax)) preMax = 10;
-
     let postMax = Math.max(...post.map(d => d.y), 5) * 1.1; 
     if (postMax === 0 || isNaN(postMax)) postMax = 10;
-
     let maxVentasVal = Math.max(...post.map(d => d.x), 100);
     
     return { pre: pre, post: post, maxInvPre: preMax, maxInvPost: postMax, maxVentas: maxVentasVal };
-  }, [distributionResult]);
+  }, [filteredDistResult]);
+
+  // --- LÓGICA DE INSIGHTS (Comparando histórico vs distribuido a nivel talla) ---
+  const buyInsights = useMemo(() => {
+    if (distributionResult.length === 0 || rawStoreData.length === 0) return { suggestions: [], hasTalla: false };
+    
+    const hasTallaInHistory = rawStoreData.some(row => row.talla && row.talla !== 'N/A');
+    if (!hasTallaInHistory) return { suggestions: [], hasTalla: false };
+
+    const sizeAgg = {}; 
+    distributionResult.forEach(r => {
+       const key = `${r.goa}|${r.talla}`;
+       if (!sizeAgg[key]) sizeAgg[key] = { comprado: 0, vendido: 0, goa: r.goa, talla: r.talla, marcas: new Set() };
+       sizeAgg[key].comprado += r.qty;
+       sizeAgg[key].marcas.add(r.marca);
+    });
+
+    const goaTotals = {};
+    distributionResult.forEach(r => {
+       goaTotals[r.goa] = (goaTotals[r.goa] || 0) + r.qty;
+    });
+
+    const historicGoaTotals = {};
+    rawStoreData.forEach(row => {
+       if (!row.talla || row.talla === 'N/A') return; 
+       const key = `${row.goa}|${row.talla}`;
+       if (!sizeAgg[key]) sizeAgg[key] = { comprado: 0, vendido: 0, goa: row.goa, talla: row.talla, marcas: new Set(['Varias']) };
+       sizeAgg[key].vendido += row.sales;
+       historicGoaTotals[row.goa] = (historicGoaTotals[row.goa] || 0) + row.sales;
+    });
+
+    const suggestions = [];
+    Object.values(sizeAgg).forEach(data => {
+       const tComprado = goaTotals[data.goa] || 0;
+       const tVendido = historicGoaTotals[data.goa] || 0;
+       
+       if (tComprado > 0 && tVendido > 0 && data.vendido > 0) {
+           const mixComprado = data.comprado / tComprado;
+           const mixVendido = data.vendido / tVendido;
+           const diff = mixVendido - mixComprado;
+           
+           if (diff > 0.03) { 
+               suggestions.push({
+                  goa: data.goa, talla: data.talla, marca: Array.from(data.marcas).join(', '),
+                  mixComprado: (mixComprado * 100).toFixed(1),
+                  mixVendido: (mixVendido * 100).toFixed(1),
+                  diff
+               });
+           }
+       }
+    });
+
+    return { suggestions: suggestions.sort((a, b) => b.diff - a.diff).slice(0, 5), hasTalla: true };
+  }, [distributionResult, rawStoreData]);
 
 
   return (
@@ -1328,7 +1361,9 @@ export default function Distribucion() {
                     const isFiltered = selectedGoaFilter !== 'ALL';
                     const activeCluster = isFiltered ? store.clusters[selectedGoaFilter] : store.globalCluster;
                     const activeScore = isFiltered ? store.goaScores[selectedGoaFilter] : store.score;
+                    const activeSales = isFiltered ? (store.goaSales[selectedGoaFilter] || 0) : store.sales;
                     const activeOH = isFiltered ? (store.goaOH[selectedGoaFilter] || 0) : store.totalOH;
+                    const activeMargin = isFiltered ? (store.goaMargin[selectedGoaFilter] || 0) : store.margin;
 
                     return (
                       <div key={`store-card-${store.id}`} className={`p-5 rounded-xl shadow-sm transition-colors group border hover:border-purple-500/50 flex flex-col ${t.cardInner}`}>
@@ -1341,15 +1376,15 @@ export default function Distribucion() {
                           <div className="flex flex-col items-end">
                             <span className={`text-[10px] px-2 py-0.5 mb-1 rounded border font-mono ${t.badgeOther}`}>{store.centerCode}</span>
                             <span className={`text-[10px] px-2 py-0.5 rounded border font-black ${activeCluster === activeClusters[0] ? t.badgeAA : activeCluster === activeClusters[1] ? t.badgeA : t.badgeOther}`}>
-                              {activeCluster}
+                              {activeCluster || '-'}
                             </span>
                           </div>
                         </div>
                         
                         <div className={`rounded-lg p-3 mb-4 mt-auto grid grid-cols-3 gap-2 text-center divide-x border ${theme==='dark'?'divide-zinc-800 bg-zinc-900 border-zinc-800':'divide-gray-200 bg-white border-gray-100'}`}>
-                          <div><p className={`text-[8px] uppercase font-bold tracking-wider ${t.textMuted}`}>Ventas</p><p className={`text-[10px] font-bold ${t.textMain}`}>${store.sales?.toLocaleString()}</p></div>
+                          <div><p className={`text-[8px] uppercase font-bold tracking-wider ${t.textMuted}`}>Ventas</p><p className={`text-[10px] font-bold ${t.textMain}`}>${activeSales?.toLocaleString()} u</p></div>
                           <div><p className={`text-[8px] uppercase font-bold tracking-wider ${t.textMuted}`}>OH</p><p className={`text-[10px] font-bold ${t.textMain}`}>{activeOH?.toLocaleString()}</p></div>
-                          <div><p className={`text-[8px] uppercase font-bold tracking-wider ${t.textMuted}`}>Rot</p><p className={`text-[10px] font-bold ${t.textMain}`}>{store.rotation?.toFixed(1)}</p></div>
+                          <div><p className={`text-[8px] uppercase font-bold tracking-wider ${t.textMuted}`}>Mg</p><p className={`text-[10px] font-bold ${t.textMain}`}>${activeMargin?.toLocaleString()}</p></div>
                           <div className={`col-span-3 pt-3 border-t divide-none mt-2 flex justify-between px-2 items-center ${theme==='dark'?'border-zinc-800':'border-gray-100'}`}>
                              <p className={`text-[9px] uppercase font-black tracking-widest ${t.textAccent2}`}>Score {isFiltered ? 'GOA' : 'Global'}:</p>
                              <p className={`text-base font-black leading-tight ${t.textAccent2}`}>{Math.round(activeScore || 0).toLocaleString()}</p>
@@ -1565,11 +1600,14 @@ export default function Distribucion() {
                 
                 <div className="flex flex-col md:flex-row items-center gap-6">
                   <div className={`flex items-center p-2 rounded-lg border ${theme==='dark'?'bg-black/30 border-zinc-800':'bg-gray-100 border-gray-200'}`}>
-                    <button onClick={() => setConsiderOH(false)} className={`flex items-center px-3 py-1.5 rounded text-xs font-bold transition-all ${!considerOH ? (theme==='dark'?'bg-zinc-800 text-white shadow':'bg-white text-black shadow') : t.textMuted}`}>
-                      <Icons.Box size={16} className={`mr-1 ${!considerOH ? 'text-red-400' : ''}`} /> Llenado Push
+                    <button onClick={() => setDistMode('PUSH')} className={`flex items-center px-3 py-1.5 rounded text-xs font-bold transition-all ${distMode === 'PUSH' ? (theme==='dark'?'bg-zinc-800 text-white shadow':'bg-white text-black shadow') : t.textMuted}`}>
+                      <Icons.Box size={16} className={`mr-1 ${distMode === 'PUSH' ? 'text-red-400' : ''}`} /> Llenado Push
                     </button>
-                    <button onClick={() => setConsiderOH(true)} className={`flex items-center px-3 py-1.5 rounded text-xs font-bold transition-all ${considerOH ? (theme==='dark'?'bg-zinc-800 text-white shadow':'bg-white text-black shadow') : t.textMuted}`}>
-                      Cuidar Dispersión (OH) <Icons.CheckSquare size={16} className={`ml-1 ${considerOH ? 'text-emerald-400' : ''}`} />
+                    <button onClick={() => setDistMode('OH')} className={`flex items-center px-3 py-1.5 rounded text-xs font-bold transition-all ${distMode === 'OH' ? (theme==='dark'?'bg-zinc-800 text-white shadow':'bg-white text-black shadow') : t.textMuted}`}>
+                       <Icons.CheckSquare size={16} className={`mr-1 ${distMode === 'OH' ? 'text-emerald-400' : ''}`} /> Dispersión (GOA)
+                    </button>
+                    <button onClick={() => setDistMode('SKU')} className={`flex items-center px-3 py-1.5 rounded text-xs font-bold transition-all ${distMode === 'SKU' ? (theme==='dark'?'bg-zinc-800 text-white shadow':'bg-white text-black shadow') : t.textMuted}`}>
+                       <Icons.Layers size={16} className={`mr-1 ${distMode === 'SKU' ? 'text-violet-400' : ''}`} /> Size-Level
                     </button>
                   </div>
 
@@ -1591,7 +1629,7 @@ export default function Distribucion() {
                       <div className="p-3 rounded-full bg-green-500 text-white mr-4"><Icons.CheckSquare size={24} /></div>
                       <div>
                         <h3 className={`text-xl font-black text-green-600 ${theme==='dark'?'text-green-400':''}`}>Distribución Completa</h3>
-                        <p className={`text-sm ${t.textMuted}`}>Se generaron <strong>{distributionResult.length}</strong> combinaciones mediante {considerOH ? 'el calculo con OH' : 'Push Proporcional'}.</p>
+                        <p className={`text-sm ${t.textMuted}`}>Se generaron <strong>{distributionResult.length}</strong> combinaciones mediante {distMode === 'SKU' ? 'la dispersión ultra precisa (Size-Level)' : distMode === 'OH' ? 'el cálculo de perfil (Nivel GOA)' : 'Push Proporcional'}.</p>
                       </div>
                     </div>
 
@@ -1609,10 +1647,22 @@ export default function Distribucion() {
                   </div>
                 </div>
 
-                <h3 className={`text-lg font-bold flex items-center pt-2 ${t.textMain}`}>
-                  <Icons.BarChart3 className={`mr-2 ${t.textAccent1}`} size={20} />
-                  Dashboard de Resultados
-                </h3>
+                <div className={`p-4 rounded-xl border flex items-center justify-between ${t.cardInner}`}>
+                  <h3 className={`text-lg font-bold flex items-center ${t.textMain}`}>
+                    <Icons.BarChart3 className={`mr-2 ${t.textAccent1}`} size={20} />
+                    Dashboard de Resultados
+                  </h3>
+                  <select 
+                    value={dashGoaFilter} 
+                    onChange={(e) => setDashGoaFilter(e.target.value)}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold border outline-none cursor-pointer max-w-[200px] truncate ${t.input}`}
+                  >
+                    <option value="ALL">Visualizando Todos los GOAs</option>
+                    {Array.from(new Set(distributionResult.map(r => r.goa))).map(g => (
+                        <option key={`dash-filt-${g}`} value={g}>{g}</option>
+                    ))}
+                  </select>
+                </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   {topStoresData.length > 0 && (
@@ -1690,6 +1740,51 @@ export default function Distribucion() {
                     </div>
                   )}
                 </div>
+
+                {buyInsights.hasTalla ? (
+                  buyInsights.suggestions.length > 0 ? (
+                    <div className={`p-6 rounded-xl border mt-6 ${t.cardInner}`}>
+                      <h3 className={`text-lg font-bold flex items-center mb-4 ${t.textMain}`}>
+                        <Icons.TrendingUp className={`mr-2 ${t.textAccent1}`} size={20} />
+                        Insights: Sugerencias de Próxima Compra (Desabasto Detectado)
+                      </h3>
+                      <p className={`text-xs mb-4 ${t.textMuted}`}>Esta tabla detecta las tallas que tienen una demanda histórica mayor al porcentaje que acabas de enviarles en este resurtido.</p>
+                      <div className="overflow-x-auto">
+                        <table className="w-full text-left">
+                          <thead>
+                            <tr className={`text-[10px] uppercase font-black tracking-widest ${theme==='dark'?'text-gray-400 border-b border-zinc-800':'text-gray-500 border-b border-gray-200'}`}>
+                              <th className="p-2">Marca</th>
+                              <th className="p-2">Modelo / SKU</th>
+                              <th className="p-2">Talla</th>
+                              <th className="p-2">Mix Histórico (Demanda)</th>
+                              <th className="p-2">Mix Distribuido (Envío)</th>
+                              <th className="p-2">Acción Recomendada</th>
+                            </tr>
+                          </thead>
+                          <tbody className={`divide-y ${theme==='dark'?'divide-zinc-800/50':'divide-gray-200'}`}>
+                            {buyInsights.suggestions.map((ins, i) => (
+                               <tr key={`ins-${i}`}>
+                                  <td className={`p-2 text-xs font-bold ${t.textMuted}`}>{ins.marca}</td>
+                                  <td className={`p-2 text-xs font-bold ${t.textMain}`}>SKU <span className="text-[10px] font-mono text-zinc-500 ml-1">({ins.talla})</span></td>
+                                  <td className={`p-2 text-xs font-black ${t.textAccent2}`}>{ins.talla}</td>
+                                  <td className={`p-2 text-xs font-mono ${t.textMain}`}>{ins.mixVendido}%</td>
+                                  <td className={`p-2 text-xs font-mono text-red-400`}>{ins.mixComprado}%</td>
+                                  <td className={`p-2 text-xs font-bold text-emerald-400 flex items-center`}><Icons.TrendingUp size={12} className="mr-1"/> Comprar +{(ins.diff * 100).toFixed(1)}%</td>
+                               </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  ) : null 
+                ) : (
+                  <div className={`p-6 rounded-xl border mt-6 flex flex-col items-center justify-center text-center ${t.cardInner}`}>
+                     <Icons.TrendingUp size={32} className={`${theme==='dark'?'text-zinc-600':'text-gray-300'} mb-3`} />
+                     <h3 className={`text-sm font-bold ${t.textMain}`}>Insights de Compra Desactivados</h3>
+                     <p className={`text-xs mt-1 ${t.textMuted} max-w-md`}>Para habilitar las sugerencias de compra inteligentes, asegúrate de que tu archivo inicial (Base de Tiendas) incluya las columnas <strong>SKU</strong> y <strong>TALLA</strong>.</p>
+                  </div>
+                )}
+
               </div>
             )}
 
