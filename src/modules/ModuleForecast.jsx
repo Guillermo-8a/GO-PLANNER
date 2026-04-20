@@ -233,8 +233,6 @@ import {
                                 <h1 className="text-2xl font-black tracking-tighter text-white leading-none uppercase">GO | </h1>
                                 <div className="flex items-center gap-3">
                                     <Icon name="trending-up" className="text-violet-500 w-6 h-6" />
-                                </div>
-                            </div>
                         </div>
                         <div className="flex gap-3">
                             <label className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold cursor-pointer transition-all border border-zinc-700">
