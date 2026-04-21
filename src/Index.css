@@ -2,25 +2,57 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Scrollbar global */
-::-webkit-scrollbar { width: 6px; height: 6px; }
+/* ─── Reset base ──────────────────────────────────────────────────── */
+* { box-sizing: border-box; }
+body { margin: 0; font-family: system-ui, -apple-system, sans-serif; }
+/* 
+  NO pongas background-color ni color en body aquí.
+  El tema (dark/light) lo maneja GlobalContext aplicando
+  la clase "dark" en <html> + las clases de Tailwind en App.jsx.
+  Si hardcodeas el body en negro, el modo claro nunca funcionará.
+*/
+
+/* ─── Scrollbar — modo oscuro (default) ──────────────────────────── */
+::-webkit-scrollbar       { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 10px; }
 ::-webkit-scrollbar-thumb:hover { background: #52525b; }
 
-.dark ::-webkit-scrollbar-thumb { background: #3f3f46; }
-.dark ::-webkit-scrollbar-thumb:hover { background: #52525b; }
+/* ─── Scrollbar — modo claro ─────────────────────────────────────── */
+:root:not(.dark) ::-webkit-scrollbar-thumb       { background: #d1d5db; }
+:root:not(.dark) ::-webkit-scrollbar-thumb:hover { background: #9ca3af; }
 
-/* Reset */
-* { box-sizing: border-box; }
-body { margin: 0; font-family: system-ui, -apple-system, sans-serif; }
-
-/* Animaciones usadas en los módulos */
+/* ─── Animaciones ────────────────────────────────────────────────── */
 @keyframes fadeIn {
   from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: translateY(0); }
 }
 .animate-fade-in { animation: fadeIn 0.3s ease-out; }
 
-/* Range input accent */
+/* Variante más pronunciada que usaba el Forecast original */
+@keyframes fadeInSlow {
+  from { opacity: 0; transform: translateY(15px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in-slow { animation: fadeInSlow 0.4s ease-out; }
+
+/* Entrada desde abajo (usada en resultados de distribución) */
+@keyframes fadeInUp {
+  from { opacity: 0; transform: translateY(10px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+.animate-fade-in-up { animation: fadeInUp 0.4s ease-out forwards; }
+
+/* ─── Inputs range ───────────────────────────────────────────────── */
 input[type="range"] { accent-color: #8b5cf6; }
+
+/* ─── Clase de transición del sidebar (legacy del Forecast HTML) ─── */
+.sidebar-transition { transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1); }
+
+/* ─── Clase .lucide (legacy del Forecast HTML standalone) ───────── */
+/* 
+  En Vite + lucide-react los iconos son componentes SVG,
+  no necesitan esta clase. La dejamos por si algún módulo 
+  todavía la referencia, pero no afecta nada si está o no.
+*/
+.lucide { width: 1.2rem; height: 1.2rem; stroke-width: 2.5px; }
