@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import * as Icons from '../utils/icons';
 import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
+// ============================================================================
 // COMPONENTE EXTERNO: GRÁFICA DE DISPERSIÓN (Con cálculo de R²)
 // ============================================================================
 const ScatterPlot = ({ data, title, subtitle, colorClass, maxVentas, maxInv, t }) => {
@@ -100,6 +101,9 @@ const ScatterPlot = ({ data, title, subtitle, colorClass, maxVentas, maxInv, t }
 export default function Distribucion() {
   const gDispatch = useDispatch();
   const gState    = useGlobal();
+  const otbDisponible = !!gState?.otbData;
+  
+  // TEMA GLOBAL SINCRONIZADO DESDE EL SHELL
   const theme = gState?.theme || 'light'; 
 
   const [activeTab, setActiveTab] = useState(1); 
@@ -114,7 +118,7 @@ export default function Distribucion() {
   }, [numClusters]);
 
   const [rawStoreData, setRawStoreData] = useState([]);
-  const [scoreWeights, setScoreWeights] = useState({ sales: 50, margin: 50, rotation: 0 }); // Ajuste de calibración por default
+  const [scoreWeights, setScoreWeights] = useState({ sales: 50, margin: 50, rotation: 0 }); 
   const [stores, setStores] = useState([]);
   const [goas, setGoas] = useState([]);
   const [storeSortBy, setStoreSortBy] = useState('score'); 
@@ -297,6 +301,7 @@ export default function Distribucion() {
     if (rawStoreData.length > 0) recalculateClusters(rawStoreData, scoreWeights, activeClusters);
   }, [scoreWeights, activeClusters]);
 
+
   const handleStoreCSVUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -376,7 +381,7 @@ export default function Distribucion() {
           marcaCol = rowUpper.indexOf('MARCA');
           nomMarcaCol = rowUpper.indexOf('NOM_MARCA');
           seccionCol = rowUpper.indexOf('SECCIÓN') > -1 ? rowUpper.indexOf('SECCIÓN') : rowUpper.indexOf('SECCION');
-          nomSeccionCol = rowUpper.indexOf('NOM_SECCIÓN') > -1 ? rowUpper.indexOf('NOM_SECCIÓN') : rowUpper.indexOf('NOM_SECCION');
+          nomSeccionCol = rowUpper.indexOf('NOM_SECCIÓN') > -1 ? rowUpper.indexOf('NOM_SECCIÓN') : rowUpper.indexOf('NOM_SECCIÓN');
           break;
         }
       }
@@ -1467,14 +1472,19 @@ export default function Distribucion() {
                           <div className="flex flex-col items-end">
                             <span className={`text-[10px] px-2 py-0.5 mb-1 rounded border font-mono ${t.badgeOther}`}>{store.centerCode}</span>
                             {isFiltered ? (
-                              <select
-                                value={activeCluster || ''}
-                                onChange={(e) => handleManualClusterChange(store.centerCode, selectedGoaFilter, e.target.value)}
-                                className={`text-[10px] px-2 py-0.5 rounded border font-black outline-none cursor-pointer appearance-none text-center bg-transparent ${activeCluster === activeClusters[0] ? t.badgeAA : activeCluster === activeClusters[1] ? t.badgeA : t.badgeOther}`}
-                                style={{ textAlignLast: 'center' }}
-                              >
-                                {activeClusters.map(c => <option key={c} value={c}>{c}</option>)}
-                              </select>
+                              <div className="relative inline-block group">
+                                <select
+                                  value={activeCluster || ''}
+                                  onChange={(e) => handleManualClusterChange(store.centerCode, selectedGoaFilter, e.target.value)}
+                                  className={`text-[10px] pl-2 pr-5 py-0.5 rounded border font-black outline-none cursor-pointer appearance-none text-center bg-transparent transition-colors ${activeCluster === activeClusters[0] ? t.badgeAA : activeCluster === activeClusters[1] ? t.badgeA : t.badgeOther}`}
+                                  style={{ textAlignLast: 'center' }}
+                                >
+                                  {activeClusters.map(c => <option key={c} value={c}>{c}</option>)}
+                                </select>
+                                <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-1 opacity-50 group-hover:opacity-100">
+                                  <Icons.ChevronDown size={12} />
+                                </div>
+                              </div>
                             ) : (
                               <span className={`text-[10px] px-2 py-0.5 rounded border font-black ${activeCluster === activeClusters[0] ? t.badgeAA : activeCluster === activeClusters[1] ? t.badgeA : t.badgeOther}`}>
                                 {activeCluster || '-'}
@@ -1500,14 +1510,19 @@ export default function Distribucion() {
                             {Object.entries(store.clusters).map(([goa, cluster]) => (
                               <div key={`store-${store.id}-goa-${goa}`} className={`flex justify-between items-center text-xs py-0.5`}>
                                 <span className={`truncate max-w-[120px] font-medium ${t.textMuted}`} title={goa}>{goa}</span>
-                                <select
-                                  value={cluster}
-                                  onChange={(e) => handleManualClusterChange(store.centerCode, goa, e.target.value)}
-                                  className={`font-black px-2 py-0.5 rounded border outline-none cursor-pointer appearance-none bg-transparent text-center ${cluster === activeClusters[0] ? t.badgeAA : cluster === activeClusters[1] ? t.badgeA : t.badgeOther}`}
-                                  style={{ textAlignLast: 'center' }}
-                                >
-                                  {activeClusters.map(c => <option key={c} value={c}>{c}</option>)}
-                                </select>
+                                <div className="relative inline-block group">
+                                  <select
+                                    value={cluster}
+                                    onChange={(e) => handleManualClusterChange(store.centerCode, goa, e.target.value)}
+                                    className={`font-black pl-2 pr-5 py-0.5 rounded border outline-none cursor-pointer appearance-none bg-transparent text-center transition-colors ${cluster === activeClusters[0] ? t.badgeAA : cluster === activeClusters[1] ? t.badgeA : t.badgeOther}`}
+                                    style={{ textAlignLast: 'center' }}
+                                  >
+                                    {activeClusters.map(c => <option key={c} value={c}>{c}</option>)}
+                                  </select>
+                                  <div className="pointer-events-none absolute inset-y-0 right-0 flex items-center px-1 opacity-50 group-hover:opacity-100">
+                                    <Icons.ChevronDown size={12} />
+                                  </div>
+                                </div>
                               </div>
                             ))}
                           </div>
@@ -1892,7 +1907,7 @@ export default function Distribucion() {
                   </div>
                 )}
 
-                {/* MATRIZ DE SKU (NUEVA) MOVIDA DEBAJO DE LOS INSIGHTS */}
+                {/* MATRIZ DE SKU */}
                 {matrixData && matrixData.storesList.length > 0 && (
                   <div className={`p-5 rounded-xl border col-span-1 md:col-span-2 ${t.cardInner} overflow-hidden flex flex-col mt-6`}>
                     <div className="flex items-center justify-between mb-4">
@@ -1964,11 +1979,14 @@ export default function Distribucion() {
 
       </main>
       <style dangerouslySetInnerHTML={{__html: `
-        * { scrollbar-width: thin; scrollbar-color: ${theme === 'dark' ? 'rgba(156, 163, 175, 0.5) transparent' : 'rgba(156, 163, 175, 0.5) transparent'}; }
+        * { scrollbar-width: thin; scrollbar-color: rgba(156, 163, 175, 0.3) transparent; }
         *::-webkit-scrollbar { width: 6px; height: 6px; }
-        *::-webkit-scrollbar-track { background: transparent; }
-        *::-webkit-scrollbar-thumb { background-color: rgba(156, 163, 175, 0.4); border-radius: 10px; }
-        *::-webkit-scrollbar-thumb:hover { background-color: rgba(156, 163, 175, 0.7); }
+        *::-webkit-scrollbar-track { background: transparent !important; }
+        *::-webkit-scrollbar-thumb { background-color: rgba(156, 163, 175, 0.3); border-radius: 10px; }
+        *::-webkit-scrollbar-thumb:hover { background-color: rgba(156, 163, 175, 0.8); }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; height: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background-color: rgba(156, 163, 175, 0.2); }
+        .custom-scrollbar:hover::-webkit-scrollbar-thumb { background-color: rgba(156, 163, 175, 0.5); }
         @keyframes fadeInUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
         .animate-fade-in-up { animation: fadeInUp 0.4s ease-out forwards; }
       `}} />
