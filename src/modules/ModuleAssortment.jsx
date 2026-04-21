@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Settings, Store, Package, Upload, ArrowUpDown, Sliders, Layers, MoreVertical, Sun, Moon, Info, Map as MapIcon, Database, ShoppingCart, BarChart3, Plus, Trash2, Save, Download, Zap, DollarSign, Target, FileSpreadsheet, Edit3, Lightbulb, CalendarDays, Compass, Activity, Wand2, RefreshCw, ClipboardList, Calculator, ChevronDown, ChevronRight } from 'lucide-react';
+import { Settings, Store, Package, Upload, ArrowUpDown, Sliders, Layers, MoreVertical, Sun, Moon, Database, ShoppingCart, Plus, Trash2, Save, Download, Zap, DollarSign, FileSpreadsheet, Edit3, Lightbulb, CalendarDays, Compass, Activity, Wand2, ClipboardList, Calculator, ChevronDown, ChevronRight } from 'lucide-react';
 import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
 // --- MOTOR INTELIGENTE PARA LEER CSV (Ignora comas dentro de comillas) ---
@@ -79,7 +79,7 @@ export default function App() {
   
   // --- ESTADO DE BASE Y CLÚSTERES ---
   const [numClusters, setNumClusters] = useState(6);
-  const [clusterStrategy, setClusterStrategy] = useState('valor'); // Modificado a 'valor' (Absoluta) por defecto
+  const [clusterStrategy, setClusterStrategy] = useState('valor'); 
   
   const activeClusters = useMemo(() => {
     if (numClusters === 6) return ['AA', 'A', 'B', 'C', 'D', 'E'];
@@ -89,7 +89,6 @@ export default function App() {
 
   const [rawStoreData, setRawStoreData] = useState([]);
   
-  // Modificado a 50% venta, 50% mg, 0% rotación por defecto
   const [scoreWeights, setScoreWeights] = useState({ sales: 50, margin: 50, rotation: 0 });
 
   const [stores, setStores] = useState([]);
@@ -97,7 +96,7 @@ export default function App() {
   
   const [storeSortBy, setStoreSortBy] = useState('score'); 
   const [storeSortOrder, setStoreSortOrder] = useState('desc');
-  const [filterGoa, setFilterGoa] = useState('ALL'); // FILTRO DE GOA
+  const [filterGoa, setFilterGoa] = useState('ALL'); 
 
   // --- CALCULADORAS ---
   const [sizeCurves, setSizeCurves] = useState([]);
@@ -251,7 +250,7 @@ export default function App() {
       csv += row + "\r\n";
     });
 
-    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" }); // BOM for Excel
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" }); 
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.setAttribute("href", url);
@@ -442,7 +441,7 @@ export default function App() {
       const rows = parseCSV(text);
       if (rows.length < 2) { if(fileInputRef.current) fileInputRef.current.value = ''; return; }
 
-      const headers = rows[0].map(h => h.toUpperCase());
+      const headers = rows[0].map(h => h.replace(/^\uFEFF/, '').trim().toUpperCase());
       const idxCentro = headers.findIndex(h => h === 'CENTRO' || h === 'ID');
       const idxNombre = headers.findIndex(h => h === 'NOMBRE' || h === 'TIENDA' || h === 'DESC CENTRO');
       const idxGoa = headers.findIndex(h => h === 'GOA' || h === 'FAMILIA');
@@ -1195,9 +1194,11 @@ export default function App() {
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                 <h2 className={`text-xl font-bold flex items-center ${t.textMain}`}><Database className={`mr-3 ${t.textAccent1}`}/> Forecast y Curvas Mensuales</h2>
                 <div className="flex space-x-3">
-                  <button onClick={handleLoadForecastFromContext} className={`px-4 py-2.5 rounded-lg text-sm font-bold flex items-center transition bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg`}>
-                    <Database size={16} className="mr-2" /> Extraer de Forecast
-                  </button>
+                  {forecastDisponible && (
+                    <button onClick={handleLoadForecastFromContext} className={`px-4 py-2.5 rounded-lg text-sm font-bold flex items-center transition bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg`}>
+                      <Database size={16} className="mr-2" /> Extraer de Forecast
+                    </button>
+                  )}
                   <label className={`cursor-pointer px-4 py-2.5 rounded-lg text-sm font-bold flex items-center transition ${t.btnGhost} shadow-lg`}>
                     <Upload size={16} className="mr-2" /> Importar CSV
                     <input type="file" accept=".csv" onClick={(e) => e.target.value = null} onChange={handleForecastCSVUpload} className="hidden" />
