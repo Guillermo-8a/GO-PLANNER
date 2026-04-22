@@ -904,16 +904,15 @@ export default function App() {
   }, [stores, suggestedPlans, purchases, goas, activeClusters, calcRules, sizeCurves, reportView]);
 
   return (
-    <div className={`min-h-screen font-sans pb-12 transition-colors duration-300 ${t.appBg}`}>
+    <div className={`min-h-screen w full font-sans pb-12 transition-colors duration-300 ${t.appBg}`}>
       
       {/* HEADER Y MINI MENU */}
       <header className={`border-b sticky top-0 z-20 transition-colors duration-300 ${t.header}`}>
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+        <div className="w-full mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center">
               <h1 className={`text-2xl font-black tracking-widest flex items-center ${t.textMain}`}>
-                GO
-                <span className="mx-3 text-gray-400 font-light">|</span>
+                GO <span className="mx-3 text-gray-400 font-light">|</span>
                 <ShoppingCart size={28} className={t.textAccent1} />
               </h1>
             </div>
