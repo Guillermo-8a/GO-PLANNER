@@ -132,6 +132,8 @@ export default function Distribucion() {
   const [showParamModal, setShowParamModal] = useState(false);
   const [paramForm, setParamForm] = useState({ etiquetaAP: '', stockMin: '', stockMax: '', leadTime: '', min: '', max: '', th: '', tipoDistribucion: '' });
 
+
+  
   useEffect(() => {
     try {
       const savedMatrix = localStorage.getItem('goplanner_brand_matrix');
@@ -162,6 +164,37 @@ export default function Distribucion() {
   const [distMode, setDistMode] = useState('SKU');
   const [showGuide, setShowGuide] = useState(false);
 
+  //GUARDAR LA MEMORIAS POR UN TIEMPO EN LA RAM, PAARA PODER MOVERME
+useEffect(() => {
+    try {
+      const saved = localStorage.getItem('gop_distribucion');
+      if (saved) {
+        const d = JSON.parse(saved);
+        if (d.stores?.length)       setStores(d.stores);
+        if (d.goas?.length)         setGoas(d.goas);
+        if (d.rawStoreData?.length) setRawStoreData(d.rawStoreData);
+        if (d.chequera?.length)     setChequera(d.chequera);
+        if (d.brandMatrix && Object.keys(d.brandMatrix).length) {
+          setBrandMatrix(d.brandMatrix);
+          if (d.matrixMetadata) setMatrixMetadata(d.matrixMetadata);
+        }
+        if (d.numClusters)    setNumClusters(d.numClusters);
+        if (d.scoreWeights)   setScoreWeights(d.scoreWeights);
+        if (d.distributionResult?.length) setDistributionResult(d.distributionResult);
+      }
+    } catch {}
+  }, []);
+ 
+  useEffect(() => {
+    try {
+      localStorage.setItem('gop_distribucion', JSON.stringify({
+        stores, goas, rawStoreData, chequera,
+        brandMatrix, matrixMetadata,
+        numClusters, scoreWeights, distributionResult,
+      }));
+    } catch {}
+  }, [stores, goas, rawStoreData, chequera, brandMatrix, matrixMetadata, numClusters, scoreWeights, distributionResult]);
+  
   const themes = {
     dark: {
       appBg: "bg-transparent text-gray-100", 
@@ -1156,16 +1189,21 @@ export default function Distribucion() {
 
 
   return (
-    <div className={`h-full flex flex-col font-sans transition-colors duration-300 ${t.appBg}`}>
+    //<div className={`h-full flex flex-col font-sans transition-colors duration-300 ${t.appBg}`}>
+    <div className={`min-h-screen w-full flex flex-col font-sans transition-colors duration-300 ${t.appBg}`}>  
       
       {/* ENCABEZADO HOMOLOGADO */}
-      <div className="px-8 pt-8 pb-2 flex items-center justify-between">
+      <header className={`px-6 py-4 mb-2 flex items-center justify-between border-b transition-colors
+        ${theme === 'dark' ? 'border-zinc-800' : 'border-gray-200'}
+        shadow-[0_4px_10px_-4px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_10px_-4px_rgba(0,0,0,0.4)]`}>
         <div className="flex items-center">
           <h1 className={`text-2xl font-black tracking-widest flex items-center ${t.textMain}`}>
-            GO <span className="mx-3 text-gray-500 font-light">|</span> <Icons.MapIcon size={28} className={t.textAccent1} />
+            GO
+            <span className="mx-3 text-gray-400 font-light">|</span>
+            <Icons.MapIcon size={28} className={t.textAccent1} />
           </h1>
         </div>
-      </div>
+      </header>
 
       {/* TABS NATIVAS */}
       <div className="flex space-x-6 px-8 mt-4 border-b border-gray-200 dark:border-zinc-800 overflow-x-auto custom-scrollbar">
