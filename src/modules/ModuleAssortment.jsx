@@ -912,7 +912,9 @@ export default function App() {
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center">
               <h1 className={`text-2xl font-black tracking-widest flex items-center ${t.textMain}`}>
-                GO <span className="mx-3 text-gray-500 font-light">|</span> <ShoppingCart size={28} className={t.textAccent1} />
+                GO
+                <span className="mx-3 text-gray-400 font-light">|</span>
+                <ShoppingCart size={28} className={t.textAccent1} />
               </h1>
             </div>
             
