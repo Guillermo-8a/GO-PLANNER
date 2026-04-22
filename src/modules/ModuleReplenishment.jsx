@@ -772,6 +772,7 @@ useEffect(() => {
           <div className={`min-h-screen w-full p-4 md:p-6 transition-colors duration-300 ${t?.appBg || 'bg-gray-50 dark:bg-black text-gray-900 dark:text-gray-200'}`}>
             
             {/* HEADER UNIFICADO GO PLANNER (Con borde inferior y sombra) */}
+          <header className={`px-6 py-4 mb-2 flex items-center justify-between border-b transition-colors ${typeof theme !== 'undefined' && theme === 'dark' ? 'border-zinc-800 shadow-[0_4px_10px_-4px_rgba(0,0,0,0.4)]' : 'border-gray-200 shadow-[0_4px_10px_-4px_rgba(0,0,0,0.08)]'}`}>
             <div className="flex items-center px-2">
                 <h1 className="text-2xl font-black tracking-widest flex items-center text-gray-900 dark:text-white">
                   GO
