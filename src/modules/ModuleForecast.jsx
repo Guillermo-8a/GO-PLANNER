@@ -243,10 +243,10 @@ export default function App() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen bg-black flex flex-col font-sans text-slate-300 overflow-hidden">
+    <div className="min-h-screen flex flex-col font-sans text-slate-300 overflow-hidden">
 
       {/* HEADER */}
-      <header className="bg-zinc-900/80 border-b border-zinc-800 px-6 py-4 flex justify-between items-center backdrop-blur-md sticky top-0 z-30 shadow-2xl">
+      <header className="bg-zinc-900/80 dark:bg-zinc-900/80 border-b border-zinc-800 dark:border-zinc-800 px-6 py-4 flex justify-between items-center backdrop-blur-md sticky top-0 z-30 shadow-2xl">
         <div className="flex items-center gap-4">
           <button
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -335,7 +335,7 @@ export default function App() {
         </aside>
 
         {/* MAIN */}
-        <main className="flex-1 overflow-y-auto p-8 bg-black">
+        <main className="flex-1 overflow-y-auto p-8">
           <div className="max-w-6xl mx-auto space-y-8 animate-fade-in text-left">
 
             {/* PANTALLA VACÍA */}
