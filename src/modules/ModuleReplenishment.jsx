@@ -233,6 +233,43 @@ export default function App() {
         }
     };
 
+    // ── Persistencia localStorage ─────────────────────────────────────
+    useEffect(() => {
+        try {
+            const saved = localStorage.getItem('gop_resurtido');
+            if (saved) {
+                const d = JSON.parse(saved);
+                if (d.sheetUrl)     setSheetUrl(d.sheetUrl);
+                if (d.calcMode)     setCalcMode(d.calcMode);
+                if (d.maxGrowth)    setMaxGrowth(d.maxGrowth);
+                if (d.maxDecline)   setMaxDecline(d.maxDecline);
+                if (d.periodStart)  setPeriodStart(d.periodStart);
+                if (d.periodEnd)    setPeriodEnd(d.periodEnd);
+                if (d.data?.length) setData(d.data);
+                if (d.filterCentro)  setFilterCentro(d.filterCentro);
+                if (d.filterSeccion) setFilterSeccion(d.filterSeccion);
+                if (d.filterMarca)   setFilterMarca(d.filterMarca);
+                if (d.filterGoa)     setFilterGoa(d.filterGoa);
+                if (d.filterModelo)  setFilterModelo(d.filterModelo);
+                if (d.filterNorma)   setFilterNorma(d.filterNorma);
+            }
+        } catch {}
+    }, []);
+
+    useEffect(() => {
+        if (!data.length) return; // No guardar estado vacío
+        try {
+            localStorage.setItem('gop_resurtido', JSON.stringify({
+                sheetUrl, calcMode, maxGrowth, maxDecline,
+                periodStart, periodEnd, data,
+                filterCentro, filterSeccion, filterMarca,
+                filterGoa, filterModelo, filterNorma,
+            }));
+        } catch {}
+    }, [sheetUrl, calcMode, maxGrowth, maxDecline, periodStart, periodEnd, data,
+        filterCentro, filterSeccion, filterMarca, filterGoa, filterModelo, filterNorma]);
+    // ─────────────────────────────────────────────────────────────────
+
     const handleFileUpload = (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -696,42 +733,7 @@ export default function App() {
         });
         downloadCSV(buildFilename('Resumen_SKU_Periodo'), csvRows);
     };
-//PARA PODER MOVERME ENTRE MODULOS
-useEffect(() => {
-    try {
-      const saved = localStorage.getItem('gop_resurtido');
-      if (saved) {
-        const d = JSON.parse(saved);
-        if (d.sheetUrl)     setSheetUrl(d.sheetUrl);
-        if (d.calcMode)     setCalcMode(d.calcMode);
-        if (d.maxGrowth)    setMaxGrowth(d.maxGrowth);
-        if (d.maxDecline)   setMaxDecline(d.maxDecline);
-        if (d.periodStart)  setPeriodStart(d.periodStart);
-        if (d.periodEnd)    setPeriodEnd(d.periodEnd);
-        if (d.data?.length) setData(d.data);
-        if (d.filterCentro)  setFilterCentro(d.filterCentro);
-        if (d.filterSeccion) setFilterSeccion(d.filterSeccion);
-        if (d.filterMarca)   setFilterMarca(d.filterMarca);
-        if (d.filterGoa)     setFilterGoa(d.filterGoa);
-        if (d.filterModelo)  setFilterModelo(d.filterModelo);
-        if (d.filterNorma)   setFilterNorma(d.filterNorma);
-      }
-    } catch {}
-  }, []);
- 
-  useEffect(() => {
-    if (!data.length) return; // No guardar estado vacío
-    try {
-      localStorage.setItem('gop_resurtido', JSON.stringify({
-        sheetUrl, calcMode, maxGrowth, maxDecline,
-        periodStart, periodEnd, data,
-        filterCentro, filterSeccion, filterMarca,
-        filterGoa, filterModelo, filterNorma,
-      }));
-    } catch {}
-  }, [sheetUrl, calcMode, maxGrowth, maxDecline, periodStart, periodEnd, data,
-      filterCentro, filterSeccion, filterMarca, filterGoa, filterModelo, filterNorma]);
-  
+
     useEffect(() => {
         if (enrichedData.length > 0) {
             const stillExists = enrichedData.find(d => d.id === selectedItem?.id);
@@ -768,18 +770,17 @@ useEffect(() => {
     };
 
     return (
-        //<div className="min-h-screen text-gray-900 dark:text-gray-200 p-4 md:p-6 transition-colors duration-300">
-          <div className={`min-h-screen w-full p-4 md:p-6 transition-colors duration-300 ${t?.appBg || 'bg-gray-50 dark:bg-black text-gray-900 dark:text-gray-200'}`}>
+        <div className="min-h-screen w-full p-4 md:p-6 transition-colors duration-300 bg-white dark:bg-black text-gray-900 dark:text-gray-200">
             
             {/* HEADER UNIFICADO GO PLANNER (Con borde inferior y sombra) */}
-          <header className={`px-6 py-4 mb-2 flex items-center justify-between border-b transition-colors ${typeof theme !== 'undefined' && theme === 'dark' ? 'border-zinc-800 shadow-[0_4px_10px_-4px_rgba(0,0,0,0.4)]' : 'border-gray-200 shadow-[0_4px_10px_-4px_rgba(0,0,0,0.08)]'}`}>
-            <div className="flex items-center px-2">
-                <h1 className="text-2xl font-black tracking-widest flex items-center text-gray-900 dark:text-white">
-                  GO
-                  <span className="mx-3 text-gray-400 font-light">|</span>
-                  <RefreshCw size={28} className="text-purple-600 dark:text-purple-500" />
-                </h1>
-              </div>
+            <header className="mb-6 pb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-gray-200 dark:border-[#262626] shadow-[0_4px_10px_-4px_rgba(0,0,0,0.1)] dark:shadow-[0_4px_10px_-4px_rgba(0,0,0,0.4)] transition-colors">
+                <div className="flex items-center px-2">
+                    <h1 className="text-2xl font-black tracking-widest flex items-center text-gray-900 dark:text-white">
+                        GO
+                        <span className="mx-3 text-gray-400 font-light">|</span>
+                        <RefreshCw size={28} className="text-purple-600 dark:text-purple-500" />
+                    </h1>
+                </div>
                 
                 <div className="w-full md:w-auto flex flex-col sm:flex-row items-center gap-3">
                     <div className="flex flex-col sm:flex-row items-center gap-3 bg-gray-50 dark:bg-[#141414] p-2 rounded-lg border border-gray-200 dark:border-[#333] transition-colors w-full sm:w-auto">
