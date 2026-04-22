@@ -243,26 +243,26 @@ export default function App() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen flex flex-col font-sans text-slate-300 overflow-hidden">
+    <div className="min-h-screen flex flex-col font-sans text-zinc-700 dark:text-slate-300 overflow-hidden">
 
       {/* HEADER */}
-      <header className="bg-zinc-900/80 dark:bg-zinc-900/80 border-b border-zinc-800 dark:border-zinc-800 px-6 py-4 flex justify-between items-center backdrop-blur-md sticky top-0 z-30 shadow-2xl">
+      <header className="bg-white/80 dark:bg-zinc-900/80 border-b border-zinc-200 dark:border-zinc-800 px-6 py-4 flex justify-between items-center backdrop-blur-md sticky top-0 z-30 shadow-2xl">
         <div className="flex items-center gap-4">
           <button
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-400 hover:text-white transition-all"
+            className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-all"
           >
             {isSidebarOpen ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
           </button>
           <div className="flex items-center gap-3">
             <TrendingUp size={22} className="text-violet-500" />
-            <h1 className="text-2xl font-black tracking-tighter text-white leading-none uppercase">
+            <h1 className="text-2xl font-black tracking-tighter text-zinc-900 dark:text-white leading-none uppercase">
               GO <span className="text-violet-500">Forecasting</span>
             </h1>
           </div>
         </div>
         <div className="flex gap-3">
-          <label className="flex items-center gap-2 bg-zinc-800 hover:bg-zinc-700 text-white px-4 py-2.5 rounded-xl text-sm font-bold cursor-pointer transition-all border border-zinc-700 shadow-md">
+          <label className="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-900 dark:text-white px-4 py-2.5 rounded-xl text-sm font-bold cursor-pointer transition-all border border-zinc-200 dark:border-zinc-700 shadow-md">
             <Database size={16} /> Subir BD (CSV)
             <input type="file" className="hidden" accept=".csv" onChange={importDatabase} />
           </label>
@@ -285,8 +285,8 @@ export default function App() {
       <div className="flex flex-1 overflow-hidden relative text-left">
 
         {/* SIDEBAR */}
-        <aside className={`sidebar-transition absolute md:relative z-20 h-full bg-zinc-950 border-r border-zinc-800 flex flex-col ${isSidebarOpen ? 'w-80 translate-x-0' : 'w-0 -translate-x-full md:translate-x-0 md:opacity-0 pointer-events-none'}`}>
-          <div className="p-4 bg-zinc-900/30 border-b border-zinc-800 flex items-center justify-between whitespace-nowrap overflow-hidden">
+        <aside className={`sidebar-transition absolute md:relative z-20 h-full bg-white dark:bg-zinc-950 border-r border-zinc-200 dark:border-zinc-800 flex flex-col ${isSidebarOpen ? 'w-80 translate-x-0' : 'w-0 -translate-x-full md:translate-x-0 md:opacity-0 pointer-events-none'}`}>
+          <div className="p-4 bg-zinc-100/30 dark:bg-zinc-900/30 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between whitespace-nowrap overflow-hidden">
             <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Portafolio Activo</span>
             <span className="text-[10px] font-bold text-violet-400 bg-violet-400/10 px-2 py-0.5 rounded-full border border-violet-400/20">{brands.length}</span>
           </div>
@@ -295,33 +295,33 @@ export default function App() {
               <div
                 key={brand.id}
                 onClick={() => setSelectedBrandId(brand.id)}
-                className={`w-full group p-4 rounded-2xl transition-all flex items-center justify-between cursor-pointer border ${selectedBrandId === brand.id ? 'bg-zinc-900 border-violet-500/50 shadow-inner' : 'bg-transparent border-transparent hover:bg-zinc-900/50'}`}
+                className={`w-full group p-4 rounded-2xl transition-all flex items-center justify-between cursor-pointer border ${selectedBrandId === brand.id ? 'bg-zinc-100 dark:bg-zinc-900 border-violet-500/50 shadow-inner' : 'bg-transparent border-transparent hover:bg-zinc-100/50 dark:hover:bg-zinc-900/50'}`}
               >
                 <div className="flex-1 min-w-0 text-left">
-                  <p className={`font-bold text-sm truncate ${selectedBrandId === brand.id ? 'text-white' : 'text-zinc-400'}`}>{brand.name}</p>
+                  <p className={`font-bold text-sm truncate ${selectedBrandId === brand.id ? 'text-zinc-900 dark:text-white' : 'text-zinc-600 dark:text-zinc-400'}`}>{brand.name}</p>
                   <p className="text-[10px] text-zinc-600 font-bold uppercase mt-0.5">{brand.unit}</p>
                 </div>
                 <div className={`flex gap-1 ${selectedBrandId === brand.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity`}>
                   <button
                     onClick={e => { e.stopPropagation(); setIsEditing(brand.id); setEditForm({ name: brand.name, data: brand.data.join(' '), unit: brand.unit }); }}
-                    className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-500 hover:text-violet-400"
+                    className="p-2 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-lg text-zinc-500 hover:text-violet-400"
                   ><Edit3 size={14} /></button>
                   <button
                     onClick={e => { e.stopPropagation(); const f = brands.filter(b => b.id !== brand.id); setBrands(f); if (selectedBrandId === brand.id) setSelectedBrandId(f[0]?.id || null); }}
-                    className="p-2 hover:bg-zinc-800 rounded-lg text-zinc-500 hover:text-rose-500 transition-all"
+                    className="p-2 hover:bg-zinc-200 dark:hover:bg-zinc-800 rounded-lg text-zinc-500 hover:text-rose-500 transition-all"
                   ><Trash2 size={14} /></button>
                 </div>
               </div>
             ))}
           </div>
-          <div className="p-4 border-t border-zinc-800 space-y-2 bg-zinc-950/80">
+          <div className="p-4 border-t border-zinc-200 dark:border-zinc-800 space-y-2 bg-white/80 dark:bg-zinc-950/80">
             <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest block mb-1 text-center">Gestión de Sesión</span>
             <div className="grid grid-cols-2 gap-2">
               <button
                 onClick={() => { const b = new Blob([JSON.stringify({ brands })], { type: 'application/json' }); const u = URL.createObjectURL(b); const l = document.createElement('a'); l.href = u; l.download = 'goplanner_sesion.json'; l.click(); }}
-                className="flex items-center justify-center gap-2 bg-zinc-900 hover:bg-zinc-800 p-3 rounded-xl text-[10px] font-bold border border-zinc-800 transition-all active:scale-95"
+                className="flex items-center justify-center gap-2 bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 p-3 rounded-xl text-[10px] font-bold border border-zinc-200 dark:border-zinc-800 transition-all active:scale-95"
               ><Save size={12} /> RESPALDAR</button>
-              <label className="flex items-center justify-center gap-2 bg-zinc-900 hover:bg-zinc-800 p-3 rounded-xl text-[10px] font-bold border border-zinc-800 cursor-pointer transition-all active:scale-95">
+              <label className="flex items-center justify-center gap-2 bg-zinc-100 dark:bg-zinc-900 hover:bg-zinc-200 dark:hover:bg-zinc-800 p-3 rounded-xl text-[10px] font-bold border border-zinc-200 dark:border-zinc-800 cursor-pointer transition-all active:scale-95">
                 <Upload size={12} /> CARGAR
                 <input type="file" className="hidden" accept=".json" onChange={e => {
                   const f = e.target.files[0]; if (!f) return;
@@ -341,28 +341,28 @@ export default function App() {
             {/* PANTALLA VACÍA */}
             {!currentBrand && !isEditing && (
               <div className="flex items-center justify-center min-h-[70vh]">
-                <div className="max-w-2xl bg-zinc-950 border-4 border-violet-600 p-12 rounded-[48px] shadow-[0_0_80px_-20px_rgba(124,58,237,0.5)] text-center animate-fade-in relative overflow-hidden">
+                <div className="max-w-2xl bg-white dark:bg-zinc-950 border-4 border-violet-600 p-12 rounded-[48px] shadow-[0_0_80px_-20px_rgba(124,58,237,0.5)] text-center animate-fade-in relative overflow-hidden">
                   <div className="absolute top-0 right-0 p-8 opacity-10"><TrendingUp size={128} /></div>
                   <div className="bg-violet-600 w-16 h-16 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-lg shadow-violet-600/30">
                     <Rocket size={28} className="text-white" />
                   </div>
-                  <h2 className="text-3xl font-black text-white uppercase tracking-tighter mb-4 leading-none">
+                  <h2 className="text-3xl font-black text-zinc-900 dark:text-white uppercase tracking-tighter mb-4 leading-none">
                     Módulo Forecasting <br /><span className="text-violet-500">GO PLANNER</span>
                   </h2>
-                  <p className="text-zinc-400 text-sm mb-10 leading-relaxed px-6 font-bold uppercase tracking-widest opacity-60">Estación de planeación predictiva avanzada</p>
+                  <p className="text-zinc-600 dark:text-zinc-400 text-sm mb-10 leading-relaxed px-6 font-bold uppercase tracking-widest opacity-60">Estación de planeación predictiva avanzada</p>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-left">
-                    <div className="bg-zinc-900/50 border border-zinc-800 p-6 rounded-3xl hover:border-violet-500/50 transition-all shadow-inner">
+                    <div className="bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl hover:border-violet-500/50 transition-all shadow-inner">
                       <h4 className="text-violet-400 font-bold text-xs uppercase mb-3 flex items-center gap-2"><FileSpreadsheet size={14} /> Estructura del CSV</h4>
-                      <p className="text-[11px] text-zinc-500 leading-relaxed">
+                      <p className="text-[11px] text-zinc-600 dark:text-zinc-500 leading-relaxed">
                         Columna A: Nombre de Marca.<br />Columna B+: Valores numéricos históricos.<br /><br />
-                        <code className="text-violet-300 block bg-black p-2 rounded mt-1 font-mono text-[10px] border border-zinc-800 uppercase">Marca X, 1200, 1000, 1500...</code>
+                        <code className="text-violet-700 dark:text-violet-300 block bg-zinc-100 dark:bg-black p-2 rounded mt-1 font-mono text-[10px] border border-zinc-200 dark:border-zinc-800 uppercase">Marca X, 1200, 1000, 1500...</code>
                       </p>
                     </div>
-                    <div className="bg-zinc-900/50 border border-zinc-800 p-6 rounded-3xl hover:border-yellow-500/50 transition-all shadow-inner">
+                    <div className="bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl hover:border-yellow-500/50 transition-all shadow-inner">
                       <h4 className="text-yellow-500 font-bold text-xs uppercase mb-3 flex items-center gap-2"><Zap size={14} /> Pegado de Excel</h4>
-                      <p className="text-[11px] text-zinc-500 leading-relaxed">
+                      <p className="text-[11px] text-zinc-600 dark:text-zinc-500 leading-relaxed">
                         Copia datos directamente. El motor procesará espacios y omitirá comas de formato.<br /><br />
-                        <span className="text-zinc-400 font-bold italic">Nota: "1,000" se lee como mil (1000).</span>
+                        <span className="text-zinc-700 dark:text-zinc-400 font-bold italic">Nota: "1,000" se lee como mil (1000).</span>
                       </p>
                     </div>
                   </div>
@@ -372,27 +372,27 @@ export default function App() {
 
             {/* EDITOR */}
             {isEditing && (
-              <div className="bg-zinc-900 border border-zinc-700 p-8 rounded-[32px] shadow-2xl mb-8 text-left">
+              <div className="bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 p-8 rounded-[32px] shadow-2xl mb-8 text-left">
                 <div className="flex justify-between items-center mb-8">
-                  <h3 className="font-black text-xl text-white uppercase flex items-center gap-3"><Edit3 size={18} className="text-violet-500" /> Gestionar Datos</h3>
-                  <button onClick={() => setIsEditing(null)} className="text-zinc-500 hover:text-white transition-colors"><X size={18} /></button>
+                  <h3 className="font-black text-xl text-zinc-900 dark:text-white uppercase flex items-center gap-3"><Edit3 size={18} className="text-violet-500" /> Gestionar Datos</h3>
+                  <button onClick={() => setIsEditing(null)} className="text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors"><X size={18} /></button>
                 </div>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-8 text-left">
                   <div>
                     <label className="text-[10px] font-black text-zinc-500 mb-2 block uppercase tracking-widest text-center">Nombre Comercial</label>
-                    <input className="w-full bg-zinc-950 border border-zinc-800 rounded-2xl p-4 outline-none focus:ring-2 focus:ring-violet-500 font-bold text-white transition-all uppercase" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
+                    <input className="w-full bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-2xl p-4 outline-none focus:ring-2 focus:ring-violet-500 font-bold text-zinc-900 dark:text-white transition-all uppercase" value={editForm.name} onChange={e => setEditForm({ ...editForm, name: e.target.value })} />
                   </div>
                   <div>
                     <label className="text-[10px] font-black text-zinc-500 mb-2 block uppercase tracking-widest text-center">Unidad Estratégica</label>
                     <div className="flex gap-2">
                       {['Meses', 'Semanas'].map(u => (
-                        <button key={u} onClick={() => setEditForm({ ...editForm, unit: u })} className={`flex-1 py-4 rounded-2xl font-black text-xs transition-all border ${editForm.unit === u ? 'bg-violet-600 border-violet-500 text-white shadow-lg' : 'bg-zinc-950 border-zinc-800 text-zinc-500 hover:border-zinc-700'}`}>{u}</button>
+                        <button key={u} onClick={() => setEditForm({ ...editForm, unit: u })} className={`flex-1 py-4 rounded-2xl font-black text-xs transition-all border ${editForm.unit === u ? 'bg-violet-600 border-violet-500 text-white shadow-lg' : 'bg-white dark:bg-zinc-950 border-zinc-200 dark:border-zinc-800 text-zinc-500 hover:border-zinc-400 dark:hover:border-zinc-700'}`}>{u}</button>
                       ))}
                     </div>
                   </div>
                   <div className="md:col-span-2">
                     <label className="text-[10px] font-black text-yellow-500 mb-2 block uppercase tracking-widest text-center">Datos Históricos (Pega desde Excel)</label>
-                    <textarea className="w-full bg-zinc-950 border border-zinc-800 rounded-3xl p-6 outline-none focus:ring-2 focus:ring-violet-500 font-mono text-xs h-32 text-zinc-300 resize-none shadow-inner" value={editForm.data} onChange={e => setEditForm({ ...editForm, data: e.target.value })} />
+                    <textarea className="w-full bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-3xl p-6 outline-none focus:ring-2 focus:ring-violet-500 font-mono text-xs h-32 text-zinc-700 dark:text-zinc-300 resize-none shadow-inner" value={editForm.data} onChange={e => setEditForm({ ...editForm, data: e.target.value })} />
                   </div>
                 </div>
                 <button onClick={saveEdit} className="w-full mt-8 bg-violet-600 text-white font-black py-5 rounded-3xl hover:bg-violet-500 transition-all shadow-xl uppercase tracking-widest">Procesar y Guardar</button>
@@ -405,23 +405,23 @@ export default function App() {
                 {/* Nombre + horizonte + winner */}
                 <div className="flex flex-col md:flex-row justify-between items-start md:items-end gap-6 text-left">
                   <div className="flex-1">
-                    <h2 className="text-5xl font-black text-white tracking-tighter mb-4 leading-none uppercase">{currentBrand.name}</h2>
+                    <h2 className="text-5xl font-black text-zinc-900 dark:text-white tracking-tighter mb-4 leading-none uppercase">{currentBrand.name}</h2>
                     <div className="flex gap-4 items-center">
-                      <span className="flex items-center gap-2 bg-zinc-900 px-4 py-2 rounded-full border border-zinc-800 text-xs font-bold uppercase tracking-widest text-zinc-500 shadow-sm">
+                      <span className="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-900 px-4 py-2 rounded-full border border-zinc-200 dark:border-zinc-800 text-xs font-bold uppercase tracking-widest text-zinc-600 dark:text-zinc-500 shadow-sm">
                         <Calendar size={12} className="text-violet-500" /> Plan por {currentBrand.unit}
                       </span>
-                      <div className="flex items-center gap-3 bg-zinc-950 border border-zinc-800 px-5 py-1.5 rounded-full shadow-inner">
+                      <div className="flex items-center gap-3 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 px-5 py-1.5 rounded-full shadow-inner">
                         <span className="text-[9px] font-black text-yellow-500 uppercase tracking-widest">Horizonte Fcst:</span>
-                        <input type="range" min="1" max="24" step="1" value={currentBrand.horizon || 12} onChange={e => updateCurrentBrand({ horizon: parseInt(e.target.value) })} className="w-24 h-1 bg-zinc-800 rounded-full appearance-none cursor-pointer accent-yellow-500" />
+                        <input type="range" min="1" max="24" step="1" value={currentBrand.horizon || 12} onChange={e => updateCurrentBrand({ horizon: parseInt(e.target.value) })} className="w-24 h-1 bg-zinc-200 dark:bg-zinc-800 rounded-full appearance-none cursor-pointer accent-yellow-500" />
                         <span className="text-xs font-bold text-white w-4 text-center">{currentBrand.horizon || 12}</span>
                       </div>
                     </div>
                   </div>
-                  <div className="bg-zinc-900 border border-zinc-800 px-8 py-5 rounded-[32px] flex items-center gap-5 shadow-2xl hover:border-yellow-500/30 transition-all">
+                  <div className="bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-8 py-5 rounded-[32px] flex items-center gap-5 shadow-2xl hover:border-yellow-500/30 transition-all">
                     <div className="bg-yellow-500 p-3 rounded-2xl text-black shadow-lg shadow-yellow-500/20 animate-pulse"><Trophy size={20} /></div>
                     <div className="text-left">
                       <p className="text-[10px] font-black text-zinc-500 uppercase mb-0.5 leading-none tracking-widest">Mejor Ajuste</p>
-                      <p className="font-black text-xl text-white tracking-tight uppercase leading-tight">{winner.name}</p>
+                      <p className="font-black text-xl text-zinc-900 dark:text-white tracking-tight uppercase leading-tight">{winner.name}</p>
                     </div>
                   </div>
                 </div>
@@ -430,11 +430,11 @@ export default function App() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-6 text-center">
                   {[
                     { l: 'Accuracy Score', v: winner.accuracy.toFixed(1) + '%', c: 'text-violet-400', bg: 'bg-violet-400/5' },
-                    { l: 'Bias (Sesgo)',   v: winner.bias.toFixed(1) + '%',     c: Math.abs(winner.bias) > 5 ? 'text-rose-400' : 'text-emerald-400', bg: 'bg-zinc-900' },
-                    { l: 'Error (WMAPE)', v: winner.wmape.toFixed(1) + '%',     c: 'text-zinc-200', bg: 'bg-zinc-900' },
-                    { l: 'Data Points',   v: currentBrand.data?.length || 0,    c: 'text-zinc-500', bg: 'bg-zinc-900' },
+                    { l: 'Bias (Sesgo)',   v: winner.bias.toFixed(1) + '%',     c: Math.abs(winner.bias) > 5 ? 'text-rose-400' : 'text-emerald-400', bg: 'bg-zinc-50 dark:bg-zinc-900' },
+                    { l: 'Error (WMAPE)', v: winner.wmape.toFixed(1) + '%',     c: 'text-zinc-900 dark:text-zinc-200', bg: 'bg-zinc-50 dark:bg-zinc-900' },
+                    { l: 'Data Points',   v: currentBrand.data?.length || 0,    c: 'text-zinc-500', bg: 'bg-zinc-50 dark:bg-zinc-900' },
                   ].map((m, i) => (
-                    <div key={i} className={`${m.bg} p-6 rounded-[32px] border border-zinc-800 shadow-lg hover:scale-[1.02] transition-all text-center`}>
+                    <div key={i} className={`${m.bg} p-6 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-lg hover:scale-[1.02] transition-all text-center`}>
                       <p className="text-[10px] font-black text-zinc-600 uppercase mb-2 tracking-widest">{m.l}</p>
                       <p className={`text-3xl font-black ${m.c} tracking-tighter`}>{m.v}</p>
                     </div>
@@ -442,10 +442,10 @@ export default function App() {
                 </div>
 
                 {/* Gráfica */}
-                <div className="bg-zinc-950 p-8 rounded-[48px] border border-zinc-800 shadow-2xl h-[500px] overflow-hidden relative">
+                <div className="bg-white dark:bg-zinc-950 p-8 rounded-[48px] border border-zinc-200 dark:border-zinc-800 shadow-2xl h-[500px] overflow-hidden relative">
                   <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-6 px-4">
                     <div className="flex gap-6">
-                      <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-zinc-700" /> Real</span>
+                      <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-zinc-400 dark:bg-zinc-700" /> Real</span>
                       <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-violet-600" /> Modelo</span>
                       <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-yellow-500" /> Forecast</span>
                     </div>
@@ -467,23 +467,23 @@ export default function App() {
                 </div>
 
                 {/* Export Pipeline */}
-                <div className="bg-zinc-900 border border-zinc-800 p-8 rounded-[40px] flex flex-col md:flex-row items-center justify-between gap-8 shadow-2xl text-left">
+                <div className="bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-8 rounded-[40px] flex flex-col md:flex-row items-center justify-between gap-8 shadow-2xl text-left">
                   <div className="flex items-center gap-6">
-                    <div className="bg-white text-black p-4 rounded-3xl shadow-xl shadow-white/5"><FileSpreadsheet size={20} /></div>
+                    <div className="bg-zinc-900 dark:bg-white text-white dark:text-black p-4 rounded-3xl shadow-xl shadow-black/5"><FileSpreadsheet size={20} /></div>
                     <div className="text-left">
-                      <h3 className="font-black text-white uppercase text-lg mb-1 leading-none tracking-widest">Export Pipeline</h3>
+                      <h3 className="font-black text-zinc-900 dark:text-white uppercase text-lg mb-1 leading-none tracking-widest">Export Pipeline</h3>
                       <p className="text-[10px] text-zinc-500 font-bold uppercase tracking-widest">Salidas integradas para planeación</p>
                     </div>
                   </div>
                   <div className="flex gap-4 w-full md:w-auto flex-wrap">
-                    <button onClick={copyToClipboard} className="flex-1 md:flex-none flex items-center justify-center gap-3 bg-zinc-950 hover:bg-zinc-800 text-zinc-300 font-black px-8 py-4 rounded-2xl transition-all border border-zinc-800 group">
+                    <button onClick={copyToClipboard} className="flex-1 md:flex-none flex items-center justify-center gap-3 bg-white dark:bg-zinc-950 hover:bg-zinc-100 dark:hover:bg-zinc-800 text-zinc-700 dark:text-zinc-300 font-black px-8 py-4 rounded-2xl transition-all border border-zinc-200 dark:border-zinc-800 group">
                       {copied ? <Check size={16} className="text-emerald-400" /> : <Copy size={16} className="group-hover:text-violet-400 transition-colors" />}
                       {copied ? 'LISTO' : 'COPIAR DATA'}
                     </button>
                     <button onClick={() => {
                       const csv = 'data:text/csv;charset=utf-8,' + ['Periodo,Tipo,Valor', ...chartData.map(d => `${d.period},${d.Forecast ? 'FORECAST' : 'REAL'},${d.Forecast || d.Real || 0}`)].join('\n');
                       const link = document.createElement('a'); link.href = encodeURI(csv); link.download = `fcst_${currentBrand.name}.csv`; link.click();
-                    }} className="flex-1 md:flex-none flex items-center justify-center gap-3 bg-zinc-950 border border-zinc-800 text-white font-black px-6 py-4 rounded-2xl hover:bg-zinc-800 transition-all shadow-xl">
+                    }} className="flex-1 md:flex-none flex items-center justify-center gap-3 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 text-zinc-900 dark:text-white font-black px-6 py-4 rounded-2xl hover:bg-zinc-100 dark:hover:bg-zinc-800 transition-all shadow-xl">
                       <Download size={16} /> BAJAR EXCEL
                     </button>
                     <button onClick={openAssortmentModal} className="flex-1 md:flex-none flex items-center justify-center gap-3 bg-violet-600 hover:bg-violet-500 text-white font-black px-8 py-4 rounded-2xl transition-all shadow-xl shadow-violet-900/20 group">
@@ -494,9 +494,9 @@ export default function App() {
                 </div>
 
                 {/* Parámetros */}
-                <div className="bg-zinc-950 rounded-[48px] p-10 border border-zinc-900 shadow-inner text-left">
+                <div className="bg-white dark:bg-zinc-950 rounded-[48px] p-10 border border-zinc-200 dark:border-zinc-900 shadow-inner text-left">
                   <div className="flex items-center justify-between mb-10">
-                    <div className="flex items-center gap-4"><Settings2 size={18} className="text-violet-500" /><h3 className="text-sm font-black uppercase tracking-[0.3em] text-zinc-400">Analítica Profunda por SKU</h3></div>
+                    <div className="flex items-center gap-4"><Settings2 size={18} className="text-violet-500" /><h3 className="text-sm font-black uppercase tracking-[0.3em] text-zinc-700 dark:text-zinc-400">Analítica Profunda por SKU</h3></div>
                     <button onClick={autoCalibrate} className="bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500 hover:text-black border border-yellow-500/20 px-6 py-3 rounded-xl text-[10px] font-black transition-all flex items-center gap-2 shadow-sm uppercase tracking-widest">
                       <Zap size={12} className="fill-current" /> AUTO-CALIBRAR MODELO
                     </button>
@@ -519,9 +519,9 @@ export default function App() {
                             if (param.key === 'beta')  updateCurrentBrand({ params: { ...currentBrand.params, holtBeta: v, hwBeta: v } });
                             if (param.key === 'period')updateCurrentBrand({ params: { ...currentBrand.params, hwPeriod: v } });
                           }}
-                          className="w-full h-1.5 bg-zinc-900 rounded-full appearance-none cursor-pointer"
+                          className="w-full h-1.5 bg-zinc-200 dark:bg-zinc-900 rounded-full appearance-none cursor-pointer"
                         />
-                        <p className="text-[9px] text-zinc-600 italic border-l border-zinc-800 pl-3 leading-relaxed">💡 {param.tip}</p>
+                        <p className="text-[9px] text-zinc-600 italic border-l border-zinc-300 dark:border-zinc-800 pl-3 leading-relaxed">💡 {param.tip}</p>
                       </div>
                     ))}
                   </div>
@@ -534,54 +534,54 @@ export default function App() {
 
       {/* MODAL ASSORTMENT */}
       {isAssortmentModalOpen && (
-        <div className="fixed inset-0 bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fade-in text-left">
-          <div className="bg-zinc-900 border-2 border-violet-500 w-full max-w-lg rounded-[32px] shadow-2xl p-8 relative overflow-hidden text-left">
+        <div className="fixed inset-0 bg-zinc-900/60 dark:bg-black/90 backdrop-blur-sm z-[100] flex items-center justify-center p-4 animate-fade-in text-left">
+          <div className="bg-white dark:bg-zinc-900 border-2 border-violet-500 w-full max-w-lg rounded-[32px] shadow-2xl p-8 relative overflow-hidden text-left">
             <div className="absolute top-0 right-0 p-4 opacity-10"><ShoppingCart size={96} /></div>
-            <h3 className="text-2xl font-black text-white uppercase tracking-tighter mb-2 flex items-center gap-3">
+            <h3 className="text-2xl font-black text-zinc-900 dark:text-white uppercase tracking-tighter mb-2 flex items-center gap-3">
               <Link size={20} className="text-violet-500" /> Vincular a Assortment
             </h3>
             <p className="text-[10px] text-zinc-500 mb-8 font-black uppercase tracking-widest leading-relaxed">Define el rango de compra y el nombre del GOA para exportar participaciones.</p>
 
             <div className="space-y-6">
               <div>
-                <label className="text-[10px] font-black text-zinc-400 mb-2 block uppercase tracking-widest">Nombre del GOA / Marca</label>
-                <input className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-4 outline-none focus:ring-2 focus:ring-violet-500 font-bold text-white uppercase" value={assortmentForm.name} onChange={e => setAssortmentForm({ ...assortmentForm, name: e.target.value })} />
+                <label className="text-[10px] font-black text-zinc-600 dark:text-zinc-400 mb-2 block uppercase tracking-widest">Nombre del GOA / Marca</label>
+                <input className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 outline-none focus:ring-2 focus:ring-violet-500 font-bold text-zinc-900 dark:text-white uppercase" value={assortmentForm.name} onChange={e => setAssortmentForm({ ...assortmentForm, name: e.target.value })} />
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-[10px] font-black text-zinc-400 mb-2 block uppercase tracking-widest">Mes Inicio</label>
-                  <input type="number" min="1" max="24" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-4 outline-none text-white font-bold" value={assortmentForm.start} onChange={e => setAssortmentForm({ ...assortmentForm, start: parseInt(e.target.value) })} />
+                  <label className="text-[10px] font-black text-zinc-600 dark:text-zinc-400 mb-2 block uppercase tracking-widest">Mes Inicio</label>
+                  <input type="number" min="1" max="24" className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 outline-none text-zinc-900 dark:text-white font-bold" value={assortmentForm.start} onChange={e => setAssortmentForm({ ...assortmentForm, start: parseInt(e.target.value) })} />
                 </div>
                 <div>
-                  <label className="text-[10px] font-black text-zinc-400 mb-2 block uppercase tracking-widest">Mes Final</label>
-                  <input type="number" min="1" max="24" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-4 outline-none text-white font-bold" value={assortmentForm.end} onChange={e => setAssortmentForm({ ...assortmentForm, end: parseInt(e.target.value) })} />
+                  <label className="text-[10px] font-black text-zinc-600 dark:text-zinc-400 mb-2 block uppercase tracking-widest">Mes Final</label>
+                  <input type="number" min="1" max="24" className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 outline-none text-zinc-900 dark:text-white font-bold" value={assortmentForm.end} onChange={e => setAssortmentForm({ ...assortmentForm, end: parseInt(e.target.value) })} />
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div>
-                  <label className="text-[10px] font-black text-zinc-400 mb-2 block uppercase tracking-widest">Presupuesto ($)</label>
-                  <input type="number" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-4 outline-none focus:ring-2 focus:ring-violet-500 text-white font-bold" value={assortmentForm.budget} onChange={e => setAssortmentForm({ ...assortmentForm, budget: e.target.value })} />
+                  <label className="text-[10px] font-black text-zinc-600 dark:text-zinc-400 mb-2 block uppercase tracking-widest">Presupuesto ($)</label>
+                  <input type="number" className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 outline-none focus:ring-2 focus:ring-violet-500 text-zinc-900 dark:text-white font-bold" value={assortmentForm.budget} onChange={e => setAssortmentForm({ ...assortmentForm, budget: e.target.value })} />
                 </div>
                 <div>
-                  <label className="text-[10px] font-black text-zinc-400 mb-2 block uppercase tracking-widest">Historia (Pzs)</label>
-                  <input type="number" className="w-full bg-zinc-950 border border-zinc-800 rounded-xl p-4 outline-none focus:ring-2 focus:ring-violet-500 text-white font-bold" value={assortmentForm.historyPzs} onChange={e => setAssortmentForm({ ...assortmentForm, historyPzs: e.target.value })} />
+                  <label className="text-[10px] font-black text-zinc-600 dark:text-zinc-400 mb-2 block uppercase tracking-widest">Historia (Pzs)</label>
+                  <input type="number" className="w-full bg-zinc-50 dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 rounded-xl p-4 outline-none focus:ring-2 focus:ring-violet-500 text-zinc-900 dark:text-white font-bold" value={assortmentForm.historyPzs} onChange={e => setAssortmentForm({ ...assortmentForm, historyPzs: e.target.value })} />
                 </div>
               </div>
 
               {/* Accesos rápidos */}
               <div className="grid grid-cols-4 gap-2">
                 {[{ l: 'S1 (1-6)', s: 1, e: 6 }, { l: 'S2 (7-12)', s: 7, e: 12 }, { l: 'Q1 (1-3)', s: 1, e: 3 }, { l: 'Q4 (10-12)', s: 10, e: 12 }].map(q => (
-                  <button key={q.l} onClick={() => setAssortmentForm({ ...assortmentForm, start: q.s, end: q.e })} className="bg-zinc-800 hover:bg-violet-900/40 border border-zinc-700 p-2 rounded-lg text-[9px] font-bold transition-all text-white">{q.l}</button>
+                  <button key={q.l} onClick={() => setAssortmentForm({ ...assortmentForm, start: q.s, end: q.e })} className="bg-zinc-100 dark:bg-zinc-800 hover:bg-violet-100 dark:hover:bg-violet-900/40 border border-zinc-200 dark:border-zinc-700 p-2 rounded-lg text-[9px] font-bold transition-all text-zinc-900 dark:text-white">{q.l}</button>
                 ))}
               </div>
 
-              <div className="bg-zinc-800/50 p-5 rounded-2xl border border-zinc-700 shadow-inner">
+              <div className="bg-zinc-100/70 dark:bg-zinc-800/50 p-5 rounded-2xl border border-zinc-200 dark:border-zinc-700 shadow-inner">
                 <div className="flex items-center gap-2 mb-2"><Percent size={14} className="text-yellow-500" /><p className="text-[10px] text-yellow-500 font-black uppercase">Exportación Inteligente a Assortment</p></div>
-                <p className="text-[11px] text-zinc-400 leading-relaxed italic font-medium">Se enviará un JSON con la distribución porcentual exacta de los meses seleccionados para automatizar la planeación de compras.</p>
+                <p className="text-[11px] text-zinc-700 dark:text-zinc-400 leading-relaxed italic font-medium">Se enviará un JSON con la distribución porcentual exacta de los meses seleccionados para automatizar la planeación de compras.</p>
               </div>
 
               <div className="flex gap-4 pt-4">
-                <button onClick={() => setIsAssortmentModalOpen(false)} className="flex-1 bg-zinc-800 hover:bg-zinc-700 text-zinc-400 font-black py-4 rounded-2xl transition-all uppercase tracking-widest text-xs border border-zinc-700">Cancelar</button>
+                <button onClick={() => setIsAssortmentModalOpen(false)} className="flex-1 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-600 dark:text-zinc-400 font-black py-4 rounded-2xl transition-all uppercase tracking-widest text-xs border border-zinc-200 dark:border-zinc-700">Cancelar</button>
                 <button onClick={sendToAssortment} className="flex-1 bg-violet-600 hover:bg-violet-500 text-white font-black py-4 px-10 rounded-2xl shadow-xl transition-all uppercase tracking-widest text-xs shadow-violet-900/20">Enviar Data</button>
               </div>
             </div>
