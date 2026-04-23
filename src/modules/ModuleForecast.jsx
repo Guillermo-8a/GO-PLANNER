@@ -255,9 +255,10 @@ export default function App() {
             {isSidebarOpen ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
           </button>
           <div className="flex items-center gap-3">
-            <TrendingUp size={22} className="text-violet-500" />
+            
             <h1 className="text-2xl font-black tracking-tighter text-zinc-900 dark:text-white leading-none uppercase">
-              GO <span className="text-violet-500">Forecasting</span>
+              GO <span className="mx-3 text-gray-400 font-light">|</span>
+              <TrendingUp size={22} className="text-violet-500" />
             </h1>
           </div>
         </div>
