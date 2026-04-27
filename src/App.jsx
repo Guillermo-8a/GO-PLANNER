@@ -10,11 +10,12 @@ import ModuleForecast     from './modules/ModuleForecast';
 import ModuleAssortment   from './modules/ModuleAssortment';
 import ModuleDistribucion from './modules/ModuleDistribucion';
 import ModuleResurtido    from './modules/ModuleReplenishment';
+import ModuleTraslados from './modules/ModuleTraslados';
 
 import {
   Layers, Menu, Bell, Sun, Moon,
   TrendingUp, ShoppingCart, Map, RefreshCw, LayoutDashboard,
-  HelpCircle, X, Zap,
+  HelpCircle, X, Zap, ArrowLeftRight,
 } from 'lucide-react';
 
 // ─── Paletas de tema ──────────────────────────────────────────────────────────
@@ -98,6 +99,7 @@ const NAV_ITEMS = [
   { id: 'assortment',   label: 'Assortment OTB', Icon: ShoppingCart,    desc: 'Compra y presupuesto',  dataKey: 'otbData' },
   { id: 'distribucion', label: 'Distribución',   Icon: Map,             desc: 'Surtido a tiendas',     dataKey: 'distributionData' },
   { id: 'resurtido',    label: 'Resurtido',       Icon: RefreshCw,       desc: 'Reposición continua',   dataKey: 'replenishmentData' },
+  { id: 'traslados', label: 'Traslados', Icon: ArrowLeftRight, desc: 'Transferencias entre centros', dataKey: null },
 ];
 
 const PIPELINE_STEPS = [
@@ -308,6 +310,7 @@ function Shell() {
       case 'assortment':   return <ModuleAssortment {...moduleProps} />;
       case 'distribucion': return <ModuleDistribucion {...moduleProps} />;
       case 'resurtido':    return <ModuleResurtido {...moduleProps} />;
+      case 'traslados': return <ModuleTraslados />;  
       default:             return <Dashboard {...moduleProps} />;
     }
   };
