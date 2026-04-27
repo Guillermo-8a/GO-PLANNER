@@ -164,6 +164,23 @@ export default function Distribucion() {
   const [distMode, setDistMode] = useState('SKU');
   const [showGuide, setShowGuide] = useState(false);
 
+  // SIZE SCALING (PACK) — curvas de empaquetado por GOA
+  const [showPackModal, setShowPackModal] = useState(false);
+  const [packCurves, setPackCurves] = useState({}); // { [GOA]: [{ talla, qty }, ...] }
+  const [packAllowSwap, setPackAllowSwap] = useState({}); // { [GOA]: bool } — permite intercambio entre tallas manteniendo total
+  const [packMinClusters, setPackMinClusters] = useState({}); // { [GOA]: ['AA','A',...] } — clusters que SÍ reciben aunque no alcance 1 pack natural
+  const [packCoverThreshold, setPackCoverThreshold] = useState({}); // { [GOA]: meses } — umbral cobertura para swap (default 5)
+
+  // MOS objetivo "sano" por GOA (usado por OH y SKU). Default 3 meses.
+  const [mosTarget, setMosTarget] = useState({}); // { [GOA]: { min, max } }
+  const [showMosModal, setShowMosModal] = useState(false);
+
+  // Alertas a compras: combos GOA/MARCA con >20% tiendas sobre-inventariadas
+  const [overstockAlerts, setOverstockAlerts] = useState([]); // [{ goa, marca, pct, total, overStores: [{centro, mos}], reason }]
+
+  // Filtro de búsqueda en Tab 1 / Base de Tiendas
+  const [storeNameFilter, setStoreNameFilter] = useState('');
+
   //GUARDAR LA MEMORIAS POR UN TIEMPO EN LA RAM, PAARA PODER MOVERME
 useEffect(() => {
     try {
@@ -181,6 +198,11 @@ useEffect(() => {
         if (d.numClusters)    setNumClusters(d.numClusters);
         if (d.scoreWeights)   setScoreWeights(d.scoreWeights);
         if (d.distributionResult?.length) setDistributionResult(d.distributionResult);
+        if (d.packCurves)     setPackCurves(d.packCurves);
+        if (d.packAllowSwap)  setPackAllowSwap(d.packAllowSwap);
+        if (d.packMinClusters) setPackMinClusters(d.packMinClusters);
+        if (d.packCoverThreshold) setPackCoverThreshold(d.packCoverThreshold);
+        if (d.mosTarget) setMosTarget(d.mosTarget);
       }
     } catch {}
   }, []);
@@ -191,9 +213,10 @@ useEffect(() => {
         stores, goas, rawStoreData, chequera,
         brandMatrix, matrixMetadata,
         numClusters, scoreWeights, distributionResult,
+        packCurves, packAllowSwap, packMinClusters, packCoverThreshold, mosTarget,
       }));
     } catch {}
-  }, [stores, goas, rawStoreData, chequera, brandMatrix, matrixMetadata, numClusters, scoreWeights, distributionResult]);
+  }, [stores, goas, rawStoreData, chequera, brandMatrix, matrixMetadata, numClusters, scoreWeights, distributionResult, packCurves, packAllowSwap, packMinClusters, packCoverThreshold, mosTarget]);
   
   const themes = {
     dark: {
@@ -238,8 +261,8 @@ useEffect(() => {
         storeMap.set(row.centro, { 
           id: row.centro, centerCode: row.centro, name: row.name, zona: row.zona,
           sales: 0, margin: 0, rotation: row.rotation, totalOH: 0,
-          score: 0, goaScores: {}, goaSales: {}, goaMargin: {}, goaOH: {}, clusters: {},
-          skuSales: {}, skuOH: {}, goaSizeSales: {} 
+          score: 0, goaScores: {}, goaSales: {}, goaMargin: {}, goaOH: {}, goaOO: {}, goaTrend3M: {}, clusters: {},
+          skuSales: {}, skuOH: {}, goaSizeSales: {}, goaSizeOH: {}, goaSizeOO: {}, goaSizeTrend3M: {}
         });
       }
       
@@ -256,15 +279,20 @@ useEffect(() => {
       if (row.talla && row.talla !== 'N/A') {
         const goaTallaKey = `${row.goa.toUpperCase()}|${row.talla}`;
         existing.goaSizeSales[goaTallaKey] = (existing.goaSizeSales[goaTallaKey] || 0) + row.sales;
+        existing.goaSizeOH[goaTallaKey] = (existing.goaSizeOH[goaTallaKey] || 0) + row.oh;
+        existing.goaSizeOO[goaTallaKey] = (existing.goaSizeOO[goaTallaKey] || 0) + (row.oo || 0);
+        existing.goaSizeTrend3M[goaTallaKey] = (existing.goaSizeTrend3M[goaTallaKey] || 0) + (row.trend3M || 0);
       }
 
       const key = `${row.centro}|${row.goa}`;
       if (!storeGoaAgg[key]) {
-        storeGoaAgg[key] = { centro: row.centro, goa: row.goa, sales: 0, margin: 0, rotation: row.rotation, oh: 0 };
+        storeGoaAgg[key] = { centro: row.centro, goa: row.goa, sales: 0, margin: 0, rotation: row.rotation, oh: 0, oo: 0, trend3M: 0 };
       }
       storeGoaAgg[key].sales += row.sales;
       storeGoaAgg[key].margin += row.margin;
       storeGoaAgg[key].oh += row.oh;
+      storeGoaAgg[key].oo += (row.oo || 0);
+      storeGoaAgg[key].trend3M += (row.trend3M || 0);
     });
 
     const maxVals = {}; 
@@ -305,6 +333,8 @@ useEffect(() => {
         store.goaSales[goaName] = item.sales; 
         store.goaMargin[goaName] = item.margin; 
         store.goaOH[goaName] = item.oh; 
+        store.goaOO[goaName] = item.oo || 0;
+        store.goaTrend3M[goaName] = item.trend3M || 0;
         store.score = (store.score + item.score) / 2; 
       });
 
@@ -357,6 +387,8 @@ useEffect(() => {
       const idxZona = headers.findIndex(h => h === 'ZONA' || h === 'REGION' || h === 'DISTRITO');
       const idxSku = headers.findIndex(h => h === 'SKU' || h === 'ARTICULO' || h === 'MATERIAL' || h === 'ITEM');
       const idxTalla = headers.findIndex(h => h === 'TALLA' || h === 'SIZE' || h === 'NUMERO');
+      const idxOO = headers.findIndex(h => h === 'OO' || h === 'ON ORDER' || h === 'ONORDER' || h === 'EN PEDIDO' || h === 'PEDIDO');
+      const idxTrend3M = headers.findIndex(h => h === 'VTA3M' || h === 'VENTAS3M' || h === 'VENTAS_3M' || h === 'TREND3M' || h === 'TREND_3M' || h === 'V3M' || h === 'VTAS3M');
 
       if (idxCentro === -1 || idxGoa === -1 || idxVentas === -1) {
         alert("El CSV debe tener mínimamente las columnas: Centro, GOA, Ventas"); 
@@ -370,18 +402,23 @@ useEffect(() => {
         const rawMargen = idxMargen !== -1 && rows[i][idxMargen] ? String(rows[i][idxMargen]).replace(/[^0-9.-]+/g, "") : "0";
         const rawRotacion = idxRotacion !== -1 && rows[i][idxRotacion] ? String(rows[i][idxRotacion]).replace(/[^0-9.-]+/g, "") : "1";
         const rawOH = idxOH !== -1 && rows[i][idxOH] ? String(rows[i][idxOH]).replace(/[^0-9.-]+/g, "") : "0";
+        const rawOO = idxOO !== -1 && rows[i][idxOO] ? String(rows[i][idxOO]).replace(/[^0-9.-]+/g, "") : "0";
+        const rawTrend3M = idxTrend3M !== -1 && rows[i][idxTrend3M] ? String(rows[i][idxTrend3M]).replace(/[^0-9.-]+/g, "") : "0";
         const rawSku = idxSku !== -1 && rows[i][idxSku] ? String(rows[i][idxSku]).trim() : 'N/A';
         const rawTalla = idxTalla !== -1 && rows[i][idxTalla] ? String(rows[i][idxTalla]).trim() : 'N/A';
         const rawModelo = headers.includes('MODELO') ? String(rows[i][headers.indexOf('MODELO')]).trim() : 'N/A';
         
         let ventas = parseFloat(rawVentas) || 0; let margen = parseFloat(rawMargen) || 0; let rotacion = parseFloat(rawRotacion) || 0;
         let oh = parseFloat(rawOH) || 0;
+        let oo = parseFloat(rawOO) || 0;
+        let trend3M = parseFloat(rawTrend3M) || 0;
         if (margen > 1 && margen <= 100 && idxMargen !== -1 && String(rows[0][idxMargen]).includes('%')) margen = margen / 100; 
 
         extractedRawData.push({
           centro: rows[i][idxCentro], name: idxNombre !== -1 ? rows[i][idxNombre] : rows[i][idxCentro],
           zona: idxZona !== -1 && rows[i][idxZona] ? rows[i][idxZona] : 'General',
           goa: rows[i][idxGoa].toUpperCase(), sales: ventas, margin: margen, rotation: rotacion, oh: oh,
+          oo: oo, trend3M: trend3M,
           sku: rawSku, modelo: rawModelo, talla: rawTalla
         });
       }
@@ -537,9 +574,17 @@ useEffect(() => {
   };
 
   const displayedStores = useMemo(() => {
-    if (selectedGoaFilter === 'ALL') return sortedStores;
-    return sortedStores.filter(s => s.clusters[selectedGoaFilter]);
-  }, [sortedStores, selectedGoaFilter]);
+    let list = selectedGoaFilter === 'ALL' ? sortedStores : sortedStores.filter(s => s.clusters[selectedGoaFilter]);
+    if (storeNameFilter.trim()) {
+      const q = storeNameFilter.trim().toUpperCase();
+      list = list.filter(s =>
+        (s.name || '').toUpperCase().includes(q) ||
+        String(s.centerCode || '').toUpperCase().includes(q) ||
+        (s.zona || '').toUpperCase().includes(q)
+      );
+    }
+    return list;
+  }, [sortedStores, selectedGoaFilter, storeNameFilter]);
   
   // LÓGICA DE OVERRIDE MANUAL PARA CLÚSTERES (MEJORA VISUAL)
   const handleManualClusterChange = (storeCenterCode, goaName, newCluster) => {
@@ -771,6 +816,7 @@ useEffect(() => {
   const processDistribution = () => {
     const results = [];
     const warnings = []; 
+    setOverstockAlerts([]);
     
     const dynamicOH = {};
     const dynamicSkuOH = {};
@@ -778,148 +824,639 @@ useEffect(() => {
        dynamicOH[s.centerCode] = { ...s.goaOH };
        dynamicSkuOH[s.centerCode] = { ...s.skuOH };
     });
-    
-    chequera.forEach(item => {
-      let qtyToDistribute = parseInt(item.qty);
-      if (qtyToDistribute <= 0) return;
 
-      const goaName = item.goa.toUpperCase();
-      let eligibleStores = stores.filter(s => s.goaScores && s.goaScores[goaName] > 0);
-      
-      if (eligibleStores.length === 0) {
-         warnings.push(`[${item.sku}]: No hay tiendas con ventas para el GOA '${goaName}'.`);
-         return;
+    // ========================================================================
+    // SIZE SCALING (PACK): asigna packs enteros respetando curva del proveedor
+    // ========================================================================
+    if (distMode === 'PACK') {
+      const allSwapLogs = []; // global a todos los GOA
+      // 1) Agrupar items de la chequera por GOA (clave) — luego por SKU/talla
+      const itemsByGoa = {};
+      chequera.forEach(it => {
+        const g = it.goa.toUpperCase();
+        if (!itemsByGoa[g]) itemsByGoa[g] = [];
+        itemsByGoa[g].push(it);
+      });
+
+      const goasWithoutCurve = [];
+      Object.keys(itemsByGoa).forEach(goaName => {
+        const curve = packCurves[goaName];
+        if (!curve || curve.length === 0 || curve.every(r => !r.qty || r.qty <= 0)) {
+          goasWithoutCurve.push(goaName);
+        }
+      });
+      if (goasWithoutCurve.length > 0) {
+        alert(`Falta definir la curva de empaquetado para: ${goasWithoutCurve.join(', ')}.\n\nAbre "Configurar Packs" y captura la curva por GOA.`);
+        return;
       }
 
-      if (Object.keys(brandMatrix).length > 0) {
-         eligibleStores = eligibleStores.filter(s => {
+      Object.keys(itemsByGoa).forEach(goaName => {
+        const items = itemsByGoa[goaName];
+        const curve = packCurves[goaName].filter(r => r.talla && r.qty > 0);
+        const packSize = curve.reduce((s, r) => s + Number(r.qty), 0);
+        if (packSize <= 0) {
+          warnings.push(`[${goaName}]: Pack size = 0. Revisa la curva.`);
+          return;
+        }
+
+        // 2) Por cada talla del pack, ¿hay item disponible en la chequera con esa talla?
+        //    Si hay varios SKU con la misma talla, los reparte proporcionalmente.
+        const tallasPack = curve.map(r => String(r.talla).toUpperCase());
+        const itemsByTalla = {};
+        tallasPack.forEach(tl => { itemsByTalla[tl] = []; });
+        items.forEach(it => {
+          const tl = String(it.talla).toUpperCase();
+          if (itemsByTalla[tl]) itemsByTalla[tl].push(it);
+        });
+
+        // Validación: cada talla del pack debe tener al menos 1 item
+        const tallasFaltantes = tallasPack.filter(tl => itemsByTalla[tl].length === 0);
+        if (tallasFaltantes.length > 0) {
+          warnings.push(`[${goaName}]: Faltan SKUs en la chequera para las tallas ${tallasFaltantes.join(', ')} requeridas por el pack. No se distribuye este GOA.`);
+          return;
+        }
+
+        // 3) Calcular cuántos packs caben con el inventario aportado por talla
+        //    Por talla: qty disponible total / qty por pack = packs posibles para esa talla.
+        const packsPosiblesPorTalla = curve.map(r => {
+          const tl = String(r.talla).toUpperCase();
+          const totalQty = itemsByTalla[tl].reduce((s, it) => s + Number(it.qty), 0);
+          return Math.floor(totalQty / Number(r.qty));
+        });
+        const totalPacks = Math.min(...packsPosiblesPorTalla);
+
+        if (totalPacks <= 0) {
+          warnings.push(`[${goaName}]: Las cantidades de la chequera no alcanzan ni para 1 pack completo (${packSize} pzs). Revisa qty por talla.`);
+          return;
+        }
+
+        // 4) Tiendas elegibles: ventas en GOA + matriz de marca de cada item
+        let eligibleStores = stores.filter(s => s.goaScores && s.goaScores[goaName] > 0);
+        if (eligibleStores.length === 0) {
+          warnings.push(`[${goaName}]: Sin tiendas con ventas en este GOA.`);
+          return;
+        }
+        if (Object.keys(brandMatrix).length > 0) {
+          // Una tienda califica si está autorizada para AL MENOS uno de los SKUs del lote
+          eligibleStores = eligibleStores.filter(s => {
             const normStoreId = parseInt(s.centerCode).toString();
             const authBrands = brandMatrix[normStoreId] || [];
-            const reqSeccion = item.seccion?.toUpperCase() || 'N/A';
-            const reqMarca = item.marca?.toUpperCase() || 'N/A';
-            
-            if (reqSeccion === 'N/A' && reqMarca === 'N/A') return true;
-            if (authBrands.includes(`${reqSeccion}|${reqMarca}`)) return true;
-            if (reqSeccion === 'N/A' && authBrands.some(auth => auth.endsWith(`|${reqMarca}`))) return true;
-            if (reqMarca === 'N/A' && authBrands.some(auth => auth.startsWith(`${reqSeccion}|`))) return true;
-            if (authBrands.includes(`N/A|${reqMarca}`)) return true;
-            return false;
-         });
-
-         if (eligibleStores.length === 0) {
-            warnings.push(`[${item.sku}]: Ninguna tienda autorizada en la Matriz para SECCIÓN='${item.seccion}' / MARCA='${item.marca}'.`);
-            return;
-         }
-      }
-
-      let isSkuModeActive = false;
-      let isGoaSizeModeActive = false;
-
-      if (distMode === 'SKU') {
-          const storesWithSkuSales = eligibleStores.filter(s => s.skuSales && s.skuSales[item.sku] > 0);
-          if (storesWithSkuSales.length > 0) {
-              eligibleStores = storesWithSkuSales; 
-              isSkuModeActive = true;
-          } else {
-              const goaTallaKey = `${goaName}|${item.talla}`;
-              const storesWithGoaSizeSales = eligibleStores.filter(s => s.goaSizeSales && s.goaSizeSales[goaTallaKey] > 0);
-              if (storesWithGoaSizeSales.length > 0) {
-                  eligibleStores = storesWithGoaSizeSales;
-                  isGoaSizeModeActive = true;
-              } else {
-                  warnings.push(`[${item.sku}]: La talla ${item.talla} no tiene ventas históricas en el GOA ${goaName}. Se usará el perfil general del GOA para no dejar el lote huérfano.`);
-              }
-          }
-      }
-
-      const totalScore = eligibleStores.reduce((sum, s) => {
-          if (isSkuModeActive) return sum + s.skuSales[item.sku];
-          if (isGoaSizeModeActive) return sum + s.goaSizeSales[`${goaName}|${item.talla}`];
-          return sum + s.goaScores[goaName];
-      }, 0);
-
-      const allocations = new Map();
-      const remainders = [];
-      let remainingQty = qtyToDistribute;
-
-      if (distMode === 'OH' || distMode === 'SKU') {
-        let totalNeed = 0;
-        const storeNeeds = [];
-        
-        let totalSystemOH = 0;
-        eligibleStores.forEach(s => {
-            totalSystemOH += isSkuModeActive ? (dynamicSkuOH[s.centerCode]?.[item.sku] || 0) : (dynamicOH[s.centerCode]?.[goaName] || 0);
-        });
-        
-        const totalPool = totalSystemOH + qtyToDistribute; 
-
-        eligibleStores.forEach(store => {
-          let share = 0;
-          if (isSkuModeActive) { share = store.skuSales[item.sku] / totalScore; }
-          else if (isGoaSizeModeActive) { share = store.goaSizeSales[`${goaName}|${item.talla}`] / totalScore; }
-          else { share = store.goaScores[goaName] / totalScore; }
-
-          const idealTotalQty = share * totalPool;
-          const currentOH = isSkuModeActive ? (dynamicSkuOH[store.centerCode]?.[item.sku] || 0) : (dynamicOH[store.centerCode]?.[goaName] || 0);
-          
-          let need = idealTotalQty - currentOH;
-          if (need < 0) need = 0; 
-
-          storeNeeds.push({ store, need });
-          totalNeed += need;
-        });
-
-        if (totalNeed > 0) {
-          storeNeeds.forEach(({ store, need }) => {
-            const expectedQty = (need / totalNeed) * qtyToDistribute;
-            const assignedQty = Math.floor(expectedQty);
-            if (assignedQty > 0) { allocations.set(store.centerCode, assignedQty); remainingQty -= assignedQty; }
-            remainders.push({ store, fraction: expectedQty - assignedQty });
+            return items.some(it => {
+              const reqSeccion = it.seccion?.toUpperCase() || 'N/A';
+              const reqMarca = it.marca?.toUpperCase() || 'N/A';
+              if (reqSeccion === 'N/A' && reqMarca === 'N/A') return true;
+              if (authBrands.includes(`${reqSeccion}|${reqMarca}`)) return true;
+              if (reqSeccion === 'N/A' && authBrands.some(a => a.endsWith(`|${reqMarca}`))) return true;
+              if (reqMarca === 'N/A' && authBrands.some(a => a.startsWith(`${reqSeccion}|`))) return true;
+              if (authBrands.includes(`N/A|${reqMarca}`)) return true;
+              return false;
+            });
           });
-        } else {
-            warnings.push(`[${item.sku}]: Inventario OH lleno. Se forzará reparto Proporcional (Push).`);
+          if (eligibleStores.length === 0) {
+            warnings.push(`[${goaName}]: Ninguna tienda autorizada en la Matriz para los SKUs del lote.`);
+            return;
+          }
         }
-      } 
-      
-      if (distMode === 'PUSH' || allocations.size === 0) {
-        eligibleStores.forEach(store => {
-          let share = 0;
-          if (isSkuModeActive) { share = store.skuSales[item.sku] / totalScore; }
-          else if (isGoaSizeModeActive) { share = store.goaSizeSales[`${goaName}|${item.talla}`] / totalScore; }
-          else { share = store.goaScores[goaName] / totalScore; }
 
-          const expectedQty = share * qtyToDistribute;
-          const assignedQty = Math.floor(expectedQty);
-          if (assignedQty > 0) { allocations.set(store.centerCode, assignedQty); remainingQty -= assignedQty; }
-          remainders.push({ store, fraction: expectedQty - assignedQty });
+        // 5) Score por tienda = goaScore * (1 + 1/(1+OH)) — premia bajo OH y alto score
+        //    Luego priorizar clusters "permitidos" para garantizar al menos 1 pack.
+        const allowedClusters = packMinClusters[goaName] || [];
+        const enriched = eligibleStores.map(s => {
+          const oh = dynamicOH[s.centerCode]?.[goaName] || 0;
+          const cluster = s.clusters?.[goaName] || s.globalCluster || '';
+          const score = s.goaScores[goaName];
+          const ohFactor = 1 / (1 + oh / Math.max(1, packSize)); // bajo OH = mayor factor
+          const weight = score * (0.5 + 0.5 * ohFactor); // mezcla 50/50 score y OH inverso
+          return { store: s, cluster, oh, score, weight, isAllowed: allowedClusters.includes(cluster) };
         });
-      }
 
-      remainders.sort((a, b) => b.fraction - a.fraction);
-      for (let i = 0; i < remainingQty; i++) {
-        if(remainders.length === 0) break;
-        const storeCenter = remainders[i % remainders.length].store.centerCode;
-        allocations.set(storeCenter, (allocations.get(storeCenter) || 0) + 1);
-      }
+        const totalWeight = enriched.reduce((s, e) => s + e.weight, 0);
+        if (totalWeight <= 0) {
+          warnings.push(`[${goaName}]: Score total = 0 entre tiendas elegibles.`);
+          return;
+        }
 
-      allocations.forEach((qty, centerCode) => {
-        dynamicOH[centerCode][goaName] = (dynamicOH[centerCode][goaName] || 0) + qty;
-        if (!dynamicSkuOH[centerCode]) dynamicSkuOH[centerCode] = {};
-        dynamicSkuOH[centerCode][item.sku] = (dynamicSkuOH[centerCode][item.sku] || 0) + qty;
-        
-        const storeObj = eligibleStores.find(s => s.centerCode === centerCode);
-        results.push({
-          centro: centerCode,
-          nombre: storeObj ? storeObj.name : centerCode,
-          zona: storeObj ? storeObj.zona : 'General',
-          ventas: storeObj ? storeObj.goaSales[goaName] : 0, 
-          score: storeObj ? storeObj.goaScores[goaName] : 0,
-          globalCluster: storeObj ? storeObj.globalCluster : '',
-          initialOH: storeObj ? (storeObj.goaOH[goaName] || 0) : 0,
-          sku: item.sku, modelo: item.modelo, goa: goaName, marca: item.marca, color: item.color, talla: item.talla, qty: qty
+        // 6) Asignación de packs enteros — Hamilton (largest remainder)
+        const packsByStore = new Map();
+        const remainders = [];
+        let assignedPacks = 0;
+        enriched.forEach(e => {
+          const ideal = (e.weight / totalWeight) * totalPacks;
+          const floorPacks = Math.floor(ideal);
+          if (floorPacks > 0) {
+            packsByStore.set(e.store.centerCode, floorPacks);
+            assignedPacks += floorPacks;
+          }
+          remainders.push({ store: e.store, fraction: ideal - floorPacks, isAllowed: e.isAllowed, weight: e.weight });
         });
+
+        // Garantizar 1 pack a tiendas en clusters permitidos que aún no recibieron
+        const allowedSinPack = remainders
+          .filter(r => r.isAllowed && !packsByStore.has(r.store.centerCode))
+          .sort((a, b) => b.weight - a.weight);
+        const packsRestantes = totalPacks - assignedPacks;
+        let used = 0;
+        allowedSinPack.forEach(r => {
+          if (used < packsRestantes) {
+            packsByStore.set(r.store.centerCode, 1);
+            used++; assignedPacks++;
+          }
+        });
+
+        // Distribuir packs sobrantes por largest remainder entre todas
+        let pendientes = totalPacks - assignedPacks;
+        remainders.sort((a, b) => b.fraction - a.fraction);
+        let idx = 0;
+        while (pendientes > 0 && remainders.length > 0) {
+          const target = remainders[idx % remainders.length].store.centerCode;
+          packsByStore.set(target, (packsByStore.get(target) || 0) + 1);
+          pendientes--;
+          idx++;
+        }
+
+        // 7) Materializar resultado: por cada tienda, por cada talla del pack, asignar (packs * qty_curva)
+        //    Si hay varios SKUs por talla, repartir proporcionalmente a la qty original de cada SKU.
+        const swapEnabled = !!packAllowSwap[goaName];
+        const coverThreshold = Number(packCoverThreshold[goaName]) > 0 ? Number(packCoverThreshold[goaName]) : 5;
+        const swapLog = []; // para reporte al usuario
+
+        packsByStore.forEach((numPacks, centerCode) => {
+          if (numPacks <= 0) return;
+          const storeObj = stores.find(s => s.centerCode === centerCode);
+
+          // ---- SWAP por cobertura ----
+          // effectiveCurve = curva ajustada para esta tienda
+          let effectiveCurve = curve.map(r => ({ talla: String(r.talla).toUpperCase(), qty: Number(r.qty) * numPacks }));
+
+          if (swapEnabled && storeObj) {
+            // Calcular cobertura por talla (en meses). Ventas son ANUALES → /12
+            const tallaInfo = effectiveCurve.map(r => {
+              const key = `${goaName}|${r.talla}`;
+              const ventasAnuales = storeObj.goaSizeSales?.[key] || 0;
+              const ventasMensuales = ventasAnuales / 12;
+              const ohActual = storeObj.goaSizeOH?.[key] || 0;
+              const cover = ventasMensuales > 0 ? (ohActual / ventasMensuales) : (ohActual > 0 ? 999 : 0);
+              return { ...r, ventasAnuales, cover };
+            });
+
+            // Tallas saturadas (> umbral) y tallas receptoras (≤ umbral, ordenadas por venta histórica desc)
+            const saturadas = tallaInfo.filter(t => t.cover > coverThreshold && t.qty > 0);
+            const receptoras = tallaInfo.filter(t => t.cover <= coverThreshold)
+                                        .sort((a, b) => b.ventasAnuales - a.ventasAnuales);
+
+            if (saturadas.length > 0 && receptoras.length > 0) {
+              saturadas.forEach(sat => {
+                // Receptora preferente: la de mayor venta histórica en esta tienda
+                const target = receptoras.find(r => r.ventasAnuales > 0) || receptoras[0];
+                if (!target) return;
+                const idxSat = effectiveCurve.findIndex(c => c.talla === sat.talla);
+                const idxTgt = effectiveCurve.findIndex(c => c.talla === target.talla);
+                if (idxSat === -1 || idxTgt === -1) return;
+
+                const movidas = effectiveCurve[idxSat].qty;
+                effectiveCurve[idxTgt].qty += movidas;
+                effectiveCurve[idxSat].qty = 0;
+                swapLog.push(`[${centerCode}] ${goaName}: ${movidas} pzs T-${sat.talla} (cob ${sat.cover.toFixed(1)}m) → T-${target.talla}`);
+              });
+            }
+          }
+
+          // ---- Materializar usando effectiveCurve ----
+          effectiveCurve.forEach(rule => {
+            const tl = rule.talla;
+            const piezasTalla = rule.qty;
+            if (piezasTalla <= 0) return;
+            const skusEnTalla = itemsByTalla[tl];
+            if (!skusEnTalla || skusEnTalla.length === 0) return; // talla destino sin SKU en chequera (raro tras validación previa)
+            const totalQtyTalla = skusEnTalla.reduce((s, it) => s + Number(it.qty), 0);
+
+            // Reparto proporcional entre SKUs de la misma talla
+            let asignadasAcum = 0;
+            skusEnTalla.forEach((it, i) => {
+              let asignar;
+              if (i === skusEnTalla.length - 1) {
+                asignar = piezasTalla - asignadasAcum; // último toma residuo
+              } else {
+                asignar = Math.floor((Number(it.qty) / totalQtyTalla) * piezasTalla);
+                asignadasAcum += asignar;
+              }
+              if (asignar <= 0) return;
+
+              dynamicOH[centerCode][goaName] = (dynamicOH[centerCode][goaName] || 0) + asignar;
+              if (!dynamicSkuOH[centerCode]) dynamicSkuOH[centerCode] = {};
+              dynamicSkuOH[centerCode][it.sku] = (dynamicSkuOH[centerCode][it.sku] || 0) + asignar;
+
+              results.push({
+                centro: centerCode,
+                nombre: storeObj ? storeObj.name : centerCode,
+                zona: storeObj ? storeObj.zona : 'General',
+                ventas: storeObj ? storeObj.goaSales[goaName] : 0,
+                score: storeObj ? storeObj.goaScores[goaName] : 0,
+                globalCluster: storeObj ? storeObj.globalCluster : '',
+                initialOH: storeObj ? (storeObj.goaOH[goaName] || 0) : 0,
+                sku: it.sku, modelo: it.modelo, goa: goaName, marca: it.marca, color: it.color,
+                talla: it.talla, qty: asignar,
+                packs: numPacks // metadato de cuántos packs recibió
+              });
+            });
+          });
+        });
+        if (swapLog.length > 0) allSwapLogs.push(...swapLog);
       });
-    });
+
+      if (warnings.length > 0) alert("ATENCIÓN: Alertas del sistema durante la corrida (PACK):\n\n" + warnings.join("\n\n"));
+      if (allSwapLogs.length > 0) alert(`SWAPS aplicados por cobertura excedida (${allSwapLogs.length}):\n\n${allSwapLogs.slice(0, 20).join('\n')}${allSwapLogs.length > 20 ? `\n\n... y ${allSwapLogs.length - 20} más` : ''}`);
+      results.sort((a, b) => a.centro.localeCompare(b.centro) || a.sku.localeCompare(b.sku));
+      setDistributionResult(results);
+      try {
+        const finalAllocations = {};
+        results.forEach(r => { finalAllocations[r.centro] = (finalAllocations[r.centro] || 0) + r.qty; });
+        const totalFcst = chequera.reduce((s, it) => s + Number(it.qty), 0);
+        const totalAlloc = Object.values(finalAllocations).reduce((a, b) => a + b, 0);
+        const fillRate = totalFcst > 0 ? Math.min((totalAlloc / totalFcst) * 100, 100) : 0;
+        if (typeof globalActions !== 'undefined' && gDispatch) {
+          globalActions.publishDistribution(gDispatch, { allocations: finalAllocations, fillRate, result: results });
+        }
+      } catch (error) {}
+      return;
+    }
+    // ========================================================================
+    // FIN BRANCH PACK
+    // ========================================================================
+    
+    // ====================================================================
+    // HELPERS COMPARTIDOS para PUSH / OH / SKU
+    // ====================================================================
+    const newAlerts = [];
+
+    // Filtra tiendas elegibles aplicando matriz de marca + score > 0
+    const filterEligible = (item, goaName, baseStores) => {
+      let elig = baseStores.filter(s => s.goaScores && s.goaScores[goaName] > 0);
+      if (elig.length === 0) return [];
+      if (Object.keys(brandMatrix).length > 0) {
+        elig = elig.filter(s => {
+          const normStoreId = parseInt(s.centerCode).toString();
+          const authBrands = brandMatrix[normStoreId] || [];
+          const reqSeccion = item.seccion?.toUpperCase() || 'N/A';
+          const reqMarca = item.marca?.toUpperCase() || 'N/A';
+          if (reqSeccion === 'N/A' && reqMarca === 'N/A') return true;
+          if (authBrands.includes(`${reqSeccion}|${reqMarca}`)) return true;
+          if (reqSeccion === 'N/A' && authBrands.some(a => a.endsWith(`|${reqMarca}`))) return true;
+          if (reqMarca === 'N/A' && authBrands.some(a => a.startsWith(`${reqSeccion}|`))) return true;
+          if (authBrands.includes(`N/A|${reqMarca}`)) return true;
+          return false;
+        });
+      }
+      return elig;
+    };
+
+    // MOS objetivo (default 3 si no está configurado)
+    const getMos = (goaName) => {
+      const cfg = mosTarget[goaName];
+      return { min: cfg?.min ?? 1.5, max: cfg?.max ?? 3 };
+    };
+
+    // Ventas mensuales priorizando tendencia 3M (si > 0) sobre 12M
+    const monthlySales = (storeObj, goaName, talla = null) => {
+      if (talla) {
+        const key = `${goaName}|${talla}`;
+        const v3m = storeObj.goaSizeTrend3M?.[key] || 0;
+        if (v3m > 0) return v3m / 3;
+        return (storeObj.goaSizeSales?.[key] || 0) / 12;
+      }
+      const v3m = storeObj.goaTrend3M?.[goaName] || 0;
+      if (v3m > 0) return v3m / 3;
+      return (storeObj.goaSales?.[goaName] || 0) / 12;
+    };
+
+    // Función para empujar resultado y actualizar OH dinámico
+    const pushResult = (centerCode, qty, item, goaName, eligibleStores) => {
+      if (qty <= 0) return;
+      dynamicOH[centerCode][goaName] = (dynamicOH[centerCode][goaName] || 0) + qty;
+      if (!dynamicSkuOH[centerCode]) dynamicSkuOH[centerCode] = {};
+      dynamicSkuOH[centerCode][item.sku] = (dynamicSkuOH[centerCode][item.sku] || 0) + qty;
+
+      const storeObj = eligibleStores.find(s => s.centerCode === centerCode);
+      // Merge si ya existe la combinación centro+sku
+      const existing = results.find(r => r.centro === centerCode && r.sku === item.sku);
+      if (existing) {
+        existing.qty += qty;
+        return;
+      }
+      results.push({
+        centro: centerCode,
+        nombre: storeObj ? storeObj.name : centerCode,
+        zona: storeObj ? storeObj.zona : 'General',
+        ventas: storeObj ? storeObj.goaSales[goaName] : 0,
+        score: storeObj ? storeObj.goaScores[goaName] : 0,
+        globalCluster: storeObj ? storeObj.globalCluster : '',
+        initialOH: storeObj ? (storeObj.goaOH[goaName] || 0) : 0,
+        sku: item.sku, modelo: item.modelo, goa: goaName,
+        marca: item.marca, color: item.color, talla: item.talla, qty: qty
+      });
+    };
+
+    // ====================================================================
+    // PUSH: Llenado por canal/cluster + corrida + round-robin
+    // ====================================================================
+    if (distMode === 'PUSH') {
+      // Agrupar items por modelo+GOA para detectar corridas (varias tallas mismo modelo)
+      const byModel = {};
+      chequera.forEach(it => {
+        const k = `${it.modelo.toUpperCase()}|${it.goa.toUpperCase()}|${(it.color || '').toUpperCase()}`;
+        if (!byModel[k]) byModel[k] = [];
+        byModel[k].push(it);
+      });
+
+      Object.values(byModel).forEach(items => {
+        const sample = items[0];
+        const goaName = sample.goa.toUpperCase();
+        const eligibleStores = filterEligible(sample, goaName, stores);
+        if (eligibleStores.length === 0) {
+          warnings.push(`[${sample.modelo}/${goaName}]: sin tiendas elegibles tras filtro de matriz.`);
+          return;
+        }
+
+        // Ordenar tiendas: cluster primero (AA → A → B...) y luego por score desc
+        const clusterRank = {};
+        activeClusters.forEach((c, i) => { clusterRank[c] = i; });
+        const sortedStores = [...eligibleStores].sort((a, b) => {
+          const ra = clusterRank[a.clusters?.[goaName] || a.globalCluster] ?? 999;
+          const rb = clusterRank[b.clusters?.[goaName] || b.globalCluster] ?? 999;
+          if (ra !== rb) return ra - rb;
+          return (b.goaScores[goaName] || 0) - (a.goaScores[goaName] || 0);
+        });
+
+        const hasTallas = items.some(it => it.talla && it.talla !== 'UNICA' && it.talla !== 'N/A');
+
+        if (hasTallas && items.length > 1) {
+          // CORRIDA: cada talla tiene proporciones según qty del lote.
+          // Calcular GCD para reducir a corrida mínima (ej. 10,20,30,20,10 → 1,2,3,2,1)
+          const qtys = items.map(it => parseInt(it.qty));
+          const gcd = (a, b) => b === 0 ? a : gcd(b, a % b);
+          const totalGcd = qtys.reduce((g, q) => gcd(g, q));
+          const corrida = qtys.map(q => q / totalGcd);
+          const piezasPorCorrida = corrida.reduce((s, q) => s + q, 0);
+          const totalPzs = qtys.reduce((s, q) => s + q, 0);
+          const corridasDisponibles = Math.floor(totalPzs / piezasPorCorrida);
+
+          // Asignar 1 corrida completa por tienda (en orden de cluster/score)
+          let corridasUsadas = 0;
+          for (const store of sortedStores) {
+            if (corridasUsadas >= corridasDisponibles) break;
+            items.forEach((it, idx) => {
+              pushResult(store.centerCode, corrida[idx], it, goaName, eligibleStores);
+            });
+            corridasUsadas++;
+          }
+
+          // Sobrante: round-robin de corridas a las top tiendas
+          let sobrantes = corridasDisponibles - corridasUsadas;
+          let i = 0;
+          while (sobrantes > 0 && sortedStores.length > 0) {
+            const store = sortedStores[i % sortedStores.length];
+            items.forEach((it, idx) => {
+              pushResult(store.centerCode, corrida[idx], it, goaName, eligibleStores);
+            });
+            sobrantes--;
+            i++;
+          }
+          // Residuo (piezas que no completan corrida) → descartar (no se rompe corrida)
+        } else {
+          // SIN TALLAS o talla única: round-robin de 1 pza por vuelta
+          items.forEach(it => {
+            let qtyToDist = parseInt(it.qty);
+            let i = 0;
+            while (qtyToDist > 0 && sortedStores.length > 0) {
+              const store = sortedStores[i % sortedStores.length];
+              pushResult(store.centerCode, 1, it, goaName, eligibleStores);
+              qtyToDist--;
+              i++;
+            }
+          });
+        }
+      });
+    }
+
+    // ====================================================================
+    // OH (Dispersión GOA) — iterativo pza-a-pza con MOS objetivo
+    // ====================================================================
+    if (distMode === 'OH') {
+      // Agrupar por GOA+marca para alertas
+      const goaMarcaSummary = {};
+
+      chequera.forEach(item => {
+        const goaName = item.goa.toUpperCase();
+        const marcaKey = `${goaName}|${(item.marca || 'N/A').toUpperCase()}`;
+        let qtyToDistribute = parseInt(item.qty);
+        if (qtyToDistribute <= 0) return;
+
+        const eligibleStores = filterEligible(item, goaName, stores);
+        if (eligibleStores.length === 0) {
+          warnings.push(`[${item.sku}]: sin tiendas elegibles tras matriz.`);
+          return;
+        }
+
+        const { min: mosMin, max: mosMax } = getMos(goaName);
+
+        // Pre-calcular MOS actual por tienda (con OH+OO)
+        const computeMos = (store) => {
+          const oh = dynamicOH[store.centerCode]?.[goaName] || 0;
+          const oo = store.goaOO?.[goaName] || 0;
+          const ms = monthlySales(store, goaName);
+          if (ms <= 0) return oh + oo > 0 ? 999 : 0;
+          return (oh + oo) / ms;
+        };
+
+        // Iterar pza a pza: a cada paso, asignar a la tienda con menor MOS (entre las que aún están bajo el target max y respetan score)
+        let pzasRest = qtyToDistribute;
+        const safetyLimit = pzasRest * 100; // evitar loops infinitos
+        let safety = 0;
+
+        while (pzasRest > 0 && safety < safetyLimit) {
+          // Candidatas: tiendas con MOS < mosMax (margen de seguridad)
+          const candidates = eligibleStores
+            .map(s => ({ store: s, mos: computeMos(s), score: s.goaScores[goaName] }))
+            .filter(c => c.mos < mosMax);
+
+          if (candidates.length === 0) break; // todas saturadas
+
+          // Priorizar por: cluster (mejor primero) y mos (menor primero)
+          const clusterRank = {};
+          activeClusters.forEach((c, i) => { clusterRank[c] = i; });
+          candidates.sort((a, b) => {
+            const ra = clusterRank[a.store.clusters?.[goaName] || a.store.globalCluster] ?? 999;
+            const rb = clusterRank[b.store.clusters?.[goaName] || b.store.globalCluster] ?? 999;
+            if (ra !== rb) return ra - rb;
+            return a.mos - b.mos;
+          });
+
+          const target = candidates[0];
+          pushResult(target.store.centerCode, 1, item, goaName, eligibleStores);
+          pzasRest--;
+          safety++;
+        }
+
+        // Tracking sobre-inventariadas para alertas
+        if (!goaMarcaSummary[marcaKey]) {
+          goaMarcaSummary[marcaKey] = { goa: goaName, marca: item.marca || 'N/A', total: 0, over: [], saturadas: pzasRest };
+        }
+        eligibleStores.forEach(s => {
+          goaMarcaSummary[marcaKey].total++;
+          const mos = computeMos(s);
+          if (mos > mosMax) {
+            goaMarcaSummary[marcaKey].over.push({ centro: s.centerCode, name: s.name, mos: mos.toFixed(1) });
+          }
+        });
+        if (pzasRest > 0) {
+          warnings.push(`[${item.sku}]: ${pzasRest} pzs no asignadas. Todas las tiendas elegibles superan MOS objetivo (${mosMax}m).`);
+        }
+      });
+
+      // Generar alertas
+      Object.values(goaMarcaSummary).forEach(s => {
+        if (s.total === 0) return;
+        const uniqueOver = Array.from(new Map(s.over.map(o => [o.centro, o])).values());
+        const totalUniqueStores = new Set(s.over.map(o => o.centro)).size + (s.total - s.over.length);
+        const pct = (uniqueOver.length / Math.max(1, s.total)) * 100;
+        if (pct > 20) {
+          newAlerts.push({
+            goa: s.goa, marca: s.marca, pct: pct.toFixed(1),
+            totalStores: s.total, overStores: uniqueOver.slice(0, 50),
+            reason: `Más del 20% de tiendas (${pct.toFixed(0)}%) supera MOS objetivo. Considerar pausar compras de ${s.goa}/${s.marca}.`
+          });
+        }
+      });
+    }
+
+    // ====================================================================
+    // SKU (Size-Level) — score-first + talla + MOS sano
+    // ====================================================================
+    if (distMode === 'SKU') {
+      const goaMarcaSummary = {};
+
+      chequera.forEach(item => {
+        const goaName = item.goa.toUpperCase();
+        const marcaKey = `${goaName}|${(item.marca || 'N/A').toUpperCase()}`;
+        const tallaKey = item.talla?.toUpperCase() || null;
+        let qtyToDistribute = parseInt(item.qty);
+        if (qtyToDistribute <= 0) return;
+
+        const eligibleStores = filterEligible(item, goaName, stores);
+        if (eligibleStores.length === 0) {
+          warnings.push(`[${item.sku}]: sin tiendas elegibles tras matriz.`);
+          return;
+        }
+
+        const { min: mosMin, max: mosMax } = getMos(goaName);
+
+        // Score combinado: prioridad a la talla específica, fallback a SKU, fallback a GOA
+        const getScore = (s) => {
+          if (tallaKey && tallaKey !== 'N/A' && s.goaSizeSales?.[`${goaName}|${tallaKey}`] > 0) {
+            return s.goaSizeSales[`${goaName}|${tallaKey}`];
+          }
+          if (s.skuSales?.[item.sku] > 0) return s.skuSales[item.sku];
+          return s.goaScores[goaName];
+        };
+
+        const computeMosSize = (store) => {
+          // MOS por talla específica si existe data, sino por GOA
+          if (tallaKey && tallaKey !== 'N/A') {
+            const key = `${goaName}|${tallaKey}`;
+            const oh = (store.goaSizeOH?.[key] || 0) + (dynamicOH[store.centerCode]?.[goaName] || 0) - (store.goaOH?.[goaName] || 0);
+            // Acumulación: oh actual de la talla + lo nuevo asignado al GOA (aprox)
+            const ohEff = (store.goaSizeOH?.[key] || 0) + ((dynamicSkuOH[store.centerCode]?.[item.sku] || 0) - (store.skuOH?.[item.sku] || 0));
+            const oo = store.goaSizeOO?.[key] || 0;
+            const ms = monthlySales(store, goaName, tallaKey);
+            if (ms <= 0) return ohEff + oo > 0 ? 999 : 0;
+            return (ohEff + oo) / ms;
+          }
+          const oh = dynamicOH[store.centerCode]?.[goaName] || 0;
+          const oo = store.goaOO?.[goaName] || 0;
+          const ms = monthlySales(store, goaName);
+          if (ms <= 0) return oh + oo > 0 ? 999 : 0;
+          return (oh + oo) / ms;
+        };
+
+        // Ordenar tiendas por score desc inicialmente
+        const ranked = [...eligibleStores]
+          .map(s => ({ store: s, score: getScore(s) }))
+          .filter(x => x.score > 0)
+          .sort((a, b) => b.score - a.score);
+
+        if (ranked.length === 0) {
+          warnings.push(`[${item.sku}]: sin tiendas con venta histórica para talla ${tallaKey || 'N/A'}. Se omite.`);
+          return;
+        }
+
+        let pzasRest = qtyToDistribute;
+        let cursor = 0;
+        const safetyLimit = pzasRest * 100;
+        let safety = 0;
+
+        while (pzasRest > 0 && safety < safetyLimit) {
+          if (cursor >= ranked.length) cursor = 0;
+          const start = cursor;
+          let asignada = false;
+
+          // Buscar la siguiente tienda en orden con MOS sano
+          do {
+            const cand = ranked[cursor];
+            const mos = computeMosSize(cand.store);
+            if (mos < mosMax) {
+              // Decidir cuántas pzs darle de un golpe: hasta llegar al MOS objetivo (mosMax) o al min, lo que sea menor
+              const ms = monthlySales(cand.store, goaName, tallaKey);
+              const ohEff = tallaKey && tallaKey !== 'N/A'
+                ? (cand.store.goaSizeOH?.[`${goaName}|${tallaKey}`] || 0) + ((dynamicSkuOH[cand.store.centerCode]?.[item.sku] || 0) - (cand.store.skuOH?.[item.sku] || 0))
+                : (dynamicOH[cand.store.centerCode]?.[goaName] || 0);
+              const oo = tallaKey && tallaKey !== 'N/A' ? (cand.store.goaSizeOO?.[`${goaName}|${tallaKey}`] || 0) : (cand.store.goaOO?.[goaName] || 0);
+              const targetOH = ms * mosMax;
+              const headroom = Math.max(1, Math.floor(targetOH - ohEff - oo));
+              const give = Math.min(headroom, pzasRest);
+              pushResult(cand.store.centerCode, give, item, goaName, eligibleStores);
+              pzasRest -= give;
+              asignada = true;
+              cursor++; // mover a siguiente tienda para no concentrar todo en una
+              break;
+            }
+            cursor++;
+            if (cursor >= ranked.length) cursor = 0;
+          } while (cursor !== start);
+
+          if (!asignada) break; // ninguna tienda con MOS sano
+          safety++;
+        }
+
+        if (!goaMarcaSummary[marcaKey]) {
+          goaMarcaSummary[marcaKey] = { goa: goaName, marca: item.marca || 'N/A', total: 0, over: [] };
+        }
+        eligibleStores.forEach(s => {
+          goaMarcaSummary[marcaKey].total++;
+          const mos = computeMosSize(s);
+          if (mos > mosMax) {
+            goaMarcaSummary[marcaKey].over.push({ centro: s.centerCode, name: s.name, mos: mos.toFixed(1) });
+          }
+        });
+        if (pzasRest > 0) {
+          warnings.push(`[${item.sku}]: ${pzasRest} pzs no asignadas. Todas las tiendas elegibles superan MOS objetivo (${mosMax}m) en talla ${tallaKey}.`);
+        }
+      });
+
+      Object.values(goaMarcaSummary).forEach(s => {
+        if (s.total === 0) return;
+        const uniqueOver = Array.from(new Map(s.over.map(o => [o.centro, o])).values());
+        const pct = (uniqueOver.length / Math.max(1, s.total)) * 100;
+        if (pct > 20) {
+          newAlerts.push({
+            goa: s.goa, marca: s.marca, pct: pct.toFixed(1),
+            totalStores: s.total, overStores: uniqueOver.slice(0, 50),
+            reason: `Más del 20% de tiendas (${pct.toFixed(0)}%) supera MOS objetivo. Considerar pausar compras de ${s.goa}/${s.marca}.`
+          });
+        }
+      });
+    }
+
+    setOverstockAlerts(newAlerts);
     
     if (warnings.length > 0) {
        alert("ATENCIÓN: Alertas del sistema durante la corrida:\n\n" + warnings.join("\n\n"));
@@ -1221,6 +1758,230 @@ useEffect(() => {
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 transition-colors duration-300 relative">
         
         {/* MODAL DE PARAMETRIZACIÓN FLOTANTE */}
+        {/* MODAL: CONFIGURACIÓN DE PACKS (Size Scaling) */}
+        {showPackModal && (() => {
+          const goasEnChequera = Array.from(new Set(chequera.map(it => it.goa.toUpperCase())));
+          const tallasPorGoa = {};
+          goasEnChequera.forEach(g => {
+            tallasPorGoa[g] = Array.from(new Set(chequera.filter(it => it.goa.toUpperCase() === g).map(it => String(it.talla).toUpperCase()))).filter(tl => tl && tl !== 'N/A');
+          });
+
+          const updateCurve = (goa, idx, field, value) => {
+            setPackCurves(prev => {
+              const curr = prev[goa] ? [...prev[goa]] : [];
+              if (!curr[idx]) curr[idx] = { talla: '', qty: 0 };
+              curr[idx] = { ...curr[idx], [field]: field === 'qty' ? (parseInt(value) || 0) : value };
+              return { ...prev, [goa]: curr };
+            });
+          };
+          const addRow = (goa) => {
+            setPackCurves(prev => ({ ...prev, [goa]: [...(prev[goa] || []), { talla: '', qty: 0 }] }));
+          };
+          const removeRow = (goa, idx) => {
+            setPackCurves(prev => ({ ...prev, [goa]: (prev[goa] || []).filter((_, i) => i !== idx) }));
+          };
+          const autoFillFromChequera = (goa) => {
+            const filas = tallasPorGoa[goa].map(tl => ({ talla: tl, qty: 1 }));
+            setPackCurves(prev => ({ ...prev, [goa]: filas }));
+          };
+          const toggleCluster = (goa, cluster) => {
+            setPackMinClusters(prev => {
+              const curr = new Set(prev[goa] || []);
+              if (curr.has(cluster)) curr.delete(cluster); else curr.add(cluster);
+              return { ...prev, [goa]: Array.from(curr) };
+            });
+          };
+
+          return (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+              <div className={`w-full max-w-4xl max-h-[90vh] overflow-auto rounded-2xl border shadow-2xl p-6 ${theme==='dark'?'bg-zinc-900 border-zinc-800':'bg-white border-gray-200'}`}>
+                <div className="flex justify-between items-center mb-4">
+                  <div>
+                    <h3 className={`text-lg font-black flex items-center ${t.textMain}`}>
+                      <Icons.Package size={20} className="mr-2 text-amber-500"/> Curvas de Empaquetado del Proveedor
+                    </h3>
+                    <p className={`text-xs mt-1 ${t.textMuted}`}>Define cuántas piezas por talla compone 1 pack. La distribución asignará packs enteros respetando esta curva.</p>
+                  </div>
+                  <button onClick={() => setShowPackModal(false)} className="text-gray-500 hover:text-red-500 transition-colors">
+                    <Icons.X size={20} />
+                  </button>
+                </div>
+
+                {goasEnChequera.length === 0 ? (
+                  <div className={`p-8 text-center rounded-xl border ${t.cardInner}`}>
+                    <Icons.AlertCircle size={32} className="mx-auto mb-3 text-amber-500"/>
+                    <p className={`text-sm ${t.textMain}`}>Primero agrega items a la chequera. Las curvas se configuran por GOA detectado.</p>
+                  </div>
+                ) : (
+                  <div className="space-y-5">
+                    {goasEnChequera.map(goa => {
+                      const curve = packCurves[goa] || [];
+                      const packSize = curve.reduce((s, r) => s + (Number(r.qty) || 0), 0);
+                      const allowed = packMinClusters[goa] || [];
+                      return (
+                        <div key={goa} className={`p-4 rounded-xl border ${t.cardInner}`}>
+                          <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                            <div className="flex items-center gap-3">
+                              <span className={`px-3 py-1 rounded-lg font-black text-sm ${theme==='dark'?'bg-amber-900/30 text-amber-400':'bg-amber-50 text-amber-700'}`}>{goa}</span>
+                              <span className={`text-xs ${t.textMuted}`}>Tallas en chequera: {tallasPorGoa[goa].join(', ') || '—'}</span>
+                            </div>
+                            <div className="flex items-center gap-2">
+                              <span className={`text-xs font-bold ${packSize > 0 ? 'text-emerald-500' : t.textMuted}`}>Pack = {packSize} pzs</span>
+                              <button onClick={() => autoFillFromChequera(goa)} className={`text-[10px] px-2 py-1 rounded font-bold ${theme==='dark'?'bg-zinc-800 text-gray-300 hover:bg-zinc-700':'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+                                Auto desde chequera
+                              </button>
+                            </div>
+                          </div>
+
+                          <table className="w-full text-left">
+                            <thead>
+                              <tr className={`text-[10px] uppercase tracking-wider ${t.textMuted}`}>
+                                <th className="p-1.5">Talla</th>
+                                <th className="p-1.5 text-center">Pzs por pack</th>
+                                <th className="p-1.5 w-10"></th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {curve.map((row, idx) => (
+                                <tr key={idx}>
+                                  <td className="p-1">
+                                    <input list={`tallas-${goa}`} value={row.talla} onChange={e => updateCurve(goa, idx, 'talla', e.target.value.toUpperCase())} className={`w-full p-1.5 rounded border text-xs outline-none ${t.input}`} placeholder="Ej. M"/>
+                                    <datalist id={`tallas-${goa}`}>
+                                      {tallasPorGoa[goa].map(tl => <option key={tl} value={tl}/>)}
+                                    </datalist>
+                                  </td>
+                                  <td className="p-1">
+                                    <input type="number" min="0" value={row.qty} onChange={e => updateCurve(goa, idx, 'qty', e.target.value)} className={`w-full p-1.5 rounded border text-xs text-center font-mono outline-none ${t.input}`}/>
+                                  </td>
+                                  <td className="p-1 text-center">
+                                    <button onClick={() => removeRow(goa, idx)} className="text-red-500 hover:text-red-700"><Icons.Trash2 size={14}/></button>
+                                  </td>
+                                </tr>
+                              ))}
+                              <tr>
+                                <td colSpan="3" className="pt-2">
+                                  <button onClick={() => addRow(goa)} className={`text-xs font-bold px-3 py-1 rounded ${theme==='dark'?'bg-zinc-800 text-gray-300 hover:bg-zinc-700':'bg-gray-100 text-gray-700 hover:bg-gray-200'}`}>
+                                    + Agregar talla
+                                  </button>
+                                </td>
+                              </tr>
+                            </tbody>
+                          </table>
+
+                          <div className="mt-4 pt-3 border-t border-dashed border-gray-500/30">
+                            <p className={`text-[10px] uppercase font-bold tracking-wider mb-2 ${t.textMuted}`}>
+                              Clusters que SÍ reciben pack aunque no alcance naturalmente
+                            </p>
+                            <div className="flex flex-wrap gap-1.5">
+                              {activeClusters.map(c => (
+                                <button key={c} onClick={() => toggleCluster(goa, c)} className={`px-2.5 py-1 rounded text-[10px] font-black border transition-all ${allowed.includes(c) ? (theme==='dark'?'bg-emerald-900/40 text-emerald-400 border-emerald-500/50':'bg-emerald-50 text-emerald-700 border-emerald-300') : (theme==='dark'?'bg-zinc-800 text-gray-500 border-zinc-700':'bg-gray-100 text-gray-500 border-gray-200')}`}>
+                                  {c}
+                                </button>
+                              ))}
+                            </div>
+                            <p className={`text-[10px] mt-2 ${t.textMuted}`}>Tip: marca AA/A para asegurar que tus tiendas top reciban al menos 1 pack aunque la repartición proporcional no se los dé.</p>
+                          </div>
+
+                          <div className="mt-3 flex items-center gap-3 flex-wrap">
+                            <label className="flex items-center gap-2">
+                              <input type="checkbox" checked={!!packAllowSwap[goa]} onChange={e => setPackAllowSwap(prev => ({...prev, [goa]: e.target.checked}))} className="rounded"/>
+                              <span className={`text-[11px] font-bold ${t.textMain}`}>Swap por cobertura</span>
+                            </label>
+                            {packAllowSwap[goa] && (
+                              <div className="flex items-center gap-2">
+                                <span className={`text-[11px] ${t.textMuted}`}>Umbral cobertura (meses):</span>
+                                <input type="number" min="1" step="0.5" value={packCoverThreshold[goa] ?? 5} onChange={e => setPackCoverThreshold(prev => ({...prev, [goa]: parseFloat(e.target.value) || 5}))} className={`w-16 p-1 rounded border text-xs text-center font-mono outline-none ${t.input}`}/>
+                                <span className={`text-[10px] ${t.textMuted}`}>Si OH/venta_mensual &gt; umbral → mover pzs a la talla con más venta histórica.</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-2 mt-5">
+                  <button onClick={() => setShowPackModal(false)} className={`px-4 py-2 rounded-lg text-sm font-bold ${t.btnGhost}`}>Cancelar</button>
+                  <button onClick={() => setShowPackModal(false)} className={`px-5 py-2 rounded-lg text-sm font-black ${t.btnPrimary}`}>Guardar curvas</button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* MODAL: MOS objetivo por GOA */}
+        {showMosModal && (() => {
+          const goasFromChequera = Array.from(new Set(chequera.map(it => it.goa.toUpperCase())));
+          const goasInStores = goas.map(g => g.name.toUpperCase());
+          const allGoas = Array.from(new Set([...goasFromChequera, ...goasInStores]));
+
+          const updateMos = (goa, field, value) => {
+            setMosTarget(prev => ({
+              ...prev,
+              [goa]: { ...(prev[goa] || { min: 1.5, max: 3 }), [field]: parseFloat(value) || 0 }
+            }));
+          };
+
+          return (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+              <div className={`w-full max-w-2xl max-h-[90vh] overflow-auto rounded-2xl border shadow-2xl p-6 ${theme==='dark'?'bg-zinc-900 border-zinc-800':'bg-white border-gray-200'}`}>
+                <div className="flex justify-between items-center mb-4">
+                  <div>
+                    <h3 className={`text-lg font-black flex items-center ${t.textMain}`}>
+                      <Icons.Activity size={20} className="mr-2 text-emerald-500"/> MOS Objetivo por GOA
+                    </h3>
+                    <p className={`text-xs mt-1 ${t.textMuted}`}>Meses de inventario "sano". Si una tienda supera el MAX, no recibe más unidades. Default: 1.5–3 meses.</p>
+                  </div>
+                  <button onClick={() => setShowMosModal(false)} className="text-gray-500 hover:text-red-500"><Icons.X size={20} /></button>
+                </div>
+
+                {allGoas.length === 0 ? (
+                  <div className={`p-8 text-center rounded-xl border ${t.cardInner}`}>
+                    <p className={`text-sm ${t.textMain}`}>Carga primero la base de tiendas o agrega items a la chequera.</p>
+                  </div>
+                ) : (
+                  <table className="w-full text-left">
+                    <thead>
+                      <tr className={`text-[10px] uppercase tracking-wider ${t.textMuted}`}>
+                        <th className="p-2">GOA</th>
+                        <th className="p-2 text-center">MOS Mínimo</th>
+                        <th className="p-2 text-center">MOS Máximo (cap)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {allGoas.map(goa => {
+                        const cfg = mosTarget[goa] || { min: 1.5, max: 3 };
+                        return (
+                          <tr key={goa} className={`border-t ${theme==='dark'?'border-zinc-800':'border-gray-200'}`}>
+                            <td className="p-2">
+                              <span className={`px-2 py-1 rounded text-xs font-black ${theme==='dark'?'bg-emerald-900/30 text-emerald-400':'bg-emerald-50 text-emerald-700'}`}>{goa}</span>
+                            </td>
+                            <td className="p-2">
+                              <input type="number" min="0" step="0.5" value={cfg.min} onChange={e => updateMos(goa, 'min', e.target.value)} className={`w-24 mx-auto block p-1.5 rounded border text-xs text-center font-mono outline-none ${t.input}`}/>
+                            </td>
+                            <td className="p-2">
+                              <input type="number" min="0" step="0.5" value={cfg.max} onChange={e => updateMos(goa, 'max', e.target.value)} className={`w-24 mx-auto block p-1.5 rounded border text-xs text-center font-mono outline-none ${t.input}`}/>
+                            </td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+
+                <div className={`mt-4 p-3 rounded-lg text-[11px] ${theme==='dark'?'bg-zinc-800/50 text-gray-400':'bg-gray-50 text-gray-600'}`}>
+                  <strong>Cómo se calcula:</strong> MOS = (OH + OO) / venta_mensual. Si la columna VTA3M está en el CSV, se usa <em>venta últimos 3M / 3</em> en lugar de venta anual / 12 (más sensible a tendencia).
+                </div>
+
+                <div className="flex justify-end gap-2 mt-5">
+                  <button onClick={() => setShowMosModal(false)} className={`px-4 py-2 rounded-lg text-sm font-bold ${t.btnGhost}`}>Cerrar</button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
         {showParamModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
             <div className={`w-full max-w-lg rounded-2xl border shadow-2xl p-6 ${theme==='dark'?'bg-zinc-900 border-zinc-800':'bg-white border-gray-200'}`}>
@@ -1449,6 +2210,19 @@ useEffect(() => {
                     <p className={`text-sm mt-1 ${t.textMuted}`}>Los clústeres son otorgados de acuerdo al Score. (0 a 100).</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
+                    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${t.cardInner}`}>
+                      <Icons.Filter size={14} className={t.textMuted} />
+                      <input
+                        type="text"
+                        placeholder="Buscar tienda…"
+                        value={storeNameFilter}
+                        onChange={e => setStoreNameFilter(e.target.value)}
+                        className={`bg-transparent outline-none text-xs w-40 ${t.textMain}`}
+                      />
+                      {storeNameFilter && (
+                        <button onClick={() => setStoreNameFilter('')} className="text-gray-400 hover:text-red-500"><Icons.X size={12}/></button>
+                      )}
+                    </div>
                     <div className={`flex rounded-lg p-1 border ${t.cardInner}`}>
                       <button onClick={()=>toggleSort('score')} className={`px-3 py-1.5 text-[10px] font-bold rounded flex items-center transition ${storeSortBy==='score'? (theme==='dark'?'bg-zinc-800 text-yellow-400':'bg-white shadow text-blue-600') : t.textMuted}`}>Score <Icons.Filter size={12} className="ml-1"/></button>
                       <button onClick={()=>toggleSort('sales')} className={`px-3 py-1.5 text-[10px] font-bold rounded flex items-center transition ${storeSortBy==='sales'? (theme==='dark'?'bg-zinc-800 text-yellow-400':'bg-white shadow text-blue-600') : t.textMuted}`}>Vtas <Icons.Filter size={12} className="ml-1"/></button>
@@ -1769,7 +2543,22 @@ useEffect(() => {
                     <button onClick={() => setDistMode('SKU')} className={`flex items-center px-3 py-1.5 rounded text-xs font-bold transition-all ${distMode === 'SKU' ? (theme==='dark'?'bg-zinc-800 text-white shadow':'bg-white text-black shadow') : t.textMuted}`}>
                        <Icons.Layers size={16} className={`mr-1 ${distMode === 'SKU' ? 'text-violet-400' : ''}`} /> Size-Level
                     </button>
+                    <button onClick={() => setDistMode('PACK')} className={`flex items-center px-3 py-1.5 rounded text-xs font-bold transition-all ${distMode === 'PACK' ? (theme==='dark'?'bg-zinc-800 text-white shadow':'bg-white text-black shadow') : t.textMuted}`}>
+                       <Icons.Package size={16} className={`mr-1 ${distMode === 'PACK' ? 'text-amber-400' : ''}`} /> Size Scaling (Pack)
+                    </button>
                   </div>
+
+                  {distMode === 'PACK' && (
+                    <button onClick={() => setShowPackModal(true)} className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center transition-all ${theme==='dark'?'bg-amber-900/30 text-amber-400 border border-amber-500/50 hover:bg-amber-900/50':'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'}`}>
+                      <Icons.Settings size={14} className="mr-1.5"/> Configurar Packs
+                    </button>
+                  )}
+
+                  {(distMode === 'OH' || distMode === 'SKU') && (
+                    <button onClick={() => setShowMosModal(true)} className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center transition-all ${theme==='dark'?'bg-emerald-900/30 text-emerald-400 border border-emerald-500/50 hover:bg-emerald-900/50':'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'}`}>
+                      <Icons.Settings size={14} className="mr-1.5"/> Configurar MOS Objetivo
+                    </button>
+                  )}
 
                   <button 
                     onClick={processDistribution}
@@ -1783,13 +2572,54 @@ useEffect(() => {
 
             {distributionResult.length > 0 && (
               <div className="space-y-6 animate-fade-in-up">
+                {overstockAlerts.length > 0 && (
+                  <div className={`p-5 rounded-xl border-2 border-red-500/60 ${theme==='dark'?'bg-red-950/30':'bg-red-50'}`}>
+                    <div className="flex items-start gap-3 mb-3">
+                      <div className="p-2 rounded-full bg-red-600 text-white"><Icons.AlertCircle size={20}/></div>
+                      <div className="flex-1">
+                        <h3 className="text-base font-black text-red-600">⚠️ Alerta a Compras: Combos sobre-inventariados</h3>
+                        <p className={`text-xs ${theme==='dark'?'text-red-300':'text-red-700'}`}>Más del 20% de las tiendas elegibles superan el MOS objetivo en estos GOA/Marca. Considerar pausar o reducir compras.</p>
+                      </div>
+                    </div>
+                    <div className="space-y-2">
+                      {overstockAlerts.map((a, i) => (
+                        <details key={i} className={`p-3 rounded-lg border ${theme==='dark'?'bg-zinc-900/60 border-red-900/40':'bg-white border-red-200'}`}>
+                          <summary className="cursor-pointer flex items-center justify-between text-xs font-bold">
+                            <span className={`${theme==='dark'?'text-red-300':'text-red-700'}`}>
+                              <span className="px-2 py-0.5 rounded bg-red-600 text-white mr-2">{a.goa}</span>
+                              <span className="px-2 py-0.5 rounded bg-zinc-700 text-white">{a.marca}</span>
+                              <span className="ml-3 font-mono text-red-500">{a.pct}% de tiendas saturadas</span>
+                            </span>
+                            <span className={`text-[10px] ${t.textMuted}`}>{a.overStores.length} tiendas</span>
+                          </summary>
+                          <div className="mt-2 max-h-40 overflow-auto">
+                            <table className="w-full text-[10px]">
+                              <thead className={`${t.textMuted}`}>
+                                <tr><th className="text-left p-1">Tienda</th><th className="text-right p-1">MOS actual</th></tr>
+                              </thead>
+                              <tbody>
+                                {a.overStores.map((os, j) => (
+                                  <tr key={j} className={`border-t ${theme==='dark'?'border-zinc-800':'border-gray-200'}`}>
+                                    <td className={`p-1 ${t.textMain}`}>{os.centro} — {os.name}</td>
+                                    <td className="p-1 text-right font-mono text-red-500">{os.mos}m</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        </details>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
                 <div className={`p-6 rounded-xl border border-green-500/50 bg-green-500/5 ${theme==='light' ? 'bg-green-50 border-green-200' : ''}`}>
                   <div className="flex flex-col md:flex-row items-center justify-between gap-4">
                     <div className="flex items-center">
                       <div className="p-3 rounded-full bg-green-500 text-white mr-4"><Icons.CheckSquare size={24} /></div>
                       <div>
                         <h3 className={`text-xl font-black text-green-600 ${theme==='dark'?'text-green-400':''}`}>Distribución Completa</h3>
-                        <p className={`text-sm ${t.textMuted}`}>Se generaron <strong>{distributionResult.length}</strong> combinaciones mediante {distMode === 'SKU' ? 'la dispersión ultra precisa (Size-Level)' : distMode === 'OH' ? 'el cálculo de perfil (Nivel GOA)' : 'Push Proporcional'}.</p>
+                        <p className={`text-sm ${t.textMuted}`}>Se generaron <strong>{distributionResult.length}</strong> combinaciones mediante {distMode === 'SKU' ? 'la dispersión ultra precisa (Size-Level)' : distMode === 'OH' ? 'el cálculo de perfil (Nivel GOA)' : distMode === 'PACK' ? 'Size Scaling con packs del proveedor' : 'Push Proporcional'}.</p>
                       </div>
                     </div>
 
