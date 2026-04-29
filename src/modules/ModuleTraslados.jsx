@@ -27,13 +27,7 @@ const downloadExcel = (rows, filename) => {
   a.click();
 };
 
-// Categorías de clima por GOA (basado en keywords)
-const esTemporada = (goa = '') => {
-  const g = goa.toUpperCase();
-  const keywords = ['BOTA', 'CHAMARRA', 'JACKET', 'ABRIGO', 'PARKA', 'NIEVE',
-    'CHANCLA', 'SANDAL', 'HUARACH', 'ACUATIC', 'PLAYERA', 'PLAYA', 'VERAN'];
-  return keywords.some(k => g.includes(k));
-};
+// (lógica de temporada ahora es configurable por el usuario, ver goasTemporada state)
 
 // ─── MINI-CHART: BARRAS COMPARATIVAS ────────────────────────────────────────
 
@@ -162,9 +156,14 @@ export default function Traslados() {
   const csvInputRef    = useRef(null);
   const matrizInputRef = useRef(null);
 
-  const [rawData,    setRawData]    = useState([]);      // filas del CSV principal
-  const [brandMatrix, setBrandMatrix] = useState({});   // { centroId: ['SECCION|MARCA', ...] }
-  const [climaMatrix, setClimaMatrix] = useState({});   // { goa: ['CALOR','FRIO','TODO'] }
+  const [rawData,    setRawData]    = useState([]);
+  const [brandMatrix, setBrandMatrix] = useState({});
+  const [climaMatrix, setClimaMatrix] = useState({});
+
+  // Panel configurable: { [goa]: 'FRIO' | 'CALOR' | 'PLAYA' | 'TODO' }
+  // El usuario define qué GOAs son de temporada y qué clima requieren
+  const [goasTemporada, setGoasTemporada] = useState({});
+  const [showPanelGoas, setShowPanelGoas] = useState(false);
 
   const [filterSku,     setFilterSku]     = useState('ALL');
   const [filterTipoCentro, setFilterTipoCentro] = useState('ALL');
@@ -181,17 +180,18 @@ export default function Traslados() {
       const s = localStorage.getItem('gop_traslados_exc');
       if (s) {
         const d = JSON.parse(s);
-        if (d.rawData?.length)    setRawData(d.rawData);
-        if (d.brandMatrix)        setBrandMatrix(d.brandMatrix);
-        if (d.climaMatrix)        setClimaMatrix(d.climaMatrix);
-        if (d.excResult?.length)  setExcResult(d.excResult);
+        if (d.rawData?.length)      setRawData(d.rawData);
+        if (d.brandMatrix)          setBrandMatrix(d.brandMatrix);
+        if (d.climaMatrix)          setClimaMatrix(d.climaMatrix);
+        if (d.goasTemporada)        setGoasTemporada(d.goasTemporada);
+        if (d.excResult?.length)    setExcResult(d.excResult);
       }
     } catch {}
   }, []);
 
   useEffect(() => {
     try {
-      localStorage.setItem('gop_traslados_exc', JSON.stringify({ rawData, brandMatrix, climaMatrix, excResult }));
+      localStorage.setItem('gop_traslados_exc', JSON.stringify({ rawData, brandMatrix, climaMatrix, goasTemporada, excResult }));
     } catch {}
   }, [rawData, brandMatrix, climaMatrix, excResult]);
 
@@ -323,73 +323,69 @@ export default function Traslados() {
   const opcionesSeccion = useMemo(() => ['ALL', ...new Set(rawData.map(r => r.seccion).filter(Boolean))], [rawData]);
   const opcionesTipoCentro = useMemo(() => ['ALL', ...new Set(rawData.map(r => r.tipoCentro).filter(Boolean))], [rawData]);
 
-  // ROBOT EXCEDENTE
+  // HERRAMIENTA EXCEDENTE — usa goasTemporada configurado por el usuario
   const calcularExcedentes = useCallback(() => {
     if (!rawData.length) return;
+    const goasActivos = Object.keys(goasTemporada).filter(g => goasTemporada[g] && goasTemporada[g] !== 'TODO');
+    if (goasActivos.length === 0) {
+      alert('Define al menos un GOA de temporada en el panel "GOAs de Temporada" antes de ejecutar la herramienta.');
+      return;
+    }
     setExcLoading(true);
 
     setTimeout(() => {
-      // Agrupar OH por (sku+goa+marca+seccion) x centro
-      const centroPorSku = {}; // key= sku|goa|marca → { centro: { oh, vta, precio, tipoCentro, zona, ... } }
-
+      // Agrupar OH por SKU x centro
+      const centroPorSku = {};
       rawData.forEach(r => {
         const key = `${r.sku}|${r.goa}|${r.marca}|${r.seccion}|${r.numSeccion}`;
         if (!centroPorSku[key]) centroPorSku[key] = { meta: r, centros: {} };
+        const prev = centroPorSku[key].centros[r.centro];
         centroPorSku[key].centros[r.centro] = {
           ...r,
-          oh:  (centroPorSku[key].centros[r.centro]?.oh  || 0) + r.oh,
-          vta: (centroPorSku[key].centros[r.centro]?.vta || 0) + r.vta,
+          oh:  (prev?.oh  || 0) + r.oh,
+          vta: (prev?.vta || 0) + r.vta,
         };
       });
 
+      // Mapa zona→tipo para validar receptores
+      const zonaValida = (tipoClima, zona = '') => {
+        const z = zona.toUpperCase();
+        if (tipoClima === 'FRIO')  return !z.includes('CALOR') && !z.includes('PLAYA') && !z.includes('TROPICAL');
+        if (tipoClima === 'CALOR') return !z.includes('FRIO')  && !z.includes('NIEVE')  && !z.includes('SIERRA');
+        if (tipoClima === 'PLAYA') return z.includes('PLAYA')  || z.includes('CALOR');
+        return true; // TODO
+      };
+
       const resultado = [];
 
-      Object.entries(centroPorSku).forEach(([key, { meta, centros }]) => {
+      Object.entries(centroPorSku).forEach(([, { meta, centros }]) => {
         const goa   = meta.goa;
         const marca = meta.marca;
-        const tipoClima = climaMatrix[goa] || 'TODO';
+        const tipoClima = goasTemporada[goa]; // undefined si no está configurado
+        if (!tipoClima || tipoClima === 'TODO') return; // solo GOAs de temporada
+
+        // Filtros del usuario
+        if (filterGoa      !== 'ALL' && goa         !== filterGoa)       return;
+        if (filterSku      !== 'ALL' && meta.sku     !== filterSku)       return;
+        if (filterMarca    !== 'ALL' && marca        !== filterMarca)     return;
+        if (filterSeccion  !== 'ALL' && meta.seccion !== filterSeccion)   return;
 
         Object.entries(centros).forEach(([centroOrigen, dataOrigen]) => {
           if (dataOrigen.oh <= 0) return;
-
-          // Aplicar filtros del usuario
-          if (filterGoa  !== 'ALL' && goa  !== filterGoa)  return;
-          if (filterSku  !== 'ALL' && meta.sku  !== filterSku)  return;
-          if (filterMarca !== 'ALL' && marca !== filterMarca) return;
-          if (filterSeccion !== 'ALL' && meta.seccion !== filterSeccion) return;
           if (filterTipoCentro !== 'ALL' && dataOrigen.tipoCentro !== filterTipoCentro) return;
 
-          // ¿Es artículo de temporada que no debería estar en este centro?
-          const esExc = esTemporada(goa);
-          if (!esExc) return;
+          const zonaOrigen = dataOrigen.zona || '';
+          // Si la zona origen es incompatible con el clima del GOA → es excedente
+          if (zonaValida(tipoClima, zonaOrigen)) return;
 
-          // Determinar si el centro actual es compatible con el clima del GOA
-          const zonaOrigen = dataOrigen.zona?.toUpperCase() || '';
-          let centroEsIncompatible = false;
-
-          if (tipoClima === 'FRIO'  && (zonaOrigen.includes('PLAYA') || zonaOrigen.includes('CALOR') || zonaOrigen.includes('TROPICAL'))) centroEsIncompatible = true;
-          if (tipoClima === 'CALOR' && (zonaOrigen.includes('FRIO') || zonaOrigen.includes('NIEVE') || zonaOrigen.includes('SIERRA')))     centroEsIncompatible = true;
-          if (tipoClima === 'PLAYA' && !zonaOrigen.includes('PLAYA') && !zonaOrigen.includes('CALOR'))                                       centroEsIncompatible = true;
-
-          if (!centroEsIncompatible) return; // Solo procesar si hay incompatibilidad
-
-          // Buscar receptor: centros compatibles con más venta del GOA y menos OH
+          // Buscar mejor receptor: zona compatible + mayor venta - menor OH + permiso de marca
           const posiblesReceptores = Object.entries(centros)
             .filter(([c]) => c !== centroOrigen)
             .map(([c, d]) => {
-              // Verificar matriz de marca
-              const seccionMarca = `${meta.seccion}|${marca}`;
-              const tienePermiso = !brandMatrix[c] || brandMatrix[c].includes(seccionMarca) || brandMatrix[c].length === 0;
-              
-              // Verificar clima del receptor
-              const zonaRec = d.zona?.toUpperCase() || '';
-              let climaOK = true;
-              if (tipoClima === 'FRIO'  && (zonaRec.includes('PLAYA') || zonaRec.includes('CALOR')))                    climaOK = false;
-              if (tipoClima === 'CALOR' && (zonaRec.includes('FRIO') || zonaRec.includes('NIEVE')))                     climaOK = false;
-              if (tipoClima === 'PLAYA' && !zonaRec.includes('PLAYA') && !zonaRec.includes('CALOR'))                    climaOK = false;
-
-              // Score: más venta y menos OH = mejor receptor
-              const score = (d.vta || 0) - (d.oh || 0) * 0.3;
+              const seccionMarca  = `${meta.seccion}|${marca}`;
+              const tienePermiso  = !brandMatrix[c] || brandMatrix[c].length === 0 || brandMatrix[c].includes(seccionMarca);
+              const climaOK       = zonaValida(tipoClima, d.zona || '');
+              const score         = (d.vta || 0) - (d.oh || 0) * 0.3;
               return { centro: c, data: d, tienePermiso, climaOK, score };
             })
             .filter(r => r.tienePermiso && r.climaOK)
@@ -398,23 +394,20 @@ export default function Traslados() {
           const receptor = posiblesReceptores[0];
           if (!receptor) return;
 
-          const pzs  = dataOrigen.oh;
-          const pesos = pzs * (dataOrigen.precio || 0);
-
           resultado.push({
             seccion:    meta.seccion,
             numSeccion: meta.numSeccion,
             sku:        meta.sku,
-            marca:      marca,
-            goa:        goa,
-            centroSalida:   centroOrigen,
-            nombreSalida:   dataOrigen.nombre || centroOrigen,
-            centroReceptor: receptor.centro,
-            nombreReceptor: receptor.data.nombre || receptor.centro,
-            pzs,
-            pesos,
-            precio:         dataOrigen.precio,
-            razon:          `${goa} temporada incompatible (${tipoClima}) en zona ${zonaOrigen}`,
+            marca,
+            goa,
+            centroSalida:       centroOrigen,
+            nombreSalida:       dataOrigen.nombre || centroOrigen,
+            centroReceptor:     receptor.centro,
+            nombreReceptor:     receptor.data.nombre || receptor.centro,
+            pzs:                dataOrigen.oh,
+            pesos:              dataOrigen.oh * (dataOrigen.precio || 0),
+            precio:             dataOrigen.precio,
+            razon:              `${goa} (${tipoClima}) en zona incompatible: ${zonaOrigen}`,
             tipoCentroOrigen:   dataOrigen.tipoCentro,
             tipoCentroReceptor: receptor.data.tipoCentro,
           });
@@ -424,7 +417,7 @@ export default function Traslados() {
       setExcResult(resultado);
       setExcLoading(false);
     }, 300);
-  }, [rawData, brandMatrix, climaMatrix, filterGoa, filterSku, filterMarca, filterSeccion, filterTipoCentro]);
+  }, [rawData, brandMatrix, goasTemporada, filterGoa, filterSku, filterMarca, filterSeccion, filterTipoCentro]);
 
   // Datos para gráfica excedente
   const chartDataExc = useMemo(() => {
@@ -463,11 +456,11 @@ export default function Traslados() {
   // TAB 2 — NECESIDAD
   // ══════════════════════════════════════════════════════════════════════
 
-  const [chequeraText,     setChequeraText]     = useState('');   // texto libre del usuario
-  const [corrida,          setCorrida]          = useState('');   // ej. "24,26,28,30" o "6,7,8,9,10"
-  const [centrosSurtidores, setCentrosSurtidores] = useState(''); // lista separada por coma
-  const [necesResult,      setNecesResult]      = useState([]);
-  const [necesLoading,     setNecesLoading]     = useState(false);
+  const [chequeraText,      setChequeraText]      = useState('');
+  const [corrida,           setCorrida]           = useState('');
+  const [centrosSurtidores, setCentrosSurtidores] = useState('');
+  const [necesResult,       setNecesResult]       = useState([]);
+  const [necesLoading,      setNecesLoading]      = useState(false);
 
   // Persistencia Tab 2
   useEffect(() => {
@@ -489,112 +482,113 @@ export default function Traslados() {
     } catch {}
   }, [chequeraText, corrida, centrosSurtidores, necesResult]);
 
-  // Parsear chequera (texto libre)
+  // Parsear chequera: Modelo | GOA | Marca | Pzs | Ppto | CentroReceptor
   const parsearChequera = (texto) => {
-    // Formato: Modelo | GOA | Marca | Pzs | Ppto
-    // Acepta separador | o tab o coma
     const lines = texto.split('\n').map(l => l.trim()).filter(Boolean);
-    const items = [];
-    lines.forEach(line => {
-      const sep = line.includes('|') ? '|' : line.includes('\t') ? '\t' : ',';
+    return lines.map(line => {
+      const sep   = line.includes('|') ? '|' : line.includes('\t') ? '\t' : ',';
       const parts = line.split(sep).map(p => p.trim());
-      if (parts.length < 4) return;
-      items.push({
-        modelo:    parts[0] || '',
-        goa:       (parts[1] || '').toUpperCase(),
-        marca:     (parts[2] || '').toUpperCase(),
-        pzsNeed:   num(parts[3]),
-        pptoNeed:  num(parts[4] || '0'),
-      });
-    });
-    return items;
+      if (parts.length < 3) return null;
+      return {
+        modelo:          parts[0] || '',
+        goa:             (parts[1] || '').toUpperCase(),
+        marca:           (parts[2] || '').toUpperCase(),
+        pzsNeed:         num(parts[3] || '0'),
+        pptoNeed:        num(parts[4] || '0'),
+        centroReceptor:  (parts[5] || 'DESTINO (definir)').trim(),
+      };
+    }).filter(Boolean);
   };
 
-  // Calcular corrida completa
+  // HERRAMIENTA NECESIDAD
   const calcularNecesidad = useCallback(() => {
     if (!chequeraText.trim() || !rawData.length) return;
     setNecesLoading(true);
 
     setTimeout(() => {
-      const chequera = parsearChequera(chequeraText);
-      const corridaTallas = corrida.split(',').map(t => t.trim()).filter(Boolean);
+      const chequera       = parsearChequera(chequeraText);
+      const corridaTallas  = corrida.split(',').map(t => t.trim()).filter(Boolean);
+      const tamCorrida     = corridaTallas.length > 0 ? corridaTallas.length : 1;
       const surtidoresList = centrosSurtidores
         ? centrosSurtidores.split(',').map(c => c.trim()).filter(Boolean)
         : null;
 
-      // Inventario disponible por centro|sku/goa
-      const invDisponible = {}; // { centro: { goa: { oh, vta, precio, ... } } }
+      // Inventario disponible por centro → goa
+      const invDisponible = {};
       rawData.forEach(r => {
         if (surtidoresList && !surtidoresList.includes(r.centro)) return;
         if (!invDisponible[r.centro]) invDisponible[r.centro] = {};
         const g = r.goa;
-        if (!invDisponible[r.centro][g]) invDisponible[r.centro][g] = { oh: 0, vta: 0, precio: r.precio, seccion: r.seccion, numSeccion: r.numSeccion, sku: r.sku, marca: r.marca, nombre: r.nombre };
+        if (!invDisponible[r.centro][g]) {
+          invDisponible[r.centro][g] = {
+            oh: 0, vta: 0, precio: r.precio,
+            seccion: r.seccion, numSeccion: r.numSeccion,
+            sku: r.sku, marca: r.marca, nombre: r.nombre,
+          };
+        }
         invDisponible[r.centro][g].oh  += r.oh;
         invDisponible[r.centro][g].vta += r.vta;
       });
 
-      const resultado = [];
+      // Trabajar sobre una copia mutable del inventario
+      const invMutable = JSON.parse(JSON.stringify(invDisponible));
+      const resultado  = [];
 
       chequera.forEach(item => {
-        let pzsRestantes = item.pzsNeed;
+        if (!item.goa) return;
+        let pzsRestantes = item.pzsNeed || 999999; // si no pone pzs, toma todo lo posible
         let pptoRestante = item.pptoNeed || 0;
 
-        // Centros surtidores ordenados por mayor OH del GOA
-        const surtidores = Object.entries(invDisponible)
-          .filter(([, data]) => data[item.goa])
-          .map(([centro, data]) => ({
-            centro,
-            oh:    data[item.goa].oh,
-            vta:   data[item.goa].vta,
-            precio: data[item.goa].precio,
-            meta:  data[item.goa],
-          }))
+        // Ordenar surtidores por mayor OH del GOA
+        const surtidores = Object.entries(invMutable)
+          .filter(([, data]) => data[item.goa] && data[item.goa].oh > 0)
+          .map(([centro, data]) => ({ centro, ...data[item.goa] }))
           .sort((a, b) => b.oh - a.oh);
-
-        // Calcular tamaño de corrida (mínimo)
-        const tamCorrida = corridaTallas.length > 0 ? corridaTallas.length : 1;
 
         surtidores.forEach(surt => {
           if (pzsRestantes <= 0) return;
 
-          // Cuántas corridas completas puede dar sin quedarse sin una
-          const ohDisp = surt.oh;
+          const ohDisp       = surt.oh;
           const corridasDisp = Math.floor(ohDisp / tamCorrida);
-          if (corridasDisp < 2) return; // debe dejar al menos 1 corrida completa
+          // Debe dejar al menos 1 corrida completa en el surtidor
+          const corridasMax  = Math.max(0, corridasDisp - 1);
+          if (corridasMax <= 0) return;
 
           const corridasTransf = Math.min(
-            Math.floor(pzsRestantes / tamCorrida),
-            corridasDisp - 1 // deja 1 corrida
+            Math.ceil(pzsRestantes / tamCorrida),
+            corridasMax
           );
           if (corridasTransf <= 0) return;
 
           const pzsTransf  = corridasTransf * tamCorrida;
+          const precioUnit = surt.precio || 0;
           const pptoTransf = pptoRestante > 0
-            ? Math.min(pptoRestante, pzsTransf * (surt.precio || 0))
-            : pzsTransf * (surt.precio || 0);
+            ? Math.min(pptoRestante, pzsTransf * precioUnit)
+            : pzsTransf * precioUnit;
 
           resultado.push({
             modelo:         item.modelo,
-            seccion:        surt.meta.seccion,
-            numSeccion:     surt.meta.numSeccion,
-            sku:            surt.meta.sku || item.goa,
-            marca:          item.marca || surt.meta.marca,
+            seccion:        surt.seccion,
+            numSeccion:     surt.numSeccion,
+            sku:            surt.sku || item.goa,
+            marca:          item.marca || surt.marca,
             goa:            item.goa,
             centroSalida:   surt.centro,
-            nombreSalida:   surt.meta.nombre || surt.centro,
-            centroReceptor: 'DESTINO (definir)',
+            nombreSalida:   surt.nombre || surt.centro,
+            centroReceptor: item.centroReceptor,
             pzsDisp:        ohDisp,
             corridasDisp,
             corridasEnv:    corridasTransf,
             pzs:            pzsTransf,
             pesos:          pptoTransf,
-            precio:         surt.precio,
+            precio:         precioUnit,
             ohQueda:        ohDisp - pzsTransf,
           });
 
-          pzsRestantes  -= pzsTransf;
-          pptoRestante  -= pptoTransf;
-          surt.oh       -= pzsTransf; // actualizar in-memory
+          // Descontar del inventario mutable
+          invMutable[surt.centro][item.goa].oh -= pzsTransf;
+          pzsRestantes -= pzsTransf;
+          if (pptoRestante > 0) pptoRestante -= pptoTransf;
         });
       });
 
@@ -643,7 +637,7 @@ export default function Traslados() {
               Traslados
             </h1>
             <p className={`text-xs mt-1 ml-10 ${t.textMuted}`}>
-              Robot de transferencias inter-tienda · Excedente de temporada y abastecimiento por necesidad
+              Herramienta de transferencias inter-tienda · Excedente de temporada y abastecimiento por necesidad
             </p>
           </div>
           <div className="flex flex-wrap gap-2 items-center">
@@ -696,10 +690,58 @@ export default function Traslados() {
         {activeTab === 1 && (
           <div className="p-5 space-y-5">
 
+            {/* Panel GOAs de Temporada */}
+            <div className={`p-4 rounded-xl border ${t.cardInner}`}>
+              <div className="flex items-center justify-between mb-3">
+                <h3 className={`text-xs font-black uppercase tracking-widest ${t.textMuted}`}>
+                  GOAs de Temporada
+                </h3>
+                <button onClick={() => setShowPanelGoas(v => !v)}
+                  className={`text-[10px] font-bold px-3 py-1 rounded-lg border transition-all ${t.btnGhost}`}>
+                  {showPanelGoas ? 'Ocultar' : `Configurar (${Object.keys(goasTemporada).length} definidos)`}
+                </button>
+              </div>
+              {showPanelGoas && (
+                <div className="space-y-2">
+                  <p className={`text-[10px] mb-3 ${t.textMuted}`}>
+                    Marca qué GOAs son de temporada y qué clima necesitan. La herramienta solo moverá artículos cuyo GOA esté aquí y cuya zona de centro sea incompatible.
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-52 overflow-y-auto pr-1 custom-scrollbar">
+                    {opcionesGoa.filter(g => g !== 'ALL').map(goa => (
+                      <div key={goa} className={`flex items-center gap-2 p-2 rounded-lg border ${isDark ? 'border-zinc-800 bg-zinc-900' : 'border-gray-200 bg-white'}`}>
+                        <span className={`flex-1 text-xs font-bold truncate ${t.textMain}`}>{goa}</span>
+                        <select
+                          value={goasTemporada[goa] || ''}
+                          onChange={e => setGoasTemporada(prev => ({ ...prev, [goa]: e.target.value || undefined }))}
+                          className={`text-[10px] px-2 py-1 rounded border ${t.input} focus:outline-none focus:ring-1 w-28`}>
+                          <option value="">— No aplica —</option>
+                          <option value="FRIO">❄️ Frío</option>
+                          <option value="CALOR">☀️ Calor</option>
+                          <option value="PLAYA">🏖️ Playa</option>
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                  {opcionesGoa.filter(g => g !== 'ALL').length === 0 && (
+                    <p className={`text-xs ${t.textMuted}`}>Carga el CSV primero para ver los GOAs disponibles.</p>
+                  )}
+                </div>
+              )}
+              {!showPanelGoas && Object.keys(goasTemporada).length > 0 && (
+                <div className="flex flex-wrap gap-1.5">
+                  {Object.entries(goasTemporada).filter(([, v]) => v).map(([goa, clima]) => (
+                    <span key={goa} className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${t.badge}`}>
+                      {goa} · {clima === 'FRIO' ? '❄️' : clima === 'CALOR' ? '☀️' : '🏖️'}
+                    </span>
+                  ))}
+                </div>
+              )}
+            </div>
+
             {/* Filtros */}
             <div className={`p-4 rounded-xl border ${t.cardInner}`}>
               <h3 className={`text-xs font-black uppercase tracking-widest mb-3 ${t.textMuted}`}>
-                Filtros · Robot detectará artículos de temporada fuera de su zona ideal
+                Filtros · La herramienta detectará artículos de temporada fuera de su zona ideal
               </h3>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                 {[
@@ -723,7 +765,7 @@ export default function Traslados() {
                   className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black transition-all disabled:opacity-40 ${t.btnPrimary}`}>
                   {excLoading
                     ? <><Icons.Loader size={15} className="animate-spin" /> Calculando…</>
-                    : <><Icons.Zap size={15} /> Ejecutar Robot</>}
+                    : <><Icons.Zap size={15} /> Ejecutar herramienta</>}
                 </button>
                 {excResult.length > 0 && (
                   <button onClick={exportExcedente}
@@ -800,8 +842,8 @@ export default function Traslados() {
             ) : rawData.length > 0 ? (
               <div className={`p-8 rounded-xl border flex flex-col items-center justify-center text-center ${t.cardInner}`}>
                 <Icons.Zap size={32} className={`${isDark ? 'text-zinc-600' : 'text-gray-300'} mb-3`} />
-                <p className={`text-sm font-bold ${t.textMain}`}>Robot listo para analizar</p>
-                <p className={`text-xs mt-1 ${t.textMuted}`}>Aplica los filtros que necesites y presiona "Ejecutar Robot"</p>
+                <p className={`text-sm font-bold ${t.textMain}`}>Herramienta lista para analizar</p>
+                <p className={`text-xs mt-1 ${t.textMuted}`}>Aplica los filtros que necesites y presiona "Ejecutar herramienta"</p>
               </div>
             ) : (
               <div className={`p-8 rounded-xl border flex flex-col items-center justify-center text-center ${t.cardInner}`}>
@@ -825,21 +867,21 @@ export default function Traslados() {
                   Chequera de Necesidad
                 </h3>
                 <p className={`text-[10px] mb-3 ${t.textMuted}`}>
-                  Un modelo por línea: <code className="opacity-60">Modelo | GOA | Marca | Pzs | Ppto</code>
+                  Un modelo por línea: <code className="opacity-60">Modelo | GOA | Marca | Pzs | Ppto | CentroReceptor</code>
                 </p>
                 <textarea
                   value={chequeraText}
                   onChange={e => setChequeraText(e.target.value)}
                   rows={10}
-                  placeholder={"MODELO-01 | BOTA | NIKE | 120 | 50000\nMODELO-02 | CHANCLA | ADIDAS | 60 | 18000"}
+                  placeholder={"Modelo | GOA | Marca | Pzs | Ppto | CentroReceptor\nMODELO-01 | BOTA | NIKE | 120 | 50000 | 670\nMODELO-02 | CHANCLA | ADIDAS | 60 | 18000 | 522"}
                   className={`w-full text-xs font-mono px-3 py-2 rounded-lg border resize-y ${t.input} focus:outline-none focus:ring-1`}
                 />
               </div>
 
-              {/* Config robot */}
+              {/* Config herramienta */}
               <div className="space-y-4">
                 <div className={`p-4 rounded-xl border ${t.cardInner}`}>
-                  <h3 className={`text-xs font-black uppercase tracking-widest mb-3 ${t.textMuted}`}>Parámetros del Robot</h3>
+                  <h3 className={`text-xs font-black uppercase tracking-widest mb-3 ${t.textMuted}`}>Parámetros de la Herramienta</h3>
 
                   <div className="space-y-3">
                     <div>
@@ -853,7 +895,7 @@ export default function Traslados() {
                         className={`w-full text-xs px-3 py-2 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}
                       />
                       <p className={`text-[9px] mt-1 ${t.textMuted}`}>
-                        El robot NO sacará mercancía que deje al surtidor sin esta corrida completa
+                        La herramienta NO sacará mercancía que deje al surtidor sin esta corrida completa
                       </p>
                     </div>
 
@@ -876,7 +918,7 @@ export default function Traslados() {
                   {necesResult.length > 0 ? (
                     <DonutSummary items={chartDataNec.map(d => ({ label: d.label, value: d.pzs }))} theme={theme} />
                   ) : (
-                    <p className={`text-xs ${t.textMuted}`}>Sin resultados aún. Llena la chequera y ejecuta el robot.</p>
+                    <p className={`text-xs ${t.textMuted}`}>Sin resultados aún. Llena la chequera y ejecuta la herramienta.</p>
                   )}
                 </div>
               </div>
@@ -889,7 +931,7 @@ export default function Traslados() {
                 className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black transition-all disabled:opacity-40 ${t.btnPrimary}`}>
                 {necesLoading
                   ? <><Icons.Loader size={15} className="animate-spin" /> Calculando…</>
-                  : <><Icons.Zap size={15} /> Ejecutar Robot</>}
+                  : <><Icons.Zap size={15} /> Ejecutar herramienta</>}
               </button>
               {necesResult.length > 0 && (
                 <button onClick={exportNecesidad}
@@ -956,7 +998,7 @@ export default function Traslados() {
             {!necesResult.length && rawData.length > 0 && (
               <div className={`p-8 rounded-xl border flex flex-col items-center justify-center text-center ${t.cardInner}`}>
                 <Icons.Package size={32} className={`${isDark ? 'text-zinc-600' : 'text-gray-300'} mb-3`} />
-                <p className={`text-sm font-bold ${t.textMain}`}>Robot de necesidad listo</p>
+                <p className={`text-sm font-bold ${t.textMain}`}>Herramienta de necesidad lista</p>
                 <p className={`text-xs mt-1 ${t.textMuted}`}>Llena la chequera con los modelos que necesitas trasladar y define la corrida mínima.</p>
               </div>
             )}
@@ -965,7 +1007,7 @@ export default function Traslados() {
               <div className={`p-8 rounded-xl border flex flex-col items-center justify-center text-center ${t.cardInner}`}>
                 <Icons.Upload size={32} className={`${isDark ? 'text-zinc-600' : 'text-gray-300'} mb-3`} />
                 <p className={`text-sm font-bold ${t.textMain}`}>Sin inventario base</p>
-                <p className={`text-xs mt-1 ${t.textMuted}`}>Carga el CSV de artículos desde el botón del encabezado para que el robot pueda calcular disponibilidad.</p>
+                <p className={`text-xs mt-1 ${t.textMuted}`}>Carga el CSV de artículos desde el botón del encabezado para que la herramienta pueda calcular disponibilidad.</p>
               </div>
             )}
           </div>
