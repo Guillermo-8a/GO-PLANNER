@@ -213,14 +213,17 @@ export default function Traslados() {
       const iNumSec   = idx(['NUM_SECCION', 'NUMSEC', 'NUMERO_SECCION', 'NUM SEC']);
       const iGoa      = idx(['GOA', 'FAMILIA']);
       const iSku      = idx(['SKU', 'ARTICULO', 'MATERIAL']);
+      const iNSku     = idx(['NSKU', 'N_SKU', 'DESC_SKU', 'NOMBRE_SKU', 'DESCRIPCION', 'DESC']);
+      const iModelo   = idx(['MODELO', 'MODEL']);
       const iMarca    = idx(['MARCA', 'BRAND']);
       const iCentro   = idx(['CENTRO', 'ID', 'TIENDA']);
+      const iNCentro  = idx(['N_CENTRO', 'NCENTRO', 'NUM_CENTRO', 'ID_CENTRO', 'COD_CENTRO']);
       const iOH       = idx(['OH', 'INV', 'INVENTARIO', 'STOCK', 'EXISTENCIAS']);
       const iPrecio   = idx(['PRECIO', 'PVP', 'PRICE', 'COSTO']);
       const iTipoCentro = idx(['TIPO_CENTRO', 'TIPO CENTRO', 'TIPO', 'TIPO_TIENDA']);
       const iZona     = idx(['ZONA', 'REGION', 'DISTRITO', 'ZONA_CENTRO']);
       const iVta      = idx(['VTA', 'VENTAS', 'VTAS', 'SALES']);
-      const iNombre   = idx(['NOMBRE', 'NOMBRE_CENTRO', 'DESC CENTRO', 'TIENDA']);
+      const iNombre   = idx(['NOMBRE', 'NOMBRE_CENTRO', 'DESC CENTRO']);
 
       if (iGoa === -1 || iSku === -1 || iCentro === -1) {
         alert('El CSV debe tener mínimo: GOA, SKU, CENTRO'); return;
@@ -235,13 +238,16 @@ export default function Traslados() {
           numSeccion: iNumSec    >= 0 ? r[iNumSec].trim()    : '',
           goa:        r[iGoa].trim().toUpperCase(),
           sku:        iSku       >= 0 ? r[iSku].trim()       : '',
+          nsku:       iNSku      >= 0 ? r[iNSku].trim()      : '',
+          modelo:     iModelo    >= 0 ? r[iModelo].trim().toUpperCase() : '',
           marca:      iMarca     >= 0 ? r[iMarca].trim().toUpperCase() : '',
           centro:     r[iCentro].trim(),
+          nCentro:    iNCentro   >= 0 ? r[iNCentro].trim()   : '',
           nombre:     iNombre    >= 0 ? r[iNombre].trim()    : r[iCentro].trim(),
           oh:         num(iOH    >= 0 ? r[iOH]     : 0),
           precio:     num(iPrecio >= 0 ? r[iPrecio]  : 0),
-          tipoCentro: iTipoCentro >= 0 ? r[iTipoCentro].trim().toUpperCase() : 'ESTÁNDAR',
-          zona:       iZona      >= 0 ? r[iZona].trim().toUpperCase()     : '',
+          tipoCentro: iTipoCentro >= 0 ? r[iTipoCentro].trim().toUpperCase() : '',
+          zona:       iZona      >= 0 ? r[iZona].trim().toUpperCase()    : '',
           vta:        num(iVta   >= 0 ? r[iVta]    : 0),
         });
       }
@@ -347,13 +353,14 @@ export default function Traslados() {
         };
       });
 
-      // Mapa zona→tipo para validar receptores
-      const zonaValida = (tipoClima, zona = '') => {
-        const z = zona.toUpperCase();
-        if (tipoClima === 'FRIO')  return !z.includes('CALOR') && !z.includes('PLAYA') && !z.includes('TROPICAL');
-        if (tipoClima === 'CALOR') return !z.includes('FRIO')  && !z.includes('NIEVE')  && !z.includes('SIERRA');
-        if (tipoClima === 'PLAYA') return z.includes('PLAYA')  || z.includes('CALOR');
-        return true; // TODO
+      // Compatibilidad: compara el clima requerido del GOA vs el TIPO CENTRO del centro
+      // tipoCentro viene del CSV col "TIPO CENTRO": FRIO | CALOR | PLAYA | TEMPLADO | etc.
+      const zonaValida = (tipoClima, tipoCentro = '') => {
+        const tc = tipoCentro.toUpperCase().trim();
+        if (tipoClima === 'FRIO')  return tc === 'FRIO'  || tc === 'TEMPLADO' || tc === '';
+        if (tipoClima === 'CALOR') return tc === 'CALOR' || tc === 'PLAYA'    || tc === 'TEMPLADO' || tc === '';
+        if (tipoClima === 'PLAYA') return tc === 'PLAYA' || tc === 'CALOR';
+        return true;
       };
 
       const resultado = [];
@@ -375,16 +382,17 @@ export default function Traslados() {
           if (filterTipoCentro !== 'ALL' && dataOrigen.tipoCentro !== filterTipoCentro) return;
 
           const zonaOrigen = dataOrigen.zona || '';
-          // Si la zona origen es incompatible con el clima del GOA → es excedente
-          if (zonaValida(tipoClima, zonaOrigen)) return;
+          const tcOrigen   = dataOrigen.tipoCentro || '';
+          // Incompatible si el TIPO CENTRO del origen no corresponde al clima del GOA
+          if (zonaValida(tipoClima, tcOrigen)) return;
 
-          // Buscar mejor receptor: zona compatible + mayor venta - menor OH + permiso de marca
+          // Buscar mejor receptor: tipoCentro compatible + mayor venta - menor OH + permiso de marca
           const posiblesReceptores = Object.entries(centros)
             .filter(([c]) => c !== centroOrigen)
             .map(([c, d]) => {
               const seccionMarca  = `${meta.seccion}|${marca}`;
               const tienePermiso  = !brandMatrix[c] || brandMatrix[c].length === 0 || brandMatrix[c].includes(seccionMarca);
-              const climaOK       = zonaValida(tipoClima, d.zona || '');
+              const climaOK       = zonaValida(tipoClima, d.tipoCentro || '');
               const score         = (d.vta || 0) - (d.oh || 0) * 0.3;
               return { centro: c, data: d, tienePermiso, climaOK, score };
             })
@@ -407,7 +415,7 @@ export default function Traslados() {
             pzs:                dataOrigen.oh,
             pesos:              dataOrigen.oh * (dataOrigen.precio || 0),
             precio:             dataOrigen.precio,
-            razon:              `${goa} (${tipoClima}) en zona incompatible: ${zonaOrigen}`,
+            razon:              `${goa} (${tipoClima}) en centro tipo ${tcOrigen} / zona: ${zonaOrigen}`,
             tipoCentroOrigen:   dataOrigen.tipoCentro,
             tipoCentroReceptor: receptor.data.tipoCentro,
           });
@@ -457,10 +465,15 @@ export default function Traslados() {
   // ══════════════════════════════════════════════════════════════════════
 
   const [chequeraText,      setChequeraText]      = useState('');
-  const [corrida,           setCorrida]           = useState('');
   const [centrosSurtidores, setCentrosSurtidores] = useState('');
   const [necesResult,       setNecesResult]       = useState([]);
   const [necesLoading,      setNecesLoading]      = useState(false);
+
+  // Modal para tallas faltantes: { sku, nsku, callback }
+  const [modalTallas,    setModalTallas]    = useState(null);
+  // Cache manual de tallas por SKU: { [sku]: '17' }
+  const [tallasCache,    setTallasCache]    = useState({});
+  const [modalInputVal,  setModalInputVal]  = useState('');
 
   // Persistencia Tab 2
   useEffect(() => {
@@ -468,149 +481,280 @@ export default function Traslados() {
       const s = localStorage.getItem('gop_traslados_nec');
       if (s) {
         const d = JSON.parse(s);
-        if (d.chequeraText)       setChequeraText(d.chequeraText);
-        if (d.corrida)            setCorrida(d.corrida);
-        if (d.centrosSurtidores)  setCentrosSurtidores(d.centrosSurtidores);
+        if (d.chequeraText)        setChequeraText(d.chequeraText);
+        if (d.centrosSurtidores)   setCentrosSurtidores(d.centrosSurtidores);
         if (d.necesResult?.length) setNecesResult(d.necesResult);
+        if (d.tallasCache)         setTallasCache(d.tallasCache);
       }
     } catch {}
   }, []);
 
   useEffect(() => {
     try {
-      localStorage.setItem('gop_traslados_nec', JSON.stringify({ chequeraText, corrida, centrosSurtidores, necesResult }));
+      localStorage.setItem('gop_traslados_nec', JSON.stringify({ chequeraText, centrosSurtidores, necesResult, tallasCache }));
     } catch {}
-  }, [chequeraText, corrida, centrosSurtidores, necesResult]);
+  }, [chequeraText, centrosSurtidores, necesResult, tallasCache]);
 
-  // Parsear chequera: Modelo | GOA | Marca | Pzs | Ppto | CentroReceptor
+  // Extraer talla del nombre del SKU: "TENIS NIÑA, 17, ROSA CLARO" → "17"
+  const extraerTalla = useCallback((nsku = '', sku = '', cache = {}) => {
+    if (cache[sku]) return cache[sku];
+    // Busca el primer segmento numérico tras una coma
+    const match = nsku.match(/,\s*([0-9]+(?:\.[0-9]+)?)\s*(?:,|$)/);
+    if (match) return match[1].trim();
+    // Fallback: busca número standalone en la cadena
+    const nums = nsku.match(/\b([0-9]{2,3})\b/g);
+    if (nums) return nums[0];
+    return null;
+  }, []);
+
+  // Lookup de centro: busca por nombre o nCentro en rawData
+  const lookupCentro = useCallback((input, datos) => {
+    if (!input || !datos.length) return { nombre: input, nCentro: '' };
+    const q = input.trim().toUpperCase();
+    const hit = datos.find(r =>
+      r.centro.toUpperCase() === q ||
+      r.nCentro === q ||
+      r.nombre?.toUpperCase() === q
+    );
+    return hit
+      ? { nombre: hit.centro, nCentro: hit.nCentro }
+      : { nombre: input, nCentro: '' };
+  }, []);
+
+  const fmtCentro = (nombre, nCentro) =>
+    nCentro ? `${nombre} (${nCentro})` : nombre;
+
+  // Parsear chequera: Modelo | GOA | Marca | Ppto | CentroReceptor
   const parsearChequera = (texto) => {
     const lines = texto.split('\n').map(l => l.trim()).filter(Boolean);
     return lines.map(line => {
       const sep   = line.includes('|') ? '|' : line.includes('\t') ? '\t' : ',';
       const parts = line.split(sep).map(p => p.trim());
-      if (parts.length < 3) return null;
+      if (parts.length < 2) return null;
       return {
-        modelo:          parts[0] || '',
-        goa:             (parts[1] || '').toUpperCase(),
-        marca:           (parts[2] || '').toUpperCase(),
-        pzsNeed:         num(parts[3] || '0'),
-        pptoNeed:        num(parts[4] || '0'),
-        centroReceptor:  (parts[5] || 'DESTINO (definir)').trim(),
+        modelo:         parts[0] || '',
+        goa:            (parts[1] || '').toUpperCase(),
+        marca:          (parts[2] || '').toUpperCase(),
+        pptoNeed:       num(parts[3] || '0'),
+        centroReceptor: (parts[4] || 'DESTINO (definir)').trim(),
       };
     }).filter(Boolean);
   };
 
-  // HERRAMIENTA NECESIDAD
+  // HERRAMIENTA NECESIDAD — corridas por modelo+talla
   const calcularNecesidad = useCallback(() => {
     if (!chequeraText.trim() || !rawData.length) return;
+
+    const chequera       = parsearChequera(chequeraText);
+    const surtidoresList = centrosSurtidores
+      ? centrosSurtidores.split(',').map(c => c.trim()).filter(Boolean)
+      : null;
+
+    // Detectar SKUs sin talla parseable que no estén en cache
+    const sinTalla = rawData.filter(r => {
+      if (surtidoresList && !surtidoresList.includes(r.centro)) return false;
+      const t = extraerTalla(r.nsku, r.sku, tallasCache);
+      return !t && r.oh > 0;
+    });
+    const skusSinTalla = [...new Map(sinTalla.map(r => [r.sku, r])).values()];
+
+    if (skusSinTalla.length > 0) {
+      // Abrir modal con el primer SKU sin talla
+      setModalTallas({ skus: skusSinTalla, index: 0, pendingCalc: true });
+      return;
+    }
+
+    ejecutarCalculo(chequera, surtidoresList, tallasCache);
+  }, [chequeraText, centrosSurtidores, rawData, tallasCache]);
+
+  const ejecutarCalculo = useCallback((chequera, surtidoresList, cache) => {
     setNecesLoading(true);
-
     setTimeout(() => {
-      const chequera       = parsearChequera(chequeraText);
-      const corridaTallas  = corrida.split(',').map(t => t.trim()).filter(Boolean);
-      const tamCorrida     = corridaTallas.length > 0 ? corridaTallas.length : 1;
-      const surtidoresList = centrosSurtidores
-        ? centrosSurtidores.split(',').map(c => c.trim()).filter(Boolean)
-        : null;
+      // Inventario por centro → modelo → talla → { skus: [{sku, nsku, oh, precio, ...}] }
+      // Si no tiene MODELO en CSV, usa GOA como agrupador
+      const inv = {}; // { centro: { modeloKey: { talla: [rows] } } }
 
-      // Inventario disponible por centro → goa
-      const invDisponible = {};
       rawData.forEach(r => {
         if (surtidoresList && !surtidoresList.includes(r.centro)) return;
-        if (!invDisponible[r.centro]) invDisponible[r.centro] = {};
-        const g = r.goa;
-        if (!invDisponible[r.centro][g]) {
-          invDisponible[r.centro][g] = {
-            oh: 0, vta: 0, precio: r.precio,
-            seccion: r.seccion, numSeccion: r.numSeccion,
-            sku: r.sku, marca: r.marca, nombre: r.nombre,
-          };
-        }
-        invDisponible[r.centro][g].oh  += r.oh;
-        invDisponible[r.centro][g].vta += r.vta;
+        if (r.oh <= 0) return;
+        const talla = extraerTalla(r.nsku, r.sku, cache);
+        if (!talla) return;
+        const modeloKey = r.modelo || r.goa;
+        if (!inv[r.centro]) inv[r.centro] = {};
+        if (!inv[r.centro][modeloKey]) inv[r.centro][modeloKey] = {};
+        if (!inv[r.centro][modeloKey][talla]) inv[r.centro][modeloKey][talla] = [];
+        inv[r.centro][modeloKey][talla].push({ ...r, ohDisp: r.oh });
       });
 
-      // Trabajar sobre una copia mutable del inventario
-      const invMutable = JSON.parse(JSON.stringify(invDisponible));
-      const resultado  = [];
+      // Copia mutable
+      const invMut = JSON.parse(JSON.stringify(inv));
+      const resultado = [];
 
       chequera.forEach(item => {
-        if (!item.goa) return;
-        let pzsRestantes = item.pzsNeed || 999999; // si no pone pzs, toma todo lo posible
+        const goaKey  = item.goa;
+        const recInfo = lookupCentro(item.centroReceptor, rawData);
         let pptoRestante = item.pptoNeed || 0;
 
-        // Ordenar surtidores por mayor OH del GOA
-        const surtidores = Object.entries(invMutable)
-          .filter(([, data]) => data[item.goa] && data[item.goa].oh > 0)
-          .map(([centro, data]) => ({ centro, ...data[item.goa] }))
-          .sort((a, b) => b.oh - a.oh);
+        // Candidatos: centros que tienen ese GOA (o modelo) con al menos 1 talla con OH
+        // Detectar qué modelos corresponden al GOA pedido
+        const modelosDelGoa = new Set(
+          rawData
+            .filter(r => r.goa === goaKey && (item.modelo === '' || r.modelo?.toUpperCase() === item.modelo || item.modelo === goaKey))
+            .map(r => r.modelo || r.goa)
+        );
 
-        surtidores.forEach(surt => {
-          if (pzsRestantes <= 0) return;
+        modelosDelGoa.forEach(modeloKey => {
+          if (pptoRestante <= 0 && item.pptoNeed > 0) return;
 
-          const ohDisp       = surt.oh;
-          const corridasDisp = Math.floor(ohDisp / tamCorrida);
-          // Debe dejar al menos 1 corrida completa en el surtidor
-          const corridasMax  = Math.max(0, corridasDisp - 1);
-          if (corridasMax <= 0) return;
-
-          const corridasTransf = Math.min(
-            Math.ceil(pzsRestantes / tamCorrida),
-            corridasMax
+          // Detectar corrida completa: union de todas las tallas que existen para este modelo en el CSV
+          const tallasTotales = new Set(
+            rawData
+              .filter(r => (r.modelo || r.goa) === modeloKey && r.goa === goaKey)
+              .map(r => extraerTalla(r.nsku, r.sku, cache))
+              .filter(Boolean)
           );
-          if (corridasTransf <= 0) return;
+          const corrida = [...tallasTotales].sort((a, b) => parseFloat(a) - parseFloat(b));
+          if (corrida.length === 0) return;
 
-          const pzsTransf  = corridasTransf * tamCorrida;
-          const precioUnit = surt.precio || 0;
-          const pptoTransf = pptoRestante > 0
-            ? Math.min(pptoRestante, pzsTransf * precioUnit)
-            : pzsTransf * precioUnit;
+          // Por talla: buscar de qué centro sacar
+          const asignaciones = []; // { talla, sku, nsku, centro, nCentro, nombreCentro, oh, precio, seccion, numSeccion, marca, goa }
 
-          resultado.push({
-            modelo:         item.modelo,
-            seccion:        surt.seccion,
-            numSeccion:     surt.numSeccion,
-            sku:            surt.sku || item.goa,
-            marca:          item.marca || surt.marca,
-            goa:            item.goa,
-            centroSalida:   surt.centro,
-            nombreSalida:   surt.nombre || surt.centro,
-            centroReceptor: item.centroReceptor,
-            pzsDisp:        ohDisp,
-            corridasDisp,
-            corridasEnv:    corridasTransf,
-            pzs:            pzsTransf,
-            pesos:          pptoTransf,
-            precio:         precioUnit,
-            ohQueda:        ohDisp - pzsTransf,
+          corrida.forEach(talla => {
+            // Centros con OH disponible para esta talla del modelo
+            const candidatos = Object.entries(invMut)
+              .filter(([, mods]) => mods[modeloKey]?.[talla]?.length > 0)
+              .map(([centro, mods]) => {
+                const rows = mods[modeloKey][talla];
+                const totalOH = rows.reduce((s, r) => s + r.ohDisp, 0);
+                const totalVta = rows.reduce((s, r) => s + (r.vta || 0), 0);
+                return { centro, rows, totalOH, totalVta };
+              })
+              .filter(c => c.totalOH > 0)
+              .sort((a, b) => b.totalVta - a.totalVta || b.totalOH - a.totalOH);
+
+            if (!candidatos.length) return;
+            const mejor = candidatos[0];
+
+            // Tomar 1 pieza de la talla (corrida = 1 pz por talla)
+            const row = mejor.rows.find(r => r.ohDisp > 0);
+            if (!row) return;
+
+            asignaciones.push({
+              talla,
+              sku:          row.sku,
+              nsku:         row.nsku,
+              centro:       mejor.centro,
+              nCentro:      row.nCentro,
+              nombreCentro: row.centro,
+              oh:           row.ohDisp,
+              precio:       row.precio,
+              seccion:      row.seccion,
+              numSeccion:   row.numSeccion,
+              marca:        row.marca,
+              goa:          row.goa,
+              modelo:       modeloKey,
+            });
           });
 
-          // Descontar del inventario mutable
-          invMutable[surt.centro][item.goa].oh -= pzsTransf;
-          pzsRestantes -= pzsTransf;
-          if (pptoRestante > 0) pptoRestante -= pptoTransf;
+          if (asignaciones.length < corrida.length) return; // corrida incompleta, skip
+
+          // ¿Cuántas corridas caben con el ppto?
+          const precioCorrida = asignaciones.reduce((s, a) => s + (a.precio || 0), 0);
+          const corridasMax   = pptoRestante > 0 && precioCorrida > 0
+            ? Math.floor(pptoRestante / precioCorrida)
+            : 1;
+          if (corridasMax <= 0) return;
+
+          // Verificar que cada surtidor tiene suficiente OH para dar corridasMax
+          // sin quedarse sin corrida completa (deja mínimo 1 pza de esa talla)
+          const corridasReales = asignaciones.reduce((minC, a) => {
+            const rowRef = invMut[a.centro]?.[modeloKey]?.[a.talla]?.find(r => r.sku === a.sku);
+            if (!rowRef) return 0;
+            // Puede dar hasta (ohDisp - 1) pzs para dejar al menos 1
+            const max = Math.max(0, rowRef.ohDisp - 1);
+            return Math.min(minC, corridasMax, max);
+          }, corridasMax);
+
+          if (corridasReales <= 0) return;
+
+          // Generar filas resultado y descontar inventario
+          asignaciones.forEach(a => {
+            const rowRef = invMut[a.centro]?.[modeloKey]?.[a.talla]?.find(r => r.sku === a.sku);
+            const pzsEnv = corridasReales; // 1 pz por talla por corrida
+            const importe = pzsEnv * (a.precio || 0);
+
+            resultado.push({
+              seccion:        a.seccion,
+              numSeccion:     a.numSeccion,
+              marca:          a.marca,
+              goa:            a.goa,
+              modelo:         a.modelo,
+              sku:            a.sku,
+              nsku:           a.nsku,
+              talla:          a.talla,
+              centroSalida:   fmtCentro(a.nombreCentro, a.nCentro),
+              centroReceptor: fmtCentro(recInfo.nombre, recInfo.nCentro),
+              ohDisp:         a.oh,
+              pzs:            pzsEnv,
+              ohQueda:        a.oh - pzsEnv,
+              importe,
+              precio:         a.precio,
+              corridasEnv:    corridasReales,
+            });
+
+            if (rowRef) rowRef.ohDisp -= pzsEnv;
+          });
+
+          if (pptoRestante > 0) pptoRestante -= corridasReales * precioCorrida;
         });
       });
 
       setNecesResult(resultado);
       setNecesLoading(false);
     }, 300);
-  }, [chequeraText, corrida, centrosSurtidores, rawData]);
+  }, [rawData, extraerTalla, lookupCentro]);
+
+  // Confirmar talla manual en el modal
+  const confirmarTallaModal = () => {
+    if (!modalTallas || !modalInputVal.trim()) return;
+    const current = modalTallas.skus[modalTallas.index];
+    const newCache = { ...tallasCache, [current.sku]: modalInputVal.trim() };
+    setTallasCache(newCache);
+
+    const nextIndex = modalTallas.index + 1;
+    if (nextIndex < modalTallas.skus.length) {
+      setModalTallas({ ...modalTallas, index: nextIndex });
+      setModalInputVal('');
+    } else {
+      setModalTallas(null);
+      setModalInputVal('');
+      // Reejecutar cálculo con cache completo
+      const chequera = parsearChequera(chequeraText);
+      const surtidoresList = centrosSurtidores
+        ? centrosSurtidores.split(',').map(c => c.trim()).filter(Boolean)
+        : null;
+      ejecutarCalculo(chequera, surtidoresList, newCache);
+    }
+  };
 
   const chartDataNec = useMemo(() => {
     if (!necesResult.length) return [];
     const byGoa = {};
     necesResult.forEach(r => {
       if (!byGoa[r.goa]) byGoa[r.goa] = { pzs: 0, pesos: 0 };
-      byGoa[r.goa].pzs  += r.pzs;
-      byGoa[r.goa].pesos += r.pesos;
+      byGoa[r.goa].pzs   += r.pzs;
+      byGoa[r.goa].pesos += r.importe;
     });
-    return Object.entries(byGoa).map(([label, v]) => ({ label, value: v.pzs, pesos: v.pesos }));
+    return Object.entries(byGoa).map(([label, v]) => ({ label, value: v.pzs }));
   }, [necesResult]);
 
   const exportNecesidad = () => {
-    const header = ['Modelo', 'Sección', 'Núm. Sección', 'SKU', 'Marca', 'GOA', 'Centro Salida', 'Centro Receptor', 'Corridas', 'Piezas', 'Importe ($)'];
-    const rows = necesResult.map(r => [r.modelo, r.seccion, r.numSeccion, r.sku, r.marca, r.goa, r.centroSalida, r.centroReceptor, r.corridasEnv, r.pzs, r.pesos]);
+    const header = ['Sección', 'Núm. Sección', 'Marca', 'GOA', 'Modelo', 'SKU', 'N SKU', 'Centro Salida', 'Centro Receptor', 'OH Disp', 'Pzs', 'OH Queda', 'Importe ($)'];
+    const rows = necesResult.map(r => [
+      r.seccion, r.numSeccion, r.marca, r.goa, r.modelo,
+      r.sku, r.nsku, r.centroSalida, r.centroReceptor,
+      r.ohDisp, r.pzs, r.ohQueda, r.importe
+    ]);
     downloadExcel([header, ...rows], 'Traslados_Necesidad.csv');
   };
 
@@ -704,7 +848,7 @@ export default function Traslados() {
               {showPanelGoas && (
                 <div className="space-y-2">
                   <p className={`text-[10px] mb-3 ${t.textMuted}`}>
-                    Marca qué GOAs son de temporada y qué clima necesitan. La herramienta solo moverá artículos cuyo GOA esté aquí y cuya zona de centro sea incompatible.
+                    Asigna el clima requerido de cada GOA. La herramienta detectará artículos de ese GOA en centros con <strong>TIPO CENTRO</strong> incompatible (ej. GOA de Calor en centro FRIO → excedente).
                   </p>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-52 overflow-y-auto pr-1 custom-scrollbar">
                     {opcionesGoa.filter(g => g !== 'ALL').map(goa => (
@@ -859,64 +1003,95 @@ export default function Traslados() {
         {activeTab === 2 && (
           <div className="p-5 space-y-5">
 
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+            {/* Modal tallas faltantes */}
+            {modalTallas && (
+              <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+                <div className={`w-full max-w-md p-6 rounded-2xl border shadow-2xl ${t.card}`}>
+                  <h3 className={`text-sm font-black mb-1 ${t.textMain}`}>Talla no detectada</h3>
+                  <p className={`text-xs mb-4 ${t.textMuted}`}>
+                    El SKU <span className="font-mono font-bold">{modalTallas.skus[modalTallas.index]?.sku}</span> no tiene talla parseable en su nombre:<br />
+                    <span className={`font-mono text-[11px] ${isDark ? 'text-zinc-400' : 'text-gray-500'}`}>
+                      "{modalTallas.skus[modalTallas.index]?.nsku}"
+                    </span>
+                  </p>
+                  <p className={`text-[10px] mb-2 font-black uppercase tracking-widest ${t.textMuted}`}>
+                    Asigna la talla manualmente ({modalTallas.index + 1} de {modalTallas.skus.length})
+                  </p>
+                  <input
+                    autoFocus
+                    value={modalInputVal}
+                    onChange={e => setModalInputVal(e.target.value)}
+                    onKeyDown={e => e.key === 'Enter' && confirmarTallaModal()}
+                    placeholder="Ej: 17"
+                    className={`w-full text-sm px-3 py-2 rounded-lg border mb-4 ${t.input} focus:outline-none focus:ring-1`}
+                  />
+                  <div className="flex gap-2 justify-end">
+                    <button onClick={() => { setModalTallas(null); setModalInputVal(''); }}
+                      className={`px-4 py-2 rounded-lg text-xs font-bold ${t.btnGhost}`}>
+                      Cancelar
+                    </button>
+                    <button onClick={confirmarTallaModal} disabled={!modalInputVal.trim()}
+                      className={`px-4 py-2 rounded-lg text-xs font-bold disabled:opacity-40 ${t.btnPrimary}`}>
+                      Confirmar y continuar
+                    </button>
+                  </div>
+                </div>
+              </div>
+            )}
 
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               {/* Chequera */}
               <div className={`p-4 rounded-xl border ${t.cardInner}`}>
                 <h3 className={`text-xs font-black uppercase tracking-widest mb-2 ${t.textMuted}`}>
                   Chequera de Necesidad
                 </h3>
                 <p className={`text-[10px] mb-3 ${t.textMuted}`}>
-                  Un modelo por línea: <code className="opacity-60">Modelo | GOA | Marca | Pzs | Ppto | CentroReceptor</code>
+                  Un modelo por línea: <code className="opacity-60">Modelo | GOA | Marca | Ppto | CentroReceptor</code>
                 </p>
                 <textarea
                   value={chequeraText}
                   onChange={e => setChequeraText(e.target.value)}
                   rows={10}
-                  placeholder={"Modelo | GOA | Marca | Pzs | Ppto | CentroReceptor\nMODELO-01 | BOTA | NIKE | 120 | 50000 | 670\nMODELO-02 | CHANCLA | ADIDAS | 60 | 18000 | 522"}
+                  placeholder={"MODELO-01 | TENIS NIÑA | BUBBLE GUMMERS | 22450 | SATELITE\n | TENIS NIÑA | BUBBLE GUMMERS | 50000 | M A QUEVEDO"}
                   className={`w-full text-xs font-mono px-3 py-2 rounded-lg border resize-y ${t.input} focus:outline-none focus:ring-1`}
                 />
+                {Object.keys(tallasCache).length > 0 && (
+                  <div className="mt-2 flex items-center justify-between">
+                    <span className={`text-[10px] ${t.textMuted}`}>
+                      {Object.keys(tallasCache).length} tallas asignadas manualmente
+                    </span>
+                    <button onClick={() => setTallasCache({})}
+                      className={`text-[10px] px-2 py-0.5 rounded border font-bold ${t.btnGhost}`}>
+                      Limpiar cache
+                    </button>
+                  </div>
+                )}
               </div>
 
-              {/* Config herramienta */}
+              {/* Config */}
               <div className="space-y-4">
                 <div className={`p-4 rounded-xl border ${t.cardInner}`}>
                   <h3 className={`text-xs font-black uppercase tracking-widest mb-3 ${t.textMuted}`}>Parámetros de la Herramienta</h3>
-
-                  <div className="space-y-3">
-                    <div>
-                      <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} block mb-1`}>
-                        Corrida completa (tallas separadas por coma)
-                      </label>
-                      <input
-                        value={corrida}
-                        onChange={e => setCorrida(e.target.value)}
-                        placeholder="24, 26, 28, 30  ó  6, 7, 8, 9, 10"
-                        className={`w-full text-xs px-3 py-2 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}
-                      />
-                      <p className={`text-[9px] mt-1 ${t.textMuted}`}>
-                        La herramienta NO sacará mercancía que deje al surtidor sin esta corrida completa
-                      </p>
-                    </div>
-
-                    <div>
-                      <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} block mb-1`}>
-                        Centros surtidores (dejar vacío = todos los del CSV)
-                      </label>
-                      <input
-                        value={centrosSurtidores}
-                        onChange={e => setCentrosSurtidores(e.target.value)}
-                        placeholder="1001, 1005, 1023"
-                        className={`w-full text-xs px-3 py-2 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}
-                      />
-                    </div>
+                  <div>
+                    <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} block mb-1`}>
+                      Centros surtidores (dejar vacío = todos los del CSV)
+                    </label>
+                    <input
+                      value={centrosSurtidores}
+                      onChange={e => setCentrosSurtidores(e.target.value)}
+                      placeholder="M A QUEVEDO, SATELITE, BUENAVISTA"
+                      className={`w-full text-xs px-3 py-2 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}
+                    />
+                    <p className={`text-[9px] mt-1 ${t.textMuted}`}>
+                      La herramienta detecta la corrida automáticamente del nombre del SKU. Deja siempre ≥1 pieza por talla en el surtidor.
+                    </p>
                   </div>
                 </div>
 
                 <div className={`p-4 rounded-xl border ${t.cardInner}`}>
                   <h3 className={`text-xs font-black uppercase tracking-widest mb-2 ${t.textMuted}`}>Resumen de Necesidad</h3>
                   {necesResult.length > 0 ? (
-                    <DonutSummary items={chartDataNec.map(d => ({ label: d.label, value: d.pzs }))} theme={theme} />
+                    <DonutSummary items={chartDataNec} theme={theme} />
                   ) : (
                     <p className={`text-xs ${t.textMuted}`}>Sin resultados aún. Llena la chequera y ejecuta la herramienta.</p>
                   )}
@@ -944,13 +1119,12 @@ export default function Traslados() {
             {/* Tabla necesidad */}
             {necesResult.length > 0 && (
               <>
-                {/* Stats */}
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   {[
-                    { label: 'Líneas',      val: necesResult.length },
-                    { label: 'Corridas',    val: fmt(necesResult.reduce((s, r) => s + r.corridasEnv, 0)) },
+                    { label: 'L\u00edneas SKU', val: necesResult.length },
+                    { label: 'Corridas',    val: fmt(Math.max(...necesResult.map(r => r.corridasEnv || 0))) },
                     { label: 'Piezas',      val: fmt(necesResult.reduce((s, r) => s + r.pzs, 0)) },
-                    { label: 'Importe',     val: fmtMXN(necesResult.reduce((s, r) => s + r.pesos, 0)) },
+                    { label: 'Importe',     val: fmtMXN(necesResult.reduce((s, r) => s + r.importe, 0)) },
                   ].map(({ label, val }) => (
                     <div key={label} className={`p-4 rounded-xl border ${t.cardInner}`}>
                       <div className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} mb-1`}>{label}</div>
@@ -964,28 +1138,29 @@ export default function Traslados() {
                     <table className="w-full text-left min-w-max">
                       <thead>
                         <tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark ? 'bg-zinc-900 text-gray-400 border-b border-zinc-800' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
-                          {['Modelo', 'Sección', 'Núm.', 'SKU', 'Marca', 'GOA', 'Centro Salida', 'OH Disp.', 'Corridas', 'Pzs', 'OH Queda', 'Importe'].map(h => (
+                          {['Secci\u00f3n', 'N\u00fam.', 'Marca', 'GOA', 'SKU', 'N SKU', 'Talla', 'Centro Salida', 'Centro Receptor', 'OH Disp', 'Pzs', 'OH Queda', 'Importe'].map(h => (
                             <th key={h} className="p-2 whitespace-nowrap">{h}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody className={`divide-y ${isDark ? 'divide-zinc-800/50' : 'divide-gray-100'}`}>
                         {necesResult.map((r, i) => (
-                          <tr key={i} className={`text-xs hover:${isDark ? 'bg-zinc-800/30' : 'bg-teal-50/30'} transition-colors`}>
-                            <td className={`p-2 font-black ${t.textMain}`}>{r.modelo}</td>
+                          <tr key={i} className={`text-xs transition-colors ${isDark ? 'hover:bg-zinc-800/30' : 'hover:bg-teal-50/30'}`}>
                             <td className={`p-2 ${t.textMuted}`}>{r.seccion}</td>
                             <td className={`p-2 font-mono text-[10px] ${t.textMuted}`}>{r.numSeccion}</td>
-                            <td className={`p-2 font-mono ${t.textMain}`}>{r.sku}</td>
                             <td className={`p-2 ${t.textMuted}`}>{r.marca}</td>
                             <td className="p-2">
                               <span className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${t.badge}`}>{r.goa}</span>
                             </td>
-                            <td className={`p-2 font-bold ${t.textMain}`}>{r.nombreSalida} <span className={`text-[9px] font-mono ${t.textMuted}`}>({r.centroSalida})</span></td>
-                            <td className={`p-2 font-mono text-amber-400`}>{fmt(r.pzsDisp)}</td>
-                            <td className={`p-2 font-black ${t.textAccent1}`}>{r.corridasEnv}</td>
+                            <td className={`p-2 font-mono text-[10px] ${t.textMain}`}>{r.sku}</td>
+                            <td className={`p-2 text-[10px] max-w-[160px] truncate ${t.textMuted}`} title={r.nsku}>{r.nsku}</td>
+                            <td className={`p-2 font-black text-center ${t.textAccent1}`}>{r.talla}</td>
+                            <td className={`p-2 font-bold ${t.textMain}`}>{r.centroSalida}</td>
+                            <td className={`p-2 font-bold text-emerald-400`}>{r.centroReceptor}</td>
+                            <td className={`p-2 font-mono text-amber-400`}>{fmt(r.ohDisp)}</td>
                             <td className={`p-2 font-black ${t.textAccent2}`}>{fmt(r.pzs)}</td>
-                            <td className={`p-2 font-mono ${r.ohQueda < (corrida.split(',').length || 1) ? 'text-red-400' : 'text-emerald-400'}`}>{fmt(r.ohQueda)}</td>
-                            <td className={`p-2 font-mono text-emerald-400`}>{fmtMXN(r.pesos)}</td>
+                            <td className={`p-2 font-mono ${r.ohQueda <= 0 ? 'text-red-400' : 'text-emerald-400'}`}>{fmt(r.ohQueda)}</td>
+                            <td className={`p-2 font-mono text-emerald-400`}>{fmtMXN(r.importe)}</td>
                           </tr>
                         ))}
                       </tbody>
@@ -999,7 +1174,7 @@ export default function Traslados() {
               <div className={`p-8 rounded-xl border flex flex-col items-center justify-center text-center ${t.cardInner}`}>
                 <Icons.Package size={32} className={`${isDark ? 'text-zinc-600' : 'text-gray-300'} mb-3`} />
                 <p className={`text-sm font-bold ${t.textMain}`}>Herramienta de necesidad lista</p>
-                <p className={`text-xs mt-1 ${t.textMuted}`}>Llena la chequera con los modelos que necesitas trasladar y define la corrida mínima.</p>
+                <p className={`text-xs mt-1 ${t.textMuted}`}>Llena la chequera. La herramienta detecta la corrida autom\u00e1ticamente por las tallas del nombre del SKU.</p>
               </div>
             )}
 
@@ -1007,7 +1182,7 @@ export default function Traslados() {
               <div className={`p-8 rounded-xl border flex flex-col items-center justify-center text-center ${t.cardInner}`}>
                 <Icons.Upload size={32} className={`${isDark ? 'text-zinc-600' : 'text-gray-300'} mb-3`} />
                 <p className={`text-sm font-bold ${t.textMain}`}>Sin inventario base</p>
-                <p className={`text-xs mt-1 ${t.textMuted}`}>Carga el CSV de artículos desde el botón del encabezado para que la herramienta pueda calcular disponibilidad.</p>
+                <p className={`text-xs mt-1 ${t.textMuted}`}>Carga el CSV de art\u00edculos desde el bot\u00f3n del encabezado para que la herramienta pueda calcular disponibilidad.</p>
               </div>
             )}
           </div>
