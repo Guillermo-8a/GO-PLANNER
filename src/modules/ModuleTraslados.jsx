@@ -711,8 +711,7 @@ export default function Traslados() {
               if (!precioTalla[t]) precioTalla[t] = r.precio || 0;
             }
           });
-          const precioCorrida1 = corrida.reduce((s,t) => s + (precioTalla[t]||0), 0);
-          if (precioCorrida1 <= 0) return;
+          // precioCorrida calculado abajo con curva de tallas
 
           // Precio de 1 corrida completa = suma de (precio_talla × pzs_curva_talla)
           // Primero calcular pzs por talla para 1 corrida según curva
@@ -789,8 +788,6 @@ export default function Traslados() {
           });
 
           if (!asignaciones.length) return;
-
-          const precioCorrida = asignaciones.reduce((s,a) => s + (a.precio||0), 0);
 
           // Emitir filas y descontar
           asignaciones.forEach(a => {
