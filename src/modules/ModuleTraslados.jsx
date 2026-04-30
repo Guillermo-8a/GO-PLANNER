@@ -278,7 +278,7 @@ export default function Traslados() {
       let climaRowIdx   = -1;
       let headerRowIdx  = -1;
 
-      const CLIMA_VALS = new Set(['FRIO', 'CALOR', 'PLAYA', 'TEMPLADO', 'TODO']);
+      const CLIMA_VALS = new Set(['FRIO', 'CALOR', 'PLAYA', 'TEMPLADO', 'EXTREMOSO', 'TODO']);
 
       for (let i = 0; i < Math.min(rows.length, 10); i++) {
         const cells = rows[i].map(c => c.toUpperCase().trim());
@@ -405,14 +405,15 @@ export default function Traslados() {
         };
       });
 
-      // Compatibilidad: compara el clima requerido del GOA vs el TIPO CENTRO del centro
-      // tipoCentro viene del CSV col "TIPO CENTRO": FRIO | CALOR | PLAYA | TEMPLADO | etc.
+      // Compatibilidad: compara el clima requerido del GOA vs el TIPO CENTRO
+      // Climas posibles: FRIO, CALOR, PLAYA, TEMPLADO, EXTREMOSO
+      // EXTREMOSO = climas extremos (muy frío o muy caluroso) — admite artículos de ambos extremos
       const zonaValida = (tipoClima, tipoCentro = '') => {
         const tc = tipoCentro.toUpperCase().trim();
-        if (tipoClima === 'FRIO')  return tc === 'FRIO'  || tc === 'TEMPLADO' || tc === '';
-        if (tipoClima === 'CALOR') return tc === 'CALOR' || tc === 'PLAYA'    || tc === 'TEMPLADO' || tc === '';
-        if (tipoClima === 'PLAYA') return tc === 'PLAYA' || tc === 'CALOR';
-        return true;
+        if (tipoClima === 'FRIO')  return ['FRIO','EXTREMOSO','TEMPLADO',''].includes(tc);
+        if (tipoClima === 'CALOR') return ['CALOR','PLAYA','EXTREMOSO','TEMPLADO',''].includes(tc);
+        if (tipoClima === 'PLAYA') return ['PLAYA','CALOR'].includes(tc);
+        return true; // TODO = va a todos
       };
 
       const resultado = [];
@@ -713,25 +714,37 @@ export default function Traslados() {
           const precioCorrida1 = corrida.reduce((s,t) => s + (precioTalla[t]||0), 0);
           if (precioCorrida1 <= 0) return;
 
-          // Cuántas corridas caben con el ppto
-          const corridasMax = pptoRestante > 0 ? Math.floor(pptoRestante / precioCorrida1) : 999;
-          if (corridasMax <= 0) return;
+          // Precio de 1 corrida completa = suma de (precio_talla × pzs_curva_talla)
+          // Primero calcular pzs por talla para 1 corrida según curva
+          const pzsCorrida1 = {}; // { talla: pzs para 1 corrida }
+          corrida.forEach(talla => {
+            const pct = (curva[talla] || 0) / totalCurva;
+            // Mínimo 1 pza por talla en la corrida base
+            pzsCorrida1[talla] = Math.max(1, Math.round(100 * pct)); // sobre base 100 para preservar proporción
+          });
+          // Normalizar: encontrar el GCD para que la corrida sea la más pequeña posible
+          const gcd = (a, b) => b === 0 ? a : gcd(b, a % b);
+          const gcdAll = Object.values(pzsCorrida1).reduce((g, v) => gcd(g, v), Object.values(pzsCorrida1)[0] || 1);
+          corrida.forEach(t => { pzsCorrida1[t] = Math.max(1, Math.floor(pzsCorrida1[t] / gcdAll)); });
 
-          // Total piezas a pedir = corridasMax * num tallas (base para distribuir curva)
-          const totalPzsPedir = corridasMax * corrida.length;
+          // Precio de 1 corrida
+          const precioCorrida = corrida.reduce((s, t) => s + (precioTalla[t]||0) * (pzsCorrida1[t]||1), 0);
+          if (precioCorrida <= 0) return;
+
+          // Cuántas corridas caben con el ppto
+          const corridasMax = pptoRestante > 0 ? Math.floor(pptoRestante / precioCorrida) : 999;
+          if (corridasMax <= 0) return;
 
           // Centro receptor para excluirlo de surtidores
           const receptorNombre = recInfo.nombre.toUpperCase().trim();
           const receptorNCentro = recInfo.nCentro?.trim() || '';
 
-          // Por talla: calcular pzs según curva, buscar surtidor
+          // Por talla: pzs = corridasMax × pzs de esa talla en 1 corrida
           const asignaciones = [];
           let corridasRealesMin = corridasMax;
 
           corrida.forEach(talla => {
-            // Participación de esta talla sobre el total de piezas pedidas
-            const pct = (curva[talla] || 0) / totalCurva;
-            const pzsPedidas = Math.max(1, Math.round(totalPzsPedir * pct));
+            const pzsPedidas = corridasMax * (pzsCorrida1[talla] || 1);
 
             // Mejor surtidor: mayor vta, que pueda dar pzsPedidas, dejar mínimo, y NO ser el receptor
             const candidatos = Object.entries(invMut)
