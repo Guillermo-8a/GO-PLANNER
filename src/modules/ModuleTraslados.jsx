@@ -269,41 +269,90 @@ export default function Traslados() {
       const rows = text.split('\n').map(r => parseCSVRow(r, sep));
       if (rows.length < 2) return;
 
-      const H = rows[0].map(h => h.toUpperCase().trim());
+      // ── Detectar filas clave escaneando las primeras 10 ────────────────
+      // Fila de IDs de centro: mayoría de celdas son números enteros
+      // Fila de clima: mayoría de celdas son FRIO/CALOR/PLAYA
+      // Fila de header: contiene MARCA o NOM_MARCA
 
-      // Detectar si tiene col GOA/FAMILIA → es matriz clima
-      const iGoa   = H.findIndex(h => h === 'GOA' || h === 'FAMILIA');
-      const iClima = H.findIndex(h => h === 'CLIMA' || h === 'ZONA_CLIMA' || h === 'TIPO_CLIMA');
+      let centroRowIdx  = -1;
+      let climaRowIdx   = -1;
+      let headerRowIdx  = -1;
 
-      if (iGoa >= 0 && iClima >= 0) {
-        // Matriz clima: GOA | CLIMA
+      const CLIMA_VALS = new Set(['FRIO', 'CALOR', 'PLAYA', 'TEMPLADO', 'TODO']);
+
+      for (let i = 0; i < Math.min(rows.length, 10); i++) {
+        const cells = rows[i].map(c => c.toUpperCase().trim());
+        const numCount   = cells.filter(c => /^\d{3,4}$/.test(c)).length;
+        const climaCount = cells.filter(c => CLIMA_VALS.has(c)).length;
+        const hasMarca   = cells.some(c => c === 'MARCA' || c === 'NOM_MARCA');
+
+        if (numCount > 5 && centroRowIdx === -1)  centroRowIdx  = i;
+        if (climaCount > 5 && climaRowIdx === -1) climaRowIdx   = i;
+        if (hasMarca && headerRowIdx === -1)       headerRowIdx  = i;
+      }
+
+      // Fallback: header en fila 0
+      if (headerRowIdx === -1) headerRowIdx = 0;
+
+      const H = rows[headerRowIdx].map(h => h.toUpperCase().trim());
+      const dataStartIdx = headerRowIdx + 1;
+
+      // Detectar si es matriz clima GOA independiente (col GOA + col CLIMA)
+      const iGoaCol   = H.findIndex(h => h === 'GOA' || h === 'FAMILIA');
+      const iClimaCol = H.findIndex(h => h === 'CLIMA' || h === 'ZONA_CLIMA' || h === 'TIPO_CLIMA');
+
+      if (iGoaCol >= 0 && iClimaCol >= 0) {
         const newClima = {};
-        for (let i = 1; i < rows.length; i++) {
+        for (let i = dataStartIdx; i < rows.length; i++) {
           const r = rows[i];
-          if (!r[iGoa]) continue;
-          const g = r[iGoa].trim().toUpperCase();
-          const c = r[iClima].trim().toUpperCase();
-          newClima[g] = c; // CALOR | FRIO | TODO
+          if (!r[iGoaCol]) continue;
+          newClima[r[iGoaCol].trim().toUpperCase()] = r[iClimaCol].trim().toUpperCase();
         }
         setClimaMatrix(newClima);
         alert(`Matriz clima cargada: ${Object.keys(newClima).length} GOAs.`);
       } else {
-        // Matriz de marca: MARCA | NOM_MARCA | SECCION | [centros...]
-        const iMarca   = H.findIndex(h => h === 'MARCA' || h === 'NOM_MARCA');
-        const iSeccion = H.findIndex(h => h.includes('SECCION') || h === 'SECTION');
-        if (iMarca === -1) { alert('No se encontró columna MARCA o NOM_MARCA'); return; }
+        // ── Matriz de marca con clima integrado ──────────────────────────
+        const iMarca    = H.findIndex(h => h === 'MARCA');
+        const iNomMarca = H.findIndex(h => h === 'NOM_MARCA');
+        const iSeccion  = H.findIndex(h => h === 'SECCION' || h === 'SECCIÓN');
+        const iNomSec   = H.findIndex(h => h === 'NOM_SECCION' || h === 'NOM_SECCIÓN');
+        if (iMarca === -1 && iNomMarca === -1) { alert('No se encontró columna MARCA o NOM_MARCA'); return; }
 
+        // Columnas de centros: numéricos en la fila de header o en centroRowIdx
+        const centroRef = centroRowIdx >= 0 ? rows[centroRowIdx] : H;
+        const climaRef  = climaRowIdx  >= 0 ? rows[climaRowIdx]  : [];
+
+        const infoColsMax = Math.max(iMarca, iNomMarca, iSeccion >= 0 ? iSeccion : 0, iNomSec >= 0 ? iNomSec : 0);
         const storeCols = [];
-        H.forEach((h, j) => {
-          if (j > Math.max(iMarca, iSeccion || 0) && /^\d+$/.test(h))
-            storeCols.push({ colIndex: j, storeId: h });
+        centroRef.forEach((cell, j) => {
+          const id = String(cell).trim();
+          if (j > infoColsMax && /^\d{3,4}$/.test(id)) {
+            const tipoClima = climaRef[j] ? String(climaRef[j]).trim().toUpperCase() : '';
+            storeCols.push({ colIndex: j, storeId: id, tipoClima });
+          }
         });
 
+        // Construir mapa climaMatrix desde la fila de clima de la matriz
+        const newClima = {};
+        storeCols.forEach(sc => {
+          if (sc.tipoClima && CLIMA_VALS.has(sc.tipoClima)) {
+            newClima[sc.storeId] = sc.tipoClima;
+          }
+        });
+        if (Object.keys(newClima).length > 0) {
+          setClimaMatrix(newClima);
+        }
+
+        // Construir brandMatrix
         const matrix = {};
-        for (let i = 1; i < rows.length; i++) {
+        for (let i = dataStartIdx; i < rows.length; i++) {
           const r = rows[i];
-          const marca   = r[iMarca]?.trim().toUpperCase() || '';
-          const seccion = iSeccion >= 0 ? (r[iSeccion]?.trim().toUpperCase() || 'GENERAL') : 'GENERAL';
+          const marca   = (iNomMarca >= 0 ? r[iNomMarca] : r[iMarca])?.trim().toUpperCase() || '';
+          const seccion = iNomSec >= 0
+            ? (r[iNomSec]?.trim().toUpperCase() || 'GENERAL')
+            : iSeccion >= 0
+              ? (r[iSeccion]?.trim().toUpperCase() || 'GENERAL')
+              : 'GENERAL';
           if (!marca) continue;
           storeCols.forEach(sc => {
             const v = r[sc.colIndex]?.trim().toUpperCase();
@@ -315,7 +364,10 @@ export default function Traslados() {
           });
         }
         setBrandMatrix(matrix);
-        alert(`Matriz marca cargada: ${storeCols.length} centros detectados.`);
+        const climaMsg = Object.keys(newClima).length > 0
+          ? ` · Clima de ${Object.keys(newClima).length} centros detectado automáticamente.`
+          : '';
+        alert(`Matriz cargada: ${storeCols.length} centros, ${Object.keys(matrix).length} con permisos.${climaMsg}`);
       }
       if (matrizInputRef.current) matrizInputRef.current.value = '';
     };
@@ -382,8 +434,8 @@ export default function Traslados() {
           if (filterTipoCentro !== 'ALL' && dataOrigen.tipoCentro !== filterTipoCentro) return;
 
           const zonaOrigen = dataOrigen.zona || '';
-          const tcOrigen   = dataOrigen.tipoCentro || '';
-          // Incompatible si el TIPO CENTRO del origen no corresponde al clima del GOA
+          // Tipo clima del centro: primero climaMatrix (viene de la matriz), luego col TIPO CENTRO del CSV
+          const tcOrigen = climaMatrix[dataOrigen.nCentro] || climaMatrix[dataOrigen.centro] || dataOrigen.tipoCentro || '';
           if (zonaValida(tipoClima, tcOrigen)) return;
 
           // Buscar mejor receptor: tipoCentro compatible + mayor venta - menor OH + permiso de marca
@@ -392,7 +444,8 @@ export default function Traslados() {
             .map(([c, d]) => {
               const seccionMarca  = `${meta.seccion}|${marca}`;
               const tienePermiso  = !brandMatrix[c] || brandMatrix[c].length === 0 || brandMatrix[c].includes(seccionMarca);
-              const climaOK       = zonaValida(tipoClima, d.tipoCentro || '');
+              const tcRec = climaMatrix[d.nCentro] || climaMatrix[d.centro] || d.tipoCentro || '';
+              const climaOK = zonaValida(tipoClima, tcRec);
               const score         = (d.vta || 0) - (d.oh || 0) * 0.3;
               return { centro: c, data: d, tienePermiso, climaOK, score };
             })
@@ -664,18 +717,35 @@ export default function Traslados() {
           const corridasMax = pptoRestante > 0 ? Math.floor(pptoRestante / precioCorrida1) : 999;
           if (corridasMax <= 0) return;
 
+          // Total piezas a pedir = corridasMax * num tallas (base para distribuir curva)
+          const totalPzsPedir = corridasMax * corrida.length;
+
+          // Centro receptor para excluirlo de surtidores
+          const receptorNombre = recInfo.nombre.toUpperCase().trim();
+          const receptorNCentro = recInfo.nCentro?.trim() || '';
+
           // Por talla: calcular pzs según curva, buscar surtidor
           const asignaciones = [];
           let corridasRealesMin = corridasMax;
 
           corrida.forEach(talla => {
-            // Participación de esta talla → pzs a pedir
+            // Participación de esta talla sobre el total de piezas pedidas
             const pct = (curva[talla] || 0) / totalCurva;
-            const pzsPedidas = Math.max(1, Math.round(corridasMax * pct));
+            const pzsPedidas = Math.max(1, Math.round(totalPzsPedir * pct));
 
-            // Mejor surtidor: mayor vta, que pueda dar pzsPedidas y dejar mínimo corridas
+            // Mejor surtidor: mayor vta, que pueda dar pzsPedidas, dejar mínimo, y NO ser el receptor
             const candidatos = Object.entries(invMut)
-              .filter(([, mods]) => mods[modeloKey]?.[talla]?.some(r => r.ohDisp > 0))
+              .filter(([centro, mods]) => {
+                if (!mods[modeloKey]?.[talla]?.some(r => r.ohDisp > 0)) return false;
+                // Excluir si el centro ES el receptor
+                const cUp = centro.toUpperCase().trim();
+                if (receptorNCentro && cUp === receptorNCentro) return false;
+                if (cUp === receptorNombre) return false;
+                // También excluir por nCentro del row
+                const firstRow = mods[modeloKey][talla][0];
+                if (receptorNCentro && firstRow?.nCentro?.trim() === receptorNCentro) return false;
+                return true;
+              })
               .map(([centro, mods]) => {
                 const rows = mods[modeloKey][talla].filter(r => r.ohDisp > 0);
                 const ohTot = rows.reduce((s,r) => s + r.ohDisp, 0);
@@ -836,7 +906,7 @@ export default function Traslados() {
             )}
             {Object.keys(climaMatrix).length > 0 && (
               <span className={`px-3 py-1 rounded-full text-[10px] font-black border ${t.badgeTeal}`}>
-                Matriz clima ✓
+                Clima {Object.keys(climaMatrix).length} centros ✓
               </span>
             )}
           </div>
