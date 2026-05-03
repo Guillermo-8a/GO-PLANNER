@@ -864,8 +864,9 @@ useEffect(() => {
 
     // 1) Agregar a nivel modelo (GOA+TALLA) sumando todas las tiendas
     rawStoreData.forEach(row => {
-      if (!row.talla || row.talla === 'N/A' || row.talla === 'UNICA') return;
-      const k = `${row.goa.toUpperCase()}|${row.talla.toUpperCase()}`;
+      const tallaNorm = row.talla ? String(row.talla).trim().toUpperCase() : 'UNICA';
+      if (!row.goa) return;
+      const k = `${row.goa.toUpperCase()}|${tallaNorm}`;
       if (!modelAggregates[k]) modelAggregates[k] = { ventas3m: 0, ventas12m: 0, oh: 0 };
       modelAggregates[k].ventas3m += (row.trend3M || 0);
       modelAggregates[k].ventas12m += (row.sales || 0);
@@ -893,9 +894,9 @@ useEffect(() => {
 
     // 3) Por cada (tienda, GOA, talla): calcular fill_rate y demanda_ajustada
     rawStoreData.forEach(row => {
-      if (!row.talla || row.talla === 'N/A' || row.talla === 'UNICA') return;
+      if (!row.goa || !row.centro) return;
       const goa = row.goa.toUpperCase();
-      const talla = row.talla.toUpperCase();
+      const talla = row.talla ? String(row.talla).trim().toUpperCase() : 'UNICA';
       const cacheKey = `${row.centro}|${goa}|${talla}`;
 
       const ventas3m = row.trend3M || 0;
@@ -1557,6 +1558,70 @@ useEffect(() => {
     // SKU (Size-Level) — score-first + talla + MOS sano
     // ====================================================================
     if (distMode === 'SKU') {
+      // Auto-recalcular demanda ajustada si está activa y no hay cache (silencioso)
+      if (useAdjustedDemand && (Object.keys(adjustedDataCache).length === 0 || adjustedDataStale)) {
+        const cacheTmp = {};
+        const modelAggTmp = {};
+        rawStoreData.forEach(row => {
+          const tallaNorm = row.talla ? String(row.talla).trim().toUpperCase() : 'UNICA';
+          if (!row.goa) return;
+          const k = `${row.goa.toUpperCase()}|${tallaNorm}`;
+          if (!modelAggTmp[k]) modelAggTmp[k] = { ventas3m: 0, ventas12m: 0 };
+          modelAggTmp[k].ventas3m += (row.trend3M || 0);
+          modelAggTmp[k].ventas12m += (row.sales || 0);
+        });
+        const goaTotalsTmp = {};
+        Object.entries(modelAggTmp).forEach(([k, v]) => {
+          const [g] = k.split('|');
+          if (!goaTotalsTmp[g]) goaTotalsTmp[g] = { ventas3m: 0, ventas12m: 0 };
+          goaTotalsTmp[g].ventas3m += v.ventas3m;
+          goaTotalsTmp[g].ventas12m += v.ventas12m;
+        });
+        const curvaModeloTmp = {};
+        Object.entries(modelAggTmp).forEach(([k, v]) => {
+          const [g, t] = k.split('|');
+          const tot = goaTotalsTmp[g];
+          const denom = tot.ventas3m > 0 ? tot.ventas3m : (tot.ventas12m / 4);
+          const num = v.ventas3m > 0 ? v.ventas3m : (v.ventas12m / 4);
+          if (!curvaModeloTmp[g]) curvaModeloTmp[g] = {};
+          curvaModeloTmp[g][t] = denom > 0 ? num / denom : 0;
+        });
+        rawStoreData.forEach(row => {
+          if (!row.goa || !row.centro) return;
+          const goa = row.goa.toUpperCase();
+          const talla = row.talla ? String(row.talla).trim().toUpperCase() : 'UNICA';
+          const cacheKey = `${row.centro}|${goa}|${talla}`;
+          const v3m = row.trend3M || 0;
+          const v12m = row.sales || 0;
+          const oh = row.oh || 0;
+          const oo = row.oo || 0;
+          const vSem = v3m / 12;
+          let frWos;
+          if (vSem <= 0) frWos = oh > 0 ? 1 : 0.5;
+          else { const wos = oh / vSem; frWos = Math.max(0.2, Math.min(1, wos / 12)); }
+          const myContrib = v3m > 0 ? v3m : (v12m / 4);
+          let storeGoaSales = 0;
+          rawStoreData.forEach(r => { if (r.centro === row.centro && r.goa.toUpperCase() === goa) storeGoaSales += (r.trend3M || r.sales / 4); });
+          const shareT = storeGoaSales > 0 ? myContrib / storeGoaSales : 0;
+          const shareM = curvaModeloTmp[goa]?.[talla] || 0;
+          const frShare = shareM > 0 ? Math.min(1, shareT / shareM) : 1;
+          const fr = 0.7 * frWos + 0.3 * frShare;
+          const oosR = Math.max(0, Math.min(0.95, 1 - fr));
+          const dBase = 0.4 * (v12m / 12) + 0.6 * (v3m / 3);
+          let dAdj = dBase / Math.max(0.05, 1 - oosR);
+          const v3mMes = v3m / 3;
+          if (v3mMes > 0) { dAdj = Math.min(dAdj, v3mMes * 1.5); dAdj = Math.max(dAdj, v3mMes * 0.5); }
+          const flags = [];
+          if (oosR > 0.4) flags.push('alta_incertidumbre');
+          if (v12m < 5 && v3m < 2) flags.push('baja_data');
+          cacheTmp[cacheKey] = { fillRate: +fr.toFixed(3), oosRatio: +oosR.toFixed(3), demandaBase: +dBase.toFixed(2), demandaAjustada: +dAdj.toFixed(2), ventas12m: v12m, ventas3m: v3m, oh, oo, curvaTienda: +shareT.toFixed(3), curvaModelo: +shareM.toFixed(3), flags };
+        });
+        // Asignar al cache local que se usará en este run (no esperamos al state)
+        Object.assign(adjustedDataCache, cacheTmp);
+        setAdjustedDataCache(cacheTmp);
+        setAdjustedDataStale(false);
+      }
+
       const goaMarcaSummary = {};
 
       // Agrupar items por modelo+color+GOA: las tallas del mismo modelo viajan juntas
@@ -1985,12 +2050,23 @@ useEffect(() => {
           pendientes = Object.values(tallaState).reduce((s, t) => s + t.remaining, 0);
         }
 
-        // Residual no asignable: warning sin forzar
-        const residual = Object.entries(tallaState).filter(([_, t]) => t.remaining > 0);
-        if (residual.length > 0) {
-          residual.forEach(([talla, t]) => {
-            warnings.push(`[${sample.modelo}/${talla}]: ${t.remaining} pzs no asignables. Tiendas alcanzaron caps de diversificación o MOS extendido (1.3×). Revisa MOS objetivo o reduce compra.`);
+        // FASE FORZADA: residual remanente se distribuye sí o sí (round-robin proporcional al score)
+        // Se ignora MOS pero se respeta la matriz de marcas (eligibleStores ya está filtrada).
+        // Esto evita "X pzs no asignables".
+        const residualForzado = Object.entries(tallaState).filter(([_, t]) => t.remaining > 0);
+        if (residualForzado.length > 0) {
+          const rankedForzado = [...eligibleStores].sort((a, b) => (b.goaScores[goaName] || 0) - (a.goaScores[goaName] || 0));
+          residualForzado.forEach(([talla, t]) => {
+            let i = 0;
+            const pzasIniciales = t.remaining;
+            while (t.remaining > 0 && rankedForzado.length > 0) {
+              const store = rankedForzado[i % rankedForzado.length];
+              assignChunk(store, talla, 1);
+              i++;
+            }
+            warnings.push(`[${sample.modelo}/${talla}]: ${pzasIniciales} pzs forzadas (MOS objetivo excedido en todas las tiendas elegibles). Distribuidas por score; revisa MOS o reduce compra.`);
           });
+          pendientes = 0;
         }
 
         // Tracking sobre-inventariadas para alertas (>20%)
@@ -3246,57 +3322,78 @@ useEffect(() => {
             )}
 
             {chequera.length > 0 && (
-              <div className={`p-6 rounded-xl border flex flex-col items-center md:flex-row justify-between gap-6 ${t.cardInner}`}>
-                <div className="flex-1">
-                  <h3 className={`font-bold mb-1 ${t.textMain}`}>Tipo de distribución</h3>
-                  <p className={`text-sm mb-4 md:mb-0 ${t.textMuted}`}>Puedes evaluar el inventario actual (OH) de las tiendas para no sobre-stockear o forzar la distribución por la calificación de GOA.</p>
-                </div>
-                
-                <div className="flex flex-col md:flex-row items-center gap-6">
-                  <div className={`flex items-center p-2 rounded-lg border ${theme==='dark'?'bg-black/30 border-zinc-800':'bg-gray-100 border-gray-200'}`}>
-                    <button onClick={() => setDistMode('PUSH')} className={`flex items-center px-3 py-1.5 rounded text-xs font-bold transition-all ${distMode === 'PUSH' ? (theme==='dark'?'bg-zinc-800 text-white shadow':'bg-white text-black shadow') : t.textMuted}`}>
-                      <Icons.Box size={16} className={`mr-1 ${distMode === 'PUSH' ? 'text-red-400' : ''}`} /> Llenado Push
-                    </button>
-                    <button onClick={() => setDistMode('OH')} className={`flex items-center px-3 py-1.5 rounded text-xs font-bold transition-all ${distMode === 'OH' ? (theme==='dark'?'bg-zinc-800 text-white shadow':'bg-white text-black shadow') : t.textMuted}`}>
-                       <Icons.CheckSquare size={16} className={`mr-1 ${distMode === 'OH' ? 'text-emerald-400' : ''}`} /> Dispersión (GOA)
-                    </button>
-                    <button onClick={() => setDistMode('SKU')} className={`flex items-center px-3 py-1.5 rounded text-xs font-bold transition-all ${distMode === 'SKU' ? (theme==='dark'?'bg-zinc-800 text-white shadow':'bg-white text-black shadow') : t.textMuted}`}>
-                       <Icons.Layers size={16} className={`mr-1 ${distMode === 'SKU' ? 'text-violet-400' : ''}`} /> Size-Level
-                    </button>
-                    <button onClick={() => setDistMode('PACK')} className={`flex items-center px-3 py-1.5 rounded text-xs font-bold transition-all ${distMode === 'PACK' ? (theme==='dark'?'bg-zinc-800 text-white shadow':'bg-white text-black shadow') : t.textMuted}`}>
-                       <Icons.Package size={16} className={`mr-1 ${distMode === 'PACK' ? 'text-amber-400' : ''}`} /> Size Scaling (Pack)
-                    </button>
+              <div className={`p-6 rounded-xl border ${t.cardInner}`}>
+                <div className="grid grid-cols-1 lg:grid-cols-[280px_1fr] gap-6 items-start">
+                  {/* Columna izquierda: descripción FIJA */}
+                  <div className="lg:border-r lg:pr-6 border-zinc-700/30">
+                    <h3 className={`font-bold mb-2 flex items-center ${t.textMain}`}>
+                      <Icons.Settings size={16} className="mr-2 text-violet-400"/> Tipo de Distribución
+                    </h3>
+                    <p className={`text-xs leading-relaxed ${t.textMuted}`}>
+                      {distMode === 'PUSH' && 'Llenado por canal/cluster con corrida proporcional. Ideal para reposiciones masivas.'}
+                      {distMode === 'OH' && 'Reparto por GOA considerando OH+OO y MOS sano. Pieza a pieza, recalcula saturación dinámicamente.'}
+                      {distMode === 'SKU' && 'Distribución por modelo+talla con demanda ajustada por OOS. Diversifica para no concentrar en una tienda.'}
+                      {distMode === 'PACK' && 'Asigna packs enteros del proveedor respetando curva de empaquetado y clusters garantizados.'}
+                    </p>
                   </div>
 
-                  {distMode === 'PACK' && (
-                    <button onClick={() => setShowPackModal(true)} className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center transition-all ${theme==='dark'?'bg-amber-900/30 text-amber-400 border border-amber-500/50 hover:bg-amber-900/50':'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'}`}>
-                      <Icons.Settings size={14} className="mr-1.5"/> Configurar Packs
+                  {/* Columna derecha: controles, distribuidos en filas con altura fija */}
+                  <div className="flex flex-col gap-3">
+                    {/* Fila 1: Selector de modo (siempre visible) */}
+                    <div className="flex flex-wrap items-center gap-2">
+                      <span className={`text-[10px] uppercase font-bold tracking-wider mr-2 ${t.textMuted}`}>Modo:</span>
+                      <div className={`flex flex-wrap items-center p-1.5 rounded-lg border ${theme==='dark'?'bg-black/30 border-zinc-800':'bg-gray-100 border-gray-200'}`}>
+                        <button onClick={() => setDistMode('PUSH')} className={`flex items-center px-3 py-1.5 rounded text-xs font-bold transition-all ${distMode === 'PUSH' ? (theme==='dark'?'bg-zinc-800 text-white shadow':'bg-white text-black shadow') : t.textMuted}`}>
+                          <Icons.Box size={14} className={`mr-1 ${distMode === 'PUSH' ? 'text-red-400' : ''}`} /> Llenado Push
+                        </button>
+                        <button onClick={() => setDistMode('OH')} className={`flex items-center px-3 py-1.5 rounded text-xs font-bold transition-all ${distMode === 'OH' ? (theme==='dark'?'bg-zinc-800 text-white shadow':'bg-white text-black shadow') : t.textMuted}`}>
+                          <Icons.CheckSquare size={14} className={`mr-1 ${distMode === 'OH' ? 'text-emerald-400' : ''}`} /> Dispersión (GOA)
+                        </button>
+                        <button onClick={() => setDistMode('SKU')} className={`flex items-center px-3 py-1.5 rounded text-xs font-bold transition-all ${distMode === 'SKU' ? (theme==='dark'?'bg-zinc-800 text-white shadow':'bg-white text-black shadow') : t.textMuted}`}>
+                          <Icons.Layers size={14} className={`mr-1 ${distMode === 'SKU' ? 'text-violet-400' : ''}`} /> Size-Level
+                        </button>
+                        <button onClick={() => setDistMode('PACK')} className={`flex items-center px-3 py-1.5 rounded text-xs font-bold transition-all ${distMode === 'PACK' ? (theme==='dark'?'bg-zinc-800 text-white shadow':'bg-white text-black shadow') : t.textMuted}`}>
+                          <Icons.Package size={14} className={`mr-1 ${distMode === 'PACK' ? 'text-amber-400' : ''}`} /> Size Scaling
+                        </button>
+                      </div>
+                    </div>
+
+                    {/* Fila 2: Configuración contextual (altura fija para no saltar) */}
+                    <div className="flex flex-wrap items-center gap-2 min-h-[40px]">
+                      <span className={`text-[10px] uppercase font-bold tracking-wider mr-2 ${t.textMuted}`}>Config:</span>
+                      {distMode === 'PACK' && (
+                        <button onClick={() => setShowPackModal(true)} className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center transition-all ${theme==='dark'?'bg-amber-900/30 text-amber-400 border border-amber-500/50 hover:bg-amber-900/50':'bg-amber-50 text-amber-700 border border-amber-200 hover:bg-amber-100'}`}>
+                          <Icons.Settings size={12} className="mr-1.5"/> Configurar Packs
+                        </button>
+                      )}
+                      {(distMode === 'OH' || distMode === 'SKU') && (
+                        <button onClick={() => setShowMosModal(true)} className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center transition-all ${theme==='dark'?'bg-emerald-900/30 text-emerald-400 border border-emerald-500/50 hover:bg-emerald-900/50':'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'}`}>
+                          <Icons.Settings size={12} className="mr-1.5"/> MOS Objetivo
+                        </button>
+                      )}
+                      {distMode === 'SKU' && (
+                        <>
+                          <button onClick={computeAdjustedDemand} className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center transition-all ${adjustedDataStale ? (theme==='dark'?'bg-red-900/40 text-red-300 border border-red-500/60':'bg-red-50 text-red-700 border border-red-300') : (theme==='dark'?'bg-violet-900/30 text-violet-400 border border-violet-500/50 hover:bg-violet-900/50':'bg-violet-50 text-violet-700 border border-violet-200 hover:bg-violet-100')}`} title={adjustedDataStale ? 'Datos cambiaron, recalcula' : 'Recalcular demanda ajustada'}>
+                            <Icons.Activity size={12} className="mr-1.5"/> {adjustedDataStale ? 'Recalcular ⚠' : 'Recalcular Demanda'}
+                          </button>
+                          <button onClick={() => setShowDiagModal(true)} className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center transition-all ${theme==='dark'?'bg-blue-900/30 text-blue-400 border border-blue-500/50 hover:bg-blue-900/50':'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100'}`}>
+                            <Icons.Layers size={12} className="mr-1.5"/> Diagnóstico
+                          </button>
+                        </>
+                      )}
+                      {distMode === 'PUSH' && (
+                        <span className={`text-xs italic ${t.textMuted}`}>Sin configuración adicional. Listo para calcular.</span>
+                      )}
+                    </div>
+
+                    {/* Fila 3: Botón Calcular (siempre full-width) */}
+                    <button 
+                      onClick={processDistribution}
+                      className={`mt-2 px-8 py-3.5 rounded-xl font-black uppercase tracking-wider transition-all flex items-center justify-center shadow-lg hover:scale-[1.02] transform duration-200 ${theme==='dark'?'bg-purple-600 text-white hover:bg-purple-500':'bg-indigo-600 text-white hover:bg-indigo-700'}`}
+                    >
+                      <Icons.Zap size={18} className="mr-2" /> Calcular Distribución
                     </button>
-                  )}
-
-                  {(distMode === 'OH' || distMode === 'SKU') && (
-                    <button onClick={() => setShowMosModal(true)} className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center transition-all ${theme==='dark'?'bg-emerald-900/30 text-emerald-400 border border-emerald-500/50 hover:bg-emerald-900/50':'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'}`}>
-                      <Icons.Settings size={14} className="mr-1.5"/> Configurar MOS Objetivo
-                    </button>
-                  )}
-
-                  {distMode === 'SKU' && (
-                    <>
-                      <button onClick={computeAdjustedDemand} className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center transition-all ${adjustedDataStale ? (theme==='dark'?'bg-red-900/40 text-red-300 border border-red-500/60':'bg-red-50 text-red-700 border border-red-300') : (theme==='dark'?'bg-violet-900/30 text-violet-400 border border-violet-500/50 hover:bg-violet-900/50':'bg-violet-50 text-violet-700 border border-violet-200 hover:bg-violet-100')}`} title={adjustedDataStale ? 'Datos cambiaron, recalcula' : 'Recalcular demanda ajustada'}>
-                        <Icons.Activity size={14} className="mr-1.5"/> {adjustedDataStale ? 'Recalcular ⚠' : 'Recalcular Demanda'} 
-                      </button>
-                      <button onClick={() => setShowDiagModal(true)} className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center transition-all ${theme==='dark'?'bg-blue-900/30 text-blue-400 border border-blue-500/50 hover:bg-blue-900/50':'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100'}`}>
-                        <Icons.Layers size={14} className="mr-1.5"/> Diagnóstico
-                      </button>
-                    </>
-                  )}
-
-                  <button 
-                    onClick={processDistribution}
-                    className={`px-8 py-4 rounded-xl font-black uppercase tracking-wider transition-all flex items-center justify-center shadow-lg hover:scale-105 transform duration-200 ${theme==='dark'?'bg-purple-600 text-white hover:bg-purple-500':'bg-indigo-600 text-white hover:bg-indigo-700'}`}
-                  >
-                    <Icons.Zap size={20} className="mr-2" /> Calcular Distribución
-                  </button>
+                  </div>
                 </div>
               </div>
             )}
