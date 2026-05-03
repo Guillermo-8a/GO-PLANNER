@@ -3,6 +3,21 @@ import * as Icons from '../utils/icons';
 import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
 // ============================================================================
+// CURVA ESTACIONAL RETAIL MX (índice 0 = enero ... 11 = diciembre)
+// Factor 1.0 = mes promedio. >1 = sobre-promedio, <1 = sub-promedio.
+// Refleja: ene-feb débil post-navidad, mzo-abr moderado, may día madres,
+// jun-jul-ago regreso a clases, sep-oct valle, nov buen fin, dic pico.
+// ============================================================================
+const SEASONAL_CURVE_MX = [0.75, 0.78, 0.92, 0.95, 1.15, 1.00, 1.10, 1.18, 0.88, 0.85, 1.20, 1.74];
+const seasonalFactor = (month0to11) => SEASONAL_CURVE_MX[((month0to11 % 12) + 12) % 12];
+// Suma de factores para los próximos N meses empezando en mes objetivo (0-indexed)
+const seasonalSumNext = (startMonth0to11, n) => {
+  let sum = 0;
+  for (let i = 0; i < n; i++) sum += seasonalFactor(startMonth0to11 + i);
+  return sum;
+};
+
+// ============================================================================
 // COMPONENTE EXTERNO: GRÁFICA DE DISPERSIÓN (Con cálculo de R²)
 // ============================================================================
 const ScatterPlot = ({ data, title, subtitle, colorClass, maxVentas, maxInv, t }) => {
@@ -175,8 +190,21 @@ export default function Distribucion() {
   const [mosTarget, setMosTarget] = useState({}); // { [GOA]: { min, max } }
   const [showMosModal, setShowMosModal] = useState(false);
 
+  // Modo de cálculo de saturación por GOA: 'historic' (default) o 'forward2m'
+  const [seasonalMode, setSeasonalMode] = useState({}); // { [GOA]: 'historic' | 'forward2m' }
+  // Mes objetivo del envío (1-12). Si 0/null → mes actual + 1
+  const [forecastMonth, setForecastMonth] = useState(0);
+
   // Alertas a compras: combos GOA/MARCA con >20% tiendas sobre-inventariadas
   const [overstockAlerts, setOverstockAlerts] = useState([]); // [{ goa, marca, pct, total, overStores: [{centro, mos}], reason }]
+
+  // Demanda ajustada (corrección por OOS)
+  const [useAdjustedDemand, setUseAdjustedDemand] = useState(true);
+  const [alpha, setAlpha] = useState(0.3); // peso del ajuste de curva
+  const [idealCurves, setIdealCurves] = useState({}); // { [modelo|goa|color]: { [talla]: pct } }
+  const [adjustedDataCache, setAdjustedDataCache] = useState({}); // { [centerCode|goa|talla]: { fillRate, oosRatio, demandaBase, demandaAjustada, flags } }
+  const [adjustedDataStale, setAdjustedDataStale] = useState(false);
+  const [showDiagModal, setShowDiagModal] = useState(false);
 
   // Filtro de búsqueda en Tab 1 / Base de Tiendas
   const [storeNameFilter, setStoreNameFilter] = useState('');
@@ -203,6 +231,12 @@ useEffect(() => {
         if (d.packMinClusters) setPackMinClusters(d.packMinClusters);
         if (d.packCoverThreshold) setPackCoverThreshold(d.packCoverThreshold);
         if (d.mosTarget) setMosTarget(d.mosTarget);
+        if (typeof d.useAdjustedDemand === 'boolean') setUseAdjustedDemand(d.useAdjustedDemand);
+        if (typeof d.alpha === 'number') setAlpha(d.alpha);
+        if (d.idealCurves) setIdealCurves(d.idealCurves);
+        if (d.adjustedDataCache) setAdjustedDataCache(d.adjustedDataCache);
+        if (d.seasonalMode) setSeasonalMode(d.seasonalMode);
+        if (d.forecastMonth) setForecastMonth(d.forecastMonth);
       }
     } catch {}
   }, []);
@@ -213,10 +247,11 @@ useEffect(() => {
         stores, goas, rawStoreData, chequera,
         brandMatrix, matrixMetadata,
         numClusters, scoreWeights, distributionResult,
-        packCurves, packAllowSwap, packMinClusters, packCoverThreshold, mosTarget,
+        packCurves, packAllowSwap, packMinClusters, packCoverThreshold, mosTarget, seasonalMode, forecastMonth,
+        useAdjustedDemand, alpha, idealCurves, adjustedDataCache,
       }));
     } catch {}
-  }, [stores, goas, rawStoreData, chequera, brandMatrix, matrixMetadata, numClusters, scoreWeights, distributionResult, packCurves, packAllowSwap, packMinClusters, packCoverThreshold, mosTarget]);
+  }, [stores, goas, rawStoreData, chequera, brandMatrix, matrixMetadata, numClusters, scoreWeights, distributionResult, packCurves, packAllowSwap, packMinClusters, packCoverThreshold, mosTarget, seasonalMode, forecastMonth, useAdjustedDemand, alpha, idealCurves, adjustedDataCache]);
   
   const themes = {
     dark: {
@@ -424,6 +459,7 @@ useEffect(() => {
       }
       
       setGoas([]); setStores([]); setRawStoreData(extractedRawData);
+      setAdjustedDataStale(true);
       recalculateClusters(extractedRawData, scoreWeights, activeClusters);
       if(fileInputRef.current) fileInputRef.current.value = '';
     };
@@ -813,6 +849,160 @@ useEffect(() => {
     setDistributionResult([]);
   };
 
+  // ============================================================================
+  // CORRECCIÓN POR OOS: fill_rate, demanda_ajustada, curvas
+  // Genera cache con clave centerCode|GOA|TALLA y guía por modelo (curva_modelo)
+  // ============================================================================
+  const computeAdjustedDemand = () => {
+    if (!stores.length || !rawStoreData.length) {
+      alert('Carga primero la base de tiendas para calcular la demanda ajustada.');
+      return;
+    }
+
+    const cache = {};
+    const modelAggregates = {}; // { [GOA|TALLA]: { ventas3m, ventas12m, oh } } — para curva_modelo
+
+    // 1) Agregar a nivel modelo (GOA+TALLA) sumando todas las tiendas
+    rawStoreData.forEach(row => {
+      if (!row.talla || row.talla === 'N/A' || row.talla === 'UNICA') return;
+      const k = `${row.goa.toUpperCase()}|${row.talla.toUpperCase()}`;
+      if (!modelAggregates[k]) modelAggregates[k] = { ventas3m: 0, ventas12m: 0, oh: 0 };
+      modelAggregates[k].ventas3m += (row.trend3M || 0);
+      modelAggregates[k].ventas12m += (row.sales || 0);
+      modelAggregates[k].oh += (row.oh || 0);
+    });
+
+    // 2) Curvas por GOA (suma de tallas del GOA)
+    const goaTotals = {};
+    Object.entries(modelAggregates).forEach(([k, v]) => {
+      const [goa] = k.split('|');
+      if (!goaTotals[goa]) goaTotals[goa] = { ventas3m: 0, ventas12m: 0 };
+      goaTotals[goa].ventas3m += v.ventas3m;
+      goaTotals[goa].ventas12m += v.ventas12m;
+    });
+
+    const curvaModelo = {}; // { [GOA]: { [talla]: pct } } — basado en demanda histórica agregada
+    Object.entries(modelAggregates).forEach(([k, v]) => {
+      const [goa, talla] = k.split('|');
+      const total = goaTotals[goa];
+      const denom = total.ventas3m > 0 ? total.ventas3m : (total.ventas12m / 4); // 3m equivalente
+      const num = v.ventas3m > 0 ? v.ventas3m : (v.ventas12m / 4);
+      if (!curvaModelo[goa]) curvaModelo[goa] = {};
+      curvaModelo[goa][talla] = denom > 0 ? num / denom : 0;
+    });
+
+    // 3) Por cada (tienda, GOA, talla): calcular fill_rate y demanda_ajustada
+    rawStoreData.forEach(row => {
+      if (!row.talla || row.talla === 'N/A' || row.talla === 'UNICA') return;
+      const goa = row.goa.toUpperCase();
+      const talla = row.talla.toUpperCase();
+      const cacheKey = `${row.centro}|${goa}|${talla}`;
+
+      const ventas3m = row.trend3M || 0;
+      const ventas12m = row.sales || 0;
+      const oh = row.oh || 0;
+      const oo = row.oo || 0;
+
+      // fill_rate por WOS
+      const ventaSemanal = ventas3m / 12; // 3m = 12 semanas
+      let fillRateWos;
+      if (ventaSemanal <= 0) {
+        fillRateWos = oh > 0 ? 1 : 0.5; // sin venta + con OH = OK; sin venta + sin OH = ambiguo
+      } else {
+        const wos = oh / ventaSemanal;
+        fillRateWos = Math.min(1, wos / 12);
+        fillRateWos = Math.max(fillRateWos, 0.2);
+      }
+
+      // fill_rate por share
+      const storeKey = `${row.centro}|${goa}`;
+      let storeGoaSales = 0;
+      rawStoreData.forEach(r => {
+        if (r.centro === row.centro && r.goa.toUpperCase() === goa) {
+          storeGoaSales += (r.trend3M || r.sales / 4);
+        }
+      });
+      const myContribTienda = ventas3m > 0 ? ventas3m : (ventas12m / 4);
+      const shareTallaTienda = storeGoaSales > 0 ? myContribTienda / storeGoaSales : 0;
+      const shareTallaModelo = curvaModelo[goa]?.[talla] || 0;
+      const fillRateShare = shareTallaModelo > 0
+        ? Math.min(1, shareTallaTienda / shareTallaModelo)
+        : 1;
+
+      const fillRate = 0.7 * fillRateWos + 0.3 * fillRateShare;
+      const oosRatio = Math.max(0, Math.min(0.95, 1 - fillRate)); // tope 0.95 para evitar explosiones
+
+      // Demanda base ponderada
+      const demandaBase = 0.4 * (ventas12m / 12) + 0.6 * (ventas3m / 3); // mensual
+
+      // Demanda ajustada
+      let demandaAjustada = demandaBase / Math.max(0.05, 1 - oosRatio);
+      // Topes: ≤ ventas_3m × 1.5 (mensual eq.), ≥ ventas_3m × 0.5
+      const ventas3mMensual = ventas3m / 3;
+      if (ventas3mMensual > 0) {
+        demandaAjustada = Math.min(demandaAjustada, ventas3mMensual * 1.5);
+        demandaAjustada = Math.max(demandaAjustada, ventas3mMensual * 0.5);
+      }
+
+      // Flags
+      const flags = [];
+      if (oosRatio > 0.4) flags.push('alta_incertidumbre');
+      if (ventas12m < 5 && ventas3m < 2) flags.push('baja_data');
+      if (ventaSemanal === 0 && oh === 0 && oo === 0) flags.push('sin_actividad');
+
+      cache[cacheKey] = {
+        fillRate: Number(fillRate.toFixed(3)),
+        oosRatio: Number(oosRatio.toFixed(3)),
+        demandaBase: Number(demandaBase.toFixed(2)),
+        demandaAjustada: Number(demandaAjustada.toFixed(2)),
+        ventas12m, ventas3m, oh, oo,
+        curvaTienda: Number(shareTallaTienda.toFixed(3)),
+        curvaModelo: Number(shareTallaModelo.toFixed(3)),
+        flags,
+      };
+    });
+
+    setAdjustedDataCache(cache);
+    setAdjustedDataStale(false);
+
+    // Resumen rápido
+    const totalEntries = Object.keys(cache).length;
+    const altaIncert = Object.values(cache).filter(v => v.flags.includes('alta_incertidumbre')).length;
+    const bajaData = Object.values(cache).filter(v => v.flags.includes('baja_data')).length;
+    alert(`Demanda ajustada calculada:\n\n• ${totalEntries} combinaciones tienda/GOA/talla\n• ${altaIncert} con alta incertidumbre (OOS > 40%)\n• ${bajaData} con baja data\n\nExporta el diagnóstico para ver detalle.`);
+  };
+
+  // Helper: obtener entrada del cache (con fallback a curvaModelo si tienda no tiene data)
+  const getAdjustedEntry = (centerCode, goa, talla) => {
+    const k = `${centerCode}|${goa.toUpperCase()}|${talla.toUpperCase()}`;
+    return adjustedDataCache[k] || null;
+  };
+
+  // Exportar diagnóstico CSV
+  const exportDiagnostic = () => {
+    if (!Object.keys(adjustedDataCache).length) {
+      alert('No hay datos de diagnóstico. Ejecuta "Calcular demanda ajustada" primero.');
+      return;
+    }
+    const headers = ['CENTRO', 'NOMBRE_TIENDA', 'GOA', 'TALLA', 'VENTAS_12M', 'VENTAS_3M', 'OH', 'OO', 'FILL_RATE', 'OOS_RATIO', 'DEMANDA_BASE_MENSUAL', 'DEMANDA_AJUSTADA_MENSUAL', 'CURVA_TIENDA', 'CURVA_MODELO', 'FLAGS'];
+    const rows = [headers.join(',')];
+    Object.entries(adjustedDataCache).forEach(([k, v]) => {
+      const [centro, goa, talla] = k.split('|');
+      const store = stores.find(s => s.centerCode === centro);
+      const nombre = store ? `"${(store.name || '').replace(/"/g, '""')}"` : '';
+      rows.push([centro, nombre, goa, talla, v.ventas12m, v.ventas3m, v.oh, v.oo, v.fillRate, v.oosRatio, v.demandaBase, v.demandaAjustada, v.curvaTienda, v.curvaModelo, `"${v.flags.join('|')}"`].join(','));
+    });
+    const blob = new Blob([rows.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `diagnostico_demanda_ajustada_${new Date().toISOString().slice(0, 10)}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(url);
+  };
+
   const processDistribution = () => {
     const results = [];
     const warnings = []; 
@@ -1116,17 +1306,40 @@ useEffect(() => {
       return { min: cfg?.min ?? 1.5, max: cfg?.max ?? 3 };
     };
 
-    // Ventas mensuales priorizando tendencia 3M (si > 0) sobre 12M
+    // Ventas mensuales priorizando tendencia 3M (si > 0) sobre 12M.
+    // Si seasonalMode[goa] === 'forward2m', devuelve el promedio mensual ESPERADO
+    // para los próximos 2 meses según la curva estacional retail Mx.
     const monthlySales = (storeObj, goaName, talla = null) => {
+      const mode = seasonalMode[goaName] || 'historic';
+      // Determinar venta anual base
+      let annualBase = 0;
       if (talla) {
         const key = `${goaName}|${talla}`;
-        const v3m = storeObj.goaSizeTrend3M?.[key] || 0;
-        if (v3m > 0) return v3m / 3;
-        return (storeObj.goaSizeSales?.[key] || 0) / 12;
+        annualBase = storeObj.goaSizeSales?.[key] || 0;
+        // si trend3M existe y modo es histórico, usar ese ritmo
+        if (mode === 'historic') {
+          const v3m = storeObj.goaSizeTrend3M?.[key] || 0;
+          if (v3m > 0) return v3m / 3;
+        }
+      } else {
+        annualBase = storeObj.goaSales?.[goaName] || 0;
+        if (mode === 'historic') {
+          const v3m = storeObj.goaTrend3M?.[goaName] || 0;
+          if (v3m > 0) return v3m / 3;
+        }
       }
-      const v3m = storeObj.goaTrend3M?.[goaName] || 0;
-      if (v3m > 0) return v3m / 3;
-      return (storeObj.goaSales?.[goaName] || 0) / 12;
+
+      const baseMonthly = annualBase / 12;
+
+      if (mode === 'forward2m') {
+        // Mes objetivo: forecastMonth (1-12) o mes actual + 1
+        const targetMonth0 = forecastMonth > 0
+          ? (forecastMonth - 1)
+          : ((new Date().getMonth() + 1) % 12);
+        const factor2m = seasonalSumNext(targetMonth0, 2) / 2; // promedio factor próximos 2 meses
+        return baseMonthly * factor2m;
+      }
+      return baseMonthly;
     };
 
     // Función para empujar resultado y actualizar OH dinámico
@@ -1272,14 +1485,25 @@ useEffect(() => {
         let pzasRest = qtyToDistribute;
         const safetyLimit = pzasRest * 100; // evitar loops infinitos
         let safety = 0;
+        const relaxLevels = [1.0, 1.2, 1.5, Infinity];
+        let relaxIdx = 0;
 
         while (pzasRest > 0 && safety < safetyLimit) {
-          // Candidatas: tiendas con MOS < mosMax (margen de seguridad)
+          const currentMosCap = relaxLevels[relaxIdx] === Infinity ? Infinity : mosMax * relaxLevels[relaxIdx];
+
+          // Candidatas: tiendas con MOS < cap dinámico
           const candidates = eligibleStores
             .map(s => ({ store: s, mos: computeMos(s), score: s.goaScores[goaName] }))
-            .filter(c => c.mos < mosMax);
+            .filter(c => c.mos < currentMosCap);
 
-          if (candidates.length === 0) break; // todas saturadas
+          if (candidates.length === 0) {
+            if (relaxIdx < relaxLevels.length - 1) {
+              relaxIdx++;
+              warnings.push(`[${item.sku}]: relajando MOS-cap a ${relaxLevels[relaxIdx] === Infinity ? '∞' : (mosMax * relaxLevels[relaxIdx]).toFixed(1) + 'm'} para colocar las ${pzasRest} pzs restantes.`);
+              continue;
+            }
+            break;
+          }
 
           // Priorizar por: cluster (mejor primero) y mos (menor primero)
           const clusterRank = {};
@@ -1309,7 +1533,7 @@ useEffect(() => {
           }
         });
         if (pzasRest > 0) {
-          warnings.push(`[${item.sku}]: ${pzasRest} pzs no asignadas. Todas las tiendas elegibles superan MOS objetivo (${mosMax}m).`);
+          warnings.push(`[${item.sku}]: ${pzasRest} pzs no pudieron colocarse incluso con MOS-cap ∞ (edge case). Revisar elegibilidad.`);
         }
       });
 
@@ -1335,111 +1559,453 @@ useEffect(() => {
     if (distMode === 'SKU') {
       const goaMarcaSummary = {};
 
-      chequera.forEach(item => {
-        const goaName = item.goa.toUpperCase();
-        const marcaKey = `${goaName}|${(item.marca || 'N/A').toUpperCase()}`;
-        const tallaKey = item.talla?.toUpperCase() || null;
-        let qtyToDistribute = parseInt(item.qty);
-        if (qtyToDistribute <= 0) return;
+      // Agrupar items por modelo+color+GOA: las tallas del mismo modelo viajan juntas
+      const byModel = {};
+      chequera.forEach(it => {
+        const k = `${it.modelo.toUpperCase()}|${it.goa.toUpperCase()}|${(it.color || '').toUpperCase()}`;
+        if (!byModel[k]) byModel[k] = [];
+        byModel[k].push(it);
+      });
 
-        const eligibleStores = filterEligible(item, goaName, stores);
+      Object.values(byModel).forEach(modelItems => {
+        const sample = modelItems[0];
+        const goaName = sample.goa.toUpperCase();
+        const marcaKey = `${goaName}|${(sample.marca || 'N/A').toUpperCase()}`;
+        const totalLote = modelItems.reduce((s, it) => s + parseInt(it.qty), 0);
+        if (totalLote <= 0) return;
+
+        const eligibleStores = filterEligible(sample, goaName, stores);
         if (eligibleStores.length === 0) {
-          warnings.push(`[${item.sku}]: sin tiendas elegibles tras matriz.`);
+          warnings.push(`[${sample.modelo}/${goaName}]: sin tiendas elegibles tras matriz.`);
           return;
         }
 
         const { min: mosMin, max: mosMax } = getMos(goaName);
+        const numTiendas = eligibleStores.length;
 
-        // Score combinado: prioridad a la talla específica, fallback a SKU, fallback a GOA
-        const getScore = (s) => {
-          if (tallaKey && tallaKey !== 'N/A' && s.goaSizeSales?.[`${goaName}|${tallaKey}`] > 0) {
-            return s.goaSizeSales[`${goaName}|${tallaKey}`];
-          }
-          if (s.skuSales?.[item.sku] > 0) return s.skuSales[item.sku];
-          return s.goaScores[goaName];
+        // --- Estado por talla: pzs restantes ---
+        const tallaState = {};
+        modelItems.forEach(it => {
+          const tl = (it.talla || 'UNICA').toUpperCase();
+          tallaState[tl] = { item: it, remaining: parseInt(it.qty), originalQty: parseInt(it.qty) };
+        });
+
+        // --- Estado dinámico por tienda ---
+        const storeState = new Map();
+        eligibleStores.forEach(s => {
+          storeState.set(s.centerCode, {
+            store: s,
+            assignedTotal: 0,
+            assignedBySize: {},
+          });
+        });
+
+        // --- Top 30% / Bottom 30% por score (para ajuste de target) ---
+        const sortedByScore = [...eligibleStores].sort((a, b) => (b.goaScores[goaName] || 0) - (a.goaScores[goaName] || 0));
+        const topN = Math.max(1, Math.ceil(sortedByScore.length * 0.3));
+        const bottomN = Math.max(1, Math.ceil(sortedByScore.length * 0.3));
+        const topSet = new Set(sortedByScore.slice(0, topN).map(s => s.centerCode));
+        const bottomSet = new Set(sortedByScore.slice(-bottomN).map(s => s.centerCode));
+
+        // Multiplicador por performance
+        const perfMult = (centerCode) => {
+          if (topSet.has(centerCode)) return 1.2;
+          if (bottomSet.has(centerCode)) return 0.8;
+          return 1.0;
         };
 
-        const computeMosSize = (store) => {
-          // MOS por talla específica si existe data, sino por GOA
-          if (tallaKey && tallaKey !== 'N/A') {
-            const key = `${goaName}|${tallaKey}`;
-            const oh = (store.goaSizeOH?.[key] || 0) + (dynamicOH[store.centerCode]?.[goaName] || 0) - (store.goaOH?.[goaName] || 0);
-            // Acumulación: oh actual de la talla + lo nuevo asignado al GOA (aprox)
-            const ohEff = (store.goaSizeOH?.[key] || 0) + ((dynamicSkuOH[store.centerCode]?.[item.sku] || 0) - (store.skuOH?.[item.sku] || 0));
-            const oo = store.goaSizeOO?.[key] || 0;
-            const ms = monthlySales(store, goaName, tallaKey);
-            if (ms <= 0) return ohEff + oo > 0 ? 999 : 0;
-            return (ohEff + oo) / ms;
+        // --- Helpers ---
+        const monthlySalesSize = (s, talla) => {
+          if (talla && talla !== 'UNICA' && talla !== 'N/A') {
+            return monthlySales(s, goaName, talla);
           }
-          const oh = dynamicOH[store.centerCode]?.[goaName] || 0;
-          const oo = store.goaOO?.[goaName] || 0;
-          const ms = monthlySales(store, goaName);
-          if (ms <= 0) return oh + oo > 0 ? 999 : 0;
-          return (oh + oo) / ms;
+          return monthlySales(s, goaName);
         };
 
-        // Ordenar tiendas por score desc inicialmente
-        const ranked = [...eligibleStores]
-          .map(s => ({ store: s, score: getScore(s) }))
-          .filter(x => x.score > 0)
-          .sort((a, b) => b.score - a.score);
+        // Forecast 2m (cuando exista). Por ahora usa venta mensual × 2 (proxy).
+        const forecast2m = (s, talla) => {
+          // Hook para futuro: s.goaSizeForecast2M?.[`${goaName}|${talla}`]
+          const f = talla && talla !== 'UNICA'
+            ? (s.goaSizeForecast2M?.[`${goaName}|${talla}`] || 0)
+            : (s.goaForecast2M?.[goaName] || 0);
+          if (f > 0) return f;
+          return monthlySalesSize(s, talla) * 2;
+        };
 
-        if (ranked.length === 0) {
-          warnings.push(`[${item.sku}]: sin tiendas con venta histórica para talla ${tallaKey || 'N/A'}. Se omite.`);
-          return;
-        }
+        // Target por tienda+talla (siguiendo tu spec)
+        const computeTarget = (s, talla) => {
+          const ms = monthlySalesSize(s, talla);
 
-        let pzasRest = qtyToDistribute;
-        let cursor = 0;
-        const safetyLimit = pzasRest * 100;
-        let safety = 0;
-
-        while (pzasRest > 0 && safety < safetyLimit) {
-          if (cursor >= ranked.length) cursor = 0;
-          const start = cursor;
-          let asignada = false;
-
-          // Buscar la siguiente tienda en orden con MOS sano
-          do {
-            const cand = ranked[cursor];
-            const mos = computeMosSize(cand.store);
-            if (mos < mosMax) {
-              // Decidir cuántas pzs darle de un golpe: hasta llegar al MOS objetivo (mosMax) o al min, lo que sea menor
-              const ms = monthlySales(cand.store, goaName, tallaKey);
-              const ohEff = tallaKey && tallaKey !== 'N/A'
-                ? (cand.store.goaSizeOH?.[`${goaName}|${tallaKey}`] || 0) + ((dynamicSkuOH[cand.store.centerCode]?.[item.sku] || 0) - (cand.store.skuOH?.[item.sku] || 0))
-                : (dynamicOH[cand.store.centerCode]?.[goaName] || 0);
-              const oo = tallaKey && tallaKey !== 'N/A' ? (cand.store.goaSizeOO?.[`${goaName}|${tallaKey}`] || 0) : (cand.store.goaOO?.[goaName] || 0);
-              const targetOH = ms * mosMax;
-              const headroom = Math.max(1, Math.floor(targetOH - ohEff - oo));
-              const give = Math.min(headroom, pzasRest);
-              pushResult(cand.store.centerCode, give, item, goaName, eligibleStores);
-              pzasRest -= give;
-              asignada = true;
-              cursor++; // mover a siguiente tienda para no concentrar todo en una
-              break;
+          // Demanda ajustada (corrección OOS) toma prioridad si está activa
+          let baseDemand = ms;
+          let usedAdjusted = false;
+          if (useAdjustedDemand) {
+            const adj = getAdjustedEntry(s.centerCode, goaName, talla);
+            if (adj && adj.demandaAjustada > 0) {
+              baseDemand = adj.demandaAjustada; // ya está en mensual
+              usedAdjusted = true;
             }
-            cursor++;
-            if (cursor >= ranked.length) cursor = 0;
-          } while (cursor !== start);
+          }
 
-          if (!asignada) break; // ninguna tienda con MOS sano
-          safety++;
+          // Forecast 2m (si existe) toma prioridad sobre histórico crudo, pero NO sobre ajustada
+          if (!usedAdjusted) {
+            const hasForecast = (talla && talla !== 'UNICA'
+              ? (s.goaSizeForecast2M?.[`${goaName}|${talla}`] || 0)
+              : (s.goaForecast2M?.[goaName] || 0)) > 0;
+            if (hasForecast) {
+              baseDemand = forecast2m(s, talla) / 2; // mensual eq.
+            }
+          }
+
+          let target = baseDemand * mosMax;
+          target *= perfMult(s.centerCode);
+
+          // Caps de target (siempre referenciados a venta mensual histórica para no salirnos de la realidad)
+          const refMs = ms > 0 ? ms : baseDemand;
+          const upperCap = refMs * mosMax * 1.2;
+          const lowerCap = refMs * mosMin;
+          target = Math.min(target, upperCap);
+          target = Math.max(target, lowerCap);
+
+          return target;
+        };
+
+        // OH+OO efectivo por tienda+talla (incluye lo ya asignado en esta corrida)
+        const effectiveOnHand = (s, talla) => {
+          const key = `${goaName}|${talla}`;
+          const stState = storeState.get(s.centerCode);
+          const baseSizeOH = (talla && talla !== 'UNICA' && talla !== 'N/A')
+            ? (s.goaSizeOH?.[key] || 0)
+            : (dynamicOH[s.centerCode]?.[goaName] || 0);
+          const oo = (talla && talla !== 'UNICA' && talla !== 'N/A')
+            ? (s.goaSizeOO?.[key] || 0)
+            : (s.goaOO?.[goaName] || 0);
+          const yaAsignado = stState.assignedBySize[talla] || 0;
+          return baseSizeOH + oo + yaAsignado;
+        };
+
+        const computeMos = (s, talla) => {
+          const ms = monthlySalesSize(s, talla);
+          const onHand = effectiveOnHand(s, talla);
+          if (ms <= 0) return onHand > 0 ? 999 : 0;
+          return onHand / ms;
+        };
+
+        // Cap de diversificación (reusa lógica existente)
+        const computeDivCap = (s, talla, capModelMultiplier = 1.0) => {
+          const stState = storeState.get(s.centerCode);
+          const tallaQty = tallaState[talla].originalQty;
+          const capModelStore = Math.max(1, Math.ceil((tallaQty / numTiendas) * 1.5 * capModelMultiplier));
+          const ms = monthlySalesSize(s, talla);
+          const capSell = Math.max(1, Math.ceil(ms));
+          const capPct = Math.max(1, Math.ceil(totalLote * 0.30));
+
+          const yaTalla = stState.assignedBySize[talla] || 0;
+          const yaTotal = stState.assignedTotal;
+
+          return Math.min(
+            Math.max(0, capModelStore - yaTalla),
+            Math.max(0, capSell - yaTalla),
+            Math.max(0, capPct - yaTotal)
+          );
+        };
+
+        const headroomMos = (s, talla, mosCapFactor = 1.0) => {
+          const ms = monthlySalesSize(s, talla);
+          const targetOH = ms * mosMax * mosCapFactor;
+          return Math.max(0, Math.floor(targetOH - effectiveOnHand(s, talla)));
+        };
+
+        const assignChunk = (s, talla, qty) => {
+          if (qty <= 0) return 0;
+          const stState = storeState.get(s.centerCode);
+          const realQty = Math.min(qty, tallaState[talla].remaining);
+          if (realQty <= 0) return 0;
+          stState.assignedTotal += realQty;
+          stState.assignedBySize[talla] = (stState.assignedBySize[talla] || 0) + realQty;
+          tallaState[talla].remaining -= realQty;
+          pushResult(s.centerCode, realQty, tallaState[talla].item, goaName, eligibleStores);
+          return realQty;
+        };
+
+        // ====================================================================
+        // ITERACIÓN PROPORCIONAL POR GAP
+        // ====================================================================
+        const proportionalRound = (capModelMultiplier, mosCapFactor) => {
+          // 1) Calcular gap por tienda+talla y gap_model por tienda
+          const gapsByStore = []; // [{ store, gapByTalla: {tl: gap}, gapModel }]
+          eligibleStores.forEach(s => {
+            const gapByTalla = {};
+            let gapModel = 0;
+            Object.keys(tallaState).forEach(tl => {
+              if (tallaState[tl].remaining <= 0) return;
+              const target = computeTarget(s, tl);
+              const onHand = effectiveOnHand(s, tl);
+              const gap = Math.max(0, target - onHand);
+              gapByTalla[tl] = gap;
+              gapModel += gap;
+            });
+            if (gapModel > 0) gapsByStore.push({ store: s, gapByTalla, gapModel });
+          });
+
+          if (gapsByStore.length === 0) return 0;
+
+          const totalGapModel = gapsByStore.reduce((sum, g) => sum + g.gapModel, 0);
+          if (totalGapModel <= 0) return 0;
+
+          // 2) Inventario disponible total del modelo
+          const inventarioTotal = Object.values(tallaState).reduce((s, t) => s + t.remaining, 0);
+          if (inventarioTotal <= 0) return 0;
+
+          // 3) Asignación base por tienda (proporcional al gap_model)
+          //    Pero la asignación por talla dentro respeta gap_talla y disponibilidad
+          let asignadasEsteRound = 0;
+
+          // Calcular peso y target de pzs por tienda
+          const allocPlan = gapsByStore.map(g => ({
+            store: g.store,
+            gapByTalla: g.gapByTalla,
+            gapModel: g.gapModel,
+            peso: g.gapModel / totalGapModel,
+            targetPzs: 0,
+            asignadaPorTalla: {},
+          }));
+          allocPlan.forEach(p => {
+            p.targetPzs = p.peso * inventarioTotal;
+          });
+
+          // Largest remainder para que la suma cuadre
+          let assignedAccum = 0;
+          allocPlan.forEach(p => {
+            p.targetPzsFloor = Math.floor(p.targetPzs);
+            p.frac = p.targetPzs - p.targetPzsFloor;
+            assignedAccum += p.targetPzsFloor;
+          });
+          let restoEnteros = inventarioTotal - assignedAccum;
+          // Repartir resto a los de mayor fracción
+          [...allocPlan].sort((a, b) => b.frac - a.frac).forEach(p => {
+            if (restoEnteros <= 0) return;
+            p.targetPzsFloor++;
+            restoEnteros--;
+          });
+
+          // 4) Para cada tienda en el plan: distribuir entre tallas según gap_talla,
+          //    respetando caps y disponibilidad
+          allocPlan.forEach(plan => {
+            let pzasParaTienda = plan.targetPzsFloor;
+            if (pzasParaTienda <= 0) return;
+
+            // Aplicar cap real: min entre target proporcional, cap_div, headroom
+            // Pero el cap_div / headroom es por talla, así que iteramos.
+            // Estrategia: split por gap_talla entre tallas activas, con ajuste de curva
+            const tallasGap = Object.entries(plan.gapByTalla)
+              .filter(([tl, gap]) => gap > 0 && tallaState[tl].remaining > 0)
+              .sort((a, b) => b[1] - a[1]); // mayor gap primero
+
+            if (tallasGap.length === 0) return;
+
+            // --- Curva ideal: del modal (idealCurves) o derivada del cache de demanda ajustada o uniforme
+            const modelKey = `${sample.modelo.toUpperCase()}|${goaName}|${(sample.color || '').toUpperCase()}`;
+            const userIdealCurve = idealCurves[modelKey] || null;
+            const stState = storeState.get(plan.store.centerCode);
+            const totalAsignadoTienda = stState.assignedTotal || 0;
+
+            const tallasActivas = tallasGap.map(([tl]) => tl);
+
+            // Curva ideal normalizada
+            const curvaIdeal = {};
+            if (userIdealCurve) {
+              const sumIdeal = tallasActivas.reduce((s, tl) => s + (userIdealCurve[tl] || 0), 0);
+              tallasActivas.forEach(tl => {
+                curvaIdeal[tl] = sumIdeal > 0 ? (userIdealCurve[tl] || 0) / sumIdeal : 1 / tallasActivas.length;
+              });
+            } else {
+              // Fallback: curva del cache de demanda ajustada (curvaModelo) si está
+              const adjShare = {};
+              let sumShare = 0;
+              tallasActivas.forEach(tl => {
+                const adj = useAdjustedDemand ? getAdjustedEntry(plan.store.centerCode, goaName, tl) : null;
+                const v = adj ? adj.curvaModelo : 0;
+                adjShare[tl] = v;
+                sumShare += v;
+              });
+              if (sumShare > 0) {
+                tallasActivas.forEach(tl => { curvaIdeal[tl] = adjShare[tl] / sumShare; });
+              } else {
+                tallasActivas.forEach(tl => { curvaIdeal[tl] = 1 / tallasActivas.length; });
+              }
+            }
+
+            // Curva real (dinámica): asignado_talla / total_asignado en esta tienda para este modelo
+            const curvaReal = {};
+            tallasActivas.forEach(tl => {
+              curvaReal[tl] = totalAsignadoTienda > 0
+                ? (stState.assignedBySize[tl] || 0) / totalAsignadoTienda
+                : 0;
+            });
+
+            // Peso final por talla = gap_talla × ajuste_curva
+            const totalGapStore = tallasGap.reduce((s, [, g]) => s + g, 0);
+            const pesosAjustados = {};
+            let sumPesos = 0;
+            tallasGap.forEach(([tl, gap]) => {
+              const ajusteCurva = useAdjustedDemand
+                ? Math.max(0.5, Math.min(1.5, 1 + alpha * (curvaIdeal[tl] - curvaReal[tl])))
+                : 1;
+              const peso = (gap / totalGapStore) * ajusteCurva;
+              pesosAjustados[tl] = peso;
+              sumPesos += peso;
+            });
+            // Re-normalizar
+            tallasActivas.forEach(tl => {
+              pesosAjustados[tl] = sumPesos > 0 ? pesosAjustados[tl] / sumPesos : 1 / tallasActivas.length;
+            });
+
+            // Repartir pzasParaTienda entre tallas según pesos ajustados
+            const pzasPorTalla = {};
+            let acumPzs = 0;
+            tallasActivas.forEach((tl, idx) => {
+              if (idx === tallasActivas.length - 1) {
+                pzasPorTalla[tl] = pzasParaTienda - acumPzs;
+              } else {
+                const ideal = Math.floor(pesosAjustados[tl] * pzasParaTienda);
+                pzasPorTalla[tl] = ideal;
+                acumPzs += ideal;
+              }
+            });
+
+            // Asignar respetando caps
+            let sobranteTienda = 0;
+            tallasActivas.forEach(tl => {
+              let pedido = pzasPorTalla[tl] || 0;
+              if (pedido <= 0) return;
+              const cap = computeDivCap(plan.store, tl, capModelMultiplier);
+              const head = headroomMos(plan.store, tl, mosCapFactor);
+              const limite = Math.min(cap, head, tallaState[tl].remaining);
+              const real = Math.min(pedido, limite);
+              if (real > 0) {
+                assignChunk(plan.store, tl, real);
+                asignadasEsteRound += real;
+                plan.asignadaPorTalla[tl] = real;
+              }
+              if (pedido > real) sobranteTienda += pedido - real;
+            });
+
+            // Si sobró por tope de cap/headroom en alguna talla, intentar redistribuir
+            // a otras tallas DENTRO de la misma tienda (con gap > 0)
+            if (sobranteTienda > 0) {
+              const otrasTallas = Object.keys(tallaState).filter(tl => tallaState[tl].remaining > 0);
+              for (const tl of otrasTallas) {
+                if (sobranteTienda <= 0) break;
+                const cap = computeDivCap(plan.store, tl, capModelMultiplier);
+                const head = headroomMos(plan.store, tl, mosCapFactor);
+                const limite = Math.min(cap, head, tallaState[tl].remaining, sobranteTienda);
+                if (limite > 0) {
+                  assignChunk(plan.store, tl, limite);
+                  asignadasEsteRound += limite;
+                  sobranteTienda -= limite;
+                }
+              }
+            }
+          });
+
+          return asignadasEsteRound;
+        };
+
+        // ====================================================================
+        // RESIDUAL: round-robin con chunks pequeños
+        // ====================================================================
+        const residualRoundRobin = (capModelMultiplier, mosCapFactor) => {
+          let asignadas = 0;
+          let pzasPendientes = Object.values(tallaState).reduce((s, t) => s + t.remaining, 0);
+          if (pzasPendientes <= 0) return 0;
+
+          let safety = 0;
+          const maxIter = pzasPendientes * 5;
+
+          while (pzasPendientes > 0 && safety < maxIter) {
+            let progreso = false;
+            const tallasOrdenadas = Object.keys(tallaState)
+              .filter(tl => tallaState[tl].remaining > 0)
+              .sort((a, b) => tallaState[b].remaining - tallaState[a].remaining);
+
+            for (const talla of tallasOrdenadas) {
+              if (tallaState[talla].remaining <= 0) continue;
+
+              // Tiendas con gap > 0 para esta talla, ranked por gap desc
+              const candidatas = eligibleStores
+                .map(s => ({
+                  store: s,
+                  gap: Math.max(0, computeTarget(s, talla) - effectiveOnHand(s, talla)),
+                }))
+                .filter(c => c.gap > 0)
+                .sort((a, b) => b.gap - a.gap);
+
+              for (const { store } of candidatas) {
+                if (tallaState[talla].remaining <= 0) break;
+                const cap = computeDivCap(store, talla, capModelMultiplier);
+                const head = headroomMos(store, talla, mosCapFactor);
+                const give = Math.min(1, cap, head, tallaState[talla].remaining);
+                if (give > 0) {
+                  assignChunk(store, talla, give);
+                  asignadas++;
+                  pzasPendientes--;
+                  progreso = true;
+                }
+              }
+            }
+            if (!progreso) break;
+            safety++;
+          }
+          return asignadas;
+        };
+
+        // ====================================================================
+        // EJECUCIÓN: 1 iteración proporcional + 2 ajuste con caps relajados + residual round-robin
+        // ====================================================================
+        proportionalRound(1.0, 1.0); // base
+        let pendientes = Object.values(tallaState).reduce((s, t) => s + t.remaining, 0);
+
+        if (pendientes > 0) {
+          proportionalRound(1.2, 1.0); // +20% cap divers
+          pendientes = Object.values(tallaState).reduce((s, t) => s + t.remaining, 0);
+        }
+        if (pendientes > 0) {
+          proportionalRound(1.4, 1.0); // +40% cap divers
+          pendientes = Object.values(tallaState).reduce((s, t) => s + t.remaining, 0);
+        }
+        if (pendientes > 0) {
+          // Residual: round-robin con MOS hasta 1.20× (top performers implícito por gap)
+          residualRoundRobin(1.4, 1.20);
+          pendientes = Object.values(tallaState).reduce((s, t) => s + t.remaining, 0);
+        }
+        if (pendientes > 0) {
+          // Última pasada: cap absoluto MOS 1.30×
+          residualRoundRobin(1.6, 1.30);
+          pendientes = Object.values(tallaState).reduce((s, t) => s + t.remaining, 0);
         }
 
+        // Residual no asignable: warning sin forzar
+        const residual = Object.entries(tallaState).filter(([_, t]) => t.remaining > 0);
+        if (residual.length > 0) {
+          residual.forEach(([talla, t]) => {
+            warnings.push(`[${sample.modelo}/${talla}]: ${t.remaining} pzs no asignables. Tiendas alcanzaron caps de diversificación o MOS extendido (1.3×). Revisa MOS objetivo o reduce compra.`);
+          });
+        }
+
+        // Tracking sobre-inventariadas para alertas (>20%)
         if (!goaMarcaSummary[marcaKey]) {
-          goaMarcaSummary[marcaKey] = { goa: goaName, marca: item.marca || 'N/A', total: 0, over: [] };
+          goaMarcaSummary[marcaKey] = { goa: goaName, marca: sample.marca || 'N/A', total: 0, over: [] };
         }
+        const tallasModel = Object.keys(tallaState);
         eligibleStores.forEach(s => {
           goaMarcaSummary[marcaKey].total++;
-          const mos = computeMosSize(s);
-          if (mos > mosMax) {
-            goaMarcaSummary[marcaKey].over.push({ centro: s.centerCode, name: s.name, mos: mos.toFixed(1) });
+          const isOver = tallasModel.some(tl => computeMos(s, tl) > mosMax);
+          if (isOver) {
+            const worstMos = Math.max(...tallasModel.map(tl => computeMos(s, tl)));
+            goaMarcaSummary[marcaKey].over.push({ centro: s.centerCode, name: s.name, mos: worstMos.toFixed(1) });
           }
         });
-        if (pzasRest > 0) {
-          warnings.push(`[${item.sku}]: ${pzasRest} pzs no asignadas. Todas las tiendas elegibles superan MOS objetivo (${mosMax}m) en talla ${tallaKey}.`);
-        }
       });
 
       Object.values(goaMarcaSummary).forEach(s => {
@@ -1941,41 +2507,195 @@ useEffect(() => {
                     <p className={`text-sm ${t.textMain}`}>Carga primero la base de tiendas o agrega items a la chequera.</p>
                   </div>
                 ) : (
-                  <table className="w-full text-left">
-                    <thead>
-                      <tr className={`text-[10px] uppercase tracking-wider ${t.textMuted}`}>
-                        <th className="p-2">GOA</th>
-                        <th className="p-2 text-center">MOS Mínimo</th>
-                        <th className="p-2 text-center">MOS Máximo (cap)</th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {allGoas.map(goa => {
-                        const cfg = mosTarget[goa] || { min: 1.5, max: 3 };
-                        return (
-                          <tr key={goa} className={`border-t ${theme==='dark'?'border-zinc-800':'border-gray-200'}`}>
-                            <td className="p-2">
-                              <span className={`px-2 py-1 rounded text-xs font-black ${theme==='dark'?'bg-emerald-900/30 text-emerald-400':'bg-emerald-50 text-emerald-700'}`}>{goa}</span>
-                            </td>
-                            <td className="p-2">
-                              <input type="number" min="0" step="0.5" value={cfg.min} onChange={e => updateMos(goa, 'min', e.target.value)} className={`w-24 mx-auto block p-1.5 rounded border text-xs text-center font-mono outline-none ${t.input}`}/>
-                            </td>
-                            <td className="p-2">
-                              <input type="number" min="0" step="0.5" value={cfg.max} onChange={e => updateMos(goa, 'max', e.target.value)} className={`w-24 mx-auto block p-1.5 rounded border text-xs text-center font-mono outline-none ${t.input}`}/>
-                            </td>
-                          </tr>
-                        );
-                      })}
-                    </tbody>
-                  </table>
+                  <>
+                    {/* Mes objetivo del envío */}
+                    <div className={`mb-4 p-3 rounded-lg border flex items-center gap-3 flex-wrap ${theme==='dark'?'bg-purple-950/30 border-purple-800/50':'bg-purple-50 border-purple-200'}`}>
+                      <div className="flex items-center gap-2">
+                        <Icons.Activity size={14} className={theme==='dark'?'text-purple-300':'text-purple-700'}/>
+                        <span className={`text-xs font-bold ${t.textMain}`}>Mes objetivo del envío:</span>
+                      </div>
+                      <select value={forecastMonth} onChange={e => setForecastMonth(parseInt(e.target.value))} className={`px-2 py-1 rounded border text-xs outline-none ${t.input}`}>
+                        <option value="0">Mes actual + 1 (auto)</option>
+                        <option value="1">Enero</option><option value="2">Febrero</option><option value="3">Marzo</option>
+                        <option value="4">Abril</option><option value="5">Mayo (Madres)</option><option value="6">Junio</option>
+                        <option value="7">Julio (Vacaciones)</option><option value="8">Agosto (Regreso a clases)</option><option value="9">Septiembre</option>
+                        <option value="10">Octubre</option><option value="11">Noviembre (Buen Fin)</option><option value="12">Diciembre (Pico)</option>
+                      </select>
+                      <span className={`text-[10px] ${t.textMuted}`}>Aplica solo a GOAs en modo "Forward 2m".</span>
+                    </div>
+
+                    <table className="w-full text-left">
+                      <thead>
+                        <tr className={`text-[10px] uppercase tracking-wider ${t.textMuted}`}>
+                          <th className="p-2">GOA</th>
+                          <th className="p-2 text-center">MOS Mín</th>
+                          <th className="p-2 text-center">MOS Máx (cap)</th>
+                          <th className="p-2 text-center">Modo cálculo</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {allGoas.map(goa => {
+                          const cfg = mosTarget[goa] || { min: 1.5, max: 3 };
+                          const mode = seasonalMode[goa] || 'historic';
+                          return (
+                            <tr key={goa} className={`border-t ${theme==='dark'?'border-zinc-800':'border-gray-200'}`}>
+                              <td className="p-2">
+                                <span className={`px-2 py-1 rounded text-xs font-black ${theme==='dark'?'bg-emerald-900/30 text-emerald-400':'bg-emerald-50 text-emerald-700'}`}>{goa}</span>
+                              </td>
+                              <td className="p-2">
+                                <input type="number" min="0" step="0.5" value={cfg.min} onChange={e => updateMos(goa, 'min', e.target.value)} className={`w-20 mx-auto block p-1.5 rounded border text-xs text-center font-mono outline-none ${t.input}`}/>
+                              </td>
+                              <td className="p-2">
+                                <input type="number" min="0" step="0.5" value={cfg.max} onChange={e => updateMos(goa, 'max', e.target.value)} className={`w-20 mx-auto block p-1.5 rounded border text-xs text-center font-mono outline-none ${t.input}`}/>
+                              </td>
+                              <td className="p-2 text-center">
+                                <select value={mode} onChange={e => setSeasonalMode(prev => ({...prev, [goa]: e.target.value}))} className={`px-2 py-1 rounded border text-[10px] outline-none ${t.input}`}>
+                                  <option value="historic">Histórico (anual/12)</option>
+                                  <option value="forward2m">Forward 2m (estacional)</option>
+                                </select>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </>
                 )}
 
                 <div className={`mt-4 p-3 rounded-lg text-[11px] ${theme==='dark'?'bg-zinc-800/50 text-gray-400':'bg-gray-50 text-gray-600'}`}>
-                  <strong>Cómo se calcula:</strong> MOS = (OH + OO) / venta_mensual. Si la columna VTA3M está en el CSV, se usa <em>venta últimos 3M / 3</em> en lugar de venta anual / 12 (más sensible a tendencia).
+                  <strong>Histórico:</strong> MOS = (OH+OO) / (venta_anual/12). Usa VTA3M si está disponible.<br/>
+                  <strong>Forward 2m:</strong> MOS = (OH+OO) / venta_esperada_próximos_2m. Aplica curva estacional retail Mx (mayo, agosto, nov-dic = picos). Útil cuando compras para temporada alta y el histórico subestima el ritmo real.
+                </div>
+
+                <div className={`mt-4 p-4 rounded-lg border ${theme==='dark'?'bg-violet-950/20 border-violet-500/30':'bg-violet-50 border-violet-200'}`}>
+                  <div className="flex items-center justify-between mb-3">
+                    <h4 className={`text-sm font-black ${theme==='dark'?'text-violet-300':'text-violet-700'}`}>Demanda Ajustada por OOS (solo Size Level)</h4>
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input type="checkbox" checked={useAdjustedDemand} onChange={e => setUseAdjustedDemand(e.target.checked)} className="rounded"/>
+                      <span className={`text-xs font-bold ${t.textMain}`}>{useAdjustedDemand ? 'Activado' : 'Desactivado'}</span>
+                    </label>
+                  </div>
+                  <p className={`text-[11px] mb-3 ${t.textMuted}`}>Corrige sesgo por falta de inventario: si una talla tuvo bajo OH, su venta histórica subestima la demanda real. Ajusta la demanda y la curva de tallas.</p>
+                  
+                  {useAdjustedDemand && (
+                    <div className="flex items-center gap-3">
+                      <span className={`text-xs ${t.textMain}`}>α (alpha):</span>
+                      <input type="range" min="0.1" max="0.5" step="0.05" value={alpha} onChange={e => setAlpha(parseFloat(e.target.value))} className="flex-1"/>
+                      <span className={`text-xs font-mono font-bold w-12 text-right ${t.textAccent2}`}>{alpha.toFixed(2)}</span>
+                    </div>
+                  )}
+                  {useAdjustedDemand && (
+                    <p className={`text-[10px] mt-2 ${t.textMuted}`}>α controla cuánto se corrige la curva real hacia la curva ideal del modelo. Bajo (0.1-0.2) = poco impacto. Alto (0.4-0.5) = mucho. Recomendado: 0.3.</p>
+                  )}
                 </div>
 
                 <div className="flex justify-end gap-2 mt-5">
                   <button onClick={() => setShowMosModal(false)} className={`px-4 py-2 rounded-lg text-sm font-bold ${t.btnGhost}`}>Cerrar</button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
+        {/* MODAL: Diagnóstico de demanda ajustada */}
+        {showDiagModal && (() => {
+          const cacheEntries = Object.entries(adjustedDataCache);
+          const totalEntries = cacheEntries.length;
+          const altaIncert = cacheEntries.filter(([_, v]) => v.flags.includes('alta_incertidumbre')).length;
+          const bajaData = cacheEntries.filter(([_, v]) => v.flags.includes('baja_data')).length;
+          const sinAct = cacheEntries.filter(([_, v]) => v.flags.includes('sin_actividad')).length;
+          const avgFillRate = totalEntries > 0 ? cacheEntries.reduce((s, [_, v]) => s + v.fillRate, 0) / totalEntries : 0;
+          const avgOosRatio = totalEntries > 0 ? cacheEntries.reduce((s, [_, v]) => s + v.oosRatio, 0) / totalEntries : 0;
+
+          // Top 10 tallas con mayor OOS (potencialmente subestimadas)
+          const topOOS = [...cacheEntries]
+            .sort((a, b) => b[1].oosRatio - a[1].oosRatio)
+            .slice(0, 10);
+
+          return (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+              <div className={`w-full max-w-3xl max-h-[90vh] overflow-auto rounded-2xl border shadow-2xl p-6 ${theme==='dark'?'bg-zinc-900 border-zinc-800':'bg-white border-gray-200'}`}>
+                <div className="flex justify-between items-center mb-4">
+                  <div>
+                    <h3 className={`text-lg font-black flex items-center ${t.textMain}`}>
+                      <Icons.Layers size={20} className="mr-2 text-blue-500"/> Diagnóstico de Demanda Ajustada
+                    </h3>
+                    <p className={`text-xs mt-1 ${t.textMuted}`}>Resumen del cálculo de fill_rate, OOS y demanda corregida.</p>
+                  </div>
+                  <button onClick={() => setShowDiagModal(false)} className="text-gray-500 hover:text-red-500"><Icons.X size={20} /></button>
+                </div>
+
+                {totalEntries === 0 ? (
+                  <div className={`p-8 text-center rounded-xl border ${t.cardInner}`}>
+                    <Icons.AlertCircle size={32} className="mx-auto mb-3 text-amber-500"/>
+                    <p className={`text-sm ${t.textMain}`}>No hay datos. Ejecuta "Recalcular Demanda" primero.</p>
+                  </div>
+                ) : (
+                  <>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
+                      <div className={`p-3 rounded-lg border ${t.cardInner}`}>
+                        <p className={`text-[10px] uppercase tracking-wider ${t.textMuted}`}>Combinaciones</p>
+                        <p className={`text-xl font-black ${t.textMain}`}>{totalEntries.toLocaleString()}</p>
+                      </div>
+                      <div className={`p-3 rounded-lg border ${t.cardInner}`}>
+                        <p className={`text-[10px] uppercase tracking-wider ${t.textMuted}`}>Fill rate prom.</p>
+                        <p className={`text-xl font-black text-emerald-500`}>{(avgFillRate * 100).toFixed(1)}%</p>
+                      </div>
+                      <div className={`p-3 rounded-lg border ${t.cardInner}`}>
+                        <p className={`text-[10px] uppercase tracking-wider ${t.textMuted}`}>OOS prom.</p>
+                        <p className={`text-xl font-black text-red-500`}>{(avgOosRatio * 100).toFixed(1)}%</p>
+                      </div>
+                      <div className={`p-3 rounded-lg border ${t.cardInner}`}>
+                        <p className={`text-[10px] uppercase tracking-wider ${t.textMuted}`}>Alertas</p>
+                        <p className={`text-xl font-black text-amber-500`}>{altaIncert + bajaData + sinAct}</p>
+                      </div>
+                    </div>
+
+                    <div className={`p-3 rounded-lg border mb-4 ${t.cardInner}`}>
+                      <h4 className={`text-xs font-bold mb-2 ${t.textMain}`}>Flags detectados</h4>
+                      <div className="flex flex-wrap gap-2 text-xs">
+                        <span className={`px-2 py-1 rounded ${theme==='dark'?'bg-amber-900/30 text-amber-400':'bg-amber-50 text-amber-700'}`}>Alta incertidumbre (OOS &gt; 40%): <strong>{altaIncert}</strong></span>
+                        <span className={`px-2 py-1 rounded ${theme==='dark'?'bg-zinc-800 text-gray-400':'bg-gray-100 text-gray-600'}`}>Baja data: <strong>{bajaData}</strong></span>
+                        <span className={`px-2 py-1 rounded ${theme==='dark'?'bg-zinc-800 text-gray-400':'bg-gray-100 text-gray-600'}`}>Sin actividad: <strong>{sinAct}</strong></span>
+                      </div>
+                    </div>
+
+                    <div className={`p-3 rounded-lg border mb-4 ${t.cardInner}`}>
+                      <h4 className={`text-xs font-bold mb-2 ${t.textMain}`}>Top 10 OOS (potencialmente subestimadas)</h4>
+                      <table className="w-full text-[11px]">
+                        <thead className={`${t.textMuted}`}>
+                          <tr>
+                            <th className="text-left p-1">Centro</th>
+                            <th className="text-left p-1">GOA / Talla</th>
+                            <th className="text-right p-1">OOS</th>
+                            <th className="text-right p-1">Vta 3M</th>
+                            <th className="text-right p-1">Demanda Aj.</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {topOOS.map(([k, v], i) => {
+                            const [centro, goa, talla] = k.split('|');
+                            return (
+                              <tr key={i} className={`border-t ${theme==='dark'?'border-zinc-800':'border-gray-200'}`}>
+                                <td className={`p-1 ${t.textMain}`}>{centro}</td>
+                                <td className={`p-1 ${t.textMain}`}>{goa} / {talla}</td>
+                                <td className="p-1 text-right font-mono text-red-500">{(v.oosRatio * 100).toFixed(0)}%</td>
+                                <td className="p-1 text-right font-mono">{v.ventas3m}</td>
+                                <td className="p-1 text-right font-mono text-emerald-500">{v.demandaAjustada}</td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                  </>
+                )}
+
+                <div className="flex justify-between items-center gap-2 mt-5">
+                  <button onClick={exportDiagnostic} disabled={totalEntries === 0} className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center ${totalEntries === 0 ? 'opacity-40 cursor-not-allowed' : ''} ${theme==='dark'?'bg-blue-900/40 text-blue-300 border border-blue-500/50 hover:bg-blue-900/60':'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100'}`}>
+                    <Icons.Download size={14} className="mr-1.5"/> Exportar Diagnóstico (CSV)
+                  </button>
+                  <button onClick={() => setShowDiagModal(false)} className={`px-4 py-2 rounded-lg text-sm font-bold ${t.btnGhost}`}>Cerrar</button>
                 </div>
               </div>
             </div>
@@ -2558,6 +3278,17 @@ useEffect(() => {
                     <button onClick={() => setShowMosModal(true)} className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center transition-all ${theme==='dark'?'bg-emerald-900/30 text-emerald-400 border border-emerald-500/50 hover:bg-emerald-900/50':'bg-emerald-50 text-emerald-700 border border-emerald-200 hover:bg-emerald-100'}`}>
                       <Icons.Settings size={14} className="mr-1.5"/> Configurar MOS Objetivo
                     </button>
+                  )}
+
+                  {distMode === 'SKU' && (
+                    <>
+                      <button onClick={computeAdjustedDemand} className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center transition-all ${adjustedDataStale ? (theme==='dark'?'bg-red-900/40 text-red-300 border border-red-500/60':'bg-red-50 text-red-700 border border-red-300') : (theme==='dark'?'bg-violet-900/30 text-violet-400 border border-violet-500/50 hover:bg-violet-900/50':'bg-violet-50 text-violet-700 border border-violet-200 hover:bg-violet-100')}`} title={adjustedDataStale ? 'Datos cambiaron, recalcula' : 'Recalcular demanda ajustada'}>
+                        <Icons.Activity size={14} className="mr-1.5"/> {adjustedDataStale ? 'Recalcular ⚠' : 'Recalcular Demanda'} 
+                      </button>
+                      <button onClick={() => setShowDiagModal(true)} className={`px-4 py-2 rounded-lg text-xs font-bold flex items-center transition-all ${theme==='dark'?'bg-blue-900/30 text-blue-400 border border-blue-500/50 hover:bg-blue-900/50':'bg-blue-50 text-blue-700 border border-blue-200 hover:bg-blue-100'}`}>
+                        <Icons.Layers size={14} className="mr-1.5"/> Diagnóstico
+                      </button>
+                    </>
                   )}
 
                   <button 
