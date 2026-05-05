@@ -101,6 +101,7 @@ export default function App() {
   // --- CALCULADORAS ---
   const [sizeCurves, setSizeCurves] = useState([]);
   const [calcRules, setCalcRules] = useState([]);
+  const [buckets, setBuckets] = useState([]);
 
   // --- COMPRAS Y ESTADO TEMPORAL ---
   const [purchases, setPurchases] = useState([]);
@@ -108,7 +109,13 @@ export default function App() {
   const [editingCurveId, setEditingCurveId] = useState(null);
   const [newRule, setNewRule] = useState({ name: '' });
   const [editingRuleId, setEditingRuleId] = useState(null);
-  const [buyData, setBuyData] = useState({ goaId: '', modelo: '', pvp: '', curveId: '', ruleId: '' });
+  const [newBucket, setNewBucket] = useState({ name: '', perfil: '', sharePct: '', pvpRange: '', notes: '' });
+  const [editingBucketId, setEditingBucketId] = useState(null);
+  const [buyData, setBuyData] = useState({ goaId: '', modelo: '', pvp: '', curveId: '', ruleId: '', bucketId: '', monthOffset: '' });
+  const [purchaseMonthBase, setPurchaseMonthBase] = useState(() => {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+  });
 
   // --- REPORTES Y PLANEACIÓN ESTRATÉGICA ---
   const [reportView, setReportView] = useState('sugerido'); 
@@ -186,6 +193,14 @@ export default function App() {
   };
   const t = themes[theme] || themes.dark;
 
+  // --- HELPER: nombres de mes desde fecha base ---
+  const MES_NAMES_ES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+  const getMonthLabel = (offset) => {
+    const [y, m] = (purchaseMonthBase || '2026-01').split('-').map(Number);
+    const baseDate = new Date(y, (m||1)-1 + Number(offset), 1);
+    return `${MES_NAMES_ES[baseDate.getMonth()]} ${String(baseDate.getFullYear()).slice(-2)}`;
+  };
+
   // --- EXPORTAR / IMPORTAR PROYECTO ---
   const handleExportProject = () => {
     setIsSaveModalOpen(true);
@@ -193,7 +208,7 @@ export default function App() {
   };
 
   const confirmExportProject = () => {
-    const data = { stores, goas, sizeCurves, calcRules, purchases, rawStoreData, scoreWeights, numClusters, clusterStrategy, suggestedPlans };
+    const data = { stores, goas, sizeCurves, calcRules, buckets, purchases, rawStoreData, scoreWeights, numClusters, clusterStrategy, suggestedPlans, purchaseMonthBase };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -215,6 +230,8 @@ export default function App() {
         if(Array.isArray(data.goas)) setGoas(data.goas);
         if(Array.isArray(data.sizeCurves)) setSizeCurves(data.sizeCurves);
         if(Array.isArray(data.calcRules)) setCalcRules(data.calcRules);
+        if(Array.isArray(data.buckets)) setBuckets(data.buckets);
+        if(typeof data.purchaseMonthBase === 'string') setPurchaseMonthBase(data.purchaseMonthBase);
         if(Array.isArray(data.purchases)) setPurchases(data.purchases);
         if(Array.isArray(data.rawStoreData)) setRawStoreData(data.rawStoreData);
         if(data.scoreWeights) setScoreWeights(data.scoreWeights);
@@ -582,6 +599,26 @@ export default function App() {
     setNewRule(editObj); setEditingRuleId(r.id); 
   };
 
+  const handleBucketSubmit = (e) => {
+    e.preventDefault();
+    if (!newBucket.name) return;
+    const bucketObj = { 
+      id: editingBucketId || Date.now(), 
+      name: newBucket.name,
+      perfil: newBucket.perfil || '',
+      sharePct: Number(newBucket.sharePct) || 0,
+      pvpRange: newBucket.pvpRange || '',
+      notes: newBucket.notes || ''
+    };
+    if (editingBucketId) { setBuckets((buckets || []).map(b => b.id === editingBucketId ? bucketObj : b)); setEditingBucketId(null); } 
+    else setBuckets([...(buckets || []), bucketObj]);
+    setNewBucket({ name: '', perfil: '', sharePct: '', pvpRange: '', notes: '' });
+  };
+  const editBucket = (b) => { 
+    setNewBucket({ name: b.name, perfil: b.perfil || '', sharePct: b.sharePct || '', pvpRange: b.pvpRange || '', notes: b.notes || '' }); 
+    setEditingBucketId(b.id); 
+  };
+
   // --- EJECUCIÓN DE COMPRAS PREVENTA ---
   const handleGenerateBuy = (e) => {
     e.preventDefault();
@@ -608,9 +645,14 @@ export default function App() {
 
     if (totalPieces === 0) { alert("La regla seleccionada no genera compras."); return; }
 
+    const bucket = (buckets || []).find(b => b.id === Number(buyData.bucketId));
+    const monthOffset = buyData.monthOffset !== '' ? Number(buyData.monthOffset) : null;
+
     setPurchases([...(purchases || []), {
       id: Date.now(), goaId: goa.id, goaName: goa.name, modelo: String(modelo).toUpperCase(),
       pvp: Number(pvp), curveId: curve.id, curveName: curve.name, ruleId: rule.id, ruleName: rule.name,
+      bucketId: bucket ? bucket.id : null, bucketName: bucket ? bucket.name : null,
+      monthOffset, monthLabel: monthOffset !== null ? getMonthLabel(monthOffset) : null,
       totalPieces, totalRetailValue: totalPieces * Number(pvp), storeDemands
     }]);
     setBuyData({ ...buyData, modelo: '', pvp: '' });
@@ -1091,7 +1133,7 @@ export default function App() {
 
         {/* === PESTAÑA 2: CALCULADORAS === */}
         {activeTab === 'calc' && (
-          <div className="grid md:grid-cols-2 gap-6">
+          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             <div className={`p-6 rounded-xl border ${t.card}`}>
               <h2 className={`text-xl font-bold mb-6 flex items-center ${t.textMain}`}><ClipboardList className={`mr-3 ${t.textAccent1}`}/> Curvas de Tallas</h2>
               
@@ -1184,6 +1226,62 @@ export default function App() {
                 </div>
               )}
             </div>
+
+            <div className={`p-6 rounded-xl border ${t.card}`}>
+              <h2 className={`text-xl font-bold mb-2 flex items-center ${t.textMain}`}><Layers className={`mr-3 ${t.textAccent1}`}/> Buckets de Producto</h2>
+              <p className={`text-xs mb-6 ${t.textMuted}`}>Define "munditos" de producto (perfiles de cliente) para pre-asignar presupuesto. Ej: Señora Clásica, Chava Trendy, Premium, Value.</p>
+
+              <form onSubmit={handleBucketSubmit} className={`mb-6 p-5 rounded-xl border ${editingBucketId ? t.warningBg : t.cardInner}`}>
+                <h3 className={`text-sm font-bold tracking-wider uppercase mb-4 ${editingBucketId ? t.warningText : t.textMuted}`}>{editingBucketId ? '✏️ Editando Bucket' : 'Crear Nuevo Bucket'}</h3>
+                <div className="space-y-3">
+                  <input required type="text" placeholder="Nombre (Ej. Señora Clásica)" value={newBucket.name} onChange={e=>setNewBucket({...newBucket, name: e.target.value})} className={`w-full p-2.5 rounded-lg text-sm transition ${t.input}`} />
+                  <input type="text" placeholder="Perfil de cliente (Ej. 45+, conservadora)" value={newBucket.perfil} onChange={e=>setNewBucket({...newBucket, perfil: e.target.value})} className={`w-full p-2.5 rounded-lg text-sm transition ${t.input}`} />
+                  <div className="grid grid-cols-2 gap-2">
+                    <input type="number" min="0" max="100" step="0.1" placeholder="% del GOA" value={newBucket.sharePct} onChange={e=>setNewBucket({...newBucket, sharePct: e.target.value})} className={`w-full p-2.5 rounded-lg text-sm transition ${t.input}`} />
+                    <input type="text" placeholder="Rango PVP (Ej. 299-599)" value={newBucket.pvpRange} onChange={e=>setNewBucket({...newBucket, pvpRange: e.target.value})} className={`w-full p-2.5 rounded-lg text-sm transition ${t.input}`} />
+                  </div>
+                  <input type="text" placeholder="Notas (opcional)" value={newBucket.notes} onChange={e=>setNewBucket({...newBucket, notes: e.target.value})} className={`w-full p-2.5 rounded-lg text-sm transition ${t.input}`} />
+                </div>
+                <div className="flex space-x-3 mt-4">
+                  <button type="submit" className={`flex-1 py-2.5 rounded-lg text-sm font-black uppercase tracking-wider transition ${editingBucketId ? t.btnPrimary : t.btnSecondary}`}>
+                    {editingBucketId ? 'Actualizar' : 'Guardar Bucket'}
+                  </button>
+                  {editingBucketId && <button type="button" onClick={()=>{setEditingBucketId(null); setNewBucket({name:'', perfil:'', sharePct:'', pvpRange:'', notes:''})}} className={`px-4 rounded-lg text-sm font-bold transition ${t.btnGhost}`}>Cancelar</button>}
+                </div>
+              </form>
+
+              {(buckets || []).length === 0 ? (
+                 <div className={`p-8 text-center rounded-lg border border-dashed ${theme==='dark'?'border-zinc-800 text-gray-500':'border-gray-300 text-gray-400'}`}>Aún no hay buckets definidos.</div>
+              ) : (
+                <>
+                  <div className={`mb-3 px-3 py-2 rounded-lg text-xs flex justify-between items-center ${t.cardInner}`}>
+                    <span className={`font-bold ${t.textMuted}`}>Suma de shares:</span>
+                    <span className={`font-black ${(buckets || []).reduce((s,b)=>s+(Number(b.sharePct)||0),0) === 100 ? t.textAccent2 : t.textAccent1}`}>
+                      {(buckets || []).reduce((s,b)=>s+(Number(b.sharePct)||0),0).toFixed(1)}%
+                    </span>
+                  </div>
+                  <div className="space-y-3">
+                    {buckets.map(b => (
+                      <div key={b.id} className={`flex justify-between items-center p-4 border rounded-xl transition-all ${editingBucketId === b.id ? t.warningBg : t.cardInner}`}>
+                        <div className="flex-1 min-w-0">
+                          <div className="flex items-center gap-2 flex-wrap">
+                            <p className={`font-bold ${t.textMain}`}>{b.name}</p>
+                            {b.sharePct > 0 && <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold border ${t.badgeAA}`}>{b.sharePct}%</span>}
+                            {b.pvpRange && <span className={`text-[10px] px-1.5 py-0.5 rounded font-bold border ${t.badgeOther}`}>${b.pvpRange}</span>}
+                          </div>
+                          {b.perfil && <p className={`text-xs mt-1 ${t.textMuted}`}>{b.perfil}</p>}
+                          {b.notes && <p className={`text-[10px] mt-1 italic ${t.textMuted}`}>{b.notes}</p>}
+                        </div>
+                        <div className="flex space-x-2 ml-2">
+                          <button onClick={()=>editBucket(b)} className={`p-2 rounded-lg transition ${t.btnEdit}`}><Edit3 size={16}/></button>
+                          <button onClick={()=>setBuckets(buckets.filter(x=>x.id!==b.id))} className={`p-2 rounded-lg transition ${t.btnDanger}`}><Trash2 size={16}/></button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </>
+              )}
+            </div>
           </div>
         )}
 
@@ -1264,7 +1362,13 @@ export default function App() {
               <>
                 <div className={`rounded-xl shadow-lg p-6 relative overflow-hidden ${t.gradientCard}`}>
                   <div className={`absolute top-0 right-0 w-64 h-64 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none ${theme==='dark'?'bg-purple-600/10':'bg-white/10'}`}></div>
-                  <h2 className="text-xl font-bold mb-6 flex items-center relative z-10 text-white"><Zap className={`mr-3 ${t.textAccent2}`}/> Captura de Preventa (Real)</h2>
+                  <div className="flex justify-between items-center mb-6 relative z-10">
+                    <h2 className="text-xl font-bold flex items-center text-white"><Zap className={`mr-3 ${t.textAccent2}`}/> Captura de Preventa (Real)</h2>
+                    <div className="flex items-center gap-2">
+                      <label className={`text-[10px] font-black uppercase tracking-wider ${theme==='dark'?'text-gray-400':'text-blue-100'}`}>Mes Base</label>
+                      <input type="month" value={purchaseMonthBase} onChange={e=>setPurchaseMonthBase(e.target.value)} className={`p-2 rounded-lg text-xs font-bold outline-none border ${theme==='dark'? t.input : 'bg-white/20 border-white/30 text-white'}`} />
+                    </div>
+                  </div>
                   
                   <form onSubmit={handleGenerateBuy} className="grid grid-cols-1 md:grid-cols-4 gap-5 items-end relative z-10">
                     <div>
@@ -1282,7 +1386,7 @@ export default function App() {
                       <label className={`text-[10px] font-black uppercase tracking-wider mb-1.5 block ${theme==='dark'?'text-gray-400':'text-blue-100'}`}>3. PVP Unitario ($)</label>
                       <input required type="number" placeholder="Ej. 299" value={buyData.pvp} onChange={e=>setBuyData({...buyData, pvp: e.target.value})} className={`w-full p-3 rounded-lg font-bold outline-none border ${theme==='dark'? t.inputYellow : 'bg-white/20 border-white/30 text-white placeholder-blue-200'}`} />
                     </div>
-                    <div className={`col-span-1 md:col-span-4 grid grid-cols-1 md:grid-cols-3 gap-5 mt-2 border-t pt-6 ${theme==='dark'?'border-zinc-800':'border-white/20'}`}>
+                    <div className={`col-span-1 md:col-span-4 grid grid-cols-1 md:grid-cols-5 gap-5 mt-2 border-t pt-6 ${theme==='dark'?'border-zinc-800':'border-white/20'}`}>
                       <div>
                         <label className={`text-[10px] font-black uppercase tracking-wider mb-1.5 block ${theme==='dark'?'text-gray-400':'text-blue-100'}`}>4. Curva de Tallas</label>
                         <select required value={buyData.curveId} onChange={e=>setBuyData({...buyData, curveId: e.target.value})} className={`w-full p-3 rounded-lg outline-none border ${theme==='dark'? t.input : 'bg-white/20 border-white/30 text-white'}`}>
@@ -1297,11 +1401,69 @@ export default function App() {
                           {calcRules.map(r => <option key={r.id} value={r.id} className={theme==='dark'?'':'text-black'}>{r.name}</option>)}
                         </select>
                       </div>
+                      <div>
+                        <label className={`text-[10px] font-black uppercase tracking-wider mb-1.5 block ${theme==='dark'?'text-gray-400':'text-blue-100'}`}>6. Bucket (Opc)</label>
+                        <select value={buyData.bucketId} onChange={e=>setBuyData({...buyData, bucketId: e.target.value})} className={`w-full p-3 rounded-lg outline-none border ${theme==='dark'? t.input : 'bg-white/20 border-white/30 text-white'}`}>
+                          <option value="" className={theme==='dark'?'':'text-black'}>Sin bucket</option>
+                          {(buckets || []).map(b => <option key={b.id} value={b.id} className={theme==='dark'?'':'text-black'}>{b.name}{b.sharePct?` (${b.sharePct}%)`:''}</option>)}
+                        </select>
+                      </div>
+                      <div>
+                        <label className={`text-[10px] font-black uppercase tracking-wider mb-1.5 block ${theme==='dark'?'text-gray-400':'text-blue-100'}`}>7. Mes Compra</label>
+                        <select required value={buyData.monthOffset} onChange={e=>setBuyData({...buyData, monthOffset: e.target.value})} className={`w-full p-3 rounded-lg outline-none border ${theme==='dark'? t.input : 'bg-white/20 border-white/30 text-white'}`}>
+                          <option value="" className={theme==='dark'?'':'text-black'}>Mes...</option>
+                          {[0,1,2,3,4,5].map(o => <option key={`mopt-${o}`} value={o} className={theme==='dark'?'':'text-black'}>{getMonthLabel(o)}</option>)}
+                        </select>
+                      </div>
                       <button type="submit" className={`w-full h-12 self-end font-black uppercase tracking-wider rounded-lg transition flex justify-center items-center ${theme==='dark'? t.btnPrimary : 'bg-yellow-400 text-indigo-900 hover:bg-yellow-300 shadow-xl'}`}>
-                        <Calculator size={18} className="mr-2" /> Agregar al Carrito
+                        <Calculator size={18} className="mr-2" /> Agregar
                       </button>
                     </div>
                   </form>
+
+                  {buyData.goaId && (buckets || []).length > 0 && (() => {
+                    const selectedGoa = goas.find(g => g.id === Number(buyData.goaId));
+                    if (!selectedGoa || !selectedGoa.budget) return null;
+                    const goaPurchases = (purchases || []).filter(p => p.goaId === selectedGoa.id);
+                    const totalBudget = Number(selectedGoa.budget) || 0;
+
+                    return (
+                      <div className={`mt-6 pt-5 border-t relative z-10 ${theme==='dark'?'border-zinc-800':'border-white/20'}`}>
+                        <div className="flex justify-between items-center mb-3">
+                          <h4 className={`text-xs font-black uppercase tracking-wider ${theme==='dark'?'text-gray-400':'text-blue-100'}`}>Consumo por Bucket — {selectedGoa.name}</h4>
+                          <span className={`text-[10px] font-bold ${theme==='dark'?'text-gray-500':'text-blue-200'}`}>Budget total: ${totalBudget.toLocaleString()}</span>
+                        </div>
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                          {buckets.map(b => {
+                            const bucketBudget = totalBudget * ((Number(b.sharePct)||0) / 100);
+                            const consumed = goaPurchases.filter(p => p.bucketId === b.id).reduce((s,p) => s + (p.totalRetailValue||0), 0);
+                            const pct = bucketBudget > 0 ? (consumed / bucketBudget) * 100 : 0;
+                            const remaining = bucketBudget - consumed;
+                            const overBudget = pct > 100;
+                            const barColor = overBudget ? 'bg-red-500' : pct >= 90 ? 'bg-yellow-500' : pct >= 50 ? 'bg-emerald-500' : 'bg-blue-500';
+                            return (
+                              <div key={`bk-cons-${b.id}`} className={`p-3 rounded-lg border ${theme==='dark'?'bg-zinc-900/60 border-zinc-700':'bg-white/15 border-white/30'}`}>
+                                <div className="flex justify-between items-start mb-1">
+                                  <p className={`text-xs font-black truncate ${theme==='dark'?'text-white':'text-white'}`} title={b.name}>{b.name}</p>
+                                  <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${theme==='dark'?'bg-zinc-800 text-gray-300':'bg-white/20 text-white'}`}>{b.sharePct||0}%</span>
+                                </div>
+                                <div className={`w-full h-1.5 rounded-full overflow-hidden mb-2 ${theme==='dark'?'bg-zinc-800':'bg-white/20'}`}>
+                                  <div className={`h-full transition-all ${barColor}`} style={{width: `${Math.min(100, pct)}%`}}></div>
+                                </div>
+                                <div className="flex justify-between text-[10px]">
+                                  <span className={`font-bold ${overBudget ? 'text-red-400' : theme==='dark'?'text-gray-300':'text-white'}`}>${consumed.toLocaleString()}</span>
+                                  <span className={`font-mono ${theme==='dark'?'text-gray-500':'text-blue-200'}`}>${bucketBudget.toLocaleString()}</span>
+                                </div>
+                                <p className={`text-[9px] mt-0.5 font-bold ${overBudget ? 'text-red-400' : remaining > 0 ? 'text-emerald-400' : theme==='dark'?'text-gray-500':'text-blue-200'}`}>
+                                  {overBudget ? `Sobre: $${Math.abs(remaining).toLocaleString()}` : `Disp: $${remaining.toLocaleString()}`}
+                                </p>
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 <div className={`rounded-xl border overflow-hidden shadow-lg ${t.card}`}>
@@ -1315,6 +1477,8 @@ export default function App() {
                           <th className={`p-4 border-r ${t.border}`}>GOA</th>
                           <th className={`p-4 border-r ${t.border}`}>Modelo Exacto</th>
                           <th className={`p-4 border-r ${t.border}`}>Estrategia</th>
+                          <th className={`p-4 border-r ${t.border}`}>Bucket</th>
+                          <th className={`p-4 border-r text-center ${t.border}`}>Mes</th>
                           <th className={`p-4 border-r text-center ${t.border}`}>PVP</th>
                           <th className={`p-4 border-r text-center font-bold ${t.border} ${t.textMain}`}>Total Pzs</th>
                           <th className={`p-4 border-r text-right font-bold ${t.border} ${t.textMain}`}>Costo Total $</th>
@@ -1322,18 +1486,26 @@ export default function App() {
                         </tr>
                       </thead>
                       <tbody className={`divide-y ${t.border}`}>
-                        {(purchases || []).length === 0 && <tr><td colSpan="7" className={`p-10 text-center ${t.textMuted}`}>No hay compras reales registradas aún.</td></tr>}
-                        {(purchases || []).map(p => (
+                        {(purchases || []).length === 0 && <tr><td colSpan="9" className={`p-10 text-center ${t.textMuted}`}>No hay compras reales registradas aún.</td></tr>}
+                        {(purchases || []).map(p => {
+                          const isRepeat = (purchases || []).some(o => o.id !== p.id && o.goaId === p.goaId && o.modelo === p.modelo);
+                          return (
                           <tr key={p.id} className={`transition ${t.tableRow}`}>
                             <td className={`p-4 border-r ${t.border} ${t.textMuted}`}>{p.goaName}</td>
-                            <td className={`p-4 font-bold border-r ${t.border} ${t.textMain}`}>{p.modelo}</td>
+                            <td className={`p-4 font-bold border-r ${t.border} ${t.textMain}`}>
+                              {p.modelo}
+                              {isRepeat && <span className={`ml-2 text-[9px] px-1.5 py-0.5 rounded font-black border ${t.warningBg} ${t.warningText}`}>REPEAT</span>}
+                            </td>
                             <td className={`p-4 text-xs border-r ${t.border} ${t.textMuted}`}><span className={`font-bold ${t.textAccent1}`}>{p.ruleName}</span><br/>{p.curveName}</td>
+                            <td className={`p-4 text-xs border-r ${t.border} ${t.textMuted}`}>{p.bucketName ? <span className={`text-[10px] px-2 py-1 rounded font-bold border ${t.badgeAA}`}>{p.bucketName}</span> : <span className="opacity-40">—</span>}</td>
+                            <td className={`p-4 text-center border-r ${t.border} ${t.textMuted}`}>{p.monthLabel ? <span className={`text-[10px] px-2 py-1 rounded font-bold border ${t.badgeOther}`}>{p.monthLabel}</span> : <span className="opacity-40">—</span>}</td>
                             <td className={`p-4 text-center border-r ${t.border} ${t.textMuted}`}>${p.pvp}</td>
                             <td className={`p-4 text-center font-black border-r ${t.border} ${t.textMain} ${theme==='dark'?'bg-purple-900/10':'bg-blue-50/50'}`}>{(p.totalPieces || 0).toLocaleString()}</td>
                             <td className={`p-4 text-right font-black border-r ${t.border} ${t.textAccent2} ${theme==='dark'?'bg-yellow-900/10':'bg-indigo-50/50'}`}>${(p.totalRetailValue || 0).toLocaleString()}</td>
                             <td className="p-4 text-center"><button onClick={()=>setPurchases(purchases.filter(x=>x.id!==p.id))} className={`transition ${t.btnDanger} p-2 rounded-lg`}><Trash2 size={18}/></button></td>
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
@@ -1510,7 +1682,7 @@ export default function App() {
                         </tr>
                       </thead>
                       <tbody className={`divide-y ${t.border}`}>
-                        {reportData.goaMetrics.map(g => (
+                        {reportData.goaMetrics.filter(g => (g.boughtPzs || 0) > 0 || (g.budget || 0) > 0).map(g => (
                           <tr key={g.id} className={`transition ${t.tableRow}`}>
                             <td className={`p-4 font-bold ${t.textMain}`}>{g.name}</td>
                             <td className={`p-4 text-right border-l font-bold ${t.border} ${t.textMain}`}>{(g.boughtPzs || 0).toLocaleString()}</td>
@@ -1547,24 +1719,45 @@ export default function App() {
                         <tr className={`text-[10px] uppercase border-b tracking-wider ${t.tableHead}`}>
                           <th className={`p-3 font-bold text-left border-r ${t.border}`}>GOA</th>
                           <th className={`p-3 font-bold border-r ${t.border}`}>Total Pzs</th>
-                          {[1,2,3,4,5,6].map((m, i) => (
-                            <th key={`head-sug-m${i}`} className={`p-3 border-r ${t.border}`}>Mes {m}</th>
+                          {[0,1,2,3,4,5].map((o) => (
+                            <th key={`head-sug-m${o}`} className={`p-3 border-r ${t.border}`}>{getMonthLabel(o)}</th>
                           ))}
                         </tr>
                       </thead>
                       <tbody className={`divide-y ${t.border}`}>
-                        {reportData.goaMetrics.map(g => (
+                        {reportData.goaMetrics.filter(g => (g.boughtPzs || 0) > 0 || (g.budget || 0) > 0).map(g => {
+                          // Si hay compras con mes asignado para este GOA, usar real; si no, distribuir por %
+                          const goaPurchases = (purchases || []).filter(p => p.goaId === g.id && p.monthOffset !== null && p.monthOffset !== undefined);
+                          const useReal = reportView === 'real' && goaPurchases.length > 0;
+                          const realPzsByMonth = {};
+                          if (useReal) {
+                            goaPurchases.forEach(p => {
+                              realPzsByMonth[p.monthOffset] = (realPzsByMonth[p.monthOffset] || 0) + (p.totalPieces || 0);
+                            });
+                          }
+                          const monthsWeights = (g.months || [16.6,16.6,16.6,16.6,16.6,17]);
+                          return (
                           <tr key={g.id} className={`transition ${t.tableRow}`}>
-                            <td className={`p-3 font-bold text-left border-r ${t.border} ${t.textMain}`}>{g.name}</td>
+                            <td className={`p-3 font-bold text-left border-r ${t.border} ${t.textMain}`}>
+                              {g.name}
+                              {useReal && <span className={`ml-2 text-[8px] px-1.5 py-0.5 rounded font-black border ${t.badgeAA}`}>REAL</span>}
+                            </td>
                             <td className={`p-3 font-black border-r ${t.border} ${t.textAccent2}`}>{(g.boughtPzs || 0).toLocaleString()} pzs</td>
-                            {(g.months || [16.6,16.6,16.6,16.6,16.6,17]).map((w, i) => (
-                               <td key={`mes-sug-${g.id}-${i}`} className={`p-3 border-r font-medium ${t.border} ${theme==='dark'?'text-gray-300':'text-gray-700'}`}>
-                                  <span className={`block text-[9px] mb-1 font-mono ${t.textMuted}`}>{Number(w?.value ?? w) || 0}%</span>
-                                  {Math.round((g.boughtPzs || 0) * ((Number(w?.value ?? w) || 0) / 100)).toLocaleString()}
-                               </td>
-                            ))}
+                            {[0,1,2,3,4,5].map((o) => {
+                              const w = monthsWeights[o];
+                              const pctVal = Number(w?.value ?? w) || 0;
+                              const pzsCalc = useReal ? (realPzsByMonth[o] || 0) : Math.round((g.boughtPzs || 0) * (pctVal / 100));
+                              const pctDisplay = useReal ? ((g.boughtPzs > 0 ? (pzsCalc / g.boughtPzs) * 100 : 0)) : pctVal;
+                              return (
+                                <td key={`mes-sug-${g.id}-${o}`} className={`p-3 border-r font-medium ${t.border} ${theme==='dark'?'text-gray-300':'text-gray-700'}`}>
+                                  <span className={`block text-[9px] mb-1 font-mono ${t.textMuted}`}>{pctDisplay.toFixed(1)}%</span>
+                                  {pzsCalc.toLocaleString()}
+                                </td>
+                              );
+                            })}
                           </tr>
-                        ))}
+                          );
+                        })}
                       </tbody>
                     </table>
                   </div>
