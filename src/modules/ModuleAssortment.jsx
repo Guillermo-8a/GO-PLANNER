@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { Settings, Store, Package, Upload, ArrowUpDown, Sliders, Layers, MoreVertical, Sun, Moon, Database, ShoppingCart, Plus, Trash2, Save, Download, Zap, DollarSign, FileSpreadsheet, Edit3, Lightbulb, CalendarDays, Compass, Activity, Wand2, ClipboardList, Calculator, ChevronDown, ChevronRight } from 'lucide-react';
+import { Settings, Store, Package, Upload, ArrowUpDown, Sliders, Layers, MoreVertical, Sun, Moon, Info, Map as MapIcon, Database, ShoppingCart, BarChart3, Plus, Trash2, Save, Download, Zap, DollarSign, Target, FileSpreadsheet, Edit3, Lightbulb, CalendarDays, Compass, Activity, Wand2, RefreshCw, ClipboardList, Calculator, ChevronDown, ChevronRight, LayoutList } from 'lucide-react';
 import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
 // --- MOTOR INTELIGENTE PARA LEER CSV (Ignora comas dentro de comillas) ---
@@ -77,9 +77,19 @@ export default function App() {
   const theme = gState?.theme || 'dark'; 
   const forecastDisponible = !!gState?.forecastData;
   
+  // =====================================================================
+  // --- CARGA DE LOCALSTORAGE (PERSISTENCIA AL CAMBIAR DE MÓDULO) ---
+  const initialState = useMemo(() => {
+    try {
+      const saved = localStorage.getItem('goplanner_assortment_state');
+      if (saved) return JSON.parse(saved);
+    } catch (e) { console.warn("No se pudo cargar la sesión de LocalStorage", e); }
+    return null;
+  }, []);
+
   // --- ESTADO DE BASE Y CLÚSTERES ---
-  const [numClusters, setNumClusters] = useState(6);
-  const [clusterStrategy, setClusterStrategy] = useState('valor'); 
+  const [numClusters, setNumClusters] = useState(initialState?.numClusters ?? 6);
+  const [clusterStrategy, setClusterStrategy] = useState(initialState?.clusterStrategy ?? 'valor'); 
   
   const activeClusters = useMemo(() => {
     if (numClusters === 6) return ['AA', 'A', 'B', 'C', 'D', 'E'];
@@ -87,39 +97,45 @@ export default function App() {
     return Array.from({length: numClusters}, (_, i) => alphabet[i]);
   }, [numClusters]);
 
-  const [rawStoreData, setRawStoreData] = useState([]);
-  
-  const [scoreWeights, setScoreWeights] = useState({ sales: 50, margin: 50, rotation: 0 });
-
-  const [stores, setStores] = useState([]);
-  const [goas, setGoas] = useState([]);
+  const [rawStoreData, setRawStoreData] = useState(initialState?.rawStoreData ?? []);
+  const [scoreWeights, setScoreWeights] = useState(initialState?.scoreWeights ?? { sales: 50, margin: 50, rotation: 0 });
+  const [stores, setStores] = useState(initialState?.stores ?? []);
+  const [goas, setGoas] = useState(initialState?.goas ?? []);
   
   const [storeSortBy, setStoreSortBy] = useState('score'); 
   const [storeSortOrder, setStoreSortOrder] = useState('desc');
   const [filterGoa, setFilterGoa] = useState('ALL'); 
 
-  // --- CALCULADORAS ---
-  const [sizeCurves, setSizeCurves] = useState([]);
-  const [calcRules, setCalcRules] = useState([]);
-  const [buckets, setBuckets] = useState([]);
+  // --- CALCULADORAS Y COMPRAS ---
+  const [sizeCurves, setSizeCurves] = useState(initialState?.sizeCurves ?? []);
+  const [calcRules, setCalcRules] = useState(initialState?.calcRules ?? []);
+  const [buckets, setBuckets] = useState(initialState?.buckets ?? []); 
+  const [purchases, setPurchases] = useState(initialState?.purchases ?? []);
+  const [suggestedPlans, setSuggestedPlans] = useState(initialState?.suggestedPlans ?? []);
+  // =====================================================================
 
-  // --- COMPRAS Y ESTADO TEMPORAL ---
-  const [purchases, setPurchases] = useState([]);
   const [newCurve, setNewCurve] = useState({ name: '', sizes: '', weights: '' });
   const [editingCurveId, setEditingCurveId] = useState(null);
+  
   const [newRule, setNewRule] = useState({ name: '' });
   const [editingRuleId, setEditingRuleId] = useState(null);
+
   const [newBucket, setNewBucket] = useState({ name: '', perfil: '', sharePct: '', pvpRange: '', notes: '' });
   const [editingBucketId, setEditingBucketId] = useState(null);
+
   const [buyData, setBuyData] = useState({ goaId: '', modelo: '', pvp: '', curveId: '', ruleId: '', bucketId: '', monthOffset: '' });
   const [purchaseMonthBase, setPurchaseMonthBase] = useState(() => {
+    if (initialState?.purchaseMonthBase) return initialState.purchaseMonthBase;
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
   });
-
-  // --- REPORTES Y PLANEACIÓN ESTRATÉGICA ---
   const [reportView, setReportView] = useState('sugerido'); 
-  const [suggestedPlans, setSuggestedPlans] = useState([]); 
+
+  // --- AUTO-GUARDADO A LOCALSTORAGE ---
+  useEffect(() => {
+    const stateToSave = { numClusters, clusterStrategy, rawStoreData, scoreWeights, stores, goas, sizeCurves, calcRules, buckets, purchases, suggestedPlans, purchaseMonthBase };
+    localStorage.setItem('goplanner_assortment_state', JSON.stringify(stateToSave));
+  }, [numClusters, clusterStrategy, rawStoreData, scoreWeights, stores, goas, sizeCurves, calcRules, buckets, purchases, suggestedPlans, purchaseMonthBase]);
 
   // --- PUBLICAR OTB AL GLOBAL CONTEXT ---
   useEffect(() => {
@@ -230,7 +246,7 @@ export default function App() {
         if(Array.isArray(data.goas)) setGoas(data.goas);
         if(Array.isArray(data.sizeCurves)) setSizeCurves(data.sizeCurves);
         if(Array.isArray(data.calcRules)) setCalcRules(data.calcRules);
-        if(Array.isArray(data.buckets)) setBuckets(data.buckets);
+        if(Array.isArray(data.buckets)) setBuckets(data.buckets); 
         if(typeof data.purchaseMonthBase === 'string') setPurchaseMonthBase(data.purchaseMonthBase);
         if(Array.isArray(data.purchases)) setPurchases(data.purchases);
         if(Array.isArray(data.rawStoreData)) setRawStoreData(data.rawStoreData);
@@ -493,7 +509,7 @@ export default function App() {
       setRawStoreData(extractedRawData);
       recalculateClusters(extractedRawData, scoreWeights, activeClusters, clusterStrategy);
     };
-    reader.readAsText(file, 'Windows-1252'); 
+    reader.readAsText(file, 'UTF-8'); 
   };
 
   const handleUpdateStoreCluster = (storeId, goaName, newCluster) => {
@@ -537,7 +553,7 @@ export default function App() {
       alert("Presupuestos Básicos actualizados.");
       if(budgetFileInputRef.current) budgetFileInputRef.current.value = '';
     };
-    reader.readAsText(file, 'Windows-1252');
+    reader.readAsText(file, 'UTF-8');
   };
 
   const handleForecastCSVUpload = (e) => {
@@ -570,10 +586,10 @@ export default function App() {
       alert("Forecast y Presupuestos Mensuales importados desde CSV con éxito.");
       if(forecastFileInputRef.current) forecastFileInputRef.current.value = '';
     };
-    reader.readAsText(file, 'Windows-1252');
+    reader.readAsText(file, 'UTF-8');
   };
 
-  // --- CRUD CALCULADORAS ---
+  // --- CRUD CALCULADORAS Y BUCKETS ---
   const handleCurveSubmit = (e) => {
     e.preventDefault();
     if (!newCurve.name) return;
@@ -660,7 +676,7 @@ export default function App() {
 
   // --- MOTOR MÁGICO DE SUGERENCIAS ---
   const handleAddSuggestion = (goaId) => {
-    setSuggestedPlans([...(suggestedPlans || []), { id: Date.now(), goaId, curveId: '', ruleId: '', pvp: '', models: '' }]);
+    setSuggestedPlans([...(suggestedPlans || []), { id: Date.now(), goaId, curveId: '', ruleId: '', pvp: '', models: '', variants: '' }]);
     setCollapsedGoas(prev => ({...prev, [goaId]: false}));
   };
   const handleUpdateSuggestion = (id, field, value) => {
@@ -692,44 +708,58 @@ export default function App() {
     const goa = (goas || []).find(g => g.id === plan.goaId);
     if(!goa) return "GOA no encontrado.";
     
-    const singleModelPzs = getPiecesForOneModel(goa.name, plan.curveId, plan.ruleId);
-    if(singleModelPzs <= 0) return "La regla y curva combinadas generan 0 piezas para las tiendas de este GOA. Valida la asignación de clústeres en Tab 1.";
+    const singleModelBasePzs = getPiecesForOneModel(goa.name, plan.curveId, plan.ruleId);
+    if(singleModelBasePzs <= 0) return "La regla y curva combinadas generan 0 piezas para las tiendas de este GOA. Valida la asignación de clústeres en Tab 1.";
     
     const otherPlans = allPlansToUpdate.filter(p => p.goaId === goa.id && p.id !== plan.id);
     let usedPzs = 0; let usedBudget = 0;
     otherPlans.forEach(op => {
        const opPzs = getPiecesForOneModel(goa.name, op.curveId, op.ruleId);
-       usedPzs += opPzs * (Number(op.models)||0);
-       usedBudget += opPzs * (Number(op.models)||0) * (Number(op.pvp)||0);
+       const opVars = Number(op.variants) || 1;
+       usedPzs += opPzs * (Number(op.models)||0) * opVars;
+       usedBudget += opPzs * (Number(op.models)||0) * opVars * (Number(op.pvp)||0);
     });
     
     const remainingPzs = Math.max(0, (goa.historyPzs || 0) - usedPzs);
     const remainingBudget = Math.max(0, (goa.budget || 0) - usedBudget);
     
     let suggestedModels = Number(plan.models) || 0;
+    let suggestedVariants = Number(plan.variants) || 0;
     let suggestedPvp = Number(plan.pvp) || 0;
 
-    if (suggestedPvp > 0 && suggestedModels === 0) {
-      const costPerModel = singleModelPzs * suggestedPvp;
-      suggestedModels = costPerModel > 0 ? Math.floor(remainingBudget / costPerModel) : 1;
+    // Si da el PVP pero no Modelos ni Variantes: calcula cuántas variantes totales le alcanzan y asume 1 modelo
+    if (suggestedPvp > 0 && suggestedModels === 0 && suggestedVariants === 0) {
+      const combos = Math.floor(remainingBudget / (singleModelBasePzs * suggestedPvp));
+      suggestedModels = 1;
+      suggestedVariants = combos > 0 ? combos : 1;
     } 
-    else if (suggestedModels > 0 && suggestedPvp === 0) {
-      const actualPzs = suggestedModels * singleModelPzs;
+    // Si da Modelos y PVP pero no Variantes: calcula cuantas Variantes por modelo
+    else if (suggestedPvp > 0 && suggestedModels > 0 && suggestedVariants === 0) {
+      const costPerVariant = singleModelBasePzs * suggestedModels * suggestedPvp;
+      suggestedVariants = costPerVariant > 0 ? Math.floor(remainingBudget / costPerVariant) : 1;
+    }
+    // Si da Modelos y Variantes pero no PVP: calcula el PVP sugerido
+    else if (suggestedModels > 0 && suggestedVariants > 0 && suggestedPvp === 0) {
+      const actualPzs = suggestedModels * suggestedVariants * singleModelBasePzs;
       suggestedPvp = actualPzs > 0 ? Math.round(remainingBudget / actualPzs) : 0;
     } 
+    // Si no da nada: Usa el histórico para sacar los combos (Modelos * Variantes), asume 1 Variante, y luego saca el PVP
     else {
       if (remainingPzs > 0) {
-        suggestedModels = Math.round(remainingPzs / singleModelPzs) || 1;
+        suggestedModels = Math.round(remainingPzs / singleModelBasePzs) || 1;
+        suggestedVariants = 1;
       } else {
         const defaultPvp = 299;
-        const costPerModel = singleModelPzs * defaultPvp;
-        suggestedModels = costPerModel > 0 ? Math.floor(remainingBudget / costPerModel) : 1;
+        const combos = Math.floor(remainingBudget / (singleModelBasePzs * defaultPvp));
+        suggestedModels = combos > 0 ? combos : 1;
+        suggestedVariants = 1;
       }
-      const actualPzs = suggestedModels * singleModelPzs;
+      const actualPzs = suggestedModels * suggestedVariants * singleModelBasePzs;
       suggestedPvp = actualPzs > 0 ? Math.round(remainingBudget / actualPzs) : 0;
     }
     
     plan.models = suggestedModels || 1;
+    plan.variants = suggestedVariants || 1;
     plan.pvp = suggestedPvp;
     return null; 
   };
@@ -776,11 +806,19 @@ export default function App() {
     }
   };
 
+  const toggleAllGoas = () => {
+    const allIds = goas.filter(g => g.budget > 0).map(g => g.id);
+    const anyOpen = allIds.some(id => !collapsedGoas[id]);
+    const newState = {};
+    allIds.forEach(id => { newState[id] = anyOpen; }); 
+    setCollapsedGoas(newState);
+  };
+
   const toggleGoaCollapse = (id) => {
     setCollapsedGoas(prev => ({...prev, [id]: !prev[id]}));
   };
 
-  // --- FILTROS TAB 1 Y REPORTES CONSOLIDADOS ---
+  // --- REPORTES CONSOLIDADOS ---
   const filteredStores = useMemo(() => {
     if (filterGoa === 'ALL') return stores || [];
     const filterUpper = filterGoa.toUpperCase();
@@ -795,11 +833,12 @@ export default function App() {
       if (isSug) {
         const plans = (suggestedPlans || []).filter(p => p.goaId === g.id);
         plans.forEach(plan => {
-          const pzsPerModel = getPiecesForOneModel(g.name, plan.curveId, plan.ruleId);
+          const pzsPerOption = getPiecesForOneModel(g.name, plan.curveId, plan.ruleId);
           const models = Number(plan.models) || 0;
+          const variants = Number(plan.variants) || 1;
           const pvp = Number(plan.pvp) || 0;
-          boughtPzs += (pzsPerModel * models);
-          spentValue += (pzsPerModel * models * pvp);
+          boughtPzs += (pzsPerOption * models * variants);
+          spentValue += (pzsPerOption * models * variants * pvp);
         });
       } else {
         const p = (purchases || []).filter(x => x.goaId === g.id);
@@ -829,17 +868,19 @@ export default function App() {
           const rule = (calcRules || []).find(r => r.id === Number(plan.ruleId));
           const curve = (sizeCurves || []).find(c => c.id === Number(plan.curveId));
           const models = Number(plan.models) || 0;
+          const variants = Number(plan.variants) || 1;
           
           if(rule && curve && models > 0) {
-            totalModelsAffected += models;
+            const totalCombos = models * variants;
+            totalModelsAffected += totalCombos;
             const totalPzsPerRun = (curve.weights || '').split(',').map(w => Number(w.trim())).reduce((a, b) => a + b, 0);
             
             (activeClusters || []).forEach(c => {
                const runs = (rule.corridas || {})[c] || 0;
                if (runs > 0 && matrix[c]) {
-                 matrix[c].ruleRunsAvg += (runs * models); 
-                 matrix[c].pzs += (runs * totalPzsPerRun * models * matrix[c].stores); 
-                 matrix[c].totalStoreInstances += (matrix[c].stores * models);
+                 matrix[c].ruleRunsAvg += (runs * totalCombos); 
+                 matrix[c].pzs += (runs * totalPzsPerRun * totalCombos * matrix[c].stores); 
+                 matrix[c].totalStoreInstances += (matrix[c].stores * totalCombos);
                }
             });
           }
@@ -929,9 +970,10 @@ export default function App() {
             if (rule && curve) {
               const runs = (rule.corridas || {})[c] || 0;
               const pzsPerRun = (curve.weights || '').split(',').reduce((a, b) => a + Number(b), 0);
+              const variants = Number(plan.variants) || 1;
               const pzsInStore = runs * pzsPerRun;
-              storeTotalPzs += pzsInStore * (Number(plan.models) || 0);
-              storeTotalValue += pzsInStore * (Number(plan.models) || 0) * (Number(plan.pvp) || 0);
+              storeTotalPzs += pzsInStore * (Number(plan.models) || 0) * variants;
+              storeTotalValue += pzsInStore * (Number(plan.models) || 0) * variants * (Number(plan.pvp) || 0);
             }
           }
         });
@@ -945,8 +987,73 @@ export default function App() {
     }).sort((a, b) => (b.storeTotalPzs || 0) - (a.storeTotalPzs || 0));
   }, [stores, suggestedPlans, purchases, goas, activeClusters, calcRules, sizeCurves, reportView]);
 
+  // --- GENERADOR DE CHEQUERAS (TAB 6) ---
+  const generateChequera = (source = 'sugerido') => {
+    let csv = "GOA,Modelo,Variante,Centro,Nombre_Centro,Cluster,Talla,Piezas\r\n";
+    const dataToProcess = source === 'sugerido' ? suggestedPlans : purchases;
+
+    if (!dataToProcess || dataToProcess.length === 0) {
+      alert(`No hay datos en el plan ${source} para generar la chequera.`);
+      return;
+    }
+
+    dataToProcess.forEach((plan, i) => {
+      const goa = goas.find(g => g.id === plan.goaId);
+      if(!goa) return;
+      const rule = calcRules.find(r => r.id === Number(plan.ruleId));
+      const curve = sizeCurves.find(c => c.id === Number(plan.curveId));
+      if(!rule || !curve) return;
+
+      const sizes = curve.sizes.split(',').map(s => s.trim());
+      const weights = curve.weights.split(',').map(w => Number(w.trim()));
+
+      const modelsCount = Number(plan.models) || 1;
+      const variantsCount = Number(plan.variants) || 1;
+      const baseModelName = plan.modelo || `Mod_Gen_${i+1}`;
+
+      stores.forEach(store => {
+        const c = store.clusters[goa.name] || store.clusters[goa.name.toUpperCase()] || activeClusters[activeClusters.length - 1];
+        const runs = rule.corridas[c] || 0;
+        
+        if(runs > 0) {
+          if (source === 'sugerido') {
+            for(let m = 1; m <= modelsCount; m++) {
+              for(let v = 1; v <= variantsCount; v++) {
+                const modelName = `${baseModelName}_M${m}`;
+                const variantName = `Var_${v}`;
+                sizes.forEach((talla, tIdx) => {
+                  const pzs = runs * (weights[tIdx] || 0);
+                  if(pzs > 0) {
+                    csv += `"${goa.name}","${modelName}","${variantName}","${store.centerCode}","${store.name}","${c}","${talla}",${pzs}\r\n`;
+                  }
+                });
+              }
+            }
+          } else {
+            // Es preventa (real) -> Solo un modelo, no multiplicamos por variante
+            sizes.forEach((talla, tIdx) => {
+              const pzs = runs * (weights[tIdx] || 0);
+              if(pzs > 0) {
+                csv += `"${goa.name}","${baseModelName}","Única","${store.centerCode}","${store.name}","${c}","${talla}",${pzs}\r\n`;
+              }
+            });
+          }
+        }
+      });
+    });
+
+    const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `Chequera_${source}_${new Date().toISOString().slice(0,10)}.csv`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+  };
+
   return (
-    <div className={`min-h-screen w full font-sans pb-12 transition-colors duration-300 ${t.appBg}`}>
+    <div className={`min-h-screen w-full font-sans pb-12 transition-colors duration-300 ${t.appBg}`}>
       
       {/* HEADER Y MINI MENU */}
       <header className={`border-b sticky top-0 z-20 transition-colors duration-300 ${t.header}`}>
@@ -954,8 +1061,7 @@ export default function App() {
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center">
               <h1 className={`text-2xl font-black tracking-widest flex items-center ${t.textMain}`}>
-                GO <span className="mx-3 text-gray-400 font-light">|</span>
-                <ShoppingCart size={28} className={t.textAccent1} />
+                GO <span className="mx-3 text-gray-500 font-light">|</span> <ShoppingCart size={28} className={t.textAccent1} />
               </h1>
             </div>
             
@@ -986,11 +1092,13 @@ export default function App() {
             <TabButton id="budget" label="3. Forecast GO Planner" icon={Database} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
             <TabButton id="assortment" label="4. Ejecutar Preventa" icon={Package} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
             <TabButton id="reports" label="5. Reportes / Plan OTB" icon={Compass} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
+            {/* NUEVA PESTAÑA */}
+            <TabButton id="chequeras" label="6. Generador Chequeras" icon={FileSpreadsheet} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
           </div>
         </div>
       </header>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 transition-colors duration-300">
+      <main className="w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 transition-colors duration-300">
         
         {/* === PESTAÑA 1: BASE === */}
         {activeTab === 'data' && (
@@ -1133,100 +1241,9 @@ export default function App() {
 
         {/* === PESTAÑA 2: CALCULADORAS === */}
         {activeTab === 'calc' && (
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <div className={`p-6 rounded-xl border ${t.card}`}>
-              <h2 className={`text-xl font-bold mb-6 flex items-center ${t.textMain}`}><ClipboardList className={`mr-3 ${t.textAccent1}`}/> Curvas de Tallas</h2>
-              
-              <form onSubmit={handleCurveSubmit} className={`mb-6 p-5 rounded-xl border ${editingCurveId ? t.warningBg : t.cardInner}`}>
-                <h3 className={`text-sm font-bold tracking-wider uppercase mb-4 ${editingCurveId ? t.warningText : t.textMuted}`}>{editingCurveId ? '✏️ Editando Curva' : 'Crear Nueva Curva'}</h3>
-                <div className="space-y-3">
-                  <input required type="text" placeholder="Nombre (Ej. Curva Bebés)" value={newCurve.name} onChange={e=>setNewCurve({...newCurve, name: e.target.value})} className={`w-full p-2.5 rounded-lg text-sm transition ${t.input}`} />
-                  <input required type="text" placeholder="Tallas separadas por coma" value={newCurve.sizes} onChange={e=>setNewCurve({...newCurve, sizes: e.target.value})} className={`w-full p-2.5 rounded-lg text-sm transition ${t.input}`} />
-                  <input required type="text" placeholder="Corridas correspondientes" value={newCurve.weights} onChange={e=>setNewCurve({...newCurve, weights: e.target.value})} className={`w-full p-2.5 rounded-lg text-sm transition ${t.input}`} />
-                </div>
-                <div className="flex space-x-3 mt-4">
-                  <button type="submit" className={`flex-1 py-2.5 rounded-lg text-sm font-black uppercase tracking-wider transition ${editingCurveId ? t.btnPrimary : t.btnSecondary}`}>
-                    {editingCurveId ? 'Actualizar' : 'Guardar Curva'}
-                  </button>
-                  {editingCurveId && <button type="button" onClick={()=>{setEditingCurveId(null); setNewCurve({name:'', sizes:'', weights:''})}} className={`px-4 rounded-lg text-sm font-bold transition ${t.btnGhost}`}>Cancelar</button>}
-                </div>
-              </form>
-
-              {(sizeCurves || []).length === 0 ? (
-                 <div className={`p-8 text-center rounded-lg border border-dashed ${theme==='dark'?'border-zinc-800 text-gray-500':'border-gray-300 text-gray-400'}`}>Aún no hay curvas de tallas.</div>
-              ) : (
-                <div className="space-y-3">
-                  {sizeCurves.map(c => (
-                    <div key={c.id} className={`flex justify-between items-center p-4 border rounded-xl transition-all ${editingCurveId === c.id ? t.warningBg : t.cardInner}`}>
-                      <div>
-                        <p className={`font-bold ${t.textMain}`}>{c.name}</p>
-                        <p className={`text-xs mt-1.5 ${t.textMuted}`}><span className={`font-bold`}>Tallas:</span> [{c.sizes}]<br/><span className={`font-bold`}>Corridas:</span> [{c.weights}]</p>
-                      </div>
-                      <div className="flex space-x-2">
-                        <button onClick={()=>editCurve(c)} className={`p-2 rounded-lg transition ${t.btnEdit}`}><Edit3 size={16}/></button>
-                        <button onClick={()=>setSizeCurves(sizeCurves.filter(x=>x.id!==c.id))} className={`p-2 rounded-lg transition ${t.btnDanger}`}><Trash2 size={16}/></button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <div className={`p-6 rounded-xl border ${t.card}`}>
-              <h2 className={`text-xl font-bold mb-6 flex items-center ${t.textMain}`}><Settings className={`mr-3 ${t.textAccent2}`}/> Reglas de Corridas</h2>
-              
-              {activeClusters.length === 0 ? (
-                 <div className={`p-8 text-center rounded-lg border border-dashed ${theme==='dark'?'border-zinc-800 text-gray-500':'border-gray-300 text-gray-400'}`}>Configura tiendas primero.</div>
-              ) : (
-                <form onSubmit={handleRuleSubmit} className={`mb-6 p-5 rounded-xl border ${editingRuleId ? t.warningBg : t.cardInner}`}>
-                  <h3 className={`text-sm font-bold tracking-wider uppercase mb-4 ${editingRuleId ? t.warningText : t.textMuted}`}>{editingRuleId ? '✏️ Editando Regla' : 'Crear Nueva Regla'}</h3>
-                  <input required type="text" placeholder="Nombre (Ej. Regla Invierno)" value={newRule.name} onChange={e=>setNewRule({...newRule, name: e.target.value})} className={`w-full mb-4 p-2.5 rounded-lg text-sm transition ${t.inputYellow}`} />
-                  <div className="grid grid-cols-3 sm:grid-cols-4 md:grid-cols-5 gap-2 mb-4">
-                    {activeClusters.map(c => (
-                      <div key={`rule-clust-${c}`} className="text-center">
-                        <label className={`block text-[10px] font-black mb-1 ${c === activeClusters[0] ? t.textAccent1 : c === activeClusters[1] ? t.textAccent2 : t.textMuted}`}>{c}</label>
-                        <input type="number" min="0" value={newRule[c] || ''} onChange={e=>setNewRule({...newRule, [c]: e.target.value})} placeholder="0" className={`w-full p-2 rounded-md text-sm text-center transition ${t.input}`} />
-                      </div>
-                    ))}
-                  </div>
-                  <div className="flex space-x-3">
-                    <button type="submit" className={`flex-1 py-2.5 rounded-lg text-sm font-black uppercase tracking-wider transition ${editingRuleId ? t.btnPrimary : t.btnSecondary}`}>
-                      {editingRuleId ? 'Actualizar' : 'Guardar Regla'}
-                    </button>
-                    {editingRuleId && <button type="button" onClick={()=>{setEditingRuleId(null); setNewRule({name:''})}} className={`px-4 rounded-lg text-sm font-bold transition ${t.btnGhost}`}>Cancelar</button>}
-                  </div>
-                </form>
-              )}
-
-              {(calcRules || []).length === 0 ? (
-                 <div className={`p-8 text-center rounded-lg border border-dashed ${theme==='dark'?'border-zinc-800 text-gray-500':'border-gray-300 text-gray-400'}`}>Aún no hay reglas.</div>
-              ) : (
-                <div className="space-y-3">
-                  {calcRules.map(r => (
-                    <div key={r.id} className={`flex justify-between items-center p-4 border rounded-xl transition-all ${editingRuleId === r.id ? t.warningBg : t.cardInner}`}>
-                      <div>
-                        <p className={`font-bold ${t.textMain}`}>{r.name}</p>
-                        <div className="flex flex-wrap gap-1 mt-2">
-                          {activeClusters.map(c => (
-                            <span key={`disp-${c}`} className={`text-[10px] px-1.5 py-0.5 rounded border 
-                              ${c === activeClusters[0] && (r.corridas || {})[c] > 0 ? t.badgeAA : 
-                                c === activeClusters[1] && (r.corridas || {})[c] > 0 ? t.badgeA : 
-                                (r.corridas || {})[c] > 0 ? t.badgeOther : `border-transparent ${t.textMuted}`}`}>
-                              <span className="font-bold">{c}:</span> {(r.corridas || {})[c] || 0}
-                            </span>
-                          ))}
-                        </div>
-                      </div>
-                      <div className="flex space-x-2">
-                        <button onClick={()=>editRule(r)} className={`p-2 rounded-lg transition ${t.btnEdit}`}><Edit3 size={16}/></button>
-                        <button onClick={()=>setCalcRules(calcRules.filter(x=>x.id!==r.id))} className={`p-2 rounded-lg transition ${t.btnDanger}`}><Trash2 size={16}/></button>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
+          <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+            
+            {/* COLUMNA 1: BUCKETS */}
             <div className={`p-6 rounded-xl border ${t.card}`}>
               <h2 className={`text-xl font-bold mb-2 flex items-center ${t.textMain}`}><Layers className={`mr-3 ${t.textAccent1}`}/> Buckets de Producto</h2>
               <p className={`text-xs mb-6 ${t.textMuted}`}>Define "munditos" de producto (perfiles de cliente) para pre-asignar presupuesto. Ej: Señora Clásica, Chava Trendy, Premium, Value.</p>
@@ -1282,6 +1299,101 @@ export default function App() {
                 </>
               )}
             </div>
+
+            {/* COLUMNA 2: CURVAS DE TALLAS */}
+            <div className={`p-6 rounded-xl border ${t.card}`}>
+              <h2 className={`text-xl font-bold mb-6 flex items-center ${t.textMain}`}><ClipboardList className={`mr-3 ${t.textAccent1}`}/> Curvas de Tallas</h2>
+              
+              <form onSubmit={handleCurveSubmit} className={`mb-6 p-5 rounded-xl border ${editingCurveId ? t.warningBg : t.cardInner}`}>
+                <h3 className={`text-sm font-bold tracking-wider uppercase mb-4 ${editingCurveId ? t.warningText : t.textMuted}`}>{editingCurveId ? '✏️ Editando Curva' : 'Crear Nueva Curva'}</h3>
+                <div className="space-y-3">
+                  <input required type="text" placeholder="Nombre (Ej. Curva Bebés)" value={newCurve.name} onChange={e=>setNewCurve({...newCurve, name: e.target.value})} className={`w-full p-2.5 rounded-lg text-sm transition ${t.input}`} />
+                  <input required type="text" placeholder="Tallas separadas por coma" value={newCurve.sizes} onChange={e=>setNewCurve({...newCurve, sizes: e.target.value})} className={`w-full p-2.5 rounded-lg text-sm transition ${t.input}`} />
+                  <input required type="text" placeholder="Corridas correspondientes" value={newCurve.weights} onChange={e=>setNewCurve({...newCurve, weights: e.target.value})} className={`w-full p-2.5 rounded-lg text-sm transition ${t.input}`} />
+                </div>
+                <div className="flex space-x-3 mt-4">
+                  <button type="submit" className={`flex-1 py-2.5 rounded-lg text-sm font-black uppercase tracking-wider transition ${editingCurveId ? t.btnPrimary : t.btnSecondary}`}>
+                    {editingCurveId ? 'Actualizar' : 'Guardar Curva'}
+                  </button>
+                  {editingCurveId && <button type="button" onClick={()=>{setEditingCurveId(null); setNewCurve({name:'', sizes:'', weights:''})}} className={`px-4 rounded-lg text-sm font-bold transition ${t.btnGhost}`}>Cancelar</button>}
+                </div>
+              </form>
+
+              {(sizeCurves || []).length === 0 ? (
+                 <div className={`p-8 text-center rounded-lg border border-dashed ${theme==='dark'?'border-zinc-800 text-gray-500':'border-gray-300 text-gray-400'}`}>Aún no hay curvas de tallas.</div>
+              ) : (
+                <div className="space-y-3">
+                  {sizeCurves.map(c => (
+                    <div key={c.id} className={`flex justify-between items-center p-4 border rounded-xl transition-all ${editingCurveId === c.id ? t.warningBg : t.cardInner}`}>
+                      <div>
+                        <p className={`font-bold ${t.textMain}`}>{c.name}</p>
+                        <p className={`text-xs mt-1.5 ${t.textMuted}`}><span className={`font-bold`}>Tallas:</span> [{c.sizes}]<br/><span className={`font-bold`}>Corridas:</span> [{c.weights}]</p>
+                      </div>
+                      <div className="flex space-x-2">
+                        <button onClick={()=>editCurve(c)} className={`p-2 rounded-lg transition ${t.btnEdit}`}><Edit3 size={16}/></button>
+                        <button onClick={()=>setSizeCurves(sizeCurves.filter(x=>x.id!==c.id))} className={`p-2 rounded-lg transition ${t.btnDanger}`}><Trash2 size={16}/></button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {/* COLUMNA 3: REGLAS DE CORRIDAS */}
+            <div className={`p-6 rounded-xl border ${t.card}`}>
+              <h2 className={`text-xl font-bold mb-6 flex items-center ${t.textMain}`}><Settings className={`mr-3 ${t.textAccent2}`}/> Reglas de Corridas</h2>
+              
+              {activeClusters.length === 0 ? (
+                 <div className={`p-8 text-center rounded-lg border border-dashed ${theme==='dark'?'border-zinc-800 text-gray-500':'border-gray-300 text-gray-400'}`}>Configura tiendas primero.</div>
+              ) : (
+                <form onSubmit={handleRuleSubmit} className={`mb-6 p-5 rounded-xl border ${editingRuleId ? t.warningBg : t.cardInner}`}>
+                  <h3 className={`text-sm font-bold tracking-wider uppercase mb-4 ${editingRuleId ? t.warningText : t.textMuted}`}>{editingRuleId ? '✏️ Editando Regla' : 'Crear Nueva Regla'}</h3>
+                  <input required type="text" placeholder="Nombre (Ej. Regla Invierno)" value={newRule.name} onChange={e=>setNewRule({...newRule, name: e.target.value})} className={`w-full mb-4 p-2.5 rounded-lg text-sm transition ${t.inputYellow}`} />
+                  <div className="grid grid-cols-3 gap-2 mb-4">
+                    {activeClusters.map(c => (
+                      <div key={`rule-clust-${c}`} className="text-center">
+                        <label className={`block text-[10px] font-black mb-1 ${c === activeClusters[0] ? t.textAccent1 : c === activeClusters[1] ? t.textAccent2 : t.textMuted}`}>{c}</label>
+                        <input type="number" min="0" value={newRule[c] || ''} onChange={e=>setNewRule({...newRule, [c]: e.target.value})} placeholder="0" className={`w-full p-2 rounded-md text-sm text-center transition ${t.input}`} />
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex space-x-3">
+                    <button type="submit" className={`flex-1 py-2.5 rounded-lg text-sm font-black uppercase tracking-wider transition ${editingRuleId ? t.btnPrimary : t.btnSecondary}`}>
+                      {editingRuleId ? 'Actualizar' : 'Guardar Regla'}
+                    </button>
+                    {editingRuleId && <button type="button" onClick={()=>{setEditingRuleId(null); setNewRule({name:''})}} className={`px-4 rounded-lg text-sm font-bold transition ${t.btnGhost}`}>Cancelar</button>}
+                  </div>
+                </form>
+              )}
+
+              {(calcRules || []).length === 0 ? (
+                 <div className={`p-8 text-center rounded-lg border border-dashed ${theme==='dark'?'border-zinc-800 text-gray-500':'border-gray-300 text-gray-400'}`}>Aún no hay reglas.</div>
+              ) : (
+                <div className="space-y-3">
+                  {calcRules.map(r => (
+                    <div key={r.id} className={`flex justify-between items-center p-4 border rounded-xl transition-all ${editingRuleId === r.id ? t.warningBg : t.cardInner}`}>
+                      <div>
+                        <p className={`font-bold ${t.textMain}`}>{r.name}</p>
+                        <div className="flex flex-wrap gap-1 mt-2">
+                          {activeClusters.map(c => (
+                            <span key={`disp-${c}`} className={`text-[10px] px-1.5 py-0.5 rounded border 
+                              ${c === activeClusters[0] && (r.corridas || {})[c] > 0 ? t.badgeAA : 
+                                c === activeClusters[1] && (r.corridas || {})[c] > 0 ? t.badgeA : 
+                                (r.corridas || {})[c] > 0 ? t.badgeOther : `border-transparent ${t.textMuted}`}`}>
+                              <span className="font-bold">{c}:</span> {(r.corridas || {})[c] || 0}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                      <div className="flex space-x-2">
+                        <button onClick={()=>editRule(r)} className={`p-2 rounded-lg transition ${t.btnEdit}`}><Edit3 size={16}/></button>
+                        <button onClick={()=>setCalcRules(calcRules.filter(x=>x.id!==r.id))} className={`p-2 rounded-lg transition ${t.btnDanger}`}><Trash2 size={16}/></button>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
           </div>
         )}
 
@@ -1293,11 +1405,9 @@ export default function App() {
               <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-6 gap-4">
                 <h2 className={`text-xl font-bold flex items-center ${t.textMain}`}><Database className={`mr-3 ${t.textAccent1}`}/> Forecast y Curvas Mensuales</h2>
                 <div className="flex space-x-3">
-                  {forecastDisponible && (
-                    <button onClick={handleLoadForecastFromContext} className={`px-4 py-2.5 rounded-lg text-sm font-bold flex items-center transition bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg`}>
-                      <Database size={16} className="mr-2" /> Extraer de Forecast
-                    </button>
-                  )}
+                  <button onClick={handleLoadForecastFromContext} className={`px-4 py-2.5 rounded-lg text-sm font-bold flex items-center transition bg-indigo-600 text-white hover:bg-indigo-500 shadow-lg`}>
+                    <Database size={16} className="mr-2" /> Extraer de Forecast
+                  </button>
                   <label className={`cursor-pointer px-4 py-2.5 rounded-lg text-sm font-bold flex items-center transition ${t.btnGhost} shadow-lg`}>
                     <Upload size={16} className="mr-2" /> Importar CSV
                     <input type="file" accept=".csv" onClick={(e) => e.target.value = null} onChange={handleForecastCSVUpload} className="hidden" />
@@ -1334,9 +1444,7 @@ export default function App() {
                           <input type="number" value={g.historyPzs} onChange={(e) => handleUpdateGoaField(g.id, 'historyPzs', e.target.value)} className={`w-20 text-right bg-transparent outline-none border-b border-transparent focus:border-purple-500`} /> pzs
                         </td>
                         {(g.months || [16.6,16.6,16.6,16.6,16.6,17]).map((m, i) => (
-                           <td key={`mes-${g.id}-${i}`} className={`p-2 text-center text-xs font-mono border-l border-black/5 ${t.textMain}`}>
-                             <input type="number" value={Number(m?.value ?? m) || 0} onChange={(e) => handleUpdateGoaField(g.id, 'months', e.target.value, i)} className={`w-12 text-center bg-transparent outline-none border-b border-transparent focus:border-gray-400`} />%
-                           </td>
+                           <td key={`mes-${g.id}-${i}`} className={`p-2 text-center text-xs font-mono border-l border-black/5 ${t.textMain}`}>{Number(m?.value ?? m) || 0}%</td>
                         ))}
                       </tr>
                     ))}
@@ -1444,7 +1552,7 @@ export default function App() {
                             return (
                               <div key={`bk-cons-${b.id}`} className={`p-3 rounded-lg border ${theme==='dark'?'bg-zinc-900/60 border-zinc-700':'bg-white/15 border-white/30'}`}>
                                 <div className="flex justify-between items-start mb-1">
-                                  <p className={`text-xs font-black truncate ${theme==='dark'?'text-white':'text-white'}`} title={b.name}>{b.name}</p>
+                                  <p className={`text-xs font-black truncate text-white`} title={b.name}>{b.name}</p>
                                   <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${theme==='dark'?'bg-zinc-800 text-gray-300':'bg-white/20 text-white'}`}>{b.sharePct||0}%</span>
                                 </div>
                                 <div className={`w-full h-1.5 rounded-full overflow-hidden mb-2 ${theme==='dark'?'bg-zinc-800':'bg-white/20'}`}>
@@ -1555,9 +1663,14 @@ export default function App() {
                           <p className={`text-xs mt-1 ${t.textMuted}`}>Crea "combos" de compras por GOA.</p>
                         </div>
                       </div>
-                      <button onClick={handleResolveAll} className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition flex items-center shadow-lg bg-indigo-600 hover:bg-indigo-500 text-white`}>
-                        <Wand2 size={14} className="mr-2"/> Resolver Todos
-                      </button>
+                      <div className="flex items-center">
+                        <button onClick={toggleAllGoas} className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition flex items-center shadow-lg border mr-3 ${t.btnGhost}`}>
+                          <ArrowUpDown size={14} className="mr-2"/> Expandir/Contraer
+                        </button>
+                        <button onClick={handleResolveAll} className={`px-4 py-2 rounded-lg text-xs font-black uppercase tracking-widest transition flex items-center shadow-lg bg-indigo-600 hover:bg-indigo-500 text-white`}>
+                          <Wand2 size={14} className="mr-2"/> Resolver Todos
+                        </button>
+                      </div>
                     </div>
                     
                     <div className="p-6 space-y-4">
@@ -1567,8 +1680,9 @@ export default function App() {
                         let goaPzs = 0; let goaSpent = 0;
                         goaPlans.forEach(plan => {
                           const pzs = getPiecesForOneModel(goa.name, plan.curveId, plan.ruleId);
-                          goaPzs += (pzs * (Number(plan.models) || 0));
-                          goaSpent += (pzs * (Number(plan.models) || 0) * (Number(plan.pvp) || 0));
+                          const variants = Number(plan.variants) || 1;
+                          goaPzs += (pzs * (Number(plan.models) || 0) * variants);
+                          goaSpent += (pzs * (Number(plan.models) || 0) * variants * (Number(plan.pvp) || 0));
                         });
                         const diffHist = goaPzs - (goa.historyPzs || 0);
                         const otbRestante = (goa.budget || 0) - goaSpent;
@@ -1607,6 +1721,7 @@ export default function App() {
                                         <th className="pb-2">Estrategia</th>
                                         <th className="pb-2 text-center w-32">Automático</th>
                                         <th className="pb-2 w-24 text-center">Modelos</th>
+                                        <th className="pb-2 w-24 text-center">Variantes</th>
                                         <th className="pb-2 w-24 text-center">PVP ($)</th>
                                         <th className="pb-2 text-right">Total Pzs</th>
                                         <th className="pb-2 text-right">Inversión</th>
@@ -1616,7 +1731,8 @@ export default function App() {
                                     <tbody className="space-y-2">
                                       {goaPlans.map(plan => {
                                         const singleModelPzs = getPiecesForOneModel(goa.name, plan.curveId, plan.ruleId);
-                                        const totalPzs = singleModelPzs * (Number(plan.models) || 0);
+                                        const variants = Number(plan.variants) || 1;
+                                        const totalPzs = singleModelPzs * (Number(plan.models) || 0) * variants;
                                         const totalCost = totalPzs * (Number(plan.pvp) || 0);
                                         
                                         return (
@@ -1636,8 +1752,15 @@ export default function App() {
                                                 <Wand2 size={12} className="mr-1"/> Resolver
                                               </button>
                                             </td>
-                                            <td className="py-2 px-2"><input type="number" min="1" value={plan.models} onChange={e=>handleUpdateSuggestion(plan.id, 'models', e.target.value)} className={`w-full p-2 rounded text-xs text-center font-bold outline-none ${t.input}`} /></td>
-                                            <td className="py-2 px-2"><input type="number" value={plan.pvp} onChange={e=>handleUpdateSuggestion(plan.id, 'pvp', e.target.value)} placeholder="0.00" className={`w-full p-2 rounded text-xs font-bold text-center outline-none ${t.inputYellow}`} /></td>
+                                            <td className="py-2 px-2">
+                                              <input type="number" min="1" value={plan.models !== undefined ? plan.models : ''} onChange={e=>handleUpdateSuggestion(plan.id, 'models', e.target.value)} className={`w-full p-2 rounded text-xs text-center font-bold outline-none ${t.input}`} />
+                                            </td>
+                                            <td className="py-2 px-2">
+                                              <input type="number" min="1" value={plan.variants !== undefined ? plan.variants : 1} onChange={e=>handleUpdateSuggestion(plan.id, 'variants', e.target.value)} className={`w-full p-2 rounded text-xs text-center font-bold outline-none ${t.input}`} />
+                                            </td>
+                                            <td className="py-2 px-2">
+                                              <input type="number" value={plan.pvp !== undefined ? plan.pvp : ''} onChange={e=>handleUpdateSuggestion(plan.id, 'pvp', e.target.value)} placeholder="0.00" className={`w-full p-2 rounded text-xs font-bold text-center outline-none ${t.inputYellow}`} />
+                                            </td>
                                             
                                             <td className={`py-2 px-2 text-right font-bold ${t.textMain}`}>{totalPzs > 0 ? totalPzs.toLocaleString() : '-'}</td>
                                             <td className={`py-2 px-2 text-right font-bold ${t.textAccent2}`}>{totalCost > 0 ? `$${totalCost.toLocaleString()}` : '-'}</td>
@@ -1695,6 +1818,34 @@ export default function App() {
                             <td className={`p-4 text-right font-black ${g.otb >= 0 ? t.successBg : t.dangerBg}`}>${(g.otb || 0).toLocaleString()}</td>
                           </tr>
                         ))}
+                        {/* FILA DE TOTALES (OTB GENERAL) */}
+                        <tr className={`font-black border-t-2 ${theme==='dark'?'bg-purple-900/20 border-purple-500/30':'bg-indigo-50 border-indigo-200'}`}>
+                          <td className={`p-4 border-r text-right uppercase text-xs tracking-wider ${theme==='dark'?'border-purple-500/20 text-purple-300':'border-indigo-200 text-indigo-700'}`}>Total General</td>
+                          <td className={`p-4 border-l text-right ${t.textMain}`}>
+                            {reportData.goaMetrics.filter(g => (g.boughtPzs || 0) > 0 || (g.budget || 0) > 0).reduce((s, g) => s + (g.boughtPzs || 0), 0).toLocaleString()}
+                          </td>
+                          <td className={`p-4 text-right ${t.textMuted}`}>
+                            {reportData.goaMetrics.filter(g => (g.boughtPzs || 0) > 0 || (g.budget || 0) > 0).reduce((s, g) => s + (g.historyPzs || 0), 0).toLocaleString()}
+                          </td>
+                          <td className={`p-4 text-right font-bold`}>
+                            {(() => {
+                                const diff = reportData.goaMetrics.filter(g => (g.boughtPzs || 0) > 0 || (g.budget || 0) > 0).reduce((s, g) => s + (g.historyDiff || 0), 0);
+                                return <span className={diff >= 0 ? t.successText : t.dangerText}>{diff > 0 ? '+' : ''}{diff.toLocaleString()}</span>;
+                            })()}
+                          </td>
+                          <td className={`p-4 border-l text-right ${t.textAccent2}`}>
+                            ${reportData.goaMetrics.filter(g => (g.boughtPzs || 0) > 0 || (g.budget || 0) > 0).reduce((s, g) => s + (g.spentValue || 0), 0).toLocaleString()}
+                          </td>
+                          <td className={`p-4 text-right ${t.textMuted}`}>
+                            ${reportData.goaMetrics.filter(g => (g.boughtPzs || 0) > 0 || (g.budget || 0) > 0).reduce((s, g) => s + (g.budget || 0), 0).toLocaleString()}
+                          </td>
+                          <td className={`p-4 text-right`}>
+                            {(() => {
+                                const otb = reportData.goaMetrics.filter(g => (g.boughtPzs || 0) > 0 || (g.budget || 0) > 0).reduce((s, g) => s + (g.otb || 0), 0);
+                                return <span className={otb >= 0 ? t.successText : t.dangerText}>${otb.toLocaleString()}</span>;
+                            })()}
+                          </td>
+                        </tr>
                       </tbody>
                     </table>
                   </div>
@@ -1726,9 +1877,8 @@ export default function App() {
                       </thead>
                       <tbody className={`divide-y ${t.border}`}>
                         {reportData.goaMetrics.filter(g => (g.boughtPzs || 0) > 0 || (g.budget || 0) > 0).map(g => {
-                          // Si hay compras con mes asignado para este GOA, usar real; si no, distribuir por %
                           const goaPurchases = (purchases || []).filter(p => p.goaId === g.id && p.monthOffset !== null && p.monthOffset !== undefined);
-                          const useReal = reportView === 'real' && goaPurchases.length > 0;
+                          const useReal = reportView === 'preventa' && goaPurchases.length > 0;
                           const realPzsByMonth = {};
                           if (useReal) {
                             goaPurchases.forEach(p => {
@@ -1758,6 +1908,25 @@ export default function App() {
                           </tr>
                           );
                         })}
+                        {/* FILA DE TOTALES (PROYECCIÓN MENSUAL) */}
+                        <tr className={`font-black border-t-2 ${theme==='dark'?'bg-purple-900/20 border-purple-500/30':'bg-indigo-50 border-indigo-200'}`}>
+                          <td className={`p-3 border-r text-right uppercase text-xs tracking-wider ${theme==='dark'?'border-purple-500/20 text-purple-300':'border-indigo-200 text-indigo-700'}`}>Total Mensual</td>
+                          <td className={`p-3 border-r ${t.textAccent2}`}>
+                            {reportData.goaMetrics.filter(g => (g.boughtPzs || 0) > 0 || (g.budget || 0) > 0).reduce((s, g) => s + (g.boughtPzs || 0), 0).toLocaleString()} pzs
+                          </td>
+                          {[0,1,2,3,4,5].map(o => {
+                             const sumMes = reportData.goaMetrics.filter(g => (g.boughtPzs || 0) > 0 || (g.budget || 0) > 0).reduce((s, g) => {
+                               const goaPurchases = (purchases || []).filter(p => p.goaId === g.id && p.monthOffset !== null && p.monthOffset !== undefined);
+                               const useReal = reportView === 'preventa' && goaPurchases.length > 0;
+                               if (useReal) {
+                                 return s + goaPurchases.filter(p => p.monthOffset === o).reduce((ss, p) => ss + (p.totalPieces || 0), 0);
+                               }
+                               const w = (g.months || [16.6,16.6,16.6,16.6,16.6,17])[o];
+                               return s + Math.round((g.boughtPzs || 0) * ((Number(w?.value ?? w) || 0) / 100));
+                             }, 0);
+                             return <td key={`tot-mes-${o}`} className={`p-3 border-r ${t.textMain}`}>{sumMes.toLocaleString()}</td>
+                          })}
+                        </tr>
                       </tbody>
                     </table>
                   </div>
@@ -1870,6 +2039,130 @@ export default function App() {
           </div>
         )}
 
+        {/* === NUEVA PESTAÑA 6: GENERADOR DE CHEQUERAS === */}
+        {activeTab === 'chequeras' && (
+          <div className="space-y-6">
+            <div className={`p-6 rounded-xl border shadow-lg ${t.card}`}>
+              <h2 className={`text-xl font-bold mb-4 flex items-center ${t.textMain}`}>
+                <LayoutList className={`mr-3 ${t.textAccent1}`}/> Generador de Chequeras (Allocation)
+              </h2>
+              <p className={`text-sm mb-8 ${t.textMuted}`}>
+                Exporta el plan de surtido desglosado a nivel SKU y Talla por Centro para el equipo de Allocation. También puedes subir un archivo externo de preventa para procesarlo con las matrices actuales.
+              </p>
+
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
+                
+                {/* EXPORTAR DESDE APP */}
+                <div className={`p-6 rounded-xl border ${t.cardInner}`}>
+                  <h3 className={`font-bold mb-2 flex items-center ${t.textMain}`}><Download className="mr-2 text-green-500" size={18}/> Exportar Desde la App</h3>
+                  <p className={`text-xs mb-6 ${t.textMuted}`}>Genera la chequera usando los datos del trabajo actual en la Pestaña 4 (Preventa Real) o 5 (Forecast Sugerido).</p>
+                  
+                  <div className="flex flex-col space-y-3">
+                    <button onClick={() => generateChequera('sugerido')} className={`w-full py-3.5 rounded-lg text-xs font-black uppercase tracking-widest transition flex items-center justify-center ${t.btnPrimary}`}>
+                      Chequera Sugerido
+                    </button>
+                    <button onClick={() => generateChequera('preventa')} className={`w-full py-3.5 rounded-lg text-xs font-black uppercase tracking-widest transition flex items-center justify-center border ${theme==='dark'?'border-purple-500 text-purple-400 hover:bg-purple-900/30':'border-indigo-500 text-indigo-600 hover:bg-indigo-50'}`}>
+                      Chequera Preventa (Real)
+                    </button>
+                  </div>
+                </div>
+
+                {/* SUBIR PREVENTA EXTERNA */}
+                <div className={`p-6 rounded-xl border ${t.cardInner}`}>
+                  <h3 className={`font-bold mb-2 flex items-center ${t.textMain}`}><Upload className="mr-2 text-blue-500" size={18}/> Procesar Preventa Externa</h3>
+                  <p className={`text-xs mb-6 ${t.textMuted}`}>
+                    Sube un CSV de preventa. <span className="font-bold">Columnas requeridas: GOA, Modelo, Curva, Regla.</span> La app cruzará estos datos con tu matriz y devolverá el archivo de Allocation.
+                  </p>
+                  
+                  <label className={`cursor-pointer w-full h-24 rounded-xl text-xs font-black uppercase tracking-widest transition flex flex-col items-center justify-center border-2 border-dashed ${theme==='dark'?'border-zinc-700 text-zinc-500 hover:border-yellow-400 hover:text-yellow-400 bg-zinc-900/50':'border-gray-300 text-gray-400 hover:border-blue-500 hover:text-blue-500 bg-gray-50'}`}>
+                    <Upload size={24} className="mb-2" /> 
+                    Subir y Procesar Archivo (.CSV)
+                    <input type="file" accept=".csv" onClick={(e) => e.target.value = null} onChange={(e) => {
+                      const file = e.target.files[0];
+                      if (!file) return;
+                      const reader = new FileReader();
+                      reader.onload = (event) => {
+                        const text = event.target.result.replace(/^\uFEFF/, '');
+                        const rows = parseCSV(text);
+                        if(rows.length < 2) return;
+                        
+                        const headers = rows[0].map(h => h.toUpperCase());
+                        const idxGoa = headers.findIndex(h => h === 'GOA' || h === 'FAMILIA');
+                        const idxMod = headers.findIndex(h => h === 'MODELO' || h === 'SKU');
+                        const idxCur = headers.findIndex(h => h === 'CURVA' || h === 'TALLAS');
+                        const idxReg = headers.findIndex(h => h === 'REGLA' || h === 'CLUSTER');
+
+                        if(idxGoa === -1 || idxMod === -1 || idxCur === -1 || idxReg === -1) {
+                           alert("Tu CSV externo debe tener las columnas: GOA, MODELO, CURVA, REGLA");
+                           return;
+                        }
+
+                        let tempExternalPurchases = [];
+                        for(let i=1; i<rows.length; i++) {
+                           if(!rows[i][idxGoa]) continue;
+                           const goaName = rows[i][idxGoa];
+                           const modeloName = rows[i][idxMod];
+                           const curveName = rows[i][idxCur];
+                           const ruleName = rows[i][idxReg];
+
+                           const goaObj = goas.find(g => g.name.toUpperCase() === goaName.toUpperCase());
+                           const curveObj = sizeCurves.find(c => c.name.toUpperCase() === curveName.toUpperCase());
+                           const ruleObj = calcRules.find(r => r.name.toUpperCase() === ruleName.toUpperCase());
+
+                           if(goaObj && curveObj && ruleObj) {
+                              tempExternalPurchases.push({
+                                 id: Date.now()+i, goaId: goaObj.id, goaName: goaObj.name, modelo: modeloName, curveId: curveObj.id, ruleId: ruleObj.id
+                              });
+                           }
+                        }
+
+                        if(tempExternalPurchases.length === 0) {
+                           alert("No se pudieron emparejar las Reglas, Curvas o GOAs del archivo con la configuración actual.");
+                           return;
+                        }
+
+                        // Generar el CSV al vuelo sin afectar el state actual
+                        let csvOut = "GOA,Modelo,Variante,Centro,Nombre_Centro,Cluster,Talla,Piezas\r\n";
+                        tempExternalPurchases.forEach((plan, i) => {
+                           const goa = goas.find(g => g.id === plan.goaId);
+                           const rule = calcRules.find(r => r.id === Number(plan.ruleId));
+                           const curve = sizeCurves.find(c => c.id === Number(plan.curveId));
+                           const sizes = curve.sizes.split(',').map(s => s.trim());
+                           const weights = curve.weights.split(',').map(w => Number(w.trim()));
+
+                           stores.forEach(store => {
+                             const c = store.clusters[goa.name] || store.clusters[goa.name.toUpperCase()] || activeClusters[activeClusters.length - 1];
+                             const runs = rule.corridas[c] || 0;
+                             if(runs > 0) {
+                               sizes.forEach((talla, tIdx) => {
+                                 const pzs = runs * (weights[tIdx] || 0);
+                                 if(pzs > 0) {
+                                   csvOut += `"${goa.name}","${plan.modelo}","Única","${store.centerCode}","${store.name}","${c}","${talla}",${pzs}\r\n`;
+                                 }
+                               });
+                             }
+                           });
+                        });
+
+                        const blob = new Blob(["\uFEFF" + csvOut], { type: "text/csv;charset=utf-8;" });
+                        const url = URL.createObjectURL(blob);
+                        const link = document.createElement("a");
+                        link.href = url;
+                        link.download = `Chequera_Externa_${new Date().toISOString().slice(0,10)}.csv`;
+                        document.body.appendChild(link);
+                        link.click();
+                        document.body.removeChild(link);
+                      };
+                      reader.readAsText(file, 'UTF-8');
+                    }} className="hidden" />
+                  </label>
+                </div>
+
+              </div>
+            </div>
+          </div>
+        )}
+
       </main>
 
       {/* MODAL PARA GUARDAR SESIÓN */}
@@ -1883,7 +2176,7 @@ export default function App() {
               placeholder="Ej. Escenario_Verano_2026"
               value={saveFileName}
               onChange={e => setSaveFileName(e.target.value)}
-              className={`w-full p-3 rounded-lg mb-6 text-sm font-bold ${t.input}`}
+              className={`w-full p-3 rounded-lg mb-6 text-sm font-bold outline-none border focus:ring-1 focus:ring-yellow-500 ${theme==='dark' ? 'bg-zinc-950 border-zinc-800 text-white' : 'bg-gray-50 border-gray-300 text-black'}`}
               autoFocus
             />
             <div className="flex space-x-3">
