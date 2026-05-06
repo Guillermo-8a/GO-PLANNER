@@ -1,6 +1,15 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { Settings, Store, Package, Upload, ArrowUpDown, Sliders, Layers, MoreVertical, Sun, Moon, Info, Map as MapIcon, Database, ShoppingCart, BarChart3, Plus, Trash2, Save, Download, Zap, DollarSign, Target, FileSpreadsheet, Edit3, Lightbulb, CalendarDays, Compass, Activity, Wand2, RefreshCw, ClipboardList, Calculator, ChevronDown, ChevronRight, LayoutList } from 'lucide-react';
-import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
+
+// =====================================================================
+// 1. IMPORT REAL (Descomenta esta línea en tu entorno local GO PLANNER)
+// import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
+
+// 2. MOCK TEMPORAL PARA EL PREVIEW EN CANVAS (¡¡¡ELIMINA ESTE BLOQUE 2 EN VERCEL PARA EVITAR ERRORES!!!)
+const useDispatch = () => (() => {});
+const useGlobal = () => ({ forecastData: null, theme: 'dark' });
+const globalActions = { publishOTB: () => {} };
+// =====================================================================
 
 // --- MOTOR INTELIGENTE PARA LEER CSV (Ignora comas dentro de comillas) ---
 const parseCSV = (text) => {
@@ -127,8 +136,11 @@ export default function App() {
   const [purchaseMonthBase, setPurchaseMonthBase] = useState(() => {
     if (initialState?.purchaseMonthBase) return initialState.purchaseMonthBase;
     const d = new Date();
-    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    return `${d.getFullYear()+1}-01`;
   });
+
+  // --- Modal nivel alto chequera ---
+  const [chequeraModal, setChequeraModal] = useState({ open: false, source: 'sugerido', seccion: '', marca: '' });
   const [reportView, setReportView] = useState('sugerido'); 
 
   // --- AUTO-GUARDADO A LOCALSTORAGE ---
@@ -676,7 +688,7 @@ export default function App() {
 
   // --- MOTOR MÁGICO DE SUGERENCIAS ---
   const handleAddSuggestion = (goaId) => {
-    setSuggestedPlans([...(suggestedPlans || []), { id: Date.now(), goaId, curveId: '', ruleId: '', pvp: '', models: '', variants: '' }]);
+    setSuggestedPlans([...(suggestedPlans || []), { id: Date.now(), goaId, curveId: '', ruleId: '', pvp: '', models: '', variants: '', bucketId: '', monthOffset: '' }]);
     setCollapsedGoas(prev => ({...prev, [goaId]: false}));
   };
   const handleUpdateSuggestion = (id, field, value) => {
@@ -719,9 +731,24 @@ export default function App() {
        usedPzs += opPzs * (Number(op.models)||0) * opVars;
        usedBudget += opPzs * (Number(op.models)||0) * opVars * (Number(op.pvp)||0);
     });
+
+    // Si el plan tiene bucket asignado, el budget restante es del bucket (no del GOA total)
+    const planBucketId = plan.bucketId ? Number(plan.bucketId) : null;
+    const planBucket = planBucketId ? (buckets || []).find(b => b.id === planBucketId) : null;
+    let goaBudgetForCalc = (goa.budget || 0);
+    let usedBudgetForCalc = usedBudget;
+    if (planBucket) {
+      goaBudgetForCalc = (goa.budget || 0) * ((Number(planBucket.sharePct) || 0) / 100);
+      // Solo descontar lo que ya consumieron OTROS planes del MISMO bucket
+      usedBudgetForCalc = otherPlans.filter(op => Number(op.bucketId) === planBucketId).reduce((s, op) => {
+        const opPzs = getPiecesForOneModel(goa.name, op.curveId, op.ruleId);
+        const opVars = Number(op.variants) || 1;
+        return s + opPzs * (Number(op.models)||0) * opVars * (Number(op.pvp)||0);
+      }, 0);
+    }
     
     const remainingPzs = Math.max(0, (goa.historyPzs || 0) - usedPzs);
-    const remainingBudget = Math.max(0, (goa.budget || 0) - usedBudget);
+    const remainingBudget = Math.max(0, goaBudgetForCalc - usedBudgetForCalc);
     
     let suggestedModels = Number(plan.models) || 0;
     let suggestedVariants = Number(plan.variants) || 0;
@@ -988,14 +1015,30 @@ export default function App() {
   }, [stores, suggestedPlans, purchases, goas, activeClusters, calcRules, sizeCurves, reportView]);
 
   // --- GENERADOR DE CHEQUERAS (TAB 6) ---
-  const generateChequera = (source = 'sugerido') => {
-    let csv = "GOA,Modelo,Variante,Centro,Nombre_Centro,Cluster,Talla,Piezas\r\n";
+  const generateChequera = (source = 'sugerido', level = 'detail', extras = {}) => {
     const dataToProcess = source === 'sugerido' ? suggestedPlans : purchases;
 
     if (!dataToProcess || dataToProcess.length === 0) {
       alert(`No hay datos en el plan ${source} para generar la chequera.`);
       return;
     }
+
+    const seccion = (extras.seccion || '').trim();
+    const marca = (extras.marca || '').trim();
+
+    // ---- Detalle: una línea por (GOA, Modelo, Variante, Centro, Talla)
+    // ---- Nivel alto: agrupado por (Sección, Marca, GOA, Modelo, Talla) — suma piezas, sin centro/cluster/variante
+    const isHigh = level === 'high';
+
+    let csv;
+    if (isHigh) {
+      csv = "Seccion,Marca,GOA,Modelo,Talla,Piezas,Bucket,Mes,PVP,Costo_Total\r\n";
+    } else {
+      csv = "Seccion,Marca,GOA,Modelo,Variante,Centro,Nombre_Centro,Cluster,Talla,Piezas,Bucket,Mes,PVP\r\n";
+    }
+
+    // Acumulador para nivel alto: key = `${goa}|${modelo}|${talla}|${bucket}|${mes}`
+    const aggregated = {};
 
     dataToProcess.forEach((plan, i) => {
       const goa = goas.find(g => g.id === plan.goaId);
@@ -1010,43 +1053,55 @@ export default function App() {
       const modelsCount = Number(plan.models) || 1;
       const variantsCount = Number(plan.variants) || 1;
       const baseModelName = plan.modelo || `Mod_Gen_${i+1}`;
+      const pvp = Number(plan.pvp) || 0;
+
+      const bucketObj = plan.bucketId ? (buckets || []).find(b => b.id === Number(plan.bucketId)) : null;
+      const bucketName = bucketObj ? bucketObj.name : (plan.bucketName || '');
+      const monthLabel = plan.monthLabel || (plan.monthOffset !== null && plan.monthOffset !== undefined && plan.monthOffset !== '' ? getMonthLabel(plan.monthOffset) : '');
 
       stores.forEach(store => {
         const c = store.clusters[goa.name] || store.clusters[goa.name.toUpperCase()] || activeClusters[activeClusters.length - 1];
         const runs = rule.corridas[c] || 0;
-        
-        if(runs > 0) {
-          if (source === 'sugerido') {
-            for(let m = 1; m <= modelsCount; m++) {
-              for(let v = 1; v <= variantsCount; v++) {
-                const modelName = `${baseModelName}_M${m}`;
-                const variantName = `Var_${v}`;
-                sizes.forEach((talla, tIdx) => {
-                  const pzs = runs * (weights[tIdx] || 0);
-                  if(pzs > 0) {
-                    csv += `"${goa.name}","${modelName}","${variantName}","${store.centerCode}","${store.name}","${c}","${talla}",${pzs}\r\n`;
-                  }
-                });
-              }
+        if(runs <= 0) return;
+
+        const emit = (modelName, variantName) => {
+          sizes.forEach((talla, tIdx) => {
+            const pzs = runs * (weights[tIdx] || 0);
+            if(pzs <= 0) return;
+            if (isHigh) {
+              const key = `${goa.name}|${modelName}|${talla}|${bucketName}|${monthLabel}`;
+              if (!aggregated[key]) aggregated[key] = { goa: goa.name, modelo: modelName, talla, bucket: bucketName, mes: monthLabel, pzs: 0, pvp };
+              aggregated[key].pzs += pzs;
+            } else {
+              csv += `"${seccion}","${marca}","${goa.name}","${modelName}","${variantName}","${store.centerCode}","${store.name}","${c}","${talla}",${pzs},"${bucketName}","${monthLabel}",${pvp}\r\n`;
             }
-          } else {
-            // Es preventa (real) -> Solo un modelo, no multiplicamos por variante
-            sizes.forEach((talla, tIdx) => {
-              const pzs = runs * (weights[tIdx] || 0);
-              if(pzs > 0) {
-                csv += `"${goa.name}","${baseModelName}","Única","${store.centerCode}","${store.name}","${c}","${talla}",${pzs}\r\n`;
-              }
-            });
+          });
+        };
+
+        if (source === 'sugerido') {
+          for(let m = 1; m <= modelsCount; m++) {
+            for(let v = 1; v <= variantsCount; v++) {
+              emit(`${baseModelName}_M${m}`, `Var_${v}`);
+            }
           }
+        } else {
+          emit(baseModelName, 'Única');
         }
       });
     });
+
+    if (isHigh) {
+      Object.values(aggregated).forEach(row => {
+        const costo = row.pzs * row.pvp;
+        csv += `"${seccion}","${marca}","${row.goa}","${row.modelo}","${row.talla}",${row.pzs},"${row.bucket}","${row.mes}",${row.pvp},${costo}\r\n`;
+      });
+    }
 
     const blob = new Blob(["\uFEFF" + csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `Chequera_${source}_${new Date().toISOString().slice(0,10)}.csv`;
+    link.download = `Chequera_${source}_${level}_${new Date().toISOString().slice(0,10)}.csv`;
     document.body.appendChild(link);
     link.click();
     document.body.removeChild(link);
@@ -1723,6 +1778,8 @@ export default function App() {
                                         <th className="pb-2 w-24 text-center">Modelos</th>
                                         <th className="pb-2 w-24 text-center">Variantes</th>
                                         <th className="pb-2 w-24 text-center">PVP ($)</th>
+                                        <th className="pb-2 w-28 text-center">Bucket</th>
+                                        <th className="pb-2 w-24 text-center">Mes</th>
                                         <th className="pb-2 text-right">Total Pzs</th>
                                         <th className="pb-2 text-right">Inversión</th>
                                         <th className="pb-2"></th>
@@ -1760,6 +1817,16 @@ export default function App() {
                                             </td>
                                             <td className="py-2 px-2">
                                               <input type="number" value={plan.pvp !== undefined ? plan.pvp : ''} onChange={e=>handleUpdateSuggestion(plan.id, 'pvp', e.target.value)} placeholder="0.00" className={`w-full p-2 rounded text-xs font-bold text-center outline-none ${t.inputYellow}`} />
+                                            </td>
+                                            <td className="py-2 px-2">
+                                              <select value={plan.bucketId || ''} onChange={e=>handleUpdateSuggestion(plan.id, 'bucketId', e.target.value)} className={`w-full p-2 rounded text-xs outline-none ${t.input}`}>
+                                                <option value="">—</option>{(buckets || []).map(b=><option key={b.id} value={b.id}>{b.name}</option>)}
+                                              </select>
+                                            </td>
+                                            <td className="py-2 px-2">
+                                              <select value={plan.monthOffset !== undefined && plan.monthOffset !== '' ? plan.monthOffset : ''} onChange={e=>handleUpdateSuggestion(plan.id, 'monthOffset', e.target.value)} className={`w-full p-2 rounded text-xs outline-none ${t.input}`}>
+                                                <option value="">—</option>{[0,1,2,3,4,5].map(o=><option key={`mp-${o}`} value={o}>{getMonthLabel(o)}</option>)}
+                                              </select>
                                             </td>
                                             
                                             <td className={`py-2 px-2 text-right font-bold ${t.textMain}`}>{totalPzs > 0 ? totalPzs.toLocaleString() : '-'}</td>
@@ -1898,10 +1965,18 @@ export default function App() {
                               const pctVal = Number(w?.value ?? w) || 0;
                               const pzsCalc = useReal ? (realPzsByMonth[o] || 0) : Math.round((g.boughtPzs || 0) * (pctVal / 100));
                               const pctDisplay = useReal ? ((g.boughtPzs > 0 ? (pzsCalc / g.boughtPzs) * 100 : 0)) : pctVal;
+                              // $ por celda: real -> suma totalRetailValue de compras del mes; sugerido -> proporcional a g.spentValue
+                              let pesosCalc = 0;
+                              if (useReal) {
+                                pesosCalc = goaPurchases.filter(p => p.monthOffset === o).reduce((ss, p) => ss + (p.totalRetailValue || 0), 0);
+                              } else {
+                                pesosCalc = Math.round((g.spentValue || 0) * (pctVal / 100));
+                              }
                               return (
                                 <td key={`mes-sug-${g.id}-${o}`} className={`p-3 border-r font-medium ${t.border} ${theme==='dark'?'text-gray-300':'text-gray-700'}`}>
-                                  <span className={`block text-[9px] mb-1 font-mono ${t.textMuted}`}>{pctDisplay.toFixed(1)}%</span>
-                                  {pzsCalc.toLocaleString()}
+                                  <span className={`block text-[9px] mb-0.5 font-mono ${t.textMuted}`}>{pctDisplay.toFixed(1)}%</span>
+                                  <span className="block">{pzsCalc.toLocaleString()}</span>
+                                  <span className={`block text-[10px] font-bold ${t.textAccent2}`}>${pesosCalc.toLocaleString()}</span>
                                 </td>
                               );
                             })}
@@ -1915,7 +1990,8 @@ export default function App() {
                             {reportData.goaMetrics.filter(g => (g.boughtPzs || 0) > 0 || (g.budget || 0) > 0).reduce((s, g) => s + (g.boughtPzs || 0), 0).toLocaleString()} pzs
                           </td>
                           {[0,1,2,3,4,5].map(o => {
-                             const sumMes = reportData.goaMetrics.filter(g => (g.boughtPzs || 0) > 0 || (g.budget || 0) > 0).reduce((s, g) => {
+                             const filtered = reportData.goaMetrics.filter(g => (g.boughtPzs || 0) > 0 || (g.budget || 0) > 0);
+                             const sumMes = filtered.reduce((s, g) => {
                                const goaPurchases = (purchases || []).filter(p => p.goaId === g.id && p.monthOffset !== null && p.monthOffset !== undefined);
                                const useReal = reportView === 'preventa' && goaPurchases.length > 0;
                                if (useReal) {
@@ -1924,13 +2000,171 @@ export default function App() {
                                const w = (g.months || [16.6,16.6,16.6,16.6,16.6,17])[o];
                                return s + Math.round((g.boughtPzs || 0) * ((Number(w?.value ?? w) || 0) / 100));
                              }, 0);
-                             return <td key={`tot-mes-${o}`} className={`p-3 border-r ${t.textMain}`}>{sumMes.toLocaleString()}</td>
+                             const sumMesPesos = filtered.reduce((s, g) => {
+                               const goaPurchases = (purchases || []).filter(p => p.goaId === g.id && p.monthOffset !== null && p.monthOffset !== undefined);
+                               const useReal = reportView === 'preventa' && goaPurchases.length > 0;
+                               if (useReal) {
+                                 return s + goaPurchases.filter(p => p.monthOffset === o).reduce((ss, p) => ss + (p.totalRetailValue || 0), 0);
+                               }
+                               const w = (g.months || [16.6,16.6,16.6,16.6,16.6,17])[o];
+                               return s + Math.round((g.spentValue || 0) * ((Number(w?.value ?? w) || 0) / 100));
+                             }, 0);
+                             return (
+                               <td key={`tot-mes-${o}`} className={`p-3 border-r ${t.textMain}`}>
+                                 <div>{sumMes.toLocaleString()}</div>
+                                 <div className={`text-[10px] font-bold ${t.textAccent2}`}>${sumMesPesos.toLocaleString()}</div>
+                               </td>
+                             );
                           })}
                         </tr>
                       </tbody>
                     </table>
                   </div>
                 </div>
+
+                {/* OTB MENSUAL GENERAL (ppto restante por mes) */}
+                <div className={`rounded-xl border shadow-lg p-6 ${t.card}`}>
+                  <h2 className={`text-lg font-bold mb-1 flex items-center ${t.textMain}`}>
+                    <DollarSign className={`mr-3 ${t.textAccent2}`}/> OTB Mensual General ({reportView === 'sugerido' ? 'Sugerido' : 'Real'})
+                  </h2>
+                  <p className={`text-xs mb-5 ${t.textMuted}`}>Cuánto ppto te queda por mes para comprar. Budget mensual = Budget GOA × % Forecast del mes. Gastado = lo asignado a ese mes.</p>
+                  <div className={`overflow-x-auto rounded-xl border ${t.border}`}>
+                    <table className="w-full text-center text-sm border-collapse">
+                      <thead>
+                        <tr className={`text-[10px] uppercase border-b tracking-wider ${t.tableHead}`}>
+                          <th className={`p-3 font-bold text-left border-r ${t.border}`}>Mes</th>
+                          <th className={`p-3 font-bold border-r ${t.border}`}>Budget Mensual</th>
+                          <th className={`p-3 font-bold border-r ${t.border}`}>Gastado / Sugerido</th>
+                          <th className={`p-3 font-bold border-r ${t.border}`}>OTB Restante</th>
+                          <th className={`p-3 font-bold ${t.border}`}>% Consumo</th>
+                        </tr>
+                      </thead>
+                      <tbody className={`divide-y ${t.border}`}>
+                        {[0,1,2,3,4,5].map(o => {
+                          const filtered = reportData.goaMetrics.filter(g => (g.boughtPzs || 0) > 0 || (g.budget || 0) > 0);
+                          let budgetMes = 0, spentMes = 0;
+                          filtered.forEach(g => {
+                            const w = (g.months || [16.6,16.6,16.6,16.6,16.6,17])[o];
+                            const pctVal = Number(w?.value ?? w) || 0;
+                            budgetMes += (g.budget || 0) * (pctVal / 100);
+                            const goaPurchases = (purchases || []).filter(p => p.goaId === g.id && p.monthOffset !== null && p.monthOffset !== undefined);
+                            const useReal = reportView === 'preventa' && goaPurchases.length > 0;
+                            if (useReal) {
+                              spentMes += goaPurchases.filter(p => p.monthOffset === o).reduce((ss, p) => ss + (p.totalRetailValue || 0), 0);
+                            } else {
+                              spentMes += (g.spentValue || 0) * (pctVal / 100);
+                            }
+                          });
+                          const otb = budgetMes - spentMes;
+                          const pct = budgetMes > 0 ? (spentMes / budgetMes) * 100 : 0;
+                          const overBudget = pct > 100;
+                          return (
+                            <tr key={`otb-mes-${o}`} className={`transition ${t.tableRow}`}>
+                              <td className={`p-3 font-bold text-left border-r ${t.border} ${t.textMain}`}>{getMonthLabel(o)}</td>
+                              <td className={`p-3 border-r ${t.border} ${t.textMuted}`}>${Math.round(budgetMes).toLocaleString()}</td>
+                              <td className={`p-3 border-r font-bold ${t.border} ${t.textAccent2}`}>${Math.round(spentMes).toLocaleString()}</td>
+                              <td className={`p-3 border-r font-black ${t.border} ${otb >= 0 ? t.successText : t.dangerText}`}>${Math.round(otb).toLocaleString()}</td>
+                              <td className={`p-3 font-bold ${overBudget ? t.dangerText : pct >= 90 ? 'text-yellow-500' : t.textMain}`}>{pct.toFixed(1)}%</td>
+                            </tr>
+                          );
+                        })}
+                        <tr className={`font-black border-t-2 ${theme==='dark'?'bg-purple-900/20 border-purple-500/30':'bg-indigo-50 border-indigo-200'}`}>
+                          <td className={`p-3 border-r text-right uppercase text-xs tracking-wider ${theme==='dark'?'border-purple-500/20 text-purple-300':'border-indigo-200 text-indigo-700'}`}>Total</td>
+                          {(() => {
+                            const filtered = reportData.goaMetrics.filter(g => (g.boughtPzs || 0) > 0 || (g.budget || 0) > 0);
+                            const totalBudget = filtered.reduce((s, g) => s + (g.budget || 0), 0);
+                            const totalSpent = filtered.reduce((s, g) => s + (g.spentValue || 0), 0);
+                            const totalOtb = totalBudget - totalSpent;
+                            const totalPct = totalBudget > 0 ? (totalSpent / totalBudget) * 100 : 0;
+                            return (
+                              <>
+                                <td className={`p-3 border-r ${t.textMain}`}>${Math.round(totalBudget).toLocaleString()}</td>
+                                <td className={`p-3 border-r ${t.textAccent2}`}>${Math.round(totalSpent).toLocaleString()}</td>
+                                <td className={`p-3 border-r ${totalOtb >= 0 ? t.successText : t.dangerText}`}>${Math.round(totalOtb).toLocaleString()}</td>
+                                <td className={`p-3 ${t.textMain}`}>{totalPct.toFixed(1)}%</td>
+                              </>
+                            );
+                          })()}
+                        </tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* RESUMEN POR BUCKET */}
+                {(buckets || []).length > 0 && (
+                  <div className={`rounded-xl border shadow-lg p-6 ${t.card}`}>
+                    <h2 className={`text-lg font-bold mb-1 flex items-center ${t.textMain}`}>
+                      <Layers className={`mr-3 ${t.textAccent1}`}/> Resumen por Bucket ({reportView === 'sugerido' ? 'Sugerido' : 'Real'})
+                    </h2>
+                    <p className={`text-xs mb-5 ${t.textMuted}`}>Vista cruzada Bucket × GOA × Mes con cantidades y montos.</p>
+                    <div className={`overflow-x-auto rounded-xl border ${t.border}`}>
+                      <table className="w-full text-center text-sm border-collapse">
+                        <thead>
+                          <tr className={`text-[10px] uppercase border-b tracking-wider ${t.tableHead}`}>
+                            <th className={`p-3 font-bold text-left border-r ${t.border}`}>Bucket</th>
+                            <th className={`p-3 font-bold text-left border-r ${t.border}`}>GOA</th>
+                            {[0,1,2,3,4,5].map(o => <th key={`bk-h-${o}`} className={`p-3 border-r ${t.border}`}>{getMonthLabel(o)}</th>)}
+                            <th className={`p-3 font-bold ${t.border}`}>Total</th>
+                          </tr>
+                        </thead>
+                        <tbody className={`divide-y ${t.border}`}>
+                          {(() => {
+                            // Source: si reportView===preventa usa purchases; sino usa suggestedPlans
+                            const isPreventa = reportView === 'preventa';
+                            const items = isPreventa ? (purchases || []) : (suggestedPlans || []);
+                            // Agrupar por bucketId+goaId
+                            const groups = {};
+                            items.forEach(it => {
+                              const bucketId = it.bucketId ? Number(it.bucketId) : null;
+                              const goaId = it.goaId;
+                              const key = `${bucketId || 'null'}|${goaId}`;
+                              if (!groups[key]) groups[key] = { bucketId, goaId, byMonth: {0:0,1:0,2:0,3:0,4:0,5:0}, byMonthValue: {0:0,1:0,2:0,3:0,4:0,5:0} };
+                              const monthOff = it.monthOffset !== null && it.monthOffset !== undefined && it.monthOffset !== '' ? Number(it.monthOffset) : null;
+                              if (monthOff === null) return;
+                              if (isPreventa) {
+                                groups[key].byMonth[monthOff] += (it.totalPieces || 0);
+                                groups[key].byMonthValue[monthOff] += (it.totalRetailValue || 0);
+                              } else {
+                                const goa = goas.find(g => g.id === it.goaId);
+                                if (!goa) return;
+                                const singleModelPzs = getPiecesForOneModel(goa.name, it.curveId, it.ruleId);
+                                const variants = Number(it.variants) || 1;
+                                const totalPzs = singleModelPzs * (Number(it.models) || 0) * variants;
+                                groups[key].byMonth[monthOff] += totalPzs;
+                                groups[key].byMonthValue[monthOff] += totalPzs * (Number(it.pvp) || 0);
+                              }
+                            });
+                            const rows = Object.values(groups);
+                            if (rows.length === 0) return <tr><td colSpan="9" className={`p-6 text-center ${t.textMuted}`}>Sin asignaciones de Bucket × Mes en esta vista.</td></tr>;
+                            return rows.map((row, idx) => {
+                              const bucket = row.bucketId ? (buckets || []).find(b => b.id === row.bucketId) : null;
+                              const goa = goas.find(g => g.id === row.goaId);
+                              const totalPzs = Object.values(row.byMonth).reduce((s,v) => s+v, 0);
+                              const totalValue = Object.values(row.byMonthValue).reduce((s,v) => s+v, 0);
+                              return (
+                                <tr key={`bk-row-${idx}`} className={`transition ${t.tableRow}`}>
+                                  <td className={`p-3 text-left border-r ${t.border} ${t.textMain}`}>{bucket ? bucket.name : <span className="opacity-40">Sin bucket</span>}</td>
+                                  <td className={`p-3 text-left border-r ${t.border} ${t.textMuted}`}>{goa ? goa.name : '?'}</td>
+                                  {[0,1,2,3,4,5].map(o => (
+                                    <td key={`bk-c-${idx}-${o}`} className={`p-3 border-r ${t.border}`}>
+                                      <div className={t.textMain}>{(row.byMonth[o] || 0).toLocaleString()}</div>
+                                      <div className={`text-[10px] font-bold ${t.textAccent2}`}>${Math.round(row.byMonthValue[o] || 0).toLocaleString()}</div>
+                                    </td>
+                                  ))}
+                                  <td className={`p-3 font-black ${t.textMain}`}>
+                                    <div>{totalPzs.toLocaleString()}</div>
+                                    <div className={`text-[10px] font-bold ${t.textAccent2}`}>${Math.round(totalValue).toLocaleString()}</div>
+                                  </td>
+                                </tr>
+                              );
+                            });
+                          })()}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
 
                 {/* TABLA 3 Y 4 (SIEMPRE VISIBLES): MATRICES Y ASSORTMENT */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
@@ -2055,14 +2289,23 @@ export default function App() {
                 {/* EXPORTAR DESDE APP */}
                 <div className={`p-6 rounded-xl border ${t.cardInner}`}>
                   <h3 className={`font-bold mb-2 flex items-center ${t.textMain}`}><Download className="mr-2 text-green-500" size={18}/> Exportar Desde la App</h3>
-                  <p className={`text-xs mb-6 ${t.textMuted}`}>Genera la chequera usando los datos del trabajo actual en la Pestaña 4 (Preventa Real) o 5 (Forecast Sugerido).</p>
-                  
-                  <div className="flex flex-col space-y-3">
-                    <button onClick={() => generateChequera('sugerido')} className={`w-full py-3.5 rounded-lg text-xs font-black uppercase tracking-widest transition flex items-center justify-center ${t.btnPrimary}`}>
-                      Chequera Sugerido
+                  <p className={`text-xs mb-6 ${t.textMuted}`}>Detalle = línea por centro/talla. Nivel Alto = agregado Sección-Marca-GOA-Modelo-Talla (sin centro).</p>
+
+                  <div className="grid grid-cols-2 gap-3 mb-2">
+                    <p className={`col-span-2 text-[10px] font-black uppercase tracking-widest ${t.textAccent1}`}>Sugerido (Forecast)</p>
+                    <button onClick={() => generateChequera('sugerido', 'detail')} className={`py-3 rounded-lg text-[11px] font-black uppercase tracking-wider transition flex items-center justify-center ${t.btnPrimary}`}>
+                      Detalle x Centro
                     </button>
-                    <button onClick={() => generateChequera('preventa')} className={`w-full py-3.5 rounded-lg text-xs font-black uppercase tracking-widest transition flex items-center justify-center border ${theme==='dark'?'border-purple-500 text-purple-400 hover:bg-purple-900/30':'border-indigo-500 text-indigo-600 hover:bg-indigo-50'}`}>
-                      Chequera Preventa (Real)
+                    <button onClick={() => setChequeraModal({ open: true, source: 'sugerido', seccion: '', marca: '' })} className={`py-3 rounded-lg text-[11px] font-black uppercase tracking-wider transition flex items-center justify-center border ${theme==='dark'?'border-purple-500 text-purple-400 hover:bg-purple-900/30':'border-indigo-500 text-indigo-600 hover:bg-indigo-50'}`}>
+                      Nivel Alto
+                    </button>
+
+                    <p className={`col-span-2 text-[10px] font-black uppercase tracking-widest mt-3 ${t.textAccent2}`}>Preventa (Real)</p>
+                    <button onClick={() => generateChequera('preventa', 'detail')} className={`py-3 rounded-lg text-[11px] font-black uppercase tracking-wider transition flex items-center justify-center ${t.btnSecondary}`}>
+                      Detalle x Centro
+                    </button>
+                    <button onClick={() => setChequeraModal({ open: true, source: 'preventa', seccion: '', marca: '' })} className={`py-3 rounded-lg text-[11px] font-black uppercase tracking-wider transition flex items-center justify-center border ${theme==='dark'?'border-yellow-500 text-yellow-400 hover:bg-yellow-900/30':'border-yellow-600 text-yellow-700 hover:bg-yellow-50'}`}>
+                      Nivel Alto
                     </button>
                   </div>
                 </div>
@@ -2182,6 +2425,29 @@ export default function App() {
             <div className="flex space-x-3">
               <button onClick={() => setIsSaveModalOpen(false)} className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition ${t.btnGhost}`}>Cancelar</button>
               <button onClick={confirmExportProject} className={`flex-1 py-2.5 rounded-lg text-sm font-black transition ${t.btnPrimary}`}>Descargar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {chequeraModal.open && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
+          <div className={`w-[420px] p-6 rounded-2xl shadow-2xl border ${theme==='dark'?'bg-zinc-900 border-zinc-700':'bg-white border-gray-200'}`}>
+            <h3 className={`text-lg font-bold mb-2 ${t.textMain}`}>Chequera Nivel Alto — {chequeraModal.source === 'sugerido' ? 'Sugerido' : 'Preventa'}</h3>
+            <p className={`text-xs mb-5 ${t.textMuted}`}>Estos valores se aplicarán a todas las filas. Si los dejas vacíos quedan en blanco.</p>
+            <div className="space-y-3 mb-6">
+              <div>
+                <label className={`text-[10px] font-black uppercase tracking-wider mb-1 block ${t.textMuted}`}>Sección</label>
+                <input type="text" placeholder="Ej. Damas" value={chequeraModal.seccion} onChange={e=>setChequeraModal({...chequeraModal, seccion: e.target.value})} className={`w-full p-2.5 rounded-lg text-sm font-bold outline-none border ${theme==='dark' ? 'bg-zinc-950 border-zinc-800 text-white' : 'bg-gray-50 border-gray-300 text-black'}`} autoFocus />
+              </div>
+              <div>
+                <label className={`text-[10px] font-black uppercase tracking-wider mb-1 block ${t.textMuted}`}>Marca</label>
+                <input type="text" placeholder="Ej. MarcaPropia" value={chequeraModal.marca} onChange={e=>setChequeraModal({...chequeraModal, marca: e.target.value})} className={`w-full p-2.5 rounded-lg text-sm font-bold outline-none border ${theme==='dark' ? 'bg-zinc-950 border-zinc-800 text-white' : 'bg-gray-50 border-gray-300 text-black'}`} />
+              </div>
+            </div>
+            <div className="flex space-x-3">
+              <button onClick={() => setChequeraModal({ ...chequeraModal, open: false })} className={`flex-1 py-2.5 rounded-lg text-sm font-bold transition ${t.btnGhost}`}>Cancelar</button>
+              <button onClick={() => { generateChequera(chequeraModal.source, 'high', { seccion: chequeraModal.seccion, marca: chequeraModal.marca }); setChequeraModal({ ...chequeraModal, open: false }); }} className={`flex-1 py-2.5 rounded-lg text-sm font-black transition ${t.btnPrimary}`}>Descargar</button>
             </div>
           </div>
         </div>
