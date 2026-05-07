@@ -3,13 +3,7 @@ import { Settings, Store, Package, Upload, ArrowUpDown, Sliders, Layers, MoreVer
 
 // =====================================================================
 // 1. IMPORT REAL (Descomenta esta línea en tu entorno local GO PLANNER)
-// import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
-
-// 2. MOCK TEMPORAL PARA EL PREVIEW EN CANVAS (¡¡¡ELIMINA ESTE BLOQUE 2 EN VERCEL PARA EVITAR ERRORES!!!)
-const useDispatch = () => (() => {});
-const useGlobal = () => ({ forecastData: null, theme: 'dark' });
-const globalActions = { publishOTB: () => {} };
-// =====================================================================
+import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
 // --- MOTOR INTELIGENTE PARA LEER CSV (Ignora comas dentro de comillas) ---
 const parseCSV = (text) => {
@@ -120,6 +114,8 @@ export default function App() {
   const [calcRules, setCalcRules] = useState(initialState?.calcRules ?? []);
   const [buckets, setBuckets] = useState(initialState?.buckets ?? []); 
   const [purchases, setPurchases] = useState(initialState?.purchases ?? []);
+  const [modelCatalog, setModelCatalog] = useState(initialState?.modelCatalog ?? []);
+  const catalogFileInputRef = useRef(null);
   const [suggestedPlans, setSuggestedPlans] = useState(initialState?.suggestedPlans ?? []);
   // =====================================================================
 
@@ -145,9 +141,9 @@ export default function App() {
 
   // --- AUTO-GUARDADO A LOCALSTORAGE ---
   useEffect(() => {
-    const stateToSave = { numClusters, clusterStrategy, rawStoreData, scoreWeights, stores, goas, sizeCurves, calcRules, buckets, purchases, suggestedPlans, purchaseMonthBase };
+    const stateToSave = { numClusters, clusterStrategy, rawStoreData, scoreWeights, stores, goas, sizeCurves, calcRules, buckets, purchases, suggestedPlans, purchaseMonthBase, modelCatalog };
     localStorage.setItem('goplanner_assortment_state', JSON.stringify(stateToSave));
-  }, [numClusters, clusterStrategy, rawStoreData, scoreWeights, stores, goas, sizeCurves, calcRules, buckets, purchases, suggestedPlans, purchaseMonthBase]);
+  }, [numClusters, clusterStrategy, rawStoreData, scoreWeights, stores, goas, sizeCurves, calcRules, buckets, purchases, suggestedPlans, purchaseMonthBase, modelCatalog]);
 
   // --- PUBLICAR OTB AL GLOBAL CONTEXT ---
   useEffect(() => {
@@ -236,7 +232,7 @@ export default function App() {
   };
 
   const confirmExportProject = () => {
-    const data = { stores, goas, sizeCurves, calcRules, buckets, purchases, rawStoreData, scoreWeights, numClusters, clusterStrategy, suggestedPlans, purchaseMonthBase };
+    const data = { stores, goas, sizeCurves, calcRules, buckets, purchases, rawStoreData, scoreWeights, numClusters, clusterStrategy, suggestedPlans, purchaseMonthBase, modelCatalog };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -260,6 +256,7 @@ export default function App() {
         if(Array.isArray(data.calcRules)) setCalcRules(data.calcRules);
         if(Array.isArray(data.buckets)) setBuckets(data.buckets); 
         if(typeof data.purchaseMonthBase === 'string') setPurchaseMonthBase(data.purchaseMonthBase);
+        if(Array.isArray(data.modelCatalog)) setModelCatalog(data.modelCatalog);
         if(Array.isArray(data.purchases)) setPurchases(data.purchases);
         if(Array.isArray(data.rawStoreData)) setRawStoreData(data.rawStoreData);
         if(data.scoreWeights) setScoreWeights(data.scoreWeights);
@@ -686,6 +683,152 @@ export default function App() {
     setBuyData({ ...buyData, modelo: '', pvp: '' });
   };
 
+  // --- CATÁLOGO DE MODELOS (Tab 4) ---
+  const downloadCatalogTemplate = () => {
+    const headers = "GOA,Modelo,Descripcion,Bucket,PVP,Costo,Margen,MesCompra,Curva,Regla,Variantes,Notas";
+    const sample = [
+      `"Ejemplo GOA","JEANS_001","Skinny tiro alto","Chava Trendy",499,180,63.9,"Ene 27","CURVA_DAMAS","REGLA_AA",3,"Best seller"`,
+      `"Ejemplo GOA","BLUSA_001","Manga 3/4","Premium",799,250,68.7,"Feb 27","CURVA_DAMAS","REGLA_A",2,""`
+    ].join("\r\n");
+    const blob = new Blob(["\uFEFF" + headers + "\r\n" + sample], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url; link.download = "Plantilla_Catalogo_Modelos.csv";
+    document.body.appendChild(link); link.click(); document.body.removeChild(link);
+  };
+
+  const handleCatalogUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (evt) => {
+      try {
+        const rows = parseCSV(evt.target.result);
+        if (rows.length < 2) { alert("CSV vacío o sin datos."); return; }
+        const headers = rows[0].map(h => h.toLowerCase().trim());
+        const idx = (name) => headers.indexOf(name.toLowerCase());
+        const catalog = rows.slice(1).filter(r => r.some(c => c)).map((r, i) => ({
+          id: Date.now() + i,
+          goaName: r[idx('goa')] || '',
+          modelo: r[idx('modelo')] || '',
+          descripcion: r[idx('descripcion')] || '',
+          bucketName: r[idx('bucket')] || '',
+          pvp: Number(r[idx('pvp')]) || 0,
+          costo: Number(r[idx('costo')]) || 0,
+          margen: Number(r[idx('margen')]) || 0,
+          mesCompra: r[idx('mescompra')] || '',
+          curveName: r[idx('curva')] || '',
+          ruleName: r[idx('regla')] || '',
+          variantes: Number(r[idx('variantes')]) || 1,
+          notas: r[idx('notas')] || '',
+          used: false
+        }));
+        setModelCatalog(catalog);
+        alert(`Catálogo cargado: ${catalog.length} modelos.`);
+      } catch (err) { alert("Error al leer CSV: " + err.message); }
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+
+  // Buscar IDs por nombre
+  const resolveByName = (collection, name, key='name') => {
+    if (!name) return null;
+    const norm = String(name).trim().toLowerCase();
+    return (collection || []).find(x => String(x[key]||'').trim().toLowerCase() === norm);
+  };
+
+  // Prellenar form desde un modelo del catálogo
+  const fillFromCatalog = (catalogId) => {
+    const m = (modelCatalog || []).find(c => c.id === Number(catalogId));
+    if (!m) return;
+    const goa = resolveByName(goas, m.goaName);
+    const curve = resolveByName(sizeCurves, m.curveName);
+    const rule = resolveByName(calcRules, m.ruleName);
+    const bucket = resolveByName(buckets, m.bucketName);
+    // Buscar mes que matchee con label
+    let monthOffset = '';
+    for (let o = 0; o < 6; o++) { if (getMonthLabel(o) === m.mesCompra) { monthOffset = o; break; } }
+    setBuyData({
+      goaId: goa ? goa.id : '',
+      modelo: m.modelo || '',
+      pvp: m.pvp ? String(m.pvp) : (goa?.defaultPvp ? String(goa.defaultPvp) : ''),
+      curveId: curve ? curve.id : '',
+      ruleId: rule ? rule.id : '',
+      bucketId: bucket ? bucket.id : '',
+      monthOffset: monthOffset !== '' ? String(monthOffset) : ''
+    });
+  };
+
+  // Auto-sugerir compras hasta agotar OTB del GOA
+  const autoSuggestFromCatalog = (goaId) => {
+    const goa = (goas || []).find(g => g.id === Number(goaId));
+    if (!goa) { alert("Selecciona un GOA primero."); return; }
+    const goaCatalog = (modelCatalog || []).filter(c => {
+      const cgoa = resolveByName(goas, c.goaName);
+      return cgoa && cgoa.id === goa.id && !c.used;
+    });
+    if (goaCatalog.length === 0) { alert("No hay modelos en el catálogo para este GOA (o todos ya están usados)."); return; }
+
+    // OTB disponible
+    const spent = (purchases || []).filter(p => p.goaId === goa.id).reduce((s,p) => s + (p.totalRetailValue || 0), 0);
+    let remaining = (goa.budget || 0) - spent;
+    if (remaining <= 0) { alert("Este GOA ya no tiene OTB disponible."); return; }
+
+    const newPurchases = [];
+    const newCatalog = [...modelCatalog];
+    let added = 0;
+
+    for (const m of goaCatalog) {
+      if (remaining <= 0) break;
+      const curve = resolveByName(sizeCurves, m.curveName);
+      const rule = resolveByName(calcRules, m.ruleName);
+      const bucket = resolveByName(buckets, m.bucketName);
+      const pvp = m.pvp || goa.defaultPvp || 0;
+      if (!curve || !rule || !pvp) continue;
+
+      // Calcular piezas
+      const sizes = curve.sizes.split(',').map(s => s.trim());
+      const weights = curve.weights.split(',').map(w => Number(w.trim()));
+      const goaStores = (stores || []).filter(s => (s.clusters[goa.name] || s.clusters[goa.name.toUpperCase()]));
+      let totalPieces = 0; const storeDemands = {};
+      goaStores.forEach(s => {
+        const c = s.clusters[goa.name] || s.clusters[goa.name.toUpperCase()];
+        const runs = rule.corridas[c] || 0;
+        if (runs > 0) {
+          const demand = {};
+          sizes.forEach((tz, ti) => { const pz = runs * (weights[ti] || 0); if (pz > 0) demand[tz] = pz; totalPieces += pz; });
+          storeDemands[s.id] = { storeId: s.id, name: s.name, centerCode: s.centerCode, cluster: c, demand };
+        }
+      });
+      if (totalPieces === 0) continue;
+      const cost = totalPieces * pvp;
+      if (cost > remaining) continue; // No alcanza, prueba siguiente
+
+      // Buscar mes
+      let monthOffset = null, monthLabel = null;
+      for (let o = 0; o < 6; o++) { if (getMonthLabel(o) === m.mesCompra) { monthOffset = o; monthLabel = m.mesCompra; break; } }
+
+      newPurchases.push({
+        id: Date.now() + Math.random(), goaId: goa.id, goaName: goa.name, modelo: m.modelo,
+        pvp, curveId: curve.id, curveName: curve.name, ruleId: rule.id, ruleName: rule.name,
+        bucketId: bucket ? bucket.id : null, bucketName: bucket ? bucket.name : null,
+        monthOffset, monthLabel, totalPieces, totalRetailValue: cost, storeDemands,
+        fromCatalog: true, catalogId: m.id
+      });
+      // Marcar usado
+      const cIdx = newCatalog.findIndex(x => x.id === m.id);
+      if (cIdx >= 0) newCatalog[cIdx] = { ...newCatalog[cIdx], used: true };
+      remaining -= cost;
+      added++;
+    }
+
+    if (added === 0) { alert("Ningún modelo del catálogo cabe en el OTB restante o falta info (curva/regla/PVP)."); return; }
+    setPurchases([...(purchases || []), ...newPurchases]);
+    setModelCatalog(newCatalog);
+    alert(`Se agregaron ${added} modelos. OTB restante: $${Math.round(remaining).toLocaleString()}`);
+  };
+
   // --- MOTOR MÁGICO DE SUGERENCIAS ---
   const handleAddSuggestion = (goaId) => {
     setSuggestedPlans([...(suggestedPlans || []), { id: Date.now(), goaId, curveId: '', ruleId: '', pvp: '', models: '', variants: '', bucketId: '', monthOffset: '' }]);
@@ -750,45 +893,33 @@ export default function App() {
     const remainingPzs = Math.max(0, (goa.historyPzs || 0) - usedPzs);
     const remainingBudget = Math.max(0, goaBudgetForCalc - usedBudgetForCalc);
     
-    let suggestedModels = Number(plan.models) || 0;
-    let suggestedVariants = Number(plan.variants) || 0;
-    let suggestedPvp = Number(plan.pvp) || 0;
+    // ===== RESOLVER: cuántas variantes alcanza a comprar con el ppto disponible =====
+    // - Modelos = 1 (siempre): el "modelo" es el genérico de esta estrategia.
+    // - PVP = el del plan, o el defaultPvp del GOA, o error.
+    // - Variantes = floor(remainingBudget / (piezas_por_variante × pvp))
+    // - Las piezas se calculan a partir de la curva × regla × tiendas (necesidad real).
 
-    // Si da el PVP pero no Modelos ni Variantes: calcula cuántas variantes totales le alcanzan y asume 1 modelo
-    if (suggestedPvp > 0 && suggestedModels === 0 && suggestedVariants === 0) {
-      const combos = Math.floor(remainingBudget / (singleModelBasePzs * suggestedPvp));
-      suggestedModels = 1;
-      suggestedVariants = combos > 0 ? combos : 1;
-    } 
-    // Si da Modelos y PVP pero no Variantes: calcula cuantas Variantes por modelo
-    else if (suggestedPvp > 0 && suggestedModels > 0 && suggestedVariants === 0) {
-      const costPerVariant = singleModelBasePzs * suggestedModels * suggestedPvp;
-      suggestedVariants = costPerVariant > 0 ? Math.floor(remainingBudget / costPerVariant) : 1;
+    const planPvp = Number(plan.pvp) || 0;
+    const goaDefaultPvp = Number(goa.defaultPvp) || 0;
+    const pvpToUse = planPvp > 0 ? planPvp : goaDefaultPvp;
+
+    if (pvpToUse <= 0) {
+      return `Falta PVP. Captura el PVP en este plan o configura el "PVP Default" del GOA "${goa.name}" en Tab 3.`;
     }
-    // Si da Modelos y Variantes pero no PVP: calcula el PVP sugerido
-    else if (suggestedModels > 0 && suggestedVariants > 0 && suggestedPvp === 0) {
-      const actualPzs = suggestedModels * suggestedVariants * singleModelBasePzs;
-      suggestedPvp = actualPzs > 0 ? Math.round(remainingBudget / actualPzs) : 0;
-    } 
-    // Si no da nada: Usa el histórico para sacar los combos (Modelos * Variantes), asume 1 Variante, y luego saca el PVP
-    else {
-      if (remainingPzs > 0) {
-        suggestedModels = Math.round(remainingPzs / singleModelBasePzs) || 1;
-        suggestedVariants = 1;
-      } else {
-        const defaultPvp = 299;
-        const combos = Math.floor(remainingBudget / (singleModelBasePzs * defaultPvp));
-        suggestedModels = combos > 0 ? combos : 1;
-        suggestedVariants = 1;
-      }
-      const actualPzs = suggestedModels * suggestedVariants * singleModelBasePzs;
-      suggestedPvp = actualPzs > 0 ? Math.round(remainingBudget / actualPzs) : 0;
+    if (singleModelBasePzs <= 0) {
+      return "La curva y regla seleccionadas generan 0 piezas. Revisa Tab 1 (clústeres) y Tab 2 (curvas/reglas).";
     }
-    
-    plan.models = suggestedModels || 1;
-    plan.variants = suggestedVariants || 1;
-    plan.pvp = suggestedPvp;
-    return null; 
+    if (remainingBudget <= 0) {
+      return `Sin presupuesto disponible. ${planBucket ? `El bucket "${planBucket.name}"` : `El GOA "${goa.name}"`} ya está agotado.`;
+    }
+
+    const costPerVariant = singleModelBasePzs * pvpToUse;
+    const variantsAffordable = Math.floor(remainingBudget / costPerVariant);
+
+    plan.models = 1;
+    plan.variants = variantsAffordable > 0 ? variantsAffordable : 0;
+    plan.pvp = pvpToUse;
+    return null;
   };
 
   const handleAutoSuggest = (planId) => {
@@ -1476,23 +1607,29 @@ export default function App() {
                     <tr>
                       <th className="p-4 font-bold uppercase tracking-wider text-xs">GOA</th>
                       <th className="p-4 text-right font-bold uppercase tracking-wider text-xs">Ppto OTB ($)</th>
+                      <th className="p-4 text-right font-bold uppercase tracking-wider text-xs">PVP Default ($)</th>
                       <th className="p-4 text-right font-bold uppercase tracking-wider text-xs">Historia (Pzs)</th>
                       <th className="p-4 text-center font-bold uppercase tracking-wider text-xs bg-black/10 border-l border-black/10" colSpan="6">Curva Mensual % (Forecast)</th>
                     </tr>
                     <tr className={`text-[10px] uppercase ${t.textMuted} ${theme==='dark'?'bg-zinc-950/50':'bg-gray-100'}`}>
-                      <th colSpan="3"></th>
+                      <th colSpan="4"></th>
                       <th className="p-2 text-center border-l border-black/10">Mes 1</th><th className="p-2 text-center">Mes 2</th><th className="p-2 text-center">Mes 3</th>
                       <th className="p-2 text-center">Mes 4</th><th className="p-2 text-center">Mes 5</th><th className="p-2 text-center">Mes 6</th>
                     </tr>
                   </thead>
                   <tbody className={`divide-y ${t.border} ${theme==='dark'?'bg-zinc-900':'bg-white'}`}>
-                    {(goas || []).length === 0 && <tr><td colSpan="9" className={`p-8 text-center ${t.textMuted}`}>Aún no hay datos de forecast disponibles.</td></tr>}
+                    {(goas || []).length === 0 && <tr><td colSpan="10" className={`p-8 text-center ${t.textMuted}`}>Aún no hay datos de forecast disponibles.</td></tr>}
                     {goas.map(g => (
                       <tr key={g.id} className={`transition ${t.tableRow}`}>
                         <td className={`p-4 font-bold ${t.textMain}`}>{g.name}</td>
                         <td className={`p-2 text-right font-black tracking-wide ${t.textAccent2}`}>
                           <div className="flex items-center justify-end">
                             $<input type="number" value={g.budget} onChange={(e) => handleUpdateGoaField(g.id, 'budget', e.target.value)} className={`w-24 text-right bg-transparent outline-none border-b border-transparent focus:border-yellow-500 ${t.textAccent2}`} />
+                          </div>
+                        </td>
+                        <td className={`p-2 text-right font-bold ${t.textMain}`}>
+                          <div className="flex items-center justify-end">
+                            $<input type="number" value={g.defaultPvp || ''} placeholder="0" onChange={(e) => handleUpdateGoaField(g.id, 'defaultPvp', e.target.value)} className={`w-20 text-right bg-transparent outline-none border-b border-transparent focus:border-blue-500`} />
                           </div>
                         </td>
                         <td className={`p-2 text-right font-bold ${t.textMuted}`}>
@@ -1523,6 +1660,87 @@ export default function App() {
               />
             ) : (
               <>
+                {/* === BLOQUE CATÁLOGO DE MODELOS === */}
+                <div className={`rounded-xl border shadow-lg p-6 ${t.card}`}>
+                  <div className="flex justify-between items-start mb-4">
+                    <div>
+                      <h2 className={`text-lg font-bold flex items-center ${t.textMain}`}>
+                        <ClipboardList className={`mr-3 ${t.textAccent1}`}/> Catálogo de Modelos
+                      </h2>
+                      <p className={`text-xs mt-1 ${t.textMuted}`}>Carga el universo de modelos posibles a comprar. Después selecciónalos en el form o usa "Auto-sugerir".</p>
+                    </div>
+                    <div className="flex gap-2 flex-wrap justify-end">
+                      <button onClick={downloadCatalogTemplate} className={`px-3 py-2 rounded-lg text-[11px] font-black uppercase tracking-wider transition flex items-center ${t.btnGhost}`}>
+                        <Download size={14} className="mr-1.5"/> Plantilla
+                      </button>
+                      <input ref={catalogFileInputRef} type="file" accept=".csv" onChange={handleCatalogUpload} className="hidden" />
+                      <button onClick={()=>catalogFileInputRef.current?.click()} className={`px-3 py-2 rounded-lg text-[11px] font-black uppercase tracking-wider transition flex items-center ${t.btnPrimary}`}>
+                        <Upload size={14} className="mr-1.5"/> Cargar CSV
+                      </button>
+                      {(modelCatalog || []).length > 0 && (
+                        <button onClick={()=>{ if(confirm('¿Borrar todo el catálogo?')) setModelCatalog([]); }} className={`px-3 py-2 rounded-lg text-[11px] font-black uppercase tracking-wider transition flex items-center ${t.btnDanger}`}>
+                          <Trash2 size={14}/>
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {(modelCatalog || []).length === 0 ? (
+                    <div className={`p-6 text-center rounded-lg border border-dashed ${theme==='dark'?'border-zinc-800 text-gray-500':'border-gray-300 text-gray-400'}`}>
+                      <p className="text-sm">Sin catálogo cargado.</p>
+                      <p className="text-[11px] mt-1">Descarga la plantilla, llénala y súbela aquí.</p>
+                    </div>
+                  ) : (
+                    <>
+                      <div className={`mb-3 px-3 py-2 rounded-lg text-xs flex justify-between items-center ${t.cardInner}`}>
+                        <span className={t.textMuted}>
+                          <strong className={t.textMain}>{modelCatalog.length}</strong> modelos en catálogo · 
+                          <strong className={t.textAccent2}> {modelCatalog.filter(m=>!m.used).length}</strong> disponibles · 
+                          <strong className={t.textMuted}> {modelCatalog.filter(m=>m.used).length}</strong> usados
+                        </span>
+                        {buyData.goaId && (
+                          <button onClick={()=>autoSuggestFromCatalog(buyData.goaId)} className={`px-3 py-1.5 rounded text-[10px] font-black uppercase tracking-widest transition ${t.btnPrimary} flex items-center`}>
+                            <Wand2 size={12} className="mr-1.5"/> Auto-sugerir hasta agotar OTB
+                          </button>
+                        )}
+                      </div>
+                      <div className="max-h-64 overflow-y-auto custom-scrollbar">
+                        <table className="w-full text-xs">
+                          <thead className={`sticky top-0 ${t.tableHead}`}>
+                            <tr className={`text-[10px] uppercase border-b ${t.border}`}>
+                              <th className="p-2 text-left">Estado</th>
+                              <th className="p-2 text-left">GOA</th>
+                              <th className="p-2 text-left">Modelo</th>
+                              <th className="p-2 text-left">Bucket</th>
+                              <th className="p-2 text-right">PVP</th>
+                              <th className="p-2 text-left">Mes</th>
+                              <th className="p-2 text-center">Acción</th>
+                            </tr>
+                          </thead>
+                          <tbody className={`divide-y ${t.border}`}>
+                            {modelCatalog.map(m => (
+                              <tr key={m.id} className={`transition ${t.tableRow} ${m.used ? 'opacity-50' : ''}`}>
+                                <td className="p-2">
+                                  {m.used ? <span className={`text-[9px] px-1.5 py-0.5 rounded font-black border ${t.badgeOther}`}>USADO</span> : <span className={`text-[9px] px-1.5 py-0.5 rounded font-black border ${t.badgeAA}`}>OK</span>}
+                                </td>
+                                <td className={`p-2 ${t.textMuted}`}>{m.goaName}</td>
+                                <td className={`p-2 font-bold ${t.textMain}`}>{m.modelo}</td>
+                                <td className={`p-2 ${t.textMuted}`}>{m.bucketName || '—'}</td>
+                                <td className={`p-2 text-right font-bold ${t.textAccent2}`}>${m.pvp || 0}</td>
+                                <td className={`p-2 ${t.textMuted}`}>{m.mesCompra || '—'}</td>
+                                <td className="p-2 text-center">
+                                  {!m.used && <button onClick={()=>fillFromCatalog(m.id)} className={`px-2 py-1 rounded text-[10px] font-black ${t.btnGhost}`}>Usar</button>}
+                                  <button onClick={()=>setModelCatalog(modelCatalog.filter(x=>x.id!==m.id))} className={`ml-1 p-1 rounded ${t.btnDanger}`}><Trash2 size={11}/></button>
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </>
+                  )}
+                </div>
+
                 <div className={`rounded-xl shadow-lg p-6 relative overflow-hidden ${t.gradientCard}`}>
                   <div className={`absolute top-0 right-0 w-64 h-64 rounded-full blur-3xl -mr-10 -mt-10 pointer-events-none ${theme==='dark'?'bg-purple-600/10':'bg-white/10'}`}></div>
                   <div className="flex justify-between items-center mb-6 relative z-10">
