@@ -145,7 +145,7 @@ export default function Distribucion() {
   const [dashGoaFilter, setDashGoaFilter] = useState('ALL'); 
 
   const [showParamModal, setShowParamModal] = useState(false);
-  const [paramForm, setParamForm] = useState({ etiquetaAP: '', stockMin: '', stockMax: '', leadTime: '', min: '', max: '', th: '', tipoDistribucion: '' });
+  const [paramForm, setParamForm] = useState({ etiquetaAP: 8, nivelFcst: 3, stockMax: 0, wos: 5, leadTime: 30, aat: 0, minAllo: 0, maxAllo: 0, tipoDistribucion: 0 });
 
 
   
@@ -205,6 +205,11 @@ export default function Distribucion() {
   const [adjustedDataCache, setAdjustedDataCache] = useState({}); // { [centerCode|goa|talla]: { fillRate, oosRatio, demandaBase, demandaAjustada, flags } }
   const [adjustedDataStale, setAdjustedDataStale] = useState(false);
   const [showDiagModal, setShowDiagModal] = useState(false);
+
+  // Filtros y orden tabla resumen del dashboard
+  const [summaryFilter, setSummaryFilter] = useState('');
+  const [summarySortBy, setSummarySortBy] = useState('qty'); // qty | venta | mos
+  const [summarySortDir, setSummarySortDir] = useState('desc');
 
   // Filtro de búsqueda en Tab 1 / Base de Tiendas
   const [storeNameFilter, setStoreNameFilter] = useState('');
@@ -303,7 +308,9 @@ useEffect(() => {
       
       const existing = storeMap.get(row.centro);
       existing.sales += row.sales; 
-      existing.margin += row.margin; 
+      // Promedio ponderado: acumulamos margin×sales y dividimos al final
+      existing._marginWeighted = (existing._marginWeighted || 0) + (row.margin * row.sales);
+      existing._salesForMargin = (existing._salesForMargin || 0) + row.sales;
       existing.totalOH += row.oh;
 
       if (row.sku && row.sku !== 'N/A') {
@@ -384,6 +391,11 @@ useEffect(() => {
     });
 
     Array.from(storeMap.values()).forEach(store => {
+      // Margin ponderado por ventas
+      store.margin = store._salesForMargin > 0 ? store._marginWeighted / store._salesForMargin : 0;
+      delete store._marginWeighted;
+      delete store._salesForMargin;
+
       let normalizedScore = store.score / 100;
       if (normalizedScore > 1) normalizedScore = 1;
       if (normalizedScore < 0) normalizedScore = 0;
@@ -899,10 +911,10 @@ useEffect(() => {
       const talla = row.talla ? String(row.talla).trim().toUpperCase() : 'UNICA';
       const cacheKey = `${row.centro}|${goa}|${talla}`;
 
-      const ventas3m = row.trend3M || 0;
-      const ventas12m = row.sales || 0;
-      const oh = row.oh || 0;
-      const oo = row.oo || 0;
+      const ventas3m = Math.max(0, row.trend3M || 0);
+      const ventas12m = Math.max(0, row.sales || 0);
+      const oh = Math.max(0, row.oh || 0);
+      const oo = Math.max(0, row.oo || 0);
 
       // fill_rate por WOS
       const ventaSemanal = ventas3m / 12; // 3m = 12 semanas
@@ -920,7 +932,9 @@ useEffect(() => {
       let storeGoaSales = 0;
       rawStoreData.forEach(r => {
         if (r.centro === row.centro && r.goa.toUpperCase() === goa) {
-          storeGoaSales += (r.trend3M || r.sales / 4);
+          const v3 = Math.max(0, r.trend3M || 0);
+          const v12 = Math.max(0, r.sales || 0);
+          storeGoaSales += (v3 > 0 ? v3 : v12 / 4);
         }
       });
       const myContribTienda = ventas3m > 0 ? ventas3m : (ventas12m / 4);
@@ -931,25 +945,27 @@ useEffect(() => {
         : 1;
 
       const fillRate = 0.7 * fillRateWos + 0.3 * fillRateShare;
-      const oosRatio = Math.max(0, Math.min(0.95, 1 - fillRate)); // tope 0.95 para evitar explosiones
+      const oosRatio = Math.max(0, Math.min(0.95, 1 - fillRate));
 
-      // Demanda base ponderada
-      const demandaBase = 0.4 * (ventas12m / 12) + 0.6 * (ventas3m / 3); // mensual
+      // Demanda base ponderada (sanitizada)
+      const demandaBase = Math.max(0, 0.4 * (ventas12m / 12) + 0.6 * (ventas3m / 3));
 
       // Demanda ajustada
       let demandaAjustada = demandaBase / Math.max(0.05, 1 - oosRatio);
-      // Topes: ≤ ventas_3m × 1.5 (mensual eq.), ≥ ventas_3m × 0.5
+      // Topes solo si hay venta histórica positiva
       const ventas3mMensual = ventas3m / 3;
       if (ventas3mMensual > 0) {
         demandaAjustada = Math.min(demandaAjustada, ventas3mMensual * 1.5);
         demandaAjustada = Math.max(demandaAjustada, ventas3mMensual * 0.5);
       }
+      demandaAjustada = Math.max(0, demandaAjustada);
 
       // Flags
       const flags = [];
       if (oosRatio > 0.4) flags.push('alta_incertidumbre');
       if (ventas12m < 5 && ventas3m < 2) flags.push('baja_data');
       if (ventaSemanal === 0 && oh === 0 && oo === 0) flags.push('sin_actividad');
+      if ((row.trend3M || 0) < 0 || (row.sales || 0) < 0) flags.push('venta_negativa_devoluciones');
 
       cache[cacheKey] = {
         fillRate: Number(fillRate.toFixed(3)),
@@ -1671,29 +1687,37 @@ useEffect(() => {
           const goa = row.goa.toUpperCase();
           const talla = row.talla ? String(row.talla).trim().toUpperCase() : 'UNICA';
           const cacheKey = `${row.centro}|${goa}|${talla}`;
-          const v3m = row.trend3M || 0;
-          const v12m = row.sales || 0;
-          const oh = row.oh || 0;
-          const oo = row.oo || 0;
+          const v3m = Math.max(0, row.trend3M || 0);
+          const v12m = Math.max(0, row.sales || 0);
+          const oh = Math.max(0, row.oh || 0);
+          const oo = Math.max(0, row.oo || 0);
           const vSem = v3m / 12;
           let frWos;
           if (vSem <= 0) frWos = oh > 0 ? 1 : 0.5;
           else { const wos = oh / vSem; frWos = Math.max(0.2, Math.min(1, wos / 12)); }
           const myContrib = v3m > 0 ? v3m : (v12m / 4);
           let storeGoaSales = 0;
-          rawStoreData.forEach(r => { if (r.centro === row.centro && r.goa.toUpperCase() === goa) storeGoaSales += (r.trend3M || r.sales / 4); });
+          rawStoreData.forEach(r => {
+            if (r.centro === row.centro && r.goa.toUpperCase() === goa) {
+              const r3 = Math.max(0, r.trend3M || 0);
+              const r12 = Math.max(0, r.sales || 0);
+              storeGoaSales += (r3 > 0 ? r3 : r12 / 4);
+            }
+          });
           const shareT = storeGoaSales > 0 ? myContrib / storeGoaSales : 0;
           const shareM = curvaModeloTmp[goa]?.[talla] || 0;
           const frShare = shareM > 0 ? Math.min(1, shareT / shareM) : 1;
           const fr = 0.7 * frWos + 0.3 * frShare;
           const oosR = Math.max(0, Math.min(0.95, 1 - fr));
-          const dBase = 0.4 * (v12m / 12) + 0.6 * (v3m / 3);
+          const dBase = Math.max(0, 0.4 * (v12m / 12) + 0.6 * (v3m / 3));
           let dAdj = dBase / Math.max(0.05, 1 - oosR);
           const v3mMes = v3m / 3;
           if (v3mMes > 0) { dAdj = Math.min(dAdj, v3mMes * 1.5); dAdj = Math.max(dAdj, v3mMes * 0.5); }
+          dAdj = Math.max(0, dAdj);
           const flags = [];
           if (oosR > 0.4) flags.push('alta_incertidumbre');
           if (v12m < 5 && v3m < 2) flags.push('baja_data');
+          if ((row.trend3M || 0) < 0 || (row.sales || 0) < 0) flags.push('venta_negativa_devoluciones');
           cacheTmp[cacheKey] = { fillRate: +fr.toFixed(3), oosRatio: +oosR.toFixed(3), demandaBase: +dBase.toFixed(2), demandaAjustada: +dAdj.toFixed(2), ventas12m: v12m, ventas3m: v3m, oh, oo, curvaTienda: +shareT.toFixed(3), curvaModelo: +shareM.toFixed(3), flags };
         });
         // Asignar al cache local que se usará en este run (no esperamos al state)
@@ -2246,9 +2270,11 @@ useEffect(() => {
 
   const downloadParamTXT = () => {
     if (distributionResult.length === 0) return;
+    // Layout: SKU | CENTRO | ETIQUETA_AP | NIVEL_FCST | STOCK_MIN(=qty distribuida) | STOCK_MAX | WOS | LEAD_TIME | AAT | MIN_ALLO | MAX_ALLO
     const rows = distributionResult.map(r => {
-        const centroPad = String(r.centro).padStart(4, '0');
-        return `${r.sku}\t${centroPad}\t${paramForm.etiquetaAP}\t${paramForm.stockMin}\t${paramForm.stockMax}\t${paramForm.leadTime}\t${paramForm.min}\t${paramForm.max}\t${paramForm.th}\t${paramForm.tipoDistribucion}`;
+      const centroPad = String(r.centro).padStart(4, '0');
+      const stockMin = r.qty; // = qty distribuida por esta corrida
+      return `${r.sku}\t${centroPad}\t${paramForm.etiquetaAP}\t${paramForm.nivelFcst}\t${stockMin}\t${paramForm.stockMax}\t${paramForm.wos}\t${paramForm.leadTime}\t${paramForm.aat}\t${paramForm.minAllo}\t${paramForm.maxAllo}`;
     });
     const txtContent = rows.join('\n');
     triggerDownloadTXT(`Parametrizacion_${new Date().toISOString().split('T')[0]}.txt`, txtContent);
@@ -2328,58 +2354,138 @@ useEffect(() => {
   }, [filteredDistResult]);
 
   const buyInsights = useMemo(() => {
-    if (distributionResult.length === 0 || rawStoreData.length === 0) return { suggestions: [], hasTalla: false };
+    if (distributionResult.length === 0 || rawStoreData.length === 0) return { underBuy: [], overBuy: [], hasTalla: false };
     
     const hasTallaInHistory = rawStoreData.some(row => row.talla && row.talla !== 'N/A');
-    if (!hasTallaInHistory) return { suggestions: [], hasTalla: false };
+    if (!hasTallaInHistory) return { underBuy: [], overBuy: [], hasTalla: false };
 
+    // Agg por GOA+TALLA con info de modelos y marcas
     const sizeAgg = {}; 
     distributionResult.forEach(r => {
        const key = `${r.goa}|${r.talla}`;
-       if (!sizeAgg[key]) sizeAgg[key] = { comprado: 0, vendido: 0, goa: r.goa, talla: r.talla, marcas: new Set() };
+       if (!sizeAgg[key]) sizeAgg[key] = { comprado: 0, vendido: 0, goa: r.goa, talla: r.talla, marcas: new Set(), modelos: new Set() };
        sizeAgg[key].comprado += r.qty;
-       sizeAgg[key].marcas.add(r.marca);
+       if (r.marca) sizeAgg[key].marcas.add(r.marca);
+       if (r.modelo) sizeAgg[key].modelos.add(r.modelo);
     });
 
     const goaTotals = {};
-    distributionResult.forEach(r => {
-       goaTotals[r.goa] = (goaTotals[r.goa] || 0) + r.qty;
-    });
+    distributionResult.forEach(r => { goaTotals[r.goa] = (goaTotals[r.goa] || 0) + r.qty; });
 
     const historicGoaTotals = {};
     rawStoreData.forEach(row => {
        if (!row.talla || row.talla === 'N/A') return; 
-       const key = `${row.goa}|${row.talla}`;
-       if (!sizeAgg[key]) sizeAgg[key] = { comprado: 0, vendido: 0, goa: row.goa, talla: row.talla, marcas: new Set(['Varias']) };
-       sizeAgg[key].vendido += row.sales;
-       historicGoaTotals[row.goa] = (historicGoaTotals[row.goa] || 0) + row.sales;
+       const key = `${row.goa.toUpperCase()}|${row.talla.toUpperCase()}`;
+       if (!sizeAgg[key]) sizeAgg[key] = { comprado: 0, vendido: 0, goa: row.goa.toUpperCase(), talla: row.talla.toUpperCase(), marcas: new Set(), modelos: new Set() };
+       sizeAgg[key].vendido += Math.max(0, row.sales || 0);
+       historicGoaTotals[row.goa.toUpperCase()] = (historicGoaTotals[row.goa.toUpperCase()] || 0) + Math.max(0, row.sales || 0);
     });
 
-    const suggestions = [];
+    const underBuy = []; // mixVendido > mixComprado → desabasto
+    const overBuy = [];  // mixComprado > mixVendido → sobrecompra
     Object.values(sizeAgg).forEach(data => {
        const tComprado = goaTotals[data.goa] || 0;
        const tVendido = historicGoaTotals[data.goa] || 0;
        
-       if (tComprado > 0 && tVendido > 0 && data.vendido > 0) {
+       if (tComprado > 0 && tVendido > 0 && data.vendido > 0 && data.comprado > 0) {
            const mixComprado = data.comprado / tComprado;
            const mixVendido = data.vendido / tVendido;
            const diff = mixVendido - mixComprado;
            
-           if (diff > 0.03) { 
-               suggestions.push({
-                  goa: data.goa, talla: data.talla, marca: Array.from(data.marcas).join(', '),
-                  mixComprado: (mixComprado * 100).toFixed(1),
-                  mixVendido: (mixVendido * 100).toFixed(1),
-                  diff
-               });
-           }
+           const entry = {
+              goa: data.goa, talla: data.talla,
+              marca: Array.from(data.marcas).slice(0, 3).join(', ') || 'Varias',
+              modelos: Array.from(data.modelos).slice(0, 3).join(', ') || '—',
+              numModelos: data.modelos.size,
+              mixComprado: (mixComprado * 100).toFixed(1),
+              mixVendido: (mixVendido * 100).toFixed(1),
+              diff,
+              comprado: data.comprado,
+              vendido: Math.round(data.vendido),
+           };
+           if (diff > 0.03) underBuy.push(entry);
+           else if (diff < -0.03) overBuy.push(entry);
        }
     });
 
-    return { suggestions: suggestions.sort((a, b) => b.diff - a.diff).slice(0, 5), hasTalla: true };
+    return { 
+      underBuy: underBuy.sort((a, b) => b.diff - a.diff).slice(0, 8), 
+      overBuy: overBuy.sort((a, b) => a.diff - b.diff).slice(0, 8),
+      hasTalla: true 
+    };
   }, [distributionResult, rawStoreData]);
 
-  // --- DATOS MATRIZ SKU ---
+  // --- TABLA RESUMEN dashboard: combinaciones tienda/modelo/talla con MOS ---
+  const summaryData = useMemo(() => {
+    if (filteredDistResult.length === 0) return { rows: [], avgQty: 0, maxQty: 0, avgMos: 0, maxMos: 0 };
+
+    const rows = filteredDistResult.map(r => {
+      const store = stores.find(s => s.centerCode === r.centro);
+      const goaKey = r.goa.toUpperCase();
+      const tallaKey = r.talla?.toUpperCase() || 'UNICA';
+      const sizeKey = `${goaKey}|${tallaKey}`;
+      // OH efectivo: OH original + qty asignada en esta corrida
+      const ohOriginal = (store?.goaSizeOH?.[sizeKey] !== undefined && tallaKey !== 'UNICA' && tallaKey !== 'N/A')
+        ? (store.goaSizeOH[sizeKey] || 0)
+        : (store?.goaOH?.[goaKey] || 0);
+      const oo = (store?.goaSizeOO?.[sizeKey] !== undefined && tallaKey !== 'UNICA' && tallaKey !== 'N/A')
+        ? (store.goaSizeOO[sizeKey] || 0)
+        : (store?.goaOO?.[goaKey] || 0);
+      const ohEff = ohOriginal + r.qty;
+      // Venta mensual
+      let ventaMensual = 0;
+      if (tallaKey !== 'UNICA' && tallaKey !== 'N/A') {
+        const v3m = store?.goaSizeTrend3M?.[sizeKey] || 0;
+        if (v3m > 0) ventaMensual = v3m / 3;
+        else ventaMensual = (store?.goaSizeSales?.[sizeKey] || 0) / 12;
+      } else {
+        const v3m = store?.goaTrend3M?.[goaKey] || 0;
+        if (v3m > 0) ventaMensual = v3m / 3;
+        else ventaMensual = (store?.goaSales?.[goaKey] || 0) / 12;
+      }
+      const mos = ventaMensual > 0 ? (ohEff + oo) / ventaMensual : (ohEff + oo > 0 ? 999 : 0);
+      const ventaAnual = (tallaKey !== 'UNICA' && tallaKey !== 'N/A')
+        ? (store?.goaSizeSales?.[sizeKey] || 0)
+        : (store?.goaSales?.[goaKey] || 0);
+      return {
+        ...r,
+        ohOriginal, oo, ohEff,
+        mos: Math.min(mos, 999),
+        ventaAnual,
+      };
+    });
+
+    const avgQty = rows.reduce((s, r) => s + r.qty, 0) / Math.max(1, rows.length);
+    const maxQty = Math.max(...rows.map(r => r.qty));
+    const validMos = rows.filter(r => r.mos < 100);
+    const avgMos = validMos.length > 0 ? validMos.reduce((s, r) => s + r.mos, 0) / validMos.length : 0;
+    const maxMos = validMos.length > 0 ? Math.max(...validMos.map(r => r.mos)) : 0;
+
+    return { rows, avgQty, maxQty, avgMos, maxMos };
+  }, [filteredDistResult, stores]);
+
+  const summaryFiltered = useMemo(() => {
+    let list = summaryData.rows;
+    if (summaryFilter.trim()) {
+      const q = summaryFilter.trim().toUpperCase();
+      list = list.filter(r =>
+        (r.nombre || '').toUpperCase().includes(q) ||
+        String(r.centro).toUpperCase().includes(q) ||
+        (r.modelo || '').toUpperCase().includes(q) ||
+        (r.sku || '').toUpperCase().includes(q) ||
+        (r.goa || '').toUpperCase().includes(q) ||
+        (r.marca || '').toUpperCase().includes(q) ||
+        String(r.talla).toUpperCase().includes(q)
+      );
+    }
+    const dir = summarySortDir === 'desc' ? -1 : 1;
+    return [...list].sort((a, b) => {
+      const va = summarySortBy === 'venta' ? a.ventaAnual : summarySortBy === 'mos' ? a.mos : a.qty;
+      const vb = summarySortBy === 'venta' ? b.ventaAnual : summarySortBy === 'mos' ? b.mos : b.qty;
+      return (va - vb) * dir;
+    });
+  }, [summaryData, summaryFilter, summarySortBy, summarySortDir]);
+
   const matrixData = useMemo(() => {
     if (filteredDistResult.length === 0) return null;
 
@@ -2844,6 +2950,18 @@ useEffect(() => {
                         </tbody>
                       </table>
                     </div>
+
+                    <details className={`p-3 rounded-lg border mb-4 ${t.cardInner}`}>
+                      <summary className={`cursor-pointer text-xs font-bold ${t.textMain}`}>📚 ¿Cómo se calcula la demanda ajustada?</summary>
+                      <div className={`mt-3 space-y-2 text-[11px] leading-relaxed ${t.textMuted}`}>
+                        <p><strong className={t.textMain}>1. Fill Rate (1 = sano, 0 = roto):</strong> mide qué tan bien se cumplió la demanda. Mezcla dos señales: <em>WOS</em> (semanas de cobertura: <code>OH / venta_semanal</code>; ≥12 semanas = fill 1.0) y <em>share</em> (peso de la talla en tu tienda vs el peso típico del modelo).</p>
+                        <p><strong className={t.textMain}>2. OOS Ratio = 1 − Fill Rate.</strong> Es la proporción estimada de demanda que se PERDIÓ por desabasto. OOS 0.4 = 40% de la demanda real probablemente no se observó.</p>
+                        <p><strong className={t.textMain}>3. Demanda Base mensual:</strong> <code>0.4 × (vta12m/12) + 0.6 × (vta3m/3)</code>. Promedio ponderado dando más peso al ritmo reciente.</p>
+                        <p><strong className={t.textMain}>4. Demanda Ajustada:</strong> <code>demanda_base / (1 − OOS)</code>. Si tuviste 40% OOS, multiplicas la venta observada por ~1.67 para inferir lo que pudiste haber vendido sin desabasto. Topes: nunca menos de 0.5× ni más de 1.5× la venta de los últimos 3M (evita inferencias salvajes).</p>
+                        <p className={`pt-2 border-t ${theme==='dark'?'border-zinc-800':'border-gray-200'}`}><strong className="text-amber-500">¿Por qué a veces sale 0?</strong> Si <code>vta12m = 0 Y vta3m = 0 Y OH = 0</code>, no hay datos para inferir nada → demanda 0. Esto NO significa "no existe demanda", significa <em>"no hay señal observable"</em>. Casos típicos: tienda nueva, talla nunca asignada, o desabasto crónico. Para esas combinaciones la lógica de distribución usa fallback a la <em>curva del modelo</em> (cómo se vende esa talla en otras tiendas).</p>
+                        <p><strong className="text-amber-500">¿Negativos?</strong> Si tu CSV trae devoluciones netas (ventas &lt; 0), antes esos valores ensuciaban el cálculo. Ahora se sanitiza: cualquier venta negativa se trata como 0 y se marca con flag <code>venta_negativa_devoluciones</code> para que lo veas en el export.</p>
+                      </div>
+                    </details>
                   </>
                 )}
 
@@ -2860,46 +2978,53 @@ useEffect(() => {
 
         {showParamModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-            <div className={`w-full max-w-lg rounded-2xl border shadow-2xl p-6 ${theme==='dark'?'bg-zinc-900 border-zinc-800':'bg-white border-gray-200'}`}>
+            <div className={`w-full max-w-2xl rounded-2xl border shadow-2xl p-6 ${theme==='dark'?'bg-zinc-900 border-zinc-800':'bg-white border-gray-200'}`}>
               <div className="flex justify-between items-center mb-4">
-                <h3 className={`text-lg font-black ${t.textMain}`}>Parametrización de Descarga</h3>
+                <div>
+                  <h3 className={`text-lg font-black ${t.textMain}`}>Parametrización de Descarga</h3>
+                  <p className={`text-xs mt-1 ${t.textMuted}`}>Layout TXT: SKU | CENTRO | ETIQUETA_AP | NIVEL_FCST | STOCK_MIN | STOCK_MAX | WOS | LEAD_TIME | AAT | MIN_ALLO | MAX_ALLO</p>
+                </div>
                 <button onClick={() => setShowParamModal(false)} className="text-gray-500 hover:text-red-500 transition-colors">
                   <Icons.X size={20} />
                 </button>
               </div>
               
-              <div className="grid grid-cols-2 gap-4 mb-6">
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-6">
                 <div className="flex flex-col">
                   <label className={`text-[10px] font-bold uppercase mb-1 ${t.textMuted}`}>Etiqueta AP</label>
-                  <input type="text" value={paramForm.etiquetaAP} onChange={e=>setParamForm({...paramForm, etiquetaAP: e.target.value})} className={`p-2 rounded-lg border text-sm outline-none ${t.input}`} placeholder="Ej. AP_2026"/>
+                  <input type="number" value={paramForm.etiquetaAP} onChange={e=>setParamForm({...paramForm, etiquetaAP: e.target.value})} className={`p-2 rounded-lg border text-sm outline-none ${t.input}`}/>
                 </div>
                 <div className="flex flex-col">
-                  <label className={`text-[10px] font-bold uppercase mb-1 ${t.textMuted}`}>Stock Min</label>
-                  <input type="text" value={paramForm.stockMin} onChange={e=>setParamForm({...paramForm, stockMin: e.target.value})} className={`p-2 rounded-lg border text-sm outline-none ${t.input}`} placeholder="0"/>
+                  <label className={`text-[10px] font-bold uppercase mb-1 ${t.textMuted}`}>Nivel de Fcst</label>
+                  <input type="number" value={paramForm.nivelFcst} onChange={e=>setParamForm({...paramForm, nivelFcst: e.target.value})} className={`p-2 rounded-lg border text-sm outline-none ${t.input}`}/>
+                </div>
+                <div className="flex flex-col">
+                  <label className={`text-[10px] font-bold uppercase mb-1 ${t.textMuted}`}>Stock Min <span className="text-violet-400">(distribuido)</span></label>
+                  <input type="text" value="= qty por combinación" disabled readOnly className={`p-2 rounded-lg border text-sm outline-none italic opacity-60 cursor-not-allowed ${t.input}`}/>
                 </div>
                 <div className="flex flex-col">
                   <label className={`text-[10px] font-bold uppercase mb-1 ${t.textMuted}`}>Stock Max</label>
-                  <input type="text" value={paramForm.stockMax} onChange={e=>setParamForm({...paramForm, stockMax: e.target.value})} className={`p-2 rounded-lg border text-sm outline-none ${t.input}`} placeholder="10"/>
+                  <input type="number" value={paramForm.stockMax} onChange={e=>setParamForm({...paramForm, stockMax: e.target.value})} className={`p-2 rounded-lg border text-sm outline-none ${t.input}`}/>
+                </div>
+                <div className="flex flex-col">
+                  <label className={`text-[10px] font-bold uppercase mb-1 ${t.textMuted}`}>WOS</label>
+                  <input type="number" value={paramForm.wos} onChange={e=>setParamForm({...paramForm, wos: e.target.value})} className={`p-2 rounded-lg border text-sm outline-none ${t.input}`}/>
                 </div>
                 <div className="flex flex-col">
                   <label className={`text-[10px] font-bold uppercase mb-1 ${t.textMuted}`}>Lead Time</label>
-                  <input type="text" value={paramForm.leadTime} onChange={e=>setParamForm({...paramForm, leadTime: e.target.value})} className={`p-2 rounded-lg border text-sm outline-none ${t.input}`} placeholder="7"/>
+                  <input type="number" value={paramForm.leadTime} onChange={e=>setParamForm({...paramForm, leadTime: e.target.value})} className={`p-2 rounded-lg border text-sm outline-none ${t.input}`}/>
                 </div>
                 <div className="flex flex-col">
-                  <label className={`text-[10px] font-bold uppercase mb-1 ${t.textMuted}`}>Min</label>
-                  <input type="text" value={paramForm.min} onChange={e=>setParamForm({...paramForm, min: e.target.value})} className={`p-2 rounded-lg border text-sm outline-none ${t.input}`} placeholder="1"/>
+                  <label className={`text-[10px] font-bold uppercase mb-1 ${t.textMuted}`}>AAT</label>
+                  <input type="number" value={paramForm.aat} onChange={e=>setParamForm({...paramForm, aat: e.target.value})} className={`p-2 rounded-lg border text-sm outline-none ${t.input}`}/>
                 </div>
                 <div className="flex flex-col">
-                  <label className={`text-[10px] font-bold uppercase mb-1 ${t.textMuted}`}>Max</label>
-                  <input type="text" value={paramForm.max} onChange={e=>setParamForm({...paramForm, max: e.target.value})} className={`p-2 rounded-lg border text-sm outline-none ${t.input}`} placeholder="5"/>
+                  <label className={`text-[10px] font-bold uppercase mb-1 ${t.textMuted}`}>Min Allo</label>
+                  <input type="number" value={paramForm.minAllo} onChange={e=>setParamForm({...paramForm, minAllo: e.target.value})} className={`p-2 rounded-lg border text-sm outline-none ${t.input}`}/>
                 </div>
                 <div className="flex flex-col">
-                  <label className={`text-[10px] font-bold uppercase mb-1 ${t.textMuted}`}>TH</label>
-                  <input type="text" value={paramForm.th} onChange={e=>setParamForm({...paramForm, th: e.target.value})} className={`p-2 rounded-lg border text-sm outline-none ${t.input}`} placeholder="0"/>
-                </div>
-                <div className="flex flex-col">
-                  <label className={`text-[10px] font-bold uppercase mb-1 ${t.textMuted}`}>Tipo de Distribución</label>
-                  <input type="text" value={paramForm.tipoDistribucion} onChange={e=>setParamForm({...paramForm, tipoDistribucion: e.target.value})} className={`p-2 rounded-lg border text-sm outline-none ${t.input}`} placeholder="Push / Pull"/>
+                  <label className={`text-[10px] font-bold uppercase mb-1 ${t.textMuted}`}>Max Allo</label>
+                  <input type="number" value={paramForm.maxAllo} onChange={e=>setParamForm({...paramForm, maxAllo: e.target.value})} className={`p-2 rounded-lg border text-sm outline-none ${t.input}`}/>
                 </div>
               </div>
               
@@ -3340,6 +3465,22 @@ useEffect(() => {
 
             {chequera.length > 0 && (
               <div className={`rounded-xl border overflow-hidden ${t.card}`}>
+                <div className={`flex items-center justify-between px-4 py-2 border-b ${theme==='dark'?'border-zinc-800 bg-zinc-950/50':'border-gray-200 bg-gray-50'}`}>
+                  <span className={`text-xs font-bold ${t.textMain}`}>
+                    {chequera.length} {chequera.length === 1 ? 'modelo' : 'modelos'} en chequera · {chequera.reduce((s, it) => s + parseInt(it.qty || 0), 0).toLocaleString()} pzs total
+                  </span>
+                  <button
+                    onClick={() => {
+                      if (confirm(`¿Borrar los ${chequera.length} modelos de la chequera? Esta acción no se puede deshacer.`)) {
+                        setChequera([]);
+                        setDistributionResult([]);
+                      }
+                    }}
+                    className={`px-3 py-1.5 rounded-lg text-xs font-bold flex items-center transition-all ${theme==='dark'?'bg-red-900/30 text-red-400 border border-red-500/40 hover:bg-red-900/60':'bg-red-50 text-red-700 border border-red-200 hover:bg-red-100'}`}
+                  >
+                    <Icons.Trash2 size={12} className="mr-1.5"/> Borrar todo
+                  </button>
+                </div>
                 <div className="overflow-x-auto max-h-80 custom-scrollbar">
                   <table className="w-full text-left border-collapse relative">
                     <thead className="sticky top-0 z-10">
@@ -3640,41 +3781,85 @@ useEffect(() => {
                 </div>
 
                 {buyInsights.hasTalla ? (
-                  buyInsights.suggestions.length > 0 ? (
-                    <div className={`p-6 rounded-xl border mt-6 ${t.cardInner}`}>
-                      <h3 className={`text-lg font-bold flex items-center mb-4 ${t.textMain}`}>
-                        <Icons.TrendingUp className={`mr-2 ${t.textAccent1}`} size={20} />
-                        Insights: Sugerencias de Próxima Compra (Desabasto Detectado)
-                      </h3>
-                      <p className={`text-xs mb-4 ${t.textMuted}`}>Esta tabla detecta las tallas que tienen una demanda histórica mayor al porcentaje que acabas de enviarles en este resurtido.</p>
-                      <div className="overflow-x-auto">
-                        <table className="w-full text-left">
-                          <thead>
-                            <tr className={`text-[10px] uppercase font-black tracking-widest ${theme==='dark'?'text-gray-400 border-b border-zinc-800':'text-gray-500 border-b border-gray-200'}`}>
-                              <th className="p-2">Marca</th>
-                              <th className="p-2">Modelo / SKU</th>
-                              <th className="p-2">Talla</th>
-                              <th className="p-2">Mix Histórico (Demanda)</th>
-                              <th className="p-2">Mix Distribuido (Envío)</th>
-                              <th className="p-2">Acción Recomendada</th>
-                            </tr>
-                          </thead>
-                          <tbody className={`divide-y ${theme==='dark'?'divide-zinc-800/50':'divide-gray-200'}`}>
-                            {buyInsights.suggestions.map((ins, i) => (
-                               <tr key={`ins-${i}`}>
-                                  <td className={`p-2 text-xs font-bold ${t.textMuted}`}>{ins.marca}</td>
-                                  <td className={`p-2 text-xs font-bold ${t.textMain}`}>SKU <span className="text-[10px] font-mono text-zinc-500 ml-1">({ins.talla})</span></td>
-                                  <td className={`p-2 text-xs font-black ${t.textAccent2}`}>{ins.talla}</td>
-                                  <td className={`p-2 text-xs font-mono ${t.textMain}`}>{ins.mixVendido}%</td>
-                                  <td className={`p-2 text-xs font-mono text-red-400`}>{ins.mixComprado}%</td>
-                                  <td className={`p-2 text-xs font-bold text-emerald-400 flex items-center`}><Icons.TrendingUp size={12} className="mr-1"/> Comprar +{(ins.diff * 100).toFixed(1)}%</td>
-                               </tr>
-                            ))}
-                          </tbody>
-                        </table>
+                  (buyInsights.underBuy.length > 0 || buyInsights.overBuy.length > 0) ? (
+                    <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-6">
+                      {/* DESABASTO */}
+                      <div className={`p-6 rounded-xl border ${t.cardInner}`}>
+                        <h3 className={`text-base font-bold flex items-center mb-2 ${t.textMain}`}>
+                          <Icons.TrendingUp className="mr-2 text-emerald-500" size={18} />
+                          Desabasto detectado <span className={`ml-2 text-[10px] font-mono ${t.textMuted}`}>({buyInsights.underBuy.length})</span>
+                        </h3>
+                        <p className={`text-[11px] mb-4 ${t.textMuted}`}>Tallas con demanda histórica MAYOR al envío. Considera comprar más.</p>
+                        {buyInsights.underBuy.length > 0 ? (
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left text-xs">
+                              <thead>
+                                <tr className={`text-[9px] uppercase font-black tracking-widest ${theme==='dark'?'text-gray-400 border-b border-zinc-800':'text-gray-500 border-b border-gray-200'}`}>
+                                  <th className="p-2">GOA / Marca</th>
+                                  <th className="p-2">Talla</th>
+                                  <th className="p-2 text-right">Mix Vta</th>
+                                  <th className="p-2 text-right">Mix Env</th>
+                                  <th className="p-2 text-right">Δ</th>
+                                </tr>
+                              </thead>
+                              <tbody className={`divide-y ${theme==='dark'?'divide-zinc-800/50':'divide-gray-200'}`}>
+                                {buyInsights.underBuy.map((ins, i) => (
+                                  <tr key={`under-${i}`}>
+                                    <td className={`p-2 font-bold ${t.textMain}`}>
+                                      <div>{ins.goa}</div>
+                                      <div className={`text-[10px] ${t.textMuted}`}>{ins.marca} · {ins.numModelos} {ins.numModelos === 1 ? 'modelo' : 'modelos'}</div>
+                                    </td>
+                                    <td className={`p-2 font-black text-amber-500`}>{ins.talla}</td>
+                                    <td className={`p-2 text-right font-mono ${t.textMain}`}>{ins.mixVendido}%</td>
+                                    <td className={`p-2 text-right font-mono text-red-400`}>{ins.mixComprado}%</td>
+                                    <td className={`p-2 text-right font-mono font-bold text-emerald-500`}>+{(ins.diff * 100).toFixed(1)}%</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : <p className={`text-xs italic ${t.textMuted}`}>Sin desabasto detectado.</p>}
+                      </div>
+
+                      {/* SOBRECOMPRA */}
+                      <div className={`p-6 rounded-xl border ${t.cardInner}`}>
+                        <h3 className={`text-base font-bold flex items-center mb-2 ${t.textMain}`}>
+                          <Icons.AlertCircle className="mr-2 text-red-500" size={18} />
+                          Sobrecompra detectada <span className={`ml-2 text-[10px] font-mono ${t.textMuted}`}>({buyInsights.overBuy.length})</span>
+                        </h3>
+                        <p className={`text-[11px] mb-4 ${t.textMuted}`}>Tallas con envío MAYOR a la demanda histórica. Considera reducir compra futura.</p>
+                        {buyInsights.overBuy.length > 0 ? (
+                          <div className="overflow-x-auto">
+                            <table className="w-full text-left text-xs">
+                              <thead>
+                                <tr className={`text-[9px] uppercase font-black tracking-widest ${theme==='dark'?'text-gray-400 border-b border-zinc-800':'text-gray-500 border-b border-gray-200'}`}>
+                                  <th className="p-2">GOA / Marca</th>
+                                  <th className="p-2">Talla</th>
+                                  <th className="p-2 text-right">Mix Vta</th>
+                                  <th className="p-2 text-right">Mix Env</th>
+                                  <th className="p-2 text-right">Δ</th>
+                                </tr>
+                              </thead>
+                              <tbody className={`divide-y ${theme==='dark'?'divide-zinc-800/50':'divide-gray-200'}`}>
+                                {buyInsights.overBuy.map((ins, i) => (
+                                  <tr key={`over-${i}`}>
+                                    <td className={`p-2 font-bold ${t.textMain}`}>
+                                      <div>{ins.goa}</div>
+                                      <div className={`text-[10px] ${t.textMuted}`}>{ins.marca} · {ins.numModelos} {ins.numModelos === 1 ? 'modelo' : 'modelos'}</div>
+                                    </td>
+                                    <td className={`p-2 font-black text-amber-500`}>{ins.talla}</td>
+                                    <td className={`p-2 text-right font-mono ${t.textMain}`}>{ins.mixVendido}%</td>
+                                    <td className={`p-2 text-right font-mono text-emerald-400`}>{ins.mixComprado}%</td>
+                                    <td className={`p-2 text-right font-mono font-bold text-red-500`}>{(ins.diff * 100).toFixed(1)}%</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          </div>
+                        ) : <p className={`text-xs italic ${t.textMuted}`}>Sin sobrecompra detectada.</p>}
                       </div>
                     </div>
-                  ) : null 
+                  ) : null
                 ) : (
                   <div className={`p-6 rounded-xl border mt-6 flex flex-col items-center justify-center text-center ${t.cardInner}`}>
                      <Icons.TrendingUp size={32} className={`${theme==='dark'?'text-zinc-600':'text-gray-300'} mb-3`} />
@@ -3743,6 +3928,100 @@ useEffect(() => {
                           </tr>
                         </tfoot>
                       </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* TABLA RESUMEN — filtros, ordenadores, MOS, highlights */}
+                {summaryData.rows.length > 0 && (
+                  <div className={`p-5 rounded-xl border col-span-1 md:col-span-2 ${t.cardInner} mt-6`}>
+                    <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+                      <h4 className={`text-sm font-bold flex items-center ${t.textMain}`}>
+                        <Icons.Table size={16} className="mr-2"/> Resumen de Combinaciones
+                        <span className={`ml-2 text-[10px] font-mono ${t.textMuted}`}>{summaryFiltered.length} de {summaryData.rows.length}</span>
+                      </h4>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <input
+                          type="text"
+                          placeholder="Filtrar por tienda, modelo, GOA, talla…"
+                          value={summaryFilter}
+                          onChange={e => setSummaryFilter(e.target.value)}
+                          className={`px-3 py-1.5 rounded-lg border text-xs outline-none w-64 ${t.input}`}
+                        />
+                        <select value={summarySortBy} onChange={e => setSummarySortBy(e.target.value)} className={`px-2 py-1.5 rounded border text-xs outline-none ${t.input}`}>
+                          <option value="qty">Ordenar por: Qty</option>
+                          <option value="venta">Ordenar por: Venta anual</option>
+                          <option value="mos">Ordenar por: MOS</option>
+                        </select>
+                        <button
+                          onClick={() => setSummarySortDir(summarySortDir === 'desc' ? 'asc' : 'desc')}
+                          className={`px-3 py-1.5 rounded border text-xs font-bold ${t.input}`}
+                          title={summarySortDir === 'desc' ? 'Mayor a menor' : 'Menor a mayor'}
+                        >
+                          {summarySortDir === 'desc' ? '↓' : '↑'}
+                        </button>
+                      </div>
+                    </div>
+
+                    <div className={`mb-3 flex flex-wrap gap-3 text-[10px] ${t.textMuted}`}>
+                      <span>📊 <strong>Qty prom:</strong> {summaryData.avgQty.toFixed(1)} | <strong>max:</strong> {summaryData.maxQty}</span>
+                      <span>📈 <strong>MOS prom:</strong> {summaryData.avgMos.toFixed(1)}m | <strong>max:</strong> {summaryData.maxMos.toFixed(1)}m</span>
+                      <span className="text-emerald-500">🌟 = Por arriba del promedio</span>
+                      <span className="text-amber-500">🔥 = En el máximo (top opportunity)</span>
+                    </div>
+
+                    <div className="overflow-auto max-h-[60vh] custom-scrollbar">
+                      <table className="w-full text-left border-collapse text-xs">
+                        <thead className="sticky top-0 z-10">
+                          <tr className={`text-[9px] uppercase font-black tracking-widest ${theme==='dark'?'bg-zinc-950 text-gray-400 border-b border-zinc-800':'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+                            <th className="p-2">Tienda</th>
+                            <th className="p-2">Cluster</th>
+                            <th className="p-2">GOA / Modelo</th>
+                            <th className="p-2">Talla</th>
+                            <th className="p-2 text-right">Qty</th>
+                            <th className="p-2 text-right">Venta Anual</th>
+                            <th className="p-2 text-right">OH+Qty</th>
+                            <th className="p-2 text-right">MOS</th>
+                          </tr>
+                        </thead>
+                        <tbody className={`divide-y ${theme==='dark'?'divide-zinc-800/50':'divide-gray-200'}`}>
+                          {summaryFiltered.slice(0, 200).map((r, i) => {
+                            const isMaxQty = r.qty >= summaryData.maxQty * 0.95;
+                            const isAboveAvgQty = r.qty > summaryData.avgQty;
+                            const isMaxVenta = r.ventaAnual > 0 && r.ventaAnual >= summaryData.maxQty * 12 * 0.5;
+                            const mosValid = r.mos < 100;
+                            const isMosHigh = mosValid && r.mos > summaryData.avgMos * 1.3;
+                            const isMosLow = mosValid && r.mos < summaryData.avgMos * 0.7 && r.mos > 0;
+                            return (
+                              <tr key={i} className={`${theme==='dark'?'hover:bg-zinc-800/30':'hover:bg-gray-50'}`}>
+                                <td className={`p-2 ${t.textMain}`}>
+                                  <span className={`text-[9px] font-mono mr-1 ${t.textMuted}`}>{r.centro}</span>
+                                  {r.nombre}
+                                </td>
+                                <td className="p-2">
+                                  <span className={`text-[9px] font-black px-1.5 py-0.5 rounded ${r.globalCluster === activeClusters[0] ? t.badgeAA : r.globalCluster === activeClusters[1] ? t.badgeA : t.badgeOther}`}>{r.globalCluster || '-'}</span>
+                                </td>
+                                <td className={`p-2 ${t.textMain}`}>
+                                  <div className="font-bold">{r.goa}</div>
+                                  <div className={`text-[10px] ${t.textMuted}`}>{r.modelo} · {r.marca}</div>
+                                </td>
+                                <td className={`p-2 font-mono font-bold text-amber-500`}>{r.talla}</td>
+                                <td className={`p-2 text-right font-mono font-bold ${isMaxQty ? 'text-amber-400 bg-amber-500/10' : isAboveAvgQty ? 'text-emerald-400' : t.textMain}`}>
+                                  {isMaxQty ? '🔥 ' : isAboveAvgQty ? '🌟 ' : ''}{r.qty}
+                                </td>
+                                <td className={`p-2 text-right font-mono ${t.textMuted}`}>{Math.round(r.ventaAnual).toLocaleString()}</td>
+                                <td className={`p-2 text-right font-mono ${t.textMain}`}>{r.ohEff}</td>
+                                <td className={`p-2 text-right font-mono font-bold ${!mosValid ? 'text-gray-500' : isMosHigh ? 'text-red-500 bg-red-500/10' : isMosLow ? 'text-emerald-500 bg-emerald-500/10' : t.textMain}`}>
+                                  {!mosValid ? '∞' : `${r.mos.toFixed(1)}m`}
+                                </td>
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                      {summaryFiltered.length > 200 && (
+                        <p className={`text-center text-[10px] mt-2 ${t.textMuted}`}>Mostrando primeras 200 filas. Usa el filtro para acotar resultados.</p>
+                      )}
                     </div>
                   </div>
                 )}
