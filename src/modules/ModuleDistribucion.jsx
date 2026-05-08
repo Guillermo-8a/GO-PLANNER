@@ -1008,6 +1008,11 @@ useEffect(() => {
     const results = [];
     const warnings = []; 
     setOverstockAlerts([]);
+    if (typeof window !== 'undefined') {
+      window.__matrixFallbackReported = false;
+      window.__goaMismatchReported = false;
+    }
+    if (typeof window !== 'undefined') window.__matrixFallbackReported = false;
     
     const dynamicOH = {};
     const dynamicSkuOH = {};
@@ -1281,24 +1286,99 @@ useEffect(() => {
     const newAlerts = [];
 
     // Filtra tiendas elegibles aplicando matriz de marca + score > 0
+    // Normalizador: quita acentos, espacios extras, uppercase
+    const normTxt = (s) => {
+      if (!s) return 'N/A';
+      return String(s)
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '') // quita acentos
+        .toUpperCase()
+        .replace(/\s+/g, ' ')
+        .trim();
+    };
+
+    // Mapea el goaName de la chequera a la key real usada en stores (resuelve typos de acentos/mayúsculas)
+    const resolveGoaKey = (goaName) => {
+      if (!stores.length) return goaName;
+      const sample = stores[0];
+      if (sample.goaScores?.[goaName] !== undefined) return goaName;
+      const norm = normTxt(goaName);
+      const found = Object.keys(sample.goaScores || {}).find(k => normTxt(k) === norm);
+      return found || goaName;
+    };
+
     const filterEligible = (item, goaName, baseStores) => {
-      let elig = baseStores.filter(s => s.goaScores && s.goaScores[goaName] > 0);
-      if (elig.length === 0) return [];
-      if (Object.keys(brandMatrix).length > 0) {
-        elig = elig.filter(s => {
-          const normStoreId = parseInt(s.centerCode).toString();
-          const authBrands = brandMatrix[normStoreId] || [];
-          const reqSeccion = item.seccion?.toUpperCase() || 'N/A';
-          const reqMarca = item.marca?.toUpperCase() || 'N/A';
-          if (reqSeccion === 'N/A' && reqMarca === 'N/A') return true;
-          if (authBrands.includes(`${reqSeccion}|${reqMarca}`)) return true;
-          if (reqSeccion === 'N/A' && authBrands.some(a => a.endsWith(`|${reqMarca}`))) return true;
-          if (reqMarca === 'N/A' && authBrands.some(a => a.startsWith(`${reqSeccion}|`))) return true;
-          if (authBrands.includes(`N/A|${reqMarca}`)) return true;
-          return false;
-        });
+      const goaNorm = normTxt(goaName);
+      // Match flexible de GOA (normaliza: sin tildes, mayúsculas, espacios colapsados)
+      let elig = baseStores.filter(s => {
+        if (!s.goaScores) return false;
+        if (s.goaScores[goaName] > 0) return true;
+        return Object.keys(s.goaScores).some(k => normTxt(k) === goaNorm && s.goaScores[k] > 0);
+      });
+      if (elig.length === 0) {
+        // Diagnóstico: ¿el GOA existe en alguna tienda?
+        const anyStoreHasGoa = baseStores.some(s => s.goaScores && Object.keys(s.goaScores).some(k => normTxt(k) === goaNorm));
+        if (typeof window !== 'undefined' && !window.__goaMismatchReported) {
+          window.__goaMismatchReported = true;
+          if (!anyStoreHasGoa) {
+            const sampleGoas = baseStores[0] ? Object.keys(baseStores[0].goaScores || {}).slice(0, 8) : [];
+            console.warn(`[GOA mismatch] "${goaName}" no existe en tiendas. GOAs disponibles (ejemplo):`, sampleGoas);
+            warnings.push(`[GOA] El GOA "${goaName}" de la chequera no coincide con ningún GOA del CSV de tiendas. Revisa si está escrito igual (acentos, mayúsculas). Ejemplo de GOAs en CSV: ${sampleGoas.join(', ')}`);
+          } else {
+            warnings.push(`[GOA] El GOA "${goaName}" existe en el CSV pero ninguna tienda tiene ventas > 0. Revisa los datos de ventas.`);
+          }
+        }
+        return [];
       }
-      return elig;
+      if (Object.keys(brandMatrix).length === 0) return elig;
+
+      const reqSeccion = normTxt(item.seccion);
+      const reqMarca = normTxt(item.marca);
+
+      const matchStrict = (s) => {
+        const normStoreId = parseInt(s.centerCode).toString();
+        const authBrands = brandMatrix[normStoreId] || [];
+        if (reqSeccion === 'N/A' && reqMarca === 'N/A') return true;
+        if (authBrands.includes(`${reqSeccion}|${reqMarca}`)) return true;
+        if (reqSeccion === 'N/A' && authBrands.some(a => a.endsWith(`|${reqMarca}`))) return true;
+        if (reqMarca === 'N/A' && authBrands.some(a => a.startsWith(`${reqSeccion}|`))) return true;
+        if (authBrands.includes(`N/A|${reqMarca}`)) return true;
+        return false;
+      };
+
+      // Match estricto
+      let filtered = elig.filter(matchStrict);
+      if (filtered.length > 0) return filtered;
+
+      // Match laxo (normaliza también las authBrands)
+      const matchLoose = (s) => {
+        const normStoreId = parseInt(s.centerCode).toString();
+        const authBrandsRaw = brandMatrix[normStoreId] || [];
+        const authNorm = authBrandsRaw.map(a => {
+          const [sec, mar] = String(a).split('|');
+          return `${normTxt(sec)}|${normTxt(mar)}`;
+        });
+        if (reqSeccion === 'N/A' && reqMarca === 'N/A') return true;
+        if (authNorm.includes(`${reqSeccion}|${reqMarca}`)) return true;
+        // Match solo por marca (ignora sección)
+        if (authNorm.some(a => a.endsWith(`|${reqMarca}`))) return true;
+        // Match solo por sección (ignora marca)
+        if (authNorm.some(a => a.startsWith(`${reqSeccion}|`))) return true;
+        return false;
+      };
+      filtered = elig.filter(matchLoose);
+      if (filtered.length > 0) return filtered;
+
+      // Si AÚN así 0, devolver TODAS las elegibles por score (fallback total) y dejar warning
+      // Reportar el primer caso para diagnóstico
+      if (typeof window !== 'undefined' && !window.__matrixFallbackReported) {
+        window.__matrixFallbackReported = true;
+        const sampleStore = elig[0];
+        const sampleStoreId = sampleStore ? parseInt(sampleStore.centerCode).toString() : 'N/A';
+        const sampleAuth = brandMatrix[sampleStoreId] || [];
+        console.warn('[Matriz] No hay match para:', { reqSeccion, reqMarca }, '| Ejemplo tienda', sampleStoreId, 'tiene autorizadas:', sampleAuth.slice(0, 5));
+        warnings.push(`[MATRIZ DE MARCAS] No se encontró autorización exacta para SECCIÓN="${item.seccion || 'N/A'}" / MARCA="${item.marca || 'N/A'}". Se ignora la matriz para este combo y se distribuye a todas las tiendas con ventas. Revisa que la matriz tenga los nombres correctos (con/sin acentos, mayúsculas).`);
+      }
+      return elig; // se asume que la matriz no contempla este combo o tiene typos
     };
 
     // MOS objetivo (default 3 si no está configurado)
@@ -1384,7 +1464,7 @@ useEffect(() => {
 
       Object.values(byModel).forEach(items => {
         const sample = items[0];
-        const goaName = sample.goa.toUpperCase();
+        const goaName = resolveGoaKey(sample.goa.toUpperCase());
         const eligibleStores = filterEligible(sample, goaName, stores);
         if (eligibleStores.length === 0) {
           warnings.push(`[${sample.modelo}/${goaName}]: sin tiendas elegibles tras filtro de matriz.`);
@@ -1460,14 +1540,14 @@ useEffect(() => {
       const goaMarcaSummary = {};
 
       chequera.forEach(item => {
-        const goaName = item.goa.toUpperCase();
+        const goaName = resolveGoaKey(item.goa.toUpperCase());
         const marcaKey = `${goaName}|${(item.marca || 'N/A').toUpperCase()}`;
         let qtyToDistribute = parseInt(item.qty);
         if (qtyToDistribute <= 0) return;
 
         const eligibleStores = filterEligible(item, goaName, stores);
         if (eligibleStores.length === 0) {
-          warnings.push(`[${item.sku}]: sin tiendas elegibles tras matriz.`);
+          warnings.push(`[${item.sku}]: sin tiendas elegibles (revisa GOA/matriz/ventas).`);
           return;
         }
 
@@ -1634,14 +1714,14 @@ useEffect(() => {
 
       Object.values(byModel).forEach(modelItems => {
         const sample = modelItems[0];
-        const goaName = sample.goa.toUpperCase();
+        const goaName = resolveGoaKey(sample.goa.toUpperCase());
         const marcaKey = `${goaName}|${(sample.marca || 'N/A').toUpperCase()}`;
         const totalLote = modelItems.reduce((s, it) => s + parseInt(it.qty), 0);
         if (totalLote <= 0) return;
 
         const eligibleStores = filterEligible(sample, goaName, stores);
         if (eligibleStores.length === 0) {
-          warnings.push(`[${sample.modelo}/${goaName}]: sin tiendas elegibles tras matriz.`);
+          warnings.push(`[${sample.modelo}/${goaName}]: sin tiendas elegibles (revisa GOA/matriz/ventas).`);
           return;
         }
 
