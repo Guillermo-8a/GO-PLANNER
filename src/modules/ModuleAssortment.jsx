@@ -115,7 +115,9 @@ export default function App() {
   const [buckets, setBuckets] = useState(initialState?.buckets ?? []); 
   const [purchases, setPurchases] = useState(initialState?.purchases ?? []);
   const [modelCatalog, setModelCatalog] = useState(initialState?.modelCatalog ?? []);
+  const [brandMatrix, setBrandMatrix] = useState(initialState?.brandMatrix ?? null); // { storeCode: { brand: 'Si'/'No' } }
   const catalogFileInputRef = useRef(null);
+  const matrixFileInputRef = useRef(null);
   const [suggestedPlans, setSuggestedPlans] = useState(initialState?.suggestedPlans ?? []);
   // =====================================================================
 
@@ -141,9 +143,9 @@ export default function App() {
 
   // --- AUTO-GUARDADO A LOCALSTORAGE ---
   useEffect(() => {
-    const stateToSave = { numClusters, clusterStrategy, rawStoreData, scoreWeights, stores, goas, sizeCurves, calcRules, buckets, purchases, suggestedPlans, purchaseMonthBase, modelCatalog };
+    const stateToSave = { numClusters, clusterStrategy, rawStoreData, scoreWeights, stores, goas, sizeCurves, calcRules, buckets, purchases, suggestedPlans, purchaseMonthBase, modelCatalog, brandMatrix };
     localStorage.setItem('goplanner_assortment_state', JSON.stringify(stateToSave));
-  }, [numClusters, clusterStrategy, rawStoreData, scoreWeights, stores, goas, sizeCurves, calcRules, buckets, purchases, suggestedPlans, purchaseMonthBase, modelCatalog]);
+  }, [numClusters, clusterStrategy, rawStoreData, scoreWeights, stores, goas, sizeCurves, calcRules, buckets, purchases, suggestedPlans, purchaseMonthBase, modelCatalog, brandMatrix]);
 
   // --- PUBLICAR OTB AL GLOBAL CONTEXT ---
   useEffect(() => {
@@ -232,7 +234,7 @@ export default function App() {
   };
 
   const confirmExportProject = () => {
-    const data = { stores, goas, sizeCurves, calcRules, buckets, purchases, rawStoreData, scoreWeights, numClusters, clusterStrategy, suggestedPlans, purchaseMonthBase, modelCatalog };
+    const data = { stores, goas, sizeCurves, calcRules, buckets, purchases, rawStoreData, scoreWeights, numClusters, clusterStrategy, suggestedPlans, purchaseMonthBase, modelCatalog, brandMatrix };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -257,6 +259,7 @@ export default function App() {
         if(Array.isArray(data.buckets)) setBuckets(data.buckets); 
         if(typeof data.purchaseMonthBase === 'string') setPurchaseMonthBase(data.purchaseMonthBase);
         if(Array.isArray(data.modelCatalog)) setModelCatalog(data.modelCatalog);
+        if(data.brandMatrix && typeof data.brandMatrix === 'object') setBrandMatrix(data.brandMatrix);
         if(Array.isArray(data.purchases)) setPurchases(data.purchases);
         if(Array.isArray(data.rawStoreData)) setRawStoreData(data.rawStoreData);
         if(data.scoreWeights) setScoreWeights(data.scoreWeights);
@@ -303,36 +306,91 @@ export default function App() {
   };
 
   // --- LÓGICA DE CLUSTERIZACIÓN DINÁMICA ---
-  const recalculateClusters = (rawData, weights, currentClusters, strategy) => {
+  const recalculateClusters = (rawData, weights, currentClusters, strategy, matrixOverride = undefined) => {
     if(!rawData || rawData.length === 0) return;
+    // matrixOverride permite recibir matriz fresca antes del setState; si no, usa la del state
+    const matrix = matrixOverride !== undefined ? matrixOverride : brandMatrix;
+    // Filtrar filas según matriz: si hay matriz y la combinación tienda×marca dice "No" -> excluir
+    const filteredRaw = matrix ? rawData.filter(row => {
+      if (!row.marca) return true; // Sin marca, no se puede validar
+      const storeMatrix = matrix[row.centro];
+      if (!storeMatrix) return true; // Tienda no está en matriz, no excluir
+      const brandUpper = String(row.marca).toUpperCase().trim();
+      // Buscar match exacto o parcial
+      let val = storeMatrix[brandUpper];
+      if (val === undefined) {
+        // Buscar por includes (la matriz puede tener nombres con espacios o variaciones)
+        const matchKey = Object.keys(storeMatrix).find(k => k === brandUpper || k.includes(brandUpper) || brandUpper.includes(k));
+        if (matchKey) val = storeMatrix[matchKey];
+      }
+      return val !== 'No'; // Si dice 'No' la excluyo; cualquier otro valor o ausencia la mantengo
+    }) : rawData;
+
     const dataByGoa = {};
     const storeMap = new Map();
+    const pvpByGoa = {};
 
-    rawData.forEach(row => {
+    filteredRaw.forEach(row => {
       if (!storeMap.has(row.centro)) {
-        storeMap.set(row.centro, { id: row.centro, centerCode: row.centro, name: row.name, sales: 0, margin: 0, rotation: 0, score: 0, clusters: {}, globalCluster: '-', goaCount: 0, totalScoreAcum: 0 });
+        storeMap.set(row.centro, { 
+          id: row.centro, centerCode: row.centro, name: row.name, 
+          sales: 0, margin: 0, rotation: 0, score: 0, 
+          clusters: {}, globalCluster: '-', 
+          goaCount: 0, totalScoreAcum: 0,
+          // Métricas detalladas por GOA
+          goaMetrics: {}, // { goaName: { sales, margin, rotation, score } }
+          // Marcas presentes
+          brands: new Set(),
+          // Acumuladores para promedio ponderado
+          _marginWeightedSum: 0, _rotationCount: 0
+        });
       }
       
+      // Agregación por GOA-Tienda (sumar ventas, ponderar margin)
       if (!dataByGoa[row.goa]) dataByGoa[row.goa] = {};
       if (!dataByGoa[row.goa][row.centro]) {
-        dataByGoa[row.goa][row.centro] = { sales: 0, margin: 0, rotation: 0, count: 0 };
+        dataByGoa[row.goa][row.centro] = { sales: 0, marginWeightedSum: 0, rotation: 0, count: 0, brands: new Set() };
       }
       
       const sg = dataByGoa[row.goa][row.centro];
       sg.sales += row.sales;
-      sg.margin += row.margin; 
+      sg.marginWeightedSum += row.margin * row.sales; // margin × ventas (peso)
       sg.rotation += row.rotation;
       sg.count += 1;
+      if (row.marca) sg.brands.add(row.marca);
 
+      // Agregación a nivel TIENDA (suma ventas, margin ponderado por ventas)
       const s = storeMap.get(row.centro);
       s.sales += row.sales;
-      s.margin += row.margin;
+      s._marginWeightedSum += row.margin * row.sales;
+      s.rotation += row.rotation;
+      s._rotationCount += 1;
+      if (row.marca) s.brands.add(row.marca);
+
+      // PVP ponderado por GOA (a nivel global, todos los stores)
+      if (row.pvp > 0 && row.sales > 0) {
+        if (!pvpByGoa[row.goa]) pvpByGoa[row.goa] = { totalSales: 0, weightedPvp: 0 };
+        pvpByGoa[row.goa].totalSales += row.sales;
+        pvpByGoa[row.goa].weightedPvp += row.pvp * row.sales;
+      }
+    });
+
+    // Calcular margin% ponderado a nivel tienda
+    storeMap.forEach(s => {
+      s.margin = s.sales > 0 ? s._marginWeightedSum / s.sales : 0;
+      s.rotation = s._rotationCount > 0 ? s.rotation / s._rotationCount : 0;
+      s.brands = Array.from(s.brands);
     });
 
     Object.keys(dataByGoa).forEach(goaName => {
       const storesInGoa = Object.keys(dataByGoa[goaName]).map(centroId => {
         const d = dataByGoa[goaName][centroId];
-        return { centro: centroId, sales: d.sales, margin: d.margin, rotation: d.rotation / d.count };
+        const marginPct = d.sales > 0 ? d.marginWeightedSum / d.sales : 0;
+        return { 
+          centro: centroId, sales: d.sales, margin: marginPct, 
+          rotation: d.count > 0 ? d.rotation / d.count : 0,
+          brands: Array.from(d.brands)
+        };
       });
 
       let maxSales = 0, maxMargin = 0, maxRot = 0;
@@ -390,14 +448,35 @@ export default function App() {
           store.totalScoreAcum += item.score;
           store.goaCount += 1;
           store.score = store.totalScoreAcum / store.goaCount;
-          store.rotation = (store.rotation + item.rotation) / 2; 
+          // Persistir métricas por GOA en la tienda
+          store.goaMetrics[goaName] = {
+            sales: item.sales,
+            margin: item.margin,
+            rotation: item.rotation,
+            score: item.score,
+            cluster: currentClusters[clusterIndex],
+            brands: item.brands
+          };
         }
       });
 
       setGoas(prev => {
         if (!(prev || []).find(g => g.name.toUpperCase() === goaName)) {
           const formatted = goaName.charAt(0).toUpperCase() + goaName.slice(1).toLowerCase();
-          return [...(prev || []), { id: Date.now() + Math.random(), name: formatted, budget: 0, historyPzs: 0, months: [16.6, 16.6, 16.6, 16.6, 16.6, 17] }];
+          // Calcular PVP default ponderado
+          const pvpData = pvpByGoa[goaName];
+          const defaultPvp = pvpData && pvpData.totalSales > 0 ? Math.round(pvpData.weightedPvp / pvpData.totalSales) : 0;
+          return [...(prev || []), { id: Date.now() + Math.random(), name: formatted, budget: 0, historyPzs: 0, defaultPvp, months: [16.6, 16.6, 16.6, 16.6, 16.6, 17] }];
+        }
+        // Si el GOA ya existía, actualizar PVP solo si está en 0
+        const pvpData = pvpByGoa[goaName];
+        if (pvpData && pvpData.totalSales > 0) {
+          return prev.map(g => {
+            if (g.name.toUpperCase() === goaName && (!g.defaultPvp || g.defaultPvp === 0)) {
+              return { ...g, defaultPvp: Math.round(pvpData.weightedPvp / pvpData.totalSales) };
+            }
+            return g;
+          });
         }
         return prev || [];
       });
@@ -446,7 +525,7 @@ export default function App() {
 
   useEffect(() => {
     if ((rawStoreData || []).length > 0) recalculateClusters(rawStoreData, scoreWeights, activeClusters, clusterStrategy);
-  }, [scoreWeights, activeClusters, clusterStrategy]);
+  }, [scoreWeights, activeClusters, clusterStrategy, brandMatrix]);
 
   // --- CARGA DE DATOS DESDE CONTEXT GLOBAL ---
   const handleLoadForecastFromContext = () => {
@@ -478,38 +557,40 @@ export default function App() {
     const file = e.target.files[0];
     if (!file) return;
     const reader = new FileReader();
-    reader.onload = (event) => {
-      const text = event.target.result.replace(/^\uFEFF/, ''); 
-      const rows = parseCSV(text);
+    const processText = (text) => {
+      const cleanText = text.replace(/^\uFEFF/, '');
+      const rows = parseCSV(cleanText);
       if (rows.length < 2) { if(fileInputRef.current) fileInputRef.current.value = ''; return; }
 
       const headers = rows[0].map(h => h.replace(/^\uFEFF/, '').trim().toUpperCase());
       const idxCentro = headers.findIndex(h => h === 'CENTRO' || h === 'ID');
       const idxNombre = headers.findIndex(h => h === 'NOMBRE' || h === 'TIENDA' || h === 'DESC CENTRO');
       const idxGoa = headers.findIndex(h => h === 'GOA' || h === 'FAMILIA');
+      const idxMarca = headers.findIndex(h => h === 'MARCA' || h === 'BRAND');
       const idxVentas = headers.findIndex(h => h === 'VENTAS' || h === 'VTA' || h.includes('VTAS. $') || h.includes('UNIDADES'));
       const idxMargen = headers.findIndex(h => h === 'MARGEN' || h === 'MG' || h.includes('%GM') || h.includes('UTILIDAD'));
       const idxRotacion = headers.findIndex(h => h === 'ROTACION' || h === 'ROT' || h.includes('SELL'));
+      const idxPvp = headers.findIndex(h => h === 'PVP' || h === 'PRECIO');
 
       if (idxCentro === -1 || idxGoa === -1 || idxVentas === -1) {
         alert(`Error de Formato CSV.\n\nSe detectaron las siguientes columnas: [${headers.join(', ')}]\nSe requieren al menos: Centro, GOA, Ventas.`); 
         return;
       }
 
+      const cleanNum = (v) => v ? parseFloat(String(v).replace(/[^0-9.\-]+/g, "")) || 0 : 0;
+
       const extractedRawData = [];
       for (let i = 1; i < rows.length; i++) {
         if (!rows[i] || !rows[i][idxCentro] || !rows[i][idxGoa]) continue;
-        const rawVentas = rows[i][idxVentas] ? String(rows[i][idxVentas]).replace(/[^0-9.-]+/g, "") : "0";
-        const rawMargen = idxMargen !== -1 && rows[i][idxMargen] ? String(rows[i][idxMargen]).replace(/[^0-9.-]+/g, "") : "0";
-        const rawRotacion = idxRotacion !== -1 && rows[i][idxRotacion] ? String(rows[i][idxRotacion]).replace(/[^0-9.-]+/g, "") : "1";
-        
-        let ventas = parseFloat(rawVentas) || 0; 
-        let margen = parseFloat(rawMargen) || 0; 
-        let rotacion = parseFloat(rawRotacion) || 0;
-
         extractedRawData.push({
-          centro: rows[i][idxCentro], name: idxNombre !== -1 ? rows[i][idxNombre] : rows[i][idxCentro],
-          goa: rows[i][idxGoa].toUpperCase(), sales: ventas, margin: margen, rotation: rotacion
+          centro: String(rows[i][idxCentro]).trim(),
+          name: idxNombre !== -1 ? rows[i][idxNombre] : rows[i][idxCentro],
+          goa: String(rows[i][idxGoa]).toUpperCase().trim(),
+          marca: idxMarca !== -1 ? String(rows[i][idxMarca] || '').trim() : '',
+          sales: cleanNum(rows[i][idxVentas]),
+          margin: cleanNum(idxMargen !== -1 ? rows[i][idxMargen] : 0),
+          rotation: cleanNum(idxRotacion !== -1 ? rows[i][idxRotacion] : 1),
+          pvp: cleanNum(idxPvp !== -1 ? rows[i][idxPvp] : 0)
         });
       }
       
@@ -518,7 +599,116 @@ export default function App() {
       setRawStoreData(extractedRawData);
       recalculateClusters(extractedRawData, scoreWeights, activeClusters, clusterStrategy);
     };
-    reader.readAsText(file, 'UTF-8'); 
+    // Probar UTF-8 primero, si truena con caracteres extraños, intentar latin1
+    reader.onload = (event) => {
+      try {
+        const text = event.target.result;
+        // Si hay muchos caracteres de reemplazo (), reintentar como latin1
+        if ((text.match(/\uFFFD/g) || []).length > 5) {
+          const r2 = new FileReader();
+          r2.onload = (ev) => processText(ev.target.result);
+          r2.readAsText(file, 'ISO-8859-1');
+        } else {
+          processText(text);
+        }
+      } catch (err) { alert("Error procesando CSV: " + err.message); }
+    };
+    reader.readAsText(file, 'UTF-8');
+  };
+
+  const handleBrandMatrixUpload = (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    const reader = new FileReader();
+    const processMatrix = (text) => {
+      try {
+        const cleanText = text.replace(/^\uFEFF/, '');
+        const rows = parseCSV(cleanText);
+        if (rows.length < 4) { alert("Matriz inválida: se esperan al menos 4 filas (título, códigos, nombres, datos)."); return; }
+
+        // Detectar fila de códigos: primera fila con muchos números en las columnas posteriores
+        let codeRowIdx = -1;
+        for (let i = 0; i < Math.min(5, rows.length); i++) {
+          const numCount = rows[i].slice(5).filter(c => c && /^\d+$/.test(String(c).trim())).length;
+          if (numCount > 10) { codeRowIdx = i; break; }
+        }
+        if (codeRowIdx === -1) { alert("No se encontró fila con códigos de tienda. La matriz debe tener una fila con números (491, 492...) como columnas."); return; }
+
+        const codeRow = rows[codeRowIdx];
+        // Detectar columna inicial donde empiezan los códigos
+        let firstCodeCol = -1;
+        for (let c = 0; c < codeRow.length; c++) {
+          if (codeRow[c] && /^\d+$/.test(String(codeRow[c]).trim())) { firstCodeCol = c; break; }
+        }
+        if (firstCodeCol === -1) { alert("No se pudo detectar dónde inician los códigos."); return; }
+
+        // Header de columnas con los nombres de las marcas. Buscamos el header con "Marca" o "Nom_Marca"
+        let headerRowIdx = -1;
+        for (let i = 0; i < codeRowIdx; i++) {
+          if (rows[i].some(c => String(c).toLowerCase().trim() === 'marca' || String(c).toLowerCase().trim() === 'nom_marca')) {
+            headerRowIdx = i; break;
+          }
+        }
+        // Si no la encontramos antes, buscamos después
+        if (headerRowIdx === -1) {
+          for (let i = codeRowIdx; i < Math.min(codeRowIdx+3, rows.length); i++) {
+            if (rows[i].some(c => String(c).toLowerCase().trim() === 'marca' || String(c).toLowerCase().trim() === 'nom_marca')) {
+              headerRowIdx = i; break;
+            }
+          }
+        }
+
+        let brandColIdx = -1;
+        if (headerRowIdx !== -1) {
+          // Preferir Nom_Marca sobre Marca
+          brandColIdx = rows[headerRowIdx].findIndex(c => String(c).toLowerCase().trim() === 'nom_marca');
+          if (brandColIdx === -1) brandColIdx = rows[headerRowIdx].findIndex(c => String(c).toLowerCase().trim() === 'marca');
+        }
+        if (brandColIdx === -1) brandColIdx = 5; // default según la estructura observada
+
+        // Construir mapa { centerCode: { brandName: 'Si'|'No' } }
+        const matrix = {};
+        const dataStartRow = (headerRowIdx !== -1 ? headerRowIdx : codeRowIdx) + 1;
+        for (let i = dataStartRow; i < rows.length; i++) {
+          const r = rows[i];
+          if (!r || !r[brandColIdx]) continue;
+          const brandName = String(r[brandColIdx]).trim().toUpperCase();
+          if (!brandName) continue;
+          for (let c = firstCodeCol; c < codeRow.length; c++) {
+            const code = codeRow[c] ? String(codeRow[c]).trim() : '';
+            if (!code) continue;
+            const value = r[c] ? String(r[c]).trim().toLowerCase() : '';
+            if (!matrix[code]) matrix[code] = {};
+            // Normalizar: 'si','sí','yes','1' = Si; cualquier otro no vacío = No; vacío = No
+            const normalized = (value === 'si' || value === 'sí' || value === 'yes' || value === '1') ? 'Si' : 'No';
+            matrix[code][brandName] = normalized;
+          }
+        }
+
+        const totalStores = Object.keys(matrix).length;
+        const totalBrands = new Set();
+        Object.values(matrix).forEach(b => Object.keys(b).forEach(k => totalBrands.add(k)));
+        if (totalStores === 0) { alert("La matriz se cargó pero no tiene tiendas válidas."); return; }
+        setBrandMatrix(matrix);
+        alert(`Matriz cargada: ${totalStores} tiendas × ${totalBrands.size} marcas.\nLas tiendas marcadas con "No" serán excluidas al hacer cluster por GOA.`);
+        // Recalcular clusters si ya hay datos
+        if ((rawStoreData || []).length > 0) recalculateClusters(rawStoreData, scoreWeights, activeClusters, clusterStrategy, matrix);
+      } catch (err) {
+        alert("Error al procesar matriz: " + err.message);
+      }
+    };
+    reader.onload = (event) => {
+      const text = event.target.result;
+      if ((text.match(/\uFFFD/g) || []).length > 5) {
+        const r2 = new FileReader();
+        r2.onload = (ev) => processMatrix(ev.target.result);
+        r2.readAsText(file, 'ISO-8859-1');
+      } else {
+        processMatrix(text);
+      }
+    };
+    reader.readAsText(file, 'UTF-8');
+    e.target.value = '';
   };
 
   const handleUpdateStoreCluster = (storeId, goaName, newCluster) => {
@@ -1376,6 +1566,16 @@ export default function App() {
                       <button onClick={handleDownloadMatrix} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center transition ${t.btnGhost}`}>
                         <Download size={16} className="mr-2" /> Exportar Matriz
                       </button>
+
+                      <input ref={matrixFileInputRef} type="file" accept=".csv" onChange={handleBrandMatrixUpload} className="hidden" />
+                      <button onClick={()=>matrixFileInputRef.current?.click()} className={`px-4 py-2 rounded-lg text-sm font-bold flex items-center transition ${brandMatrix ? t.btnSecondary : t.btnGhost}`}>
+                        <Layers size={16} className="mr-2" /> {brandMatrix ? `Matriz Cargada (${Object.keys(brandMatrix).length} tdas)` : 'Cargar Matriz Marcas'}
+                      </button>
+                      {brandMatrix && (
+                        <button onClick={()=>{ if(confirm('¿Quitar matriz de marcas? Las tiendas marcadas con "No" volverán a incluirse.')) setBrandMatrix(null); }} className={`px-3 py-2 rounded-lg text-sm font-bold flex items-center transition ${t.btnDanger}`}>
+                          <Trash2 size={16}/>
+                        </button>
+                      )}
                       
                       <label className={`cursor-pointer px-4 py-2 rounded-lg text-sm font-bold flex items-center transition ${t.btnGhost}`}>
                         <Upload size={16} className="mr-2" /> Actualizar CSV
@@ -1394,13 +1594,27 @@ export default function App() {
                           </div>
                         </div>
                         <div className={`rounded-lg p-2 mb-4 mt-3 grid grid-cols-3 gap-2 text-center divide-x border ${theme==='dark'?'divide-zinc-800 bg-zinc-900 border-zinc-800':'divide-gray-200 bg-white border-gray-100'}`}>
-                          <div><p className={`text-[8px] uppercase font-bold tracking-wider ${t.textMuted}`}>Ventas (Pzs)</p><p className={`text-[10px] font-bold ${t.textMain}`}>{(store.sales || 0).toLocaleString()}</p></div>
-                          <div><p className={`text-[8px] uppercase font-bold tracking-wider ${t.textMuted}`}>Mg (%)</p><p className={`text-[10px] font-bold ${t.textMain}`}>{Math.round(store.margin || 0)}%</p></div>
-                          <div><p className={`text-[8px] uppercase font-bold tracking-wider ${t.textMuted}`}>Rotación</p><p className={`text-[10px] font-bold ${t.textMain}`}>{(store.rotation || 0).toFixed(1)}</p></div>
-                          <div className={`col-span-3 pt-2 border-t divide-none mt-1 flex justify-between px-2 items-center ${theme==='dark'?'border-zinc-800':'border-gray-100'}`}>
-                             <p className={`text-[9px] uppercase font-black tracking-widest ${t.textAccent2}`}>Score Promedio:</p>
-                             <p className={`text-sm font-black leading-tight ${t.textAccent2}`}>{Math.round(store.score || 0).toLocaleString()}</p>
-                          </div>
+                          {(() => {
+                            // Si hay filtro de GOA, usar métricas POR GOA; si no, las globales de la tienda
+                            let metrics = { sales: store.sales || 0, margin: store.margin || 0, rotation: store.rotation || 0, score: store.score || 0 };
+                            if (filterGoa !== 'ALL') {
+                              const goaKey = filterGoa.toUpperCase();
+                              const gm = (store.goaMetrics || {})[goaKey];
+                              if (gm) metrics = { sales: gm.sales || 0, margin: gm.margin || 0, rotation: gm.rotation || 0, score: gm.score || 0 };
+                              else metrics = { sales: 0, margin: 0, rotation: 0, score: 0 };
+                            }
+                            return (
+                              <>
+                                <div><p className={`text-[8px] uppercase font-bold tracking-wider ${t.textMuted}`}>Ventas (Pzs)</p><p className={`text-[10px] font-bold ${t.textMain}`}>{Math.round(metrics.sales).toLocaleString()}</p></div>
+                                <div><p className={`text-[8px] uppercase font-bold tracking-wider ${t.textMuted}`}>Mg (%)</p><p className={`text-[10px] font-bold ${t.textMain}`}>{metrics.margin.toFixed(1)}%</p></div>
+                                <div><p className={`text-[8px] uppercase font-bold tracking-wider ${t.textMuted}`}>Rotación</p><p className={`text-[10px] font-bold ${t.textMain}`}>{metrics.rotation.toFixed(1)}</p></div>
+                                <div className={`col-span-3 pt-2 border-t divide-none mt-1 flex justify-between px-2 items-center ${theme==='dark'?'border-zinc-800':'border-gray-100'}`}>
+                                   <p className={`text-[9px] uppercase font-black tracking-widest ${t.textAccent2}`}>Score {filterGoa==='ALL' ? 'Promedio' : filterGoa}:</p>
+                                   <p className={`text-sm font-black leading-tight ${t.textAccent2}`}>{Math.round(metrics.score).toLocaleString()}</p>
+                                </div>
+                              </>
+                            );
+                          })()}
                         </div>
                         <div className="space-y-1.5">
                           <p className={`text-[10px] uppercase font-bold tracking-wider ${t.textMuted}`}>Asignación por GOA:</p>
@@ -1624,12 +1838,32 @@ export default function App() {
                         <td className={`p-4 font-bold ${t.textMain}`}>{g.name}</td>
                         <td className={`p-2 text-right font-black tracking-wide ${t.textAccent2}`}>
                           <div className="flex items-center justify-end">
-                            $<input type="number" value={g.budget} onChange={(e) => handleUpdateGoaField(g.id, 'budget', e.target.value)} className={`w-24 text-right bg-transparent outline-none border-b border-transparent focus:border-yellow-500 ${t.textAccent2}`} />
+                            $<input 
+                              type="text" 
+                              inputMode="numeric"
+                              value={g.budget ? Number(g.budget).toLocaleString('en-US') : ''} 
+                              onChange={(e) => {
+                                const cleaned = e.target.value.replace(/[^0-9.]/g, '');
+                                handleUpdateGoaField(g.id, 'budget', cleaned);
+                              }}
+                              placeholder="0"
+                              className={`w-32 text-right bg-transparent outline-none border-b border-transparent focus:border-yellow-500 ${t.textAccent2}`} 
+                            />
                           </div>
                         </td>
                         <td className={`p-2 text-right font-bold ${t.textMain}`}>
                           <div className="flex items-center justify-end">
-                            $<input type="number" value={g.defaultPvp || ''} placeholder="0" onChange={(e) => handleUpdateGoaField(g.id, 'defaultPvp', e.target.value)} className={`w-20 text-right bg-transparent outline-none border-b border-transparent focus:border-blue-500`} />
+                            $<input 
+                              type="text" 
+                              inputMode="numeric"
+                              value={g.defaultPvp ? Number(g.defaultPvp).toLocaleString('en-US') : ''} 
+                              placeholder="0" 
+                              onChange={(e) => {
+                                const cleaned = e.target.value.replace(/[^0-9.]/g, '');
+                                handleUpdateGoaField(g.id, 'defaultPvp', cleaned);
+                              }}
+                              className={`w-20 text-right bg-transparent outline-none border-b border-transparent focus:border-blue-500`} 
+                            />
                           </div>
                         </td>
                         <td className={`p-2 text-right font-bold ${t.textMuted}`}>
