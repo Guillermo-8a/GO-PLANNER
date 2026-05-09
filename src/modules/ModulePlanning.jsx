@@ -1,20 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback, startTransition } from 'react';
 import * as Icons from '../utils/icons';
-
-// Theme local con localStorage — independiente de GlobalContext
-const useThemeLocal = () => {
-  const [theme, setTheme] = useState(() => {
-    try { return localStorage.getItem('gop_theme') || 'dark'; } catch { return 'dark'; }
-  });
-  useEffect(() => {
-    const sync = () => {
-      try { setTheme(localStorage.getItem('gop_theme') || 'dark'); } catch {}
-    };
-    window.addEventListener('storage', sync);
-    return () => window.removeEventListener('storage', sync);
-  }, []);
-  return { theme };
-};
+import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
 
