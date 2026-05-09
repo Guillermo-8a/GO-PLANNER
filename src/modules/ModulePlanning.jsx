@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback, startTransition } from 'react';
-import * as icons from '../utils/icons';
+import * as Icons from '../utils/icons';
 
 // Theme local con localStorage — independiente de GlobalContext
 const useThemeLocal = () => {
