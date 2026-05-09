@@ -100,7 +100,7 @@ const NAV_ITEMS = [
   { id: 'assortment',   label: 'Assortment OTB', Icon: ShoppingCart,    desc: 'Compra y presupuesto',  dataKey: 'otbData' },
   { id: 'distribucion', label: 'Distribución',   Icon: Map,             desc: 'Surtido a tiendas',     dataKey: 'distributionData' },
   { id: 'resurtido',    label: 'Resurtido',       Icon: RefreshCw,       desc: 'Reposición continua',   dataKey: 'replenishmentData' },
-  { id: 'planning',    label: 'Planning',       Icon: TrendingUp,       desc: 'Planeación compuesta',   dataKey: 'planningData' }
+  { id: 'planning',    label: 'Planning',       Icon: TrendingUp,       desc: 'Planeación compuesta',   dataKey: 'planningData' },
   { id: 'traslados', label: 'Traslados', Icon: ArrowLeftRight, desc: 'Transferencias entre centros', dataKey: null },
 ];
 
