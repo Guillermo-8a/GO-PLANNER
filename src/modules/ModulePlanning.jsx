@@ -1,6 +1,20 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback, startTransition } from 'react';
 import * as Icons from '../utils/icons';
-import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
+
+// Theme local con localStorage — independiente de GlobalContext
+const useThemeLocal = () => {
+  const [theme, setTheme] = useState(() => {
+    try { return localStorage.getItem('gop_theme') || 'dark'; } catch { return 'dark'; }
+  });
+  useEffect(() => {
+    const sync = () => {
+      try { setTheme(localStorage.getItem('gop_theme') || 'dark'); } catch {}
+    };
+    window.addEventListener('storage', sync);
+    return () => window.removeEventListener('storage', sync);
+  }, []);
+  return { theme };
+};
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
 
@@ -32,7 +46,6 @@ const downloadExcel = (rows, filename) => {
 const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 
 // Regresión lineal simple (mínimos cuadrados) sobre [{x,y}]
-// devuelve { slope, intercept, r2, predict(x) }
 const linearRegression = (points) => {
   const n = points.length;
   if (n < 2) return { slope: 0, intercept: points[0]?.y || 0, r2: 0, predict: () => points[0]?.y || 0 };
@@ -84,19 +97,36 @@ const LineForecast = ({ historico, proyeccion, theme, height = 120 }) => {
   );
 };
 
+// ─── SPARKLINE BARRAS (Para OTB) ───────────────────────────────────────────
+const SparklineBarras = ({ valores, color = '#a78bfa', height = 24 }) => {
+  const max = Math.max(...valores, 1);
+  return (
+    <div className="flex items-end gap-0.5" style={{ height, minWidth: 80 }}>
+      {valores.map((v, i) => (
+        <div key={i}
+          className="flex-1 rounded-sm transition-all"
+          style={{ 
+            height: `${(v / max) * 100}%`, 
+            minHeight: '1px',
+            backgroundColor: v > 0 ? color : 'rgba(150,150,150,0.2)',
+            opacity: 0.7
+          }}
+          title={`${MESES[i]}: ${fmt(v, 0)}`}
+        />
+      ))}
+    </div>
+  );
+};
+
 // ─── INPUT NUMÉRICO CON LOCAL STATE + onBlur ────────────────────────────────
-// Patrón crítico de performance: el state global (overrides, drivers) solo se
-// actualiza cuando el usuario sale del input (onBlur) o presiona Enter.
-// Mientras tipea, el valor vive en el local state — sin re-renders del padre.
-// Memoizado para evitar re-mounts.
 const NumberInputDeferred = React.memo(function NumberInputDeferred({
-  value,                  // valor controlado externo (puede ser null/undefined)
-  onCommit,               // callback al sacar foco o Enter: (parsedValue, rawString) => void
+  value,
+  onCommit,
   placeholder,
   step = 'any',
   className = '',
-  formatter,              // opcional: (n) => string para mostrar al perder foco
-  parseValue,             // opcional: (str) => num | null
+  formatter,
+  parseValue,
   ...rest
 }) {
   const fmtIn  = useCallback((v) => {
@@ -113,7 +143,6 @@ const NumberInputDeferred = React.memo(function NumberInputDeferred({
   const [local, setLocal] = useState(() => fmtIn(value));
   const [focused, setFocused] = useState(false);
 
-  // Sincronizar valor externo cuando NO está focuseado (evita pisar lo que tipea)
   useEffect(() => {
     if (!focused) setLocal(fmtIn(value));
   }, [value, focused, fmtIn]);
@@ -169,7 +198,6 @@ export default function Forecast() {
       tabActive: 'border-orange-500 text-orange-400',
       badge: 'bg-orange-900/30 text-orange-400 border-orange-500/40',
       badgeTeal: 'bg-teal-900/30 text-teal-400 border-teal-500/40',
-      // Nueva paleta
       textPurple: 'text-violet-400', textYellow: 'text-amber-400', textGray: 'text-zinc-400',
       badgePurple: 'bg-violet-900/30 text-violet-300 border-violet-500/40',
       badgeYellow: 'bg-amber-900/30 text-amber-300 border-amber-500/40',
@@ -195,7 +223,6 @@ export default function Forecast() {
       tabActive: 'border-orange-500 text-orange-600',
       badge: 'bg-orange-50 text-orange-700 border-orange-200',
       badgeTeal: 'bg-teal-50 text-teal-700 border-teal-200',
-      // Nueva paleta
       textPurple: 'text-violet-600', textYellow: 'text-amber-600', textGray: 'text-zinc-500',
       badgePurple: 'bg-violet-50 text-violet-700 border-violet-200',
       badgeYellow: 'bg-amber-50 text-amber-700 border-amber-200',
@@ -216,24 +243,13 @@ export default function Forecast() {
 
   const histInputRef = useRef(null);
 
-  // Histórico: [{ centro, nombre, anio, mes, venta, costo, markdown, msi, inventario }]
   const [historico, setHistorico]   = useState([]);
-  // Catálogo de centros derivado del histórico + flags manuales
-  // { [centro]: { nombre, tipo: 'NORMAL'|'APERTURA'|'NUEVA', mesApertura?: 1-12 } }
   const [centros, setCentros]       = useState({});
-  // Aperturas planeadas (tiendas nuevas que abren en el año del plan)
-  // { [centro]: { nombre, mesApertura, goa: 'ALL' } }
   const [aperturas, setAperturas]   = useState({});
-  // Matriz GOA × Centro × Temporada (editable)
-  // { [centro]: { [goa]: { activo: bool, meses: [1..12] } } }
   const [matrizGoaCentro, setMatrizGoaCentro] = useState({});
-  // Lista maestra de GOAs (puede venir del histórico o capturarse manualmente)
   const [goasMaestro, setGoasMaestro] = useState([]);
-
-  // Año del plan (default = año máximo del histórico + 1)
   const [anioPlan, setAnioPlan] = useState(new Date().getFullYear() + 1);
 
-  // ── Persistencia ──────────────────────────────────────────────────────
   useEffect(() => {
     try {
       const s = localStorage.getItem('gop_forecast_setup');
@@ -264,12 +280,6 @@ export default function Forecast() {
   // TAB 1 — CARGA & SETUP
   // ══════════════════════════════════════════════════════════════════════
 
-  // Parser formato wide (4 filas header):
-  //   Fila 1: CANAL DE VENTA (Físico / Digital — "Sin asignar" cuenta como Físico)
-  //   Fila 2: MÉTRICA (Vta $, Mkds, MSI, ROT, MG%)
-  //   Fila 3: AÑO (2026, 2025, 2024, 2023)
-  //   Fila 4: SECCION, N_SECCION, TIPO_TDA, CENTRO, N_CENTRO, GOA, MES, ENE, FEB, ..., DIC
-  // Datos comienzan en fila 5. La col MES de la fila 4 es placeholder vacío.
   const handleHistUpload = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -299,7 +309,7 @@ export default function Forecast() {
       const iCentro   = findCol('CENTRO');
       const iNCentro  = findCol('N_CENTRO', 'NOMBRE_CENTRO', 'NOM_CENTRO');
       const iGoa      = findCol('GOA', 'FAMILIA', 'DEPARTAMENTO');
-      const iMes      = findCol('MES'); // placeholder
+      const iMes      = findCol('MES'); 
 
       if (iCentro === -1 || iSec === -1 || iGoa === -1) {
         alert('El CSV debe incluir mínimo: SECCION, CENTRO y GOA en la fila 4.');
@@ -309,7 +319,6 @@ export default function Forecast() {
       const startData = (iMes >= 0 ? iMes : Math.max(iSec, iNSec, iTipoTda, iCentro, iNCentro, iGoa)) + 1;
       const MESES_MAP = { ENE:1, FEB:2, MAR:3, ABR:4, MAY:5, JUN:6, JUL:7, AGO:8, SEP:9, OCT:10, NOV:11, DIC:12 };
 
-      // Mapear cada col mensual: { idx, canal, metrica, anio, mes }
       const colsMensuales = [];
       for (let c = startData; c < headerRow.length; c++) {
         const canal   = (canalRow[c]   || '').trim();
@@ -339,7 +348,6 @@ export default function Forecast() {
         return;
       }
 
-      // Bucket: centro|seccion|goa|anio|mes|canal → métricas
       const bucket = {};
       const centrosSet = {};
       const goasSet = new Set();
@@ -375,7 +383,6 @@ export default function Forecast() {
             bucket[key]._mgSum += v;
             bucket[key]._mgCnt += 1;
           } else if (metrica === 'rotacion') {
-            // ROT promedio (no suma) por si vienen 2 bloques (Piso + Sin asignar)
             bucket[key]._rotSum += v;
             bucket[key]._rotCnt += 1;
           } else {
@@ -404,8 +411,6 @@ export default function Forecast() {
       });
       if (goasSet.size) setGoasMaestro(prev => Array.from(new Set([...prev, ...goasSet])).sort());
 
-      // Inicializar matriz GOA × Centro a partir del histórico (cruces con venta > 0)
-      // Sin sobrescribir lo que el usuario ya haya editado.
       setMatrizGoaCentro(prev => {
         const next = { ...prev };
         const hist = {};
@@ -434,7 +439,6 @@ export default function Forecast() {
     reader.readAsText(file, 'ISO-8859-1');
   };
 
-  // Resumen del histórico cargado
   const resumenHist = useMemo(() => {
     if (!historico.length) return null;
     const aniosSet = new Set(historico.map(r => r.anio));
@@ -449,7 +453,6 @@ export default function Forecast() {
     const ultimoAnio = aniosArr[aniosArr.length - 1];
     const mesesUlt = new Set(historico.filter(r => r.anio === ultimoAnio).map(r => r.mes));
 
-    // Sección dominante (más venta) — para mostrar en header
     const ventaPorSec = {};
     historico.forEach(r => {
       const k = `${r.seccion}|${r.nSeccion || ''}`;
@@ -473,7 +476,6 @@ export default function Forecast() {
     };
   }, [historico]);
 
-  // Lista de centros con stats agregados (suma todos los canales y secciones)
   const centrosLista = useMemo(() => {
     if (!historico.length) return [];
     const agg = {};
@@ -495,20 +497,17 @@ export default function Forecast() {
       .sort((a,b) => b.vta - a.vta);
   }, [historico, centros]);
 
-  // Tipos de tienda únicos para el filtro
   const tiposTdaUnicos = useMemo(() => {
     const set = new Set(centrosLista.map(c => c.tipoTda).filter(Boolean));
     return Array.from(set).sort();
   }, [centrosLista]);
 
-  // Filtros + orden tabla centros (declarados antes del useMemo que los usa)
   const [filtroTexto, setFiltroTexto]       = useState('');
   const [filtroTipo, setFiltroTipo]         = useState('TODOS');
   const [filtroTipoTda, setFiltroTipoTda]   = useState('TODOS');
   const [ordenCol, setOrdenCol]             = useState('vta');
   const [ordenDir, setOrdenDir]             = useState('desc');
 
-  // Lista filtrada y ordenada para la tabla del catálogo
   const centrosListaFiltrada = useMemo(() => {
     let arr = centrosLista.filter(c => {
       if (filtroTipo !== 'TODOS' && c.tipo !== filtroTipo) return false;
@@ -553,19 +552,12 @@ export default function Forecast() {
     }));
   };
 
-  // Agregar tienda nueva (no existe en histórico)
   const [nuevaCentroId, setNuevaCentroId]   = useState('');
   const [nuevaCentroNom, setNuevaCentroNom] = useState('');
   const [nuevaCentroMes, setNuevaCentroMes] = useState(1);
-
-  // Estados para matriz GOA
   const [nuevoGoa, setNuevoGoa] = useState('');
-  const [celaEditando, setCelaEditando] = useState(null); // { centro, goa }
-
-  // Edición masiva por GOA (click en header GOA)
-  const [goaMasivo, setGoaMasivo] = useState(null); // { goa, meses: [] }
-
-  // Menú de 3 puntos (header)
+  const [celaEditando, setCelaEditando] = useState(null); 
+  const [goaMasivo, setGoaMasivo] = useState(null); 
   const [menuAbierto, setMenuAbierto] = useState(false);
   const sesionInputRef = useRef(null);
 
@@ -584,24 +576,11 @@ export default function Forecast() {
   };
 
   const eliminarTiendaNueva = (id) => {
-    setCentros(prev => {
-      const n = { ...prev };
-      delete n[id];
-      return n;
-    });
-    setAperturas(prev => {
-      const n = { ...prev };
-      delete n[id];
-      return n;
-    });
-    setMatrizGoaCentro(prev => {
-      const n = { ...prev };
-      delete n[id];
-      return n;
-    });
+    setCentros(prev => { const n = { ...prev }; delete n[id]; return n; });
+    setAperturas(prev => { const n = { ...prev }; delete n[id]; return n; });
+    setMatrizGoaCentro(prev => { const n = { ...prev }; delete n[id]; return n; });
   };
 
-  // Matriz GOA × Centro: toggle activo/inactivo del cruce
   const toggleCruce = (centro, goa) => {
     setMatrizGoaCentro(prev => {
       const next = { ...prev };
@@ -619,7 +598,6 @@ export default function Forecast() {
     });
   };
 
-  // Toggle de mes específico para un cruce GOA × Centro
   const toggleMesCruce = (centro, goa, mes) => {
     setMatrizGoaCentro(prev => {
       const next = { ...prev };
@@ -633,7 +611,6 @@ export default function Forecast() {
     });
   };
 
-  // Marcar todos los meses (todo el año) en un cruce
   const setMesesCruce = (centro, goa, meses) => {
     setMatrizGoaCentro(prev => {
       const next = { ...prev };
@@ -643,7 +620,6 @@ export default function Forecast() {
     });
   };
 
-  // Helpers GOA-maestro
   const agregarGoaMaestro = (nombre) => {
     const g = nombre.trim().toUpperCase();
     if (!g) return;
@@ -680,7 +656,6 @@ export default function Forecast() {
     downloadExcel([header, ...rows], 'Forecast_Setup_Centros.csv');
   };
 
-  // ── Guardar / Cargar sesión completa (.json) ──────────────────────────
   const guardarSesion = () => {
     const payload = {
       _meta: { app: 'GO Planner', module: 'Forecast', version: 1, exportedAt: new Date().toISOString() },
@@ -743,7 +718,6 @@ export default function Forecast() {
     setMenuAbierto(false);
   };
 
-  // ── Eliminar centro completo (incluye matriz y aperturas) ─────────────
   const eliminarCentro = (id) => {
     if (!confirm(`¿Eliminar el centro ${id}? Esto borra su histórico, cruces GOA y apertura si aplica.`)) return;
     setHistorico(prev => prev.filter(r => r.centro !== id));
@@ -752,7 +726,6 @@ export default function Forecast() {
     setMatrizGoaCentro(prev => { const n = { ...prev }; delete n[id]; return n; });
   };
 
-  // ── Matriz masiva: aplicar meses de un GOA a todos los centros ────────
   const aplicarGoaMasivo = (goa, meses, soloActivos = false) => {
     startTransition(() => {
       setMatrizGoaCentro(prev => {
@@ -777,10 +750,8 @@ export default function Forecast() {
   // TAB 2 — REGRESIÓN & IN SEASON
   // ══════════════════════════════════════════════════════════════════════
 
-  // Overrides manuales de In Season: { "centro|goa|anio|mes": valor }
   const [inSeasonOverrides, setInSeasonOverrides] = useState({});
 
-  // Persistir overrides en mismo localStorage
   useEffect(() => {
     try {
       const s = localStorage.getItem('gop_forecast_overrides');
@@ -790,31 +761,26 @@ export default function Forecast() {
   useEffect(() => {
     const t = setTimeout(() => {
       try { localStorage.setItem('gop_forecast_overrides', JSON.stringify(inSeasonOverrides)); } catch {}
-    }, 1000); // debounce 1s
+    }, 1000); 
     return () => clearTimeout(t);
   }, [inSeasonOverrides]);
 
-  // Selector Tab 2
   const [t2Centro, setT2Centro] = useState('');
   const [t2Goa,    setT2Goa]    = useState('');
-  const [t2Filtro, setT2Filtro] = useState(''); // filtro lista resumen
+  const [t2Filtro, setT2Filtro] = useState(''); 
 
-  // Escenarios IS
-  const [escenarioActivo, setEscenarioActivo] = useState('editable'); // conservador|optimista|limpio|editable
-  const [thresholdsAvanzado, setThresholdsAvanzado] = useState(false); // panel colapsable
+  const [escenarioActivo, setEscenarioActivo] = useState('editable'); 
+  const [thresholdsAvanzado, setThresholdsAvanzado] = useState(false); 
   const [thresholds, setThresholds] = useState({
-    pesoConservador:    [0.6, 0.3, 0.1],   // último, penúltimo, antepenúltimo año
-    capOptimista:       0.30,               // +30% sobre conservador
-    // Z-score sobre ratio markdown/venta (Limpio)
-    zScoreMkd:          1.5,                // |z| > 1.5σ → mes promocional atípico
-    volumenMin:         0.10,               // sólo aplica Z-score si venta del mes ≥ 10% prom mensual
-    // Detección de stockout (Limpio)
-    stockoutLocal:      0.30,               // venta < 30% del prom de meses adyacentes
-    stockoutHist:       0.50,               // venta < 50% del prom mismo mes en otros años
-    stockoutFactorGuard:0.75,               // factor del mes >= factor_anterior * 0.75 (no es bajón estacional)
+    pesoConservador:    [0.6, 0.3, 0.1],   
+    capOptimista:       0.30,               
+    zScoreMkd:          1.5,                
+    volumenMin:         0.10,               
+    stockoutLocal:      0.30,               
+    stockoutHist:       0.50,               
+    stockoutFactorGuard:0.75,               
   });
 
-  // Histórico agregado por Centro × GOA × Año × Mes (suma canales)
   const histCxG = useMemo(() => {
     const map = {};
     historico.forEach(r => {
@@ -827,7 +793,6 @@ export default function Forecast() {
     return map;
   }, [historico]);
 
-  // Año actual y plan
   const anioActual = useMemo(() => {
     if (!historico.length) return new Date().getFullYear();
     return Math.max(...historico.map(r => r.anio));
@@ -838,17 +803,13 @@ export default function Forecast() {
     return Array.from(new Set(historico.map(r => r.anio))).sort().filter(a => a < anioActual);
   }, [historico, anioActual]);
 
-  // Meses con dato real del año actual
   const mesesActualReales = useMemo(() => {
     const set = new Set(historico.filter(r => r.anio === anioActual && r.venta > 0).map(r => r.mes));
     return set;
   }, [historico, anioActual]);
 
   // ══════════════════════════════════════════════════════════════════════
-  // L1 — MOTOR DE REGRESIÓN PESADO (sin overrides)
-  // Recalcula SOLO cuando cambia: histórico, matriz, thresholds, anioPlan
-  // Devuelve un Map: { "centro|goa": { serie, escenarios, plan, ... } }
-  // No depende de inSeasonOverrides ni de escenarioActivo.
+  // L1 — MOTOR DE REGRESIÓN PESADO
   // ══════════════════════════════════════════════════════════════════════
   const forecastL1 = useMemo(() => {
     if (!historico.length) return { mapa: {}, baseAnio: 0 };
@@ -857,7 +818,6 @@ export default function Forecast() {
     const baseAnio = todosAnios[0];
     const mapa = {};
 
-    // Pre-cómputo: lista de cruces a procesar (de la matriz)
     const cruces = [];
     Object.entries(matrizGoaCentro).forEach(([centro, goas]) => {
       Object.entries(goas).forEach(([goa, v]) => {
@@ -868,7 +828,6 @@ export default function Forecast() {
     cruces.forEach(({ centro, goa, mesesSet }) => {
       const key = `${centro}|${goa}`;
 
-      // 1) Serie histórica con flag stockout para imputación posterior
       const serieRaw = [];
       todosAnios.forEach(anio => {
         for (let mes = 1; mes <= 12; mes++) {
@@ -887,18 +846,15 @@ export default function Forecast() {
         }
       });
 
-      // Si hay menos de 6 meses con dato real, marcar insuficiente
       const conDato = serieRaw.filter(s => !s.faltante);
       if (conDato.length < 6) {
         mapa[key] = { insuficiente: true, error: 'Datos insuficientes (<6 meses)', serie: conDato };
         return;
       }
 
-      // 2) Regresión lineal sobre serie real (sin imputación, mantiene la realidad)
       const serie = conDato;
       const regresion = linearRegression(serie.map(s => ({ x: s.x, y: s.venta })));
 
-      // 3) Factores estacionales BASE (con años cerrados completos)
       const porMes = {};
       const porAnio = {};
       serie.forEach(s => {
@@ -925,19 +881,13 @@ export default function Forecast() {
         for (let m = 1; m <= 12; m++) factores[m] = 1;
       }
 
-      // 4) DETECCIÓN DE STOCKOUTS y MESES ATÍPICOS para escenario LIMPIO
-      //    Operamos sobre años cerrados completos.
-      //    A) Stockout: caída local (<30% adyacentes) AND (factor mes >= factor previo * 0.75) → no es estacional
-      //                 OR caída histórica (<50% mismo mes en otros años)
-      //    Z-score sobre RATIO mkd/venta (no monto absoluto), con candado de volumen mínimo.
       const promVtaMensual = aniosCompletos.length > 0 ? promAnualGlobal : 0;
       const volumenMinAbs = promVtaMensual * thresholds.volumenMin;
 
-      // Z-score sobre ratios mkd/venta de meses con volumen ≥ umbral
       const ratiosValidos = [];
       serie.forEach(s => {
         if (s.anio === anioActual || !aniosCompletos.includes(s.anio)) return;
-        if (s.venta < volumenMinAbs) return; // candado de volumen
+        if (s.venta < volumenMinAbs) return; 
         ratiosValidos.push(s.venta > 0 ? s.markdown / s.venta : 0);
       });
       const muRatio = ratiosValidos.length ? ratiosValidos.reduce((a,b)=>a+b,0) / ratiosValidos.length : 0;
@@ -945,21 +895,18 @@ export default function Forecast() {
         ? Math.sqrt(ratiosValidos.reduce((s,v) => s + (v - muRatio)**2, 0) / ratiosValidos.length)
         : 0;
 
-      // Marcar cada mes (de años cerrados completos) como atípico/stockout
-      const meta = {}; // { "anio|mes": { atipico, stockout, valorImputado } }
+      const meta = {}; 
       serie.forEach(s => {
         if (s.anio === anioActual || !aniosCompletos.includes(s.anio)) return;
         const k = `${s.anio}|${s.mes}`;
         meta[k] = { atipico: false, stockout: false, valorImputado: s.venta };
 
-        // Z-score atípico (sólo si pasa candado volumen)
         if (s.venta >= volumenMinAbs && sigmaRatio > 0) {
           const ratio = s.venta > 0 ? s.markdown / s.venta : 0;
           const z = Math.abs(ratio - muRatio) / sigmaRatio;
           if (z > thresholds.zScoreMkd) meta[k].atipico = true;
         }
 
-        // Stockout — Condición A (local): venta < 30% prom adyacentes
         const prev = serie.find(x => x.anio === s.anio && x.mes === s.mes - 1)
                   ?? serie.find(x => x.anio === s.anio - 1 && x.mes === 12);
         const next = serie.find(x => x.anio === s.anio && x.mes === s.mes + 1)
@@ -970,7 +917,6 @@ export default function Forecast() {
           : 0;
         let condA = false;
         if (promAdyacentes > 0 && s.venta < promAdyacentes * thresholds.stockoutLocal) {
-          // Candado: factor del mes >= factor mes anterior * 0.75 (no es bajón estacional natural)
           const factorMes = factores[s.mes] || 1;
           const factorPrev = factores[s.mes - 1] || factores[12] || 1;
           if (factorMes >= factorPrev * thresholds.stockoutFactorGuard) {
@@ -978,14 +924,12 @@ export default function Forecast() {
           }
         }
 
-        // Stockout — Condición B (histórica): venta < 50% prom mismo mes en otros años
         const otrosAnios = (porMes[s.mes] || []).filter(p => p.anio !== s.anio).map(p => p.valor);
         const promMismoMes = otrosAnios.length ? otrosAnios.reduce((a,b)=>a+b,0) / otrosAnios.length : 0;
         const condB = promMismoMes > 0 && s.venta < promMismoMes * thresholds.stockoutHist;
 
         if (condA || condB) {
           meta[k].stockout = true;
-          // Imputar promedio entre vecinos válidos (preservar OTB)
           const candidatos = [];
           if (promAdyacentes > 0) candidatos.push(promAdyacentes);
           if (promMismoMes > 0) candidatos.push(promMismoMes);
@@ -995,7 +939,6 @@ export default function Forecast() {
         }
       });
 
-      // 5) Factores estacionales LIMPIO: excluye meses atípicos, imputa stockouts
       const factoresLimpio = { ...factores };
       if (aniosCompletos.length > 0) {
         for (let m = 1; m <= 12; m++) {
@@ -1004,8 +947,8 @@ export default function Forecast() {
             const k = `${a}|${m}`;
             const info = meta[k];
             if (!info) return;
-            if (info.atipico) return;            // excluye atípicos
-            valoresLimpios.push(info.valorImputado); // usa imputado si stockout
+            if (info.atipico) return;            
+            valoresLimpios.push(info.valorImputado); 
           });
           const promMesL = valoresLimpios.length
             ? valoresLimpios.reduce((a,b)=>a+b,0) / valoresLimpios.length
@@ -1014,7 +957,6 @@ export default function Forecast() {
         }
       }
 
-      // 6) Funciones de proyección por escenario
       const inMatriz = (mes) => !mesesSet.size || mesesSet.has(mes);
       const proyectarBase = (anio, mes) => {
         if (!inMatriz(mes)) return 0;
@@ -1049,7 +991,6 @@ export default function Forecast() {
         return Math.min(base, cap);
       };
 
-      // 7) Construir IS por escenario (sin overrides — eso es L2)
       const buildIS = (proyFn) => {
         const arr = [];
         for (let mes = 1; mes <= 12; mes++) {
@@ -1071,7 +1012,6 @@ export default function Forecast() {
         base:        buildIS(proyectarBase),
       };
 
-      // 8) Plan año siguiente — uno por escenario (L2 elegirá según activo)
       const planEsc = {};
       [['conservador', proyectarConservador], ['limpio', proyectarLimpio],
        ['optimista', proyectarOptimista], ['base', proyectarBase]].forEach(([k, fn]) => {
@@ -1079,7 +1019,6 @@ export default function Forecast() {
         for (let mes = 1; mes <= 12; mes++) planEsc[k].push({ mes, valor: fn(anioPlan, mes) });
       });
 
-      // 9) Confidence
       const r2 = regresion.r2;
       const slope = regresion.slope;
       const tieneCompletos = aniosCompletos.length;
@@ -1104,14 +1043,11 @@ export default function Forecast() {
 
   // ══════════════════════════════════════════════════════════════════════
   // L2 — APLICA OVERRIDES + ESCENARIO ACTIVO PARA UN CRUCE
-  // Operación O(12) por cruce, ultra ligera. Se llama solo cuando se
-  // renderiza el cruce activo en pantalla.
   // ══════════════════════════════════════════════════════════════════════
   const aplicarOverrides = useCallback((centro, goa) => {
     const r = forecastL1.mapa[`${centro}|${goa}`];
     if (!r || r.insuficiente) return r;
 
-    // IS según escenario: si activo es 'editable', parte de 'base'; si no, copia el escenario
     const fuenteIS = escenarioActivo === 'editable' ? r.escenarios.base : r.escenarios[escenarioActivo];
     const fuentePlan = escenarioActivo === 'editable' ? r.planEsc.base : r.planEsc[escenarioActivo];
 
@@ -1139,10 +1075,8 @@ export default function Forecast() {
     };
   }, [forecastL1, escenarioActivo, inSeasonOverrides, anioActual]);
 
-  // Compatibilidad: alias para no romper referencias
   const calcRegresion = aplicarOverrides;
 
-  // Lista de cruces Centro×GOA activos según matriz
   const crucesActivos = useMemo(() => {
     const arr = [];
     Object.entries(matrizGoaCentro).forEach(([centro, goas]) => {
@@ -1154,8 +1088,7 @@ export default function Forecast() {
   }, [matrizGoaCentro]);
 
   // ══════════════════════════════════════════════════════════════════════
-  // L3 — KPIs AGREGADOS (depende de L1 + escenario + overrides)
-  // O(N) sobre cruces, una pasada. Se actualiza con cada keystroke pero es barato.
+  // L3 — KPIs AGREGADOS
   // ══════════════════════════════════════════════════════════════════════
   const resumenCruces = useMemo(() => {
     if (!historico.length) return [];
@@ -1166,7 +1099,6 @@ export default function Forecast() {
         return { centro, nombre, goa, totalInSeason: 0, totalPlan: 0, crecPlan: 0, crecYoY: 0, totalUltAnio: 0, r2: 0, insuficiente: true };
       }
 
-      // Aplicar escenario activo + overrides (operación barata O(12))
       const fuenteIS = escenarioActivo === 'editable' ? r.escenarios.base : r.escenarios[escenarioActivo];
       const fuentePlan = escenarioActivo === 'editable' ? r.planEsc.base : r.planEsc[escenarioActivo];
 
@@ -1203,7 +1135,6 @@ export default function Forecast() {
     );
   }, [resumenCruces, t2Filtro]);
 
-  // Auto-seleccionar primer cruce al entrar a Tab 2
   useEffect(() => {
     if (activeTab === 2 && !t2Centro && resumenCruces.length > 0) {
       setT2Centro(resumenCruces[0].centro);
@@ -1211,10 +1142,8 @@ export default function Forecast() {
     }
   }, [activeTab, t2Centro, resumenCruces]);
 
-  // Cálculo del cruce activo
   const t2Calc = useMemo(() => calcRegresion(t2Centro, t2Goa), [t2Centro, t2Goa, calcRegresion]);
 
-  // Helpers UI Tab 2
   const editarInSeason = (centro, goa, mes, valor) => {
     const k = `${centro}|${goa}|${anioActual}|${mes}`;
     setInSeasonOverrides(prev => ({ ...prev, [k]: parseFloat(valor) || 0 }));
@@ -1247,13 +1176,35 @@ export default function Forecast() {
   // ══════════════════════════════════════════════════════════════════════
 
   // Drivers persistidos
-  const [otbTotal, setOtbTotal]               = useState(0);          // OTB total del depto (capturado)
-  const [otbOverridesGoa, setOtbOverridesGoa] = useState({});         // { goa: monto }  override sobre distribución
-  const [crecGoa, setCrecGoa]                 = useState({});         // { goa: pct decimal, ej 0.07 }
-  const [crecCentro, setCrecCentro]           = useState({});         // { "centro|goa": pct }  override centro×goa
-  const [rotOverrides, setRotOverrides]       = useState({});         // { "centro|goa": rotación }
-  const [msiPct, setMsiPct]                   = useState(0.05);       // % global MSI sobre venta plan
-  const [mkdPctGoa, setMkdPctGoa]             = useState({});         // { goa: % markdown sobre venta }
+  const [otbMaster, setOtbMaster] = useState({
+    vta:    Array(12).fill(null),    
+    rot:    Array(12).fill(null),
+    invIni: Array(12).fill(null),
+    mgPct:  Array(12).fill(null),
+    modoVta:  'mensual',  
+    modoMg:   'total',    
+    totalVta: null,
+    totalMg:  null,
+  });
+  const [msiModo, setMsiModo]       = useState('total'); 
+  const [msiMensual, setMsiMensual] = useState(Array(12).fill(null));
+  const [mkdModo, setMkdModo]       = useState('porGoa'); 
+  const [mkdMensualGlobal, setMkdMensualGlobal] = useState(Array(12).fill(null));
+
+  const [otbTotal, setOtbTotal]               = useState(0);          
+  const [otbOverridesGoa, setOtbOverridesGoa] = useState({});         
+  const [crecGoa, setCrecGoa]                 = useState({});         
+  const [crecCentro, setCrecCentro]           = useState({});         
+  const [rotOverrides, setRotOverrides]       = useState({});         
+  const [msiPct, setMsiPct]                   = useState(0.05);       
+  const [mkdPctGoa, setMkdPctGoa]             = useState({});         
+
+  // Tab 4 - Plan Distribuido
+  const [t4Agrupacion, setT4Agrupacion] = useState('centro'); 
+  const [t4Expandidas, setT4Expandidas] = useState(new Set()); 
+  const [t4Locks, setT4Locks] = useState(new Set()); 
+  const [t4Overrides, setT4Overrides] = useState({}); 
+  const [t4Filtro, setT4Filtro] = useState('');
 
   // Persistencia
   useEffect(() => {
@@ -1268,6 +1219,11 @@ export default function Forecast() {
         if (d.rotOverrides)            setRotOverrides(d.rotOverrides);
         if (d.msiPct != null)          setMsiPct(d.msiPct);
         if (d.mkdPctGoa)               setMkdPctGoa(d.mkdPctGoa);
+        if (d.otbMaster)               setOtbMaster(d.otbMaster);
+        if (d.msiModo)                 setMsiModo(d.msiModo);
+        if (d.msiMensual)              setMsiMensual(d.msiMensual);
+        if (d.mkdModo)                 setMkdModo(d.mkdModo);
+        if (d.mkdMensualGlobal)        setMkdMensualGlobal(d.mkdMensualGlobal);
       }
     } catch {}
   }, []);
@@ -1275,16 +1231,14 @@ export default function Forecast() {
     const t = setTimeout(() => {
       try {
         localStorage.setItem('gop_forecast_drivers', JSON.stringify({
-          otbTotal, otbOverridesGoa, crecGoa, crecCentro, rotOverrides, msiPct, mkdPctGoa
+          otbTotal, otbOverridesGoa, crecGoa, crecCentro, rotOverrides, msiPct, mkdPctGoa,
+          otbMaster, msiModo, msiMensual, mkdModo, mkdMensualGlobal
         }));
       } catch {}
     }, 1000);
     return () => clearTimeout(t);
-  }, [otbTotal, otbOverridesGoa, crecGoa, crecCentro, rotOverrides, msiPct, mkdPctGoa]);
+  }, [otbTotal, otbOverridesGoa, crecGoa, crecCentro, rotOverrides, msiPct, mkdPctGoa, otbMaster, msiModo, msiMensual, mkdModo, mkdMensualGlobal]);
 
-  // ── Lógica de distribución y cálculos ────────────────────────────────
-
-  // Total Plan sugerido por GOA (suma de plan de regresión por GOA)
   const planSugeridoPorGoa = useMemo(() => {
     const map = {};
     resumenCruces.forEach(r => {
@@ -1293,12 +1247,10 @@ export default function Forecast() {
     return map;
   }, [resumenCruces]);
 
-  // Plan total sugerido (suma global)
   const planSugeridoTotal = useMemo(() =>
     Object.values(planSugeridoPorGoa).reduce((s,v) => s+v, 0)
   , [planSugeridoPorGoa]);
 
-  // Distribución OTB por GOA (sugerido vs override)
   const otbPorGoa = useMemo(() => {
     const map = {};
     const otbBase = otbTotal > 0 ? otbTotal : planSugeridoTotal;
@@ -1315,18 +1267,15 @@ export default function Forecast() {
     return map;
   }, [goasMaestro, planSugeridoPorGoa, planSugeridoTotal, otbTotal, otbOverridesGoa]);
 
-  // Total OTB aplicado (con overrides)
   const otbAplicadoTotal = useMemo(() =>
     Object.values(otbPorGoa).reduce((s,v) => s + v.aplicado, 0)
   , [otbPorGoa]);
 
-  // Diferencia OTB total capturado vs aplicado (para alertar al usuario)
   const otbDiff = useMemo(() => {
     if (!otbTotal) return 0;
     return otbAplicadoTotal - otbTotal;
   }, [otbTotal, otbAplicadoTotal]);
 
-  // Crecimiento aplicado para un cruce (override centro > GOA > sugerido)
   const getCrecAplicado = useCallback((centro, goa, crecSugeridoCruce) => {
     const overrideCentro = crecCentro[`${centro}|${goa}`];
     if (overrideCentro != null) return overrideCentro;
@@ -1335,7 +1284,6 @@ export default function Forecast() {
     return crecSugeridoCruce;
   }, [crecCentro, crecGoa]);
 
-  // Rotación histórica promedio por Centro × GOA (de los últimos años cerrados con dato)
   const rotacionHistPromedio = useMemo(() => {
     const map = {};
     historico.forEach(r => {
@@ -1352,7 +1300,53 @@ export default function Forecast() {
     return out;
   }, [historico]);
 
-  // Mg histórico promedio por Centro × GOA
+  // Rotación por año cerrado (para columnas de comparativa)
+  const rotacionPorAnio = useMemo(() => {
+    const map = {}; 
+    const acum = {}; 
+    historico.forEach(r => {
+      if (!r.goa || !r.rotacion) return;
+      const k = `${r.centro}|${r.goa}|${r.anio}`;
+      if (!acum[k]) acum[k] = { sum: 0, cnt: 0 };
+      acum[k].sum += r.rotacion;
+      acum[k].cnt += 1;
+    });
+    Object.entries(acum).forEach(([k, v]) => {
+      const [centro, goa, anio] = k.split('|');
+      const ck = `${centro}|${goa}`;
+      if (!map[ck]) map[ck] = {};
+      map[ck][anio] = v.cnt > 0 ? v.sum / v.cnt : 0;
+    });
+    return map;
+  }, [historico]);
+
+  // Sugerencia inteligente de rotación
+  const rotSugeridaInteligente = useMemo(() => {
+    const promPorGoa = {};
+    Object.entries(rotacionHistPromedio).forEach(([k, v]) => {
+      const [, goa] = k.split('|');
+      if (!promPorGoa[goa]) promPorGoa[goa] = { sum: 0, cnt: 0 };
+      promPorGoa[goa].sum += v;
+      promPorGoa[goa].cnt += 1;
+    });
+    const promFinalGoa = {};
+    Object.entries(promPorGoa).forEach(([g, v]) => {
+      promFinalGoa[g] = v.cnt > 0 ? v.sum / v.cnt : 0;
+    });
+    
+    const out = {};
+    Object.entries(rotacionHistPromedio).forEach(([k, rotCentro]) => {
+      const [, goa] = k.split('|');
+      const rotGoa = promFinalGoa[goa] || rotCentro;
+      if (rotCentro >= rotGoa) {
+        out[k] = rotCentro * 1.05;  
+      } else {
+        out[k] = rotCentro * 0.5 + rotGoa * 0.5;  
+      }
+    });
+    return out;
+  }, [rotacionHistPromedio]);
+
   const mgHistPromedio = useMemo(() => {
     const map = {};
     historico.forEach(r => {
@@ -1369,7 +1363,6 @@ export default function Forecast() {
     return out;
   }, [historico]);
 
-  // Plan completo por cruce (con drivers aplicados): venta, mkd, msi, rot, inv promedio, compra
   const planCruceCompleto = useMemo(() => {
     return resumenCruces.map(r => {
       const ventaSugerida = r.totalPlan || 0;
@@ -1377,31 +1370,24 @@ export default function Forecast() {
       const crecSug = r.crecPlan || 0;
       const crecAplicado = getCrecAplicado(r.centro, r.goa, crecSug);
 
-      // Si hay override, recalcular venta
       const tieneOverrideCrec = crecCentro[`${r.centro}|${r.goa}`] != null || crecGoa[r.goa] != null;
       const ventaPlanFinal = tieneOverrideCrec && ventaInS > 0
         ? ventaInS * (1 + crecAplicado)
         : ventaSugerida;
 
-      // Markdowns: % por GOA × venta
       const mkdPct = mkdPctGoa[r.goa] != null ? mkdPctGoa[r.goa] : 0;
       const mkdMonto = ventaPlanFinal * mkdPct;
-
-      // MSI: % global × venta plan
       const msiMonto = ventaPlanFinal * msiPct;
 
-      // Rotación
       const rotHist = rotacionHistPromedio[`${r.centro}|${r.goa}`] || 0;
       const rotOverride = rotOverrides[`${r.centro}|${r.goa}`];
       const rotAplicada = rotOverride != null ? rotOverride : rotHist;
+      const rotSugerida = rotSugeridaInteligente[`${r.centro}|${r.goa}`] || rotHist;
+      const rotPorAnio = rotacionPorAnio[`${r.centro}|${r.goa}`] || {};
 
-      // Inv promedio = Venta / Rotación
       const invPromedio = rotAplicada > 0 ? ventaPlanFinal / rotAplicada : 0;
-      // Compra resultante = Venta + ΔInventario (asumimos inv inicial ≈ inv promedio para simplificar en este tab)
-      // En Tab 5 se hará el cálculo completo con stock inicial.
-      const compra = ventaPlanFinal; // simplificación inicial
+      const compra = ventaPlanFinal; 
 
-      // Mg base histórico (en Tab 5 se aplicará bonificación apertura)
       const mgHist = mgHistPromedio[`${r.centro}|${r.goa}`] || 0;
       const utilidad = ventaPlanFinal * mgHist - mkdMonto;
 
@@ -1410,15 +1396,171 @@ export default function Forecast() {
         ventaSugerida, ventaPlanFinal, crecSug, crecAplicado, tieneOverrideCrec,
         mkdPct, mkdMonto, msiMonto,
         rotHist, rotOverride, rotAplicada, tieneRotOverride: rotOverride != null,
+        rotSugerida, rotPorAnio,
         invPromedio, compra,
         mgHist, utilidad,
       };
     });
   }, [resumenCruces, getCrecAplicado, crecCentro, crecGoa, mkdPctGoa, msiPct,
-      rotacionHistPromedio, rotOverrides, mgHistPromedio]);
+      rotacionHistPromedio, rotOverrides, mgHistPromedio, rotSugeridaInteligente, rotacionPorAnio]);
 
-  // Filtros Tab 3
-  const [t3Tab, setT3Tab]           = useState('otb'); // otb | crec | rot | mkdmsi
+  // Cálculos derivados del bloque maestro Excel (Tab 3)
+  const otbMasterCalc = useMemo(() => {
+    // 1) Sugeridos por mes desde el plan completo
+    const sugVta = Array(12).fill(0);
+    const sugInvIni = Array(12).fill(0);
+    const sugMkd = Array(12).fill(0);
+    
+    planCruceCompleto.forEach(r => {
+      const cruce = forecastL1.mapa[`${r.centro}|${r.goa}`];
+      if (!cruce || cruce.insuficiente) return;
+      const planEsc = cruce.planEsc[escenarioActivo === 'editable' ? 'base' : escenarioActivo];
+      planEsc.forEach((m, i) => sugVta[i] += m.valor);
+    });
+    
+    // 2) Resolver inputs (override > total mensualizado por estacionalidad > sugerido)
+    const factorEstacional = sugVta.map(v => {
+      const tot = sugVta.reduce((a,b)=>a+b, 0);
+      return tot > 0 ? v / tot : 1/12;
+    });
+    
+    const vtaFinal = Array(12).fill(0).map((_, i) => {
+      if (otbMaster.vta[i] != null) return otbMaster.vta[i];
+      if (otbMaster.modoVta === 'total' && otbMaster.totalVta) {
+        return otbMaster.totalVta * factorEstacional[i];
+      }
+      return sugVta[i];
+    });
+    
+    // 3) Mg% por mes
+    const mgHistProm = planCruceCompleto.length 
+      ? planCruceCompleto.reduce((s,r) => s + r.mgHist, 0) / planCruceCompleto.length 
+      : 0.40;
+    const mgFinal = Array(12).fill(0).map((_, i) => {
+      if (otbMaster.mgPct[i] != null) return otbMaster.mgPct[i];
+      if (otbMaster.modoMg === 'total' && otbMaster.totalMg != null) return otbMaster.totalMg;
+      return mgHistProm;
+    });
+    
+    // 4) Rotación mensual
+    const rotFinal = otbMaster.rot.map((v, i) => v ?? 1.5); 
+    
+    // 5) Inv inicial Ene
+    const invIniEne = otbMaster.invIni[0] ?? vtaFinal[0] / (rotFinal[0] || 1.5);
+    
+    // 6) Cascada mensual
+    const filas = [];
+    let invInicial = invIniEne;
+    for (let i = 0; i < 12; i++) {
+      const venta = vtaFinal[i];
+      const rot = rotFinal[i];
+      const mgPct = mgFinal[i];
+      const invFinal = otbMaster.invIni[i+1] ?? venta / (rot || 1.5);
+      const compra = venta + invFinal - invInicial;
+      const utilidadBruta = venta * mgPct;
+      const mkd = sugMkd[i]; 
+      const msi = venta * msiPct;
+      
+      filas.push({
+        mes: i+1,
+        invInicial, venta, mkd, msi,
+        compra, utilidadBruta, mgPct,
+        invFinal, rot,
+      });
+      invInicial = invFinal;
+    }
+    
+    return { filas, sugVta, factorEstacional };
+  }, [otbMaster, planCruceCompleto, forecastL1, escenarioActivo, msiPct]);
+
+  // Tab 4 (Matriz GOA x Centro - Hold & Spread)
+  const t4DataAgrupada = useMemo(() => {
+    const cruces = planCruceCompleto.map(r => {
+      const cruceL1 = forecastL1.mapa[`${r.centro}|${r.goa}`];
+      if (!cruceL1?.planEsc) return null;
+      const planEsc = cruceL1.planEsc[escenarioActivo === 'editable' ? 'base' : escenarioActivo];
+      const meses = planEsc.map((m, i) => {
+        const k = `${r.centro}|${r.goa}|${m.mes}`;
+        const override = t4Overrides[k];
+        const isLocked = t4Locks.has(k);
+        return {
+          mes: m.mes,
+          valor: override !== undefined ? override : m.valor,
+          sugerido: m.valor,
+          isLocked,
+          isOverride: override !== undefined,
+        };
+      });
+      return {
+        centro: r.centro, nombre: r.nombre, goa: r.goa,
+        meses,
+        total: meses.reduce((s,m) => s + m.valor, 0),
+      };
+    }).filter(Boolean);
+    
+    if (t4Agrupacion === 'centro') {
+      const map = {};
+      cruces.forEach(c => {
+        if (!map[c.centro]) map[c.centro] = { id: c.centro, nombre: c.nombre, hijos: [], meses: Array(12).fill(0), total: 0 };
+        map[c.centro].hijos.push(c);
+        c.meses.forEach((m, i) => map[c.centro].meses[i] += m.valor);
+        map[c.centro].total += c.total;
+      });
+      return Object.values(map).sort((a,b) => b.total - a.total);
+    } else {
+      const map = {};
+      cruces.forEach(c => {
+        if (!map[c.goa]) map[c.goa] = { id: c.goa, nombre: c.goa, hijos: [], meses: Array(12).fill(0), total: 0 };
+        map[c.goa].hijos.push(c);
+        c.meses.forEach((m, i) => map[c.goa].meses[i] += m.valor);
+        map[c.goa].total += c.total;
+      });
+      return Object.values(map).sort((a,b) => b.total - a.total);
+    }
+  }, [planCruceCompleto, forecastL1, escenarioActivo, t4Agrupacion, t4Overrides, t4Locks]);
+
+  const rebalancearTab4 = (grupoId) => {
+    const grupo = t4DataAgrupada.find(g => g.id === grupoId);
+    if (!grupo) return;
+    
+    let target;
+    if (t4Agrupacion === 'goa') {
+      target = otbPorGoa[grupoId]?.aplicado || grupo.total;
+    } else {
+      target = grupo.hijos.reduce((s,h) => s + h.meses.reduce((a,m) => a + m.sugerido, 0), 0);
+    }
+    
+    const sumaActual = grupo.total;
+    const diff = target - sumaActual;
+    if (Math.abs(diff) < 1) return; 
+    
+    const candidatos = [];
+    grupo.hijos.forEach(h => {
+      h.meses.forEach(m => {
+        const k = `${h.centro}|${h.goa}|${m.mes}`;
+        if (!t4Locks.has(k)) candidatos.push({ k, valor: m.valor });
+      });
+    });
+    
+    const sumaCandidatos = candidatos.reduce((s,c) => s + c.valor, 0);
+    if (sumaCandidatos === 0) {
+      alert('Todas las celdas están bloqueadas. Libera al menos una para rebalancear.');
+      return;
+    }
+    
+    startTransition(() => {
+      setT4Overrides(prev => {
+        const next = { ...prev };
+        candidatos.forEach(c => {
+          const proporcion = c.valor / sumaCandidatos;
+          next[c.k] = Math.max(0, c.valor + diff * proporcion);
+        });
+        return next;
+      });
+    });
+  };
+
+  const [t3Tab, setT3Tab]           = useState('otb'); 
   const [t3Filtro, setT3Filtro]     = useState('');
   const [t3FiltroGoa, setT3FiltroGoa] = useState('TODOS');
 
@@ -1432,7 +1574,6 @@ export default function Forecast() {
     return arr;
   }, [planCruceCompleto, t3Filtro, t3FiltroGoa]);
 
-  // Exports
   const exportDrivers = () => {
     const header = ['Centro','Nombre','GOA','Venta Plan','Crec %','Markdown $','MSI $','Rot','Inv Prom','Mg %','Utilidad'];
     const rows = planCruceCompleto.map(r => [
@@ -1445,7 +1586,6 @@ export default function Forecast() {
     downloadExcel([header, ...rows], `Forecast_Drivers_${anioPlan}.csv`);
   };
 
-  // Reset por sección
   const resetOtbOverrides = () => {
     if (!confirm('Eliminar todos los overrides de OTB por GOA?')) return;
     setOtbOverridesGoa({});
@@ -1511,7 +1651,6 @@ export default function Forecast() {
               <Icons.Upload size={14} /> Cargar Histórico
             </button>
 
-            {/* Año del plan */}
             <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${t.cardInner}`}>
               <span className={`text-[10px] font-black uppercase tracking-widest ${t.textMuted}`}>Año plan</span>
               <input type="number" value={anioPlan}
@@ -1519,7 +1658,6 @@ export default function Forecast() {
                 className={`w-20 text-xs font-bold px-2 py-1 rounded border ${t.input} focus:outline-none focus:ring-1`} />
             </div>
 
-            {/* Indicadores */}
             {resumenHist && (
               <>
                 <span className={`px-3 py-1 rounded-full text-[10px] font-black border ${t.badgePurple}`}>
@@ -1531,7 +1669,6 @@ export default function Forecast() {
               </>
             )}
 
-            {/* Menú 3 puntos */}
             <div className="relative">
               <button onClick={() => setMenuAbierto(v => !v)}
                 className={`flex items-center justify-center w-9 h-9 rounded-lg border transition-all ${t.btnGhost}`}
@@ -1540,7 +1677,6 @@ export default function Forecast() {
               </button>
               {menuAbierto && (
                 <>
-                  {/* Backdrop para cerrar al click fuera */}
                   <div className="fixed inset-0 z-40" onClick={() => setMenuAbierto(false)} />
                   <div className={`absolute right-0 mt-2 w-56 rounded-xl border overflow-hidden z-50 ${t.menu}`}>
                     <button onClick={guardarSesion}
@@ -1586,7 +1722,6 @@ export default function Forecast() {
         {activeTab === 1 && (
           <div className="p-5 space-y-5">
 
-            {/* Estado vacío */}
             {!historico.length && (
               <div className={`p-8 rounded-xl border flex flex-col items-center justify-center text-center ${t.cardInner}`}>
                 <Icons.Upload size={32} className={`${isDark ? 'text-zinc-600' : 'text-gray-300'} mb-3`} />
@@ -1599,7 +1734,6 @@ export default function Forecast() {
 
             {historico.length > 0 && (
               <>
-                {/* KPIs del histórico */}
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                   {[
                     { label: 'Centros', val: fmt(resumenHist.centros) },
@@ -1615,7 +1749,6 @@ export default function Forecast() {
                   ))}
                 </div>
 
-                {/* Split por canal */}
                 <div className={`p-4 rounded-xl border ${t.cardInner}`}>
                   <h3 className={`text-xs font-black uppercase tracking-widest mb-3 ${t.textMuted}`}>Venta por Canal</h3>
                   <div className="grid grid-cols-3 gap-3">
@@ -1637,7 +1770,6 @@ export default function Forecast() {
                   </div>
                 </div>
 
-                {/* Catálogo de centros + tipo + mes apertura */}
                 <div className={`p-4 rounded-xl border ${t.cardInner}`}>
                   <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                     <h3 className={`text-xs font-black uppercase tracking-widest ${t.textMuted}`}>
@@ -1645,7 +1777,6 @@ export default function Forecast() {
                     </h3>
                   </div>
 
-                  {/* Barra de filtros */}
                   <div className="grid grid-cols-1 md:grid-cols-4 gap-2 mb-3">
                     <div className="relative md:col-span-2">
                       <Icons.Search size={13} className={`absolute left-3 top-1/2 -translate-y-1/2 ${t.textMuted}`} />
@@ -1760,7 +1891,6 @@ export default function Forecast() {
                   </div>
                 </div>
 
-                {/* Tiendas nuevas (no existen en histórico) */}
                 <div className={`p-4 rounded-xl border ${t.cardInner}`}>
                   <h3 className={`text-xs font-black uppercase tracking-widest mb-3 ${t.textMuted}`}>
                     Tiendas Nuevas · Sin histórico — se proyectan con benchmark
@@ -1797,7 +1927,6 @@ export default function Forecast() {
                   )}
                 </div>
 
-                {/* Maestro de GOAs · agregar/eliminar */}
                 <div className={`p-4 rounded-xl border ${t.cardInner}`}>
                   <h3 className={`text-xs font-black uppercase tracking-widest mb-3 ${t.textMuted}`}>
                     GOAs Maestro · {goasMaestro.length} registrados
@@ -1828,7 +1957,6 @@ export default function Forecast() {
                   )}
                 </div>
 
-                {/* Matriz GOA × Centro × Temporada */}
                 {goasMaestro.length > 0 && (
                   <div className={`p-4 rounded-xl border ${t.cardInner}`}>
                     <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
@@ -1859,7 +1987,6 @@ export default function Forecast() {
                           <tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark ? 'bg-zinc-900 text-gray-400 border-b border-zinc-800' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
                             <th className={`p-2 sticky left-0 ${isDark ? 'bg-zinc-900' : 'bg-gray-50'}`}>Centro</th>
                             {goasMaestro.map(g => {
-                              // Estado de aplicación: cuántos centros lo tienen activo
                               const allCentros = [...new Set([...centrosLista.map(c => c.centro), ...Object.keys(aperturas)])];
                               const activos = allCentros.filter(c => matrizGoaCentro[c]?.[g]?.activo).length;
                               const total = allCentros.length;
@@ -1867,7 +1994,6 @@ export default function Forecast() {
                                 <th key={g} className="p-1 text-center">
                                   <button
                                     onClick={() => {
-                                      // Inicializar con meses actuales del primer cruce activo, o todo el año
                                       const primerActivo = allCentros.map(c => matrizGoaCentro[c]?.[g]).find(v => v?.activo);
                                       setGoaMasivo({ goa: g, meses: primerActivo?.meses || [1,2,3,4,5,6,7,8,9,10,11,12] });
                                     }}
@@ -1931,7 +2057,6 @@ export default function Forecast() {
                       </table>
                     </div>
 
-                    {/* Editor masivo: aplica meses del GOA a todas las tiendas */}
                     {goaMasivo && (
                       <div className={`mt-3 p-4 rounded-xl border-2 ${isDark ? 'border-violet-500/50 bg-violet-900/10' : 'border-violet-300 bg-violet-50/40'}`}>
                         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
@@ -2015,7 +2140,6 @@ export default function Forecast() {
                       </div>
                     )}
 
-                    {/* Editor de temporada individual (popover inline) */}
                     {celaEditando && (
                       <div className={`mt-3 p-4 rounded-xl border-2 ${isDark ? 'border-amber-500/50 bg-amber-900/10' : 'border-amber-300 bg-amber-50/40'}`}>
                         <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
@@ -2094,7 +2218,6 @@ export default function Forecast() {
 
             {historico.length > 0 && resumenCruces.length > 0 && (
               <>
-                {/* KPIs globales */}
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                   {(() => {
                     const totIS = resumenCruces.reduce((s,r) => s + (r.totalInSeason || 0), 0);
@@ -2140,7 +2263,6 @@ export default function Forecast() {
                   })()}
                 </div>
 
-                {/* ═══ PANEL DE ESCENARIOS IS ═══ */}
                 <div className={`p-4 rounded-xl border ${t.cardInner}`}>
                   <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                     <div>
@@ -2157,13 +2279,11 @@ export default function Forecast() {
                     </button>
                   </div>
 
-                  {/* Panel avanzado colapsable */}
                   {thresholdsAvanzado && (
                     <div className={`mb-4 p-3 rounded-lg border ${isDark ? 'bg-zinc-900/50 border-zinc-800' : 'bg-white border-gray-200'}`}>
                       <h4 className={`text-[10px] font-black uppercase tracking-widest mb-3 ${t.textMuted}`}>Configuración avanzada</h4>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                        {/* Bloque Conservador / Optimista */}
                         <div className="space-y-3">
                           <div>
                             <label className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} block mb-1`}>
@@ -2197,7 +2317,6 @@ export default function Forecast() {
                           </div>
                         </div>
 
-                        {/* Bloque Limpio: Z-score + stockout */}
                         <div className={`p-2 rounded-lg border ${isDark ? 'bg-teal-500/5 border-teal-500/20' : 'bg-teal-50/30 border-teal-200'}`}>
                           <p className={`text-[9px] uppercase font-black tracking-widest mb-2 text-teal-500`}>Detección Limpio</p>
 
@@ -2255,7 +2374,6 @@ export default function Forecast() {
                     </div>
                   )}
 
-                  {/* Cards de escenarios — solo visibles si hay un cruce seleccionado */}
                   {t2Calc && !t2Calc.insuficiente && t2Calc.escenarios && (
                     <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                       {[
@@ -2265,7 +2383,6 @@ export default function Forecast() {
                         { key: 'editable',    label: 'Editable',    desc: 'Base operativa con overrides', color: 'violet', editable: true },
                       ].map(s => {
                         const esActivo = escenarioActivo === s.key;
-                        // Total del escenario (ya viene calculado en escenarios[key], excepto editable que es inSeason)
                         const totalEsc = s.key === 'editable'
                           ? t2Calc.inSeason.reduce((a,x) => a + x.valor, 0)
                           : t2Calc.escenarios[s.key].reduce((a,x) => a + x.valor, 0);
@@ -2317,7 +2434,6 @@ export default function Forecast() {
                   )}
                 </div>
 
-                {/* ═══ RESUMEN POR GOA (gráfica de barras) ═══ */}
                 <div className={`p-4 rounded-xl border ${t.cardInner}`}>
                   <h3 className={`text-xs font-black uppercase tracking-widest mb-3 ${t.textMuted}`}>
                     Resumen por GOA · Plan {anioPlan} con escenario activo
@@ -2339,7 +2455,6 @@ export default function Forecast() {
 
                     return (
                       <>
-                        {/* Total sección */}
                         <div className={`p-3 rounded-lg border mb-3 ${isDark ? 'bg-violet-900/10 border-violet-500/30' : 'bg-violet-50/50 border-violet-200'}`}>
                           <div className="flex items-center justify-between flex-wrap gap-2">
                             <div>
@@ -2356,7 +2471,6 @@ export default function Forecast() {
                           </div>
                         </div>
 
-                        {/* Barras por GOA */}
                         <div className="space-y-1.5">
                           {arr.map(g => {
                             const partPlan = totSeccionPlan > 0 ? g.plan / totSeccionPlan : 0;
@@ -2387,7 +2501,6 @@ export default function Forecast() {
                   })()}
                 </div>
 
-                {/* Selector cruce + Detalle */}
                 <div className={`p-4 rounded-xl border ${t.cardInner}`}>
                   <div className="flex flex-wrap items-center gap-2 mb-4">
                     <span className={`text-[10px] font-black uppercase tracking-widest ${t.textMuted}`}>Análisis detallado:</span>
@@ -2415,7 +2528,6 @@ export default function Forecast() {
                     <p className={`text-xs ${t.textMuted} p-4 text-center`}>{t2Calc.error || 'Sin datos suficientes para regresión.'}</p>
                   ) : t2Calc && (
                     <>
-                      {/* KPIs del cruce */}
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
                         <div className={`p-3 rounded-lg border ${isDark ? 'bg-zinc-950 border-zinc-800' : 'bg-white border-gray-200'}`}>
                           <div className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted}`}>{anioActual - 1}</div>
@@ -2444,7 +2556,6 @@ export default function Forecast() {
                         </div>
                       </div>
 
-                      {/* Gráfico */}
                       <div className={`p-3 rounded-lg border mb-4 ${isDark ? 'bg-zinc-950 border-zinc-800' : 'bg-white border-gray-200'}`}>
                         <div className="flex items-center justify-between mb-2">
                           <span className={`text-[10px] font-black uppercase tracking-widest ${t.textMuted}`}>
@@ -2466,7 +2577,6 @@ export default function Forecast() {
                         />
                       </div>
 
-                      {/* Tabla mensual */}
                       <div className="overflow-x-auto custom-scrollbar">
                         <table className="w-full text-left min-w-max">
                           <thead>
@@ -2477,7 +2587,6 @@ export default function Forecast() {
                             </tr>
                           </thead>
                           <tbody className={`divide-y ${isDark ? 'divide-zinc-800/50' : 'divide-gray-100'}`}>
-                            {/* Años cerrados */}
                             {aniosCerrados.map(anio => {
                               const fila = MESES.map((_, i) => {
                                 const k = `${t2Centro}|${t2Goa}|${anio}|${i+1}`;
@@ -2497,7 +2606,6 @@ export default function Forecast() {
                               );
                             })}
 
-                            {/* Año actual: In Season editable */}
                             <tr className={`text-xs ${isDark ? 'bg-amber-900/10' : 'bg-amber-50/50'}`}>
                               <td className={`p-2 font-mono font-bold sticky left-0 ${isDark ? 'bg-zinc-950' : 'bg-gray-50'} ${t.textYellow}`}>
                                 {anioActual} <span className="text-[9px] font-normal">(InS)</span>
@@ -2542,7 +2650,6 @@ export default function Forecast() {
                               </td>
                             </tr>
 
-                            {/* Año plan */}
                             <tr className={`text-xs ${isDark ? 'bg-violet-900/10' : 'bg-violet-50/50'}`}>
                               <td className={`p-2 font-mono font-bold sticky left-0 ${isDark ? 'bg-zinc-950' : 'bg-gray-50'} ${t.textPurple}`}>
                                 {anioPlan} <span className="text-[9px] font-normal">(Plan)</span>
@@ -2557,7 +2664,6 @@ export default function Forecast() {
                               </td>
                             </tr>
 
-                            {/* Factores estacionales */}
                             <tr className={`text-xs ${isDark ? 'bg-zinc-900/40' : 'bg-gray-50'}`}>
                               <td className={`p-2 font-mono sticky left-0 ${isDark ? 'bg-zinc-950' : 'bg-gray-50'} ${t.textMuted} text-[10px]`}>Factor estac.</td>
                               {MESES.map((_, i) => {
@@ -2592,7 +2698,6 @@ export default function Forecast() {
                   )}
                 </div>
 
-                {/* Tabla resumen de todos los cruces */}
                 <div className={`p-4 rounded-xl border ${t.cardInner}`}>
                   <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
                     <h3 className={`text-xs font-black uppercase tracking-widest ${t.textMuted}`}>
@@ -2684,7 +2789,6 @@ export default function Forecast() {
 
             {historico.length > 0 && resumenCruces.length > 0 && (
               <>
-                {/* KPIs maestros del plan */}
                 <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                   <div className={`p-4 rounded-xl border ${t.cardInner}`}>
                     <div className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} mb-1`}>OTB capturado</div>
@@ -2719,7 +2823,212 @@ export default function Forecast() {
                   </div>
                 </div>
 
-                {/* Sub-tabs */}
+                {/* ═══ BLOQUE MAESTRO EXCEL ═══ */}
+                <div className={`p-4 rounded-xl border ${t.cardInner}`}>
+                  <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                    <h3 className={`text-xs font-black uppercase tracking-widest ${t.textMuted}`}>
+                      📋 Captura Maestra · Cuadre del Plan {anioPlan}
+                    </h3>
+                    <div className="flex gap-2 text-[10px]">
+                      <span className={`px-2 py-1 rounded ${t.badgeGray}`}>Amarillo = input · Morado = derivado</span>
+                    </div>
+                  </div>
+
+                  <div className="overflow-x-auto custom-scrollbar">
+                    <table className="w-full text-left min-w-max text-xs">
+                      <thead>
+                        <tr className={`text-[9px] uppercase font-black tracking-widest ${isDark ? 'bg-zinc-900 text-gray-400 border-b border-zinc-800' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+                          <th className="p-2 sticky left-0 bg-inherit">Concepto</th>
+                          {MESES.map(m => <th key={m} className="p-2 text-right">{m}</th>)}
+                          <th className="p-2 text-right">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody className={`divide-y ${isDark ? 'divide-zinc-800/50' : 'divide-gray-100'}`}>
+
+                        {/* Inv Inicial $ — INPUT (amarillo en Ene, derivado el resto) */}
+                        <tr>
+                          <td className={`p-2 font-bold sticky left-0 bg-inherit ${t.textMain}`}>Inv. Inicial $</td>
+                          {otbMasterCalc.filas.map((f, i) => (
+                            <td key={i} className="p-1 text-right">
+                              {i === 0 ? (
+                                <NumberInputDeferred
+                                  value={otbMaster.invIni[0] ?? Math.round(f.invInicial)}
+                                  onCommit={(v) => setOtbMaster(prev => {
+                                    const arr = [...prev.invIni]; arr[0] = v;
+                                    return { ...prev, invIni: arr };
+                                  })}
+                                  className={`w-20 text-right font-mono px-1.5 py-0.5 rounded border ${
+                                    otbMaster.invIni[0] != null
+                                      ? (isDark ? 'bg-amber-500/20 border-amber-400 text-amber-200' : 'bg-amber-100 border-amber-400 text-amber-900')
+                                      : t.input
+                                  }`} />
+                              ) : (
+                                <span className={t.textPurple}>{fmt(f.invInicial, 0)}</span>
+                              )}
+                            </td>
+                          ))}
+                          <td className={`p-2 text-right font-mono font-black ${t.textPurple}`}>—</td>
+                        </tr>
+
+                        {/* Ventas $ — INPUT */}
+                        <tr>
+                          <td className={`p-2 font-bold sticky left-0 bg-inherit ${t.textMain}`}>
+                            Ventas $
+                            <select 
+                              value={otbMaster.modoVta} 
+                              onChange={e => setOtbMaster(prev => ({ ...prev, modoVta: e.target.value }))}
+                              className={`ml-2 text-[9px] px-1 py-0.5 rounded ${t.input}`}>
+                              <option value="mensual">Mensual</option>
+                              <option value="total">Total → distribuye</option>
+                            </select>
+                          </td>
+                          {otbMasterCalc.filas.map((f, i) => (
+                            <td key={i} className="p-1 text-right">
+                              <NumberInputDeferred
+                                value={otbMaster.vta[i] ?? Math.round(f.venta)}
+                                onCommit={(v) => setOtbMaster(prev => {
+                                  const arr = [...prev.vta]; arr[i] = v;
+                                  return { ...prev, vta: arr };
+                                })}
+                                className={`w-20 text-right font-mono px-1.5 py-0.5 rounded border ${
+                                  otbMaster.vta[i] != null
+                                    ? (isDark ? 'bg-amber-500/20 border-amber-400 text-amber-200' : 'bg-amber-100 border-amber-400 text-amber-900')
+                                    : t.input
+                                }`} />
+                            </td>
+                          ))}
+                          <td className="p-2 text-right">
+                            {otbMaster.modoVta === 'total' ? (
+                              <NumberInputDeferred
+                                value={otbMaster.totalVta ?? Math.round(otbMasterCalc.filas.reduce((s,f) => s+f.venta, 0))}
+                                onCommit={(v) => setOtbMaster(prev => ({ ...prev, totalVta: v }))}
+                                className={`w-24 text-right font-mono font-black px-2 py-1 rounded border ${
+                                  isDark ? 'bg-amber-500/20 border-amber-400 text-amber-200' : 'bg-amber-100 border-amber-400 text-amber-900'
+                                }`} />
+                            ) : (
+                              <span className={`font-mono font-black ${t.textYellow}`}>
+                                {fmt(otbMasterCalc.filas.reduce((s,f) => s+f.venta, 0), 0)}
+                              </span>
+                            )}
+                          </td>
+                        </tr>
+
+                        {/* Markdowns — DERIVADO */}
+                        <tr>
+                          <td className={`p-2 font-bold sticky left-0 bg-inherit ${t.textMuted}`}>Markdowns $</td>
+                          {otbMasterCalc.filas.map((f, i) => (
+                            <td key={i} className={`p-2 text-right font-mono ${t.textMuted}`}>{fmt(f.mkd, 0)}</td>
+                          ))}
+                          <td className={`p-2 text-right font-mono font-bold ${t.textMuted}`}>
+                            {fmt(otbMasterCalc.filas.reduce((s,f) => s+f.mkd, 0), 0)}
+                          </td>
+                        </tr>
+
+                        {/* MSI — DERIVADO */}
+                        <tr>
+                          <td className={`p-2 font-bold sticky left-0 bg-inherit ${t.textMuted}`}>Costo MSI $</td>
+                          {otbMasterCalc.filas.map((f, i) => (
+                            <td key={i} className={`p-2 text-right font-mono ${t.textMuted}`}>{fmt(f.msi, 0)}</td>
+                          ))}
+                          <td className={`p-2 text-right font-mono font-bold ${t.textMuted}`}>
+                            {fmt(otbMasterCalc.filas.reduce((s,f) => s+f.msi, 0), 0)}
+                          </td>
+                        </tr>
+
+                        {/* Compras — DERIVADO */}
+                        <tr className={isDark ? 'bg-violet-900/10' : 'bg-violet-50/30'}>
+                          <td className={`p-2 font-black sticky left-0 bg-inherit ${t.textPurple}`}>Compras Totales $</td>
+                          {otbMasterCalc.filas.map((f, i) => (
+                            <td key={i} className={`p-2 text-right font-mono font-bold ${t.textPurple}`}>{fmt(f.compra, 0)}</td>
+                          ))}
+                          <td className={`p-2 text-right font-mono font-black ${t.textPurple}`}>
+                            {fmt(otbMasterCalc.filas.reduce((s,f) => s+f.compra, 0), 0)}
+                          </td>
+                        </tr>
+
+                        {/* MG% — INPUT */}
+                        <tr>
+                          <td className={`p-2 font-bold sticky left-0 bg-inherit ${t.textMain}`}>
+                            MG %
+                            <select 
+                              value={otbMaster.modoMg} 
+                              onChange={e => setOtbMaster(prev => ({ ...prev, modoMg: e.target.value }))}
+                              className={`ml-2 text-[9px] px-1 py-0.5 rounded ${t.input}`}>
+                              <option value="total">Anual aplicado</option>
+                              <option value="mensual">Mensual</option>
+                            </select>
+                          </td>
+                          {otbMasterCalc.filas.map((f, i) => (
+                            <td key={i} className="p-1 text-right">
+                              {otbMaster.modoMg === 'mensual' ? (
+                                <NumberInputDeferred
+                                  value={otbMaster.mgPct[i] != null ? (otbMaster.mgPct[i]*100).toFixed(1) : (f.mgPct*100).toFixed(1)}
+                                  onCommit={(v) => setOtbMaster(prev => {
+                                    const arr = [...prev.mgPct]; arr[i] = v != null ? v/100 : null;
+                                    return { ...prev, mgPct: arr };
+                                  })}
+                                  className={`w-16 text-right font-mono px-1.5 py-0.5 rounded border ${t.input}`} />
+                              ) : (
+                                <span className={t.textMuted}>{(f.mgPct*100).toFixed(1)}%</span>
+                              )}
+                            </td>
+                          ))}
+                          <td className="p-2 text-right">
+                            {otbMaster.modoMg === 'total' ? (
+                              <NumberInputDeferred
+                                value={otbMaster.totalMg != null ? (otbMaster.totalMg*100).toFixed(1) : ''}
+                                placeholder={(otbMasterCalc.filas[0].mgPct*100).toFixed(1)}
+                                onCommit={(v) => setOtbMaster(prev => ({ ...prev, totalMg: v != null ? v/100 : null }))}
+                                className={`w-20 text-right font-mono font-black px-2 py-1 rounded border ${
+                                  isDark ? 'bg-amber-500/20 border-amber-400 text-amber-200' : 'bg-amber-100 border-amber-400 text-amber-900'
+                                }`} />
+                            ) : (
+                              <span className={`font-mono font-black ${t.textYellow}`}>—</span>
+                            )}
+                          </td>
+                        </tr>
+
+                        {/* Inv Final — DERIVADO */}
+                        <tr>
+                          <td className={`p-2 font-bold sticky left-0 bg-inherit ${t.textMuted}`}>Inv. Final $</td>
+                          {otbMasterCalc.filas.map((f, i) => (
+                            <td key={i} className={`p-2 text-right font-mono ${t.textMuted}`}>{fmt(f.invFinal, 0)}</td>
+                          ))}
+                          <td className={`p-2 text-right font-mono font-bold ${t.textMuted}`}>—</td>
+                        </tr>
+
+                        {/* Rotación — INPUT */}
+                        <tr>
+                          <td className={`p-2 font-bold sticky left-0 bg-inherit ${t.textMain}`}>Rotación</td>
+                          {otbMasterCalc.filas.map((f, i) => (
+                            <td key={i} className="p-1 text-right">
+                              <NumberInputDeferred
+                                value={otbMaster.rot[i] ?? f.rot.toFixed(2)}
+                                onCommit={(v) => setOtbMaster(prev => {
+                                  const arr = [...prev.rot]; arr[i] = v;
+                                  return { ...prev, rot: arr };
+                                })}
+                                className={`w-14 text-right font-mono px-1.5 py-0.5 rounded border ${
+                                  otbMaster.rot[i] != null
+                                    ? (isDark ? 'bg-amber-500/20 border-amber-400 text-amber-200' : 'bg-amber-100 border-amber-400 text-amber-900')
+                                    : t.input
+                                }`} />
+                            </td>
+                          ))}
+                          <td className={`p-2 text-right font-mono font-black ${t.textPurple}`}>
+                            {(otbMasterCalc.filas.reduce((s,f) => s+f.rot, 0) / 12).toFixed(2)}
+                          </td>
+                        </tr>
+
+                      </tbody>
+                    </table>
+                  </div>
+
+                  <p className={`text-[10px] mt-3 ${t.textMuted}`}>
+                    💡 Los inputs <span className={t.textYellow}>amarillos</span> son los 4 que tú das (Vta, Inv Inicial Ene, Mg%, Rot). El sistema deriva el resto manteniendo coherencia. Al cambiar el modo (Total/Mensual), captura una sola vez y se distribuye.
+                  </p>
+                </div>
+
                 <div className={`flex gap-1 border-b ${t.border} overflow-x-auto custom-scrollbar`}>
                   {[
                     { id: 'otb',    label: 'OTB Departamento',     icon: '💰' },
@@ -2800,6 +3109,8 @@ export default function Forecast() {
                               <th className="p-2 text-right">Override $</th>
                               <th className="p-2 text-right">OTB aplicado</th>
                               <th className="p-2 text-right">% Part. apl.</th>
+                              <th className="p-2 text-center">Estacionalidad</th>
+                              <th className="p-2 text-center">Ajuste %Part</th>
                               <th className="p-2 text-center"></th>
                             </tr>
                           </thead>
@@ -2838,6 +3149,34 @@ export default function Forecast() {
                                     {fmtMXN(d.aplicado)}
                                   </td>
                                   <td className={`p-2 text-right font-mono ${t.textMuted}`}>{fmtPct(d.partApl)}</td>
+                                  <td className="p-2">
+                                    <SparklineBarras
+                                      valores={(() => {
+                                        const meses = Array(12).fill(0);
+                                        planCruceCompleto.filter(r => r.goa === g).forEach(r => {
+                                          const cruce = forecastL1.mapa[`${r.centro}|${r.goa}`];
+                                          if (!cruce?.planEsc) return;
+                                          cruce.planEsc.base.forEach((m, i) => meses[i] += m.valor);
+                                        });
+                                        const sum = meses.reduce((s,v) => s+v, 0);
+                                        return sum > 0 ? meses.map(v => v / sum * d.aplicado) : meses;
+                                      })()}
+                                      color={isDark ? '#a78bfa' : '#7c3aed'}
+                                    />
+                                  </td>
+                                  <td className="p-2 text-center">
+                                    <NumberInputDeferred
+                                      value={(d.partApl * 100).toFixed(1)}
+                                      onCommit={(parsed) => {
+                                        const otbBase = otbTotal > 0 ? otbTotal : planSugeridoTotal;
+                                        setOtbOverridesGoa(prev => ({
+                                          ...prev,
+                                          [g]: (parsed || 0) / 100 * otbBase
+                                        }));
+                                      }}
+                                      className={`w-16 text-right font-mono text-xs px-1.5 py-1 rounded border ${t.input}`} />
+                                    <span className={`text-[9px] ${t.textMuted}`}>%</span>
+                                  </td>
                                   <td className="p-2 text-center">
                                     {tieneOverride && (
                                       <button onClick={() => setOtbOverridesGoa(prev => { const n = { ...prev }; delete n[g]; return n; })}
@@ -2857,7 +3196,7 @@ export default function Forecast() {
                               <td className="p-2"></td>
                               <td className={`p-2 text-right font-mono ${t.textPurple}`}>{fmtMXN(otbAplicadoTotal)}</td>
                               <td className={`p-2 text-right font-mono ${t.textMuted}`}>100%</td>
-                              <td></td>
+                              <td colSpan={3}></td>
                             </tr>
                           </tfoot>
                         </table>
@@ -2947,7 +3286,6 @@ export default function Forecast() {
                       </div>
                     </div>
 
-                    {/* Override por centro × GOA */}
                     <div className={`p-4 rounded-xl border ${t.cardInner}`}>
                       <h3 className={`text-xs font-black uppercase tracking-widest mb-3 ${t.textMuted}`}>
                         Override por Centro × GOA · Solo casos específicos (toma prioridad sobre crec. GOA)
@@ -3072,9 +3410,12 @@ export default function Forecast() {
                               <th className="p-2">Centro</th>
                               <th className="p-2">GOA</th>
                               <th className="p-2 text-right">Venta Plan</th>
-                              <th className="p-2 text-right">Rot. hist.</th>
-                              <th className="p-2 text-center">Rot. override</th>
-                              <th className="p-2 text-right">Rot. aplicada</th>
+                              {aniosCerrados.slice(-3).map(a => (
+                                <th key={a} className="p-2 text-right">Rot {a}</th>
+                              ))}
+                              <th className="p-2 text-right">Sugerida</th>
+                              <th className="p-2 text-center">Override</th>
+                              <th className="p-2 text-right">Aplicada</th>
                               <th className="p-2 text-right">Inv. Promedio</th>
                               <th className="p-2 text-center"></th>
                             </tr>
@@ -3089,13 +3430,19 @@ export default function Forecast() {
                                   </td>
                                   <td className="p-2"><span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${t.badgePurple}`}>{r.goa}</span></td>
                                   <td className={`p-2 text-right font-mono ${t.textPurple}`}>{fmt(r.ventaPlanFinal, 0)}</td>
-                                  <td className={`p-2 text-right font-mono ${r.rotHist > 0 ? t.textGray : 'opacity-40'}`}>
-                                    {r.rotHist > 0 ? r.rotHist.toFixed(2) : '—'}
+                                  {aniosCerrados.slice(-3).map(a => (
+                                    <td key={a} className={`p-2 text-right font-mono ${(r.rotPorAnio?.[a] || 0) > 0 ? t.textGray : 'opacity-40'}`}>
+                                      {(r.rotPorAnio?.[a] || 0) > 0 ? r.rotPorAnio[a].toFixed(2) : '—'}
+                                    </td>
+                                  ))}
+                                  <td className={`p-2 text-right font-mono ${r.rotSugerida > r.rotHist ? 'text-emerald-500' : t.textMuted}`}>
+                                    {r.rotSugerida > 0 ? r.rotSugerida.toFixed(2) : '—'}
+                                    {r.rotSugerida > r.rotHist && <span className="text-[8px] ml-0.5">↑</span>}
                                   </td>
                                   <td className="p-2 text-center">
                                     <NumberInputDeferred
                                       value={r.tieneRotOverride ? r.rotOverride.toFixed(2) : ''}
-                                      placeholder={r.rotHist > 0 ? r.rotHist.toFixed(2) : '0.00'}
+                                      placeholder={r.rotSugerida > 0 ? r.rotSugerida.toFixed(2) : '0.00'}
                                       onCommit={(parsed) => {
                                         setRotOverrides(prev => {
                                           const n = { ...prev };
@@ -3224,7 +3571,6 @@ export default function Forecast() {
                   </div>
                 )}
 
-                {/* Footer: export y reglas */}
                 <div className="flex items-center justify-between flex-wrap gap-2 pt-2">
                   <p className={`text-[10px] ${t.textMuted}`}>
                     💡 Prioridad de overrides: <strong>Centro</strong> &gt; <strong>GOA</strong> &gt; <strong>Sugerido</strong>. Todos los cambios se guardan automáticamente.
@@ -3239,12 +3585,128 @@ export default function Forecast() {
           </div>
         )}
 
-        {/* ══════════ TAB 4-7: PLACEHOLDERS ══════════ */}
-        {activeTab >= 4 && (
+        {/* ══════════ TAB 4: MATRIZ GOA × CENTRO ══════════ */}
+        {activeTab === 4 && (
+          <div className="p-5 space-y-5">
+            <div className={`p-4 rounded-xl border ${t.cardInner} flex items-center justify-between flex-wrap gap-2`}>
+              <div className="flex items-center gap-2">
+                <span className={`text-[10px] font-black uppercase tracking-widest ${t.textMuted}`}>Agrupar por:</span>
+                <div className={`flex rounded-lg border ${t.border} overflow-hidden`}>
+                  <button onClick={() => setT4Agrupacion('centro')}
+                    className={`px-3 py-1.5 text-xs font-bold ${t4Agrupacion === 'centro' ? t.btnPurple : t.btnGhost}`}>
+                    🏬 Centro
+                  </button>
+                  <button onClick={() => setT4Agrupacion('goa')}
+                    className={`px-3 py-1.5 text-xs font-bold ${t4Agrupacion === 'goa' ? t.btnPurple : t.btnGhost}`}>
+                    🎯 GOA
+                  </button>
+                </div>
+                <input placeholder="Filtrar..." value={t4Filtro} onChange={e => setT4Filtro(e.target.value)}
+                  className={`text-xs px-3 py-1.5 rounded border ${t.input}`} />
+              </div>
+              <button onClick={() => setT4Expandidas(new Set())}
+                className={`text-xs px-3 py-1.5 rounded ${t.btnGhost}`}>
+                Colapsar todo
+              </button>
+            </div>
+
+            <div className={`rounded-xl border ${t.cardInner} overflow-hidden`}>
+              <div className="overflow-x-auto custom-scrollbar max-h-[70vh]">
+                <table className="w-full text-left min-w-max text-xs">
+                  <thead>
+                    <tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark ? 'bg-zinc-900' : 'bg-gray-50'}`}>
+                      <th className="p-2 sticky left-0 bg-inherit">{t4Agrupacion === 'centro' ? 'Centro / GOA' : 'GOA / Centro'}</th>
+                      {MESES.map(m => <th key={m} className="p-2 text-right">{m}</th>)}
+                      <th className="p-2 text-right">Total</th>
+                      <th className="p-2 text-center">⚖️</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {t4DataAgrupada
+                      .filter(g => !t4Filtro || g.nombre.toLowerCase().includes(t4Filtro.toLowerCase()))
+                      .map(grupo => {
+                        const expandido = t4Expandidas.has(grupo.id);
+                        return (
+                          <React.Fragment key={grupo.id}>
+                            <tr className={`font-bold ${isDark ? 'bg-violet-900/10 hover:bg-violet-900/20' : 'bg-violet-50 hover:bg-violet-100'} cursor-pointer`}
+                                onClick={() => setT4Expandidas(prev => {
+                                  const n = new Set(prev);
+                                  n.has(grupo.id) ? n.delete(grupo.id) : n.add(grupo.id);
+                                  return n;
+                                })}>
+                              <td className={`p-2 sticky left-0 bg-inherit ${t.textMain}`}>
+                                <span className="inline-block w-4">{expandido ? '▼' : '▶'}</span>
+                                {grupo.nombre} <span className={`text-[9px] ${t.textMuted}`}>({grupo.hijos.length})</span>
+                              </td>
+                              {grupo.meses.map((v, i) => (
+                                <td key={i} className={`p-2 text-right font-mono ${t.textPurple}`}>{fmt(v, 0)}</td>
+                              ))}
+                              <td className={`p-2 text-right font-mono font-black ${t.textPurple}`}>{fmt(grupo.total, 0)}</td>
+                              <td className="p-2 text-center">
+                                <button onClick={(e) => { e.stopPropagation(); rebalancearTab4(grupo.id); }}
+                                  className={`text-[10px] px-2 py-0.5 rounded ${t.btnGhost}`}
+                                  title="Rebalancear diferencia entre celdas no bloqueadas">⚖️</button>
+                              </td>
+                            </tr>
+
+                            {expandido && grupo.hijos.map(hijo => (
+                              <tr key={`${hijo.centro}|${hijo.goa}`} className={`text-xs ${isDark ? 'hover:bg-zinc-800/30' : 'hover:bg-violet-50/30'}`}>
+                                <td className={`p-2 pl-8 sticky left-0 bg-inherit ${t.textMuted}`}>
+                                  {t4Agrupacion === 'centro'
+                                    ? <span><span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${t.badgePurple}`}>{hijo.goa}</span></span>
+                                    : <span className="font-mono">{hijo.centro} <span className={`text-[9px] ${t.textMuted}`}>· {hijo.nombre}</span></span>}
+                                </td>
+                                {hijo.meses.map((m, i) => {
+                                  const k = `${hijo.centro}|${hijo.goa}|${m.mes}`;
+                                  return (
+                                    <td key={i} className="p-1 text-right">
+                                      <div className="flex items-center justify-end gap-0.5">
+                                        <NumberInputDeferred
+                                          value={Math.round(m.valor)}
+                                          onCommit={(parsed) => {
+                                            setT4Overrides(prev => ({ ...prev, [k]: parsed ?? m.sugerido }));
+                                            setT4Locks(prev => new Set(prev).add(k));
+                                          }}
+                                          className={`w-16 text-right font-mono px-1 py-0.5 rounded border text-[10px] ${
+                                            m.isLocked
+                                              ? (isDark ? 'bg-amber-500/20 border-amber-400 text-amber-200' : 'bg-amber-100 border-amber-400 text-amber-900')
+                                              : t.input
+                                          }`} />
+                                        {m.isLocked && (
+                                          <button onClick={() => {
+                                            setT4Overrides(prev => { const n = {...prev}; delete n[k]; return n; });
+                                            setT4Locks(prev => { const n = new Set(prev); n.delete(k); return n; });
+                                          }} className="text-[10px]" title="Liberar candado">🔒</button>
+                                        )}
+                                      </div>
+                                    </td>
+                                  );
+                                })}
+                                <td className={`p-2 text-right font-mono font-bold ${t.textPurple}`}>
+                                  {fmt(hijo.meses.reduce((s,m) => s + m.valor, 0), 0)}
+                                </td>
+                                <td className="p-2"></td>
+                              </tr>
+                            ))}
+                          </React.Fragment>
+                        );
+                      })}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+
+            <p className={`text-[10px] ${t.textMuted}`}>
+              💡 Click en un valor → se marca con 🔒 (intocable). Click en el 🔒 → libera. Botón ⚖️ rebalancea diferencia solo entre celdas sin candado.
+            </p>
+          </div>
+        )}
+
+        {/* ══════════ TAB 5-7: PLACEHOLDERS ══════════ */}
+        {activeTab >= 5 && (
           <div className="p-8 flex flex-col items-center justify-center text-center min-h-[40vh]">
             <Icons.Settings size={32} className={`${isDark ? 'text-zinc-600' : 'text-gray-300'} mb-3`} />
             <p className={`text-sm font-bold ${t.textMain}`}>
-              {activeTab === 4 && 'Matriz GOA × Centro'}
               {activeTab === 5 && 'Plan x Tienda'}
               {activeTab === 6 && 'Canales'}
               {activeTab === 7 && 'Resumen OTB'}
