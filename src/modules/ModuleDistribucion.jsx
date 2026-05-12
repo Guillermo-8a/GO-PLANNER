@@ -2417,41 +2417,55 @@ useEffect(() => {
 
   // --- TABLA RESUMEN dashboard: combinaciones tienda/modelo/talla con MOS ---
   const summaryData = useMemo(() => {
-    if (filteredDistResult.length === 0) return { rows: [], avgQty: 0, maxQty: 0, avgMos: 0, maxMos: 0 };
+    if (filteredDistResult.length === 0) return { rows: [], avgQty: 0, maxQty: 0, avgMos: 0, maxMos: 0, negativeOHCount: 0 };
+
+    let negativeOHCount = 0;
 
     const rows = filteredDistResult.map(r => {
       const store = stores.find(s => s.centerCode === r.centro);
       const goaKey = r.goa.toUpperCase();
       const tallaKey = r.talla?.toUpperCase() || 'UNICA';
       const sizeKey = `${goaKey}|${tallaKey}`;
-      // OH efectivo: OH original + qty asignada en esta corrida
-      const ohOriginal = (store?.goaSizeOH?.[sizeKey] !== undefined && tallaKey !== 'UNICA' && tallaKey !== 'N/A')
+
+      // OH original a nivel GOA/Talla cuando hay talla, sino a nivel GOA
+      let ohRaw = (store?.goaSizeOH?.[sizeKey] !== undefined && tallaKey !== 'UNICA' && tallaKey !== 'N/A')
         ? (store.goaSizeOH[sizeKey] || 0)
         : (store?.goaOH?.[goaKey] || 0);
-      const oo = (store?.goaSizeOO?.[sizeKey] !== undefined && tallaKey !== 'UNICA' && tallaKey !== 'N/A')
+
+      // Sanitizar OH negativo (mermas, ajustes mal capturados)
+      const ohOriginal = ohRaw < 0 ? 0 : ohRaw;
+      const ohNegativeFlag = ohRaw < 0;
+      if (ohNegativeFlag) negativeOHCount++;
+
+      const ooRaw = (store?.goaSizeOO?.[sizeKey] !== undefined && tallaKey !== 'UNICA' && tallaKey !== 'N/A')
         ? (store.goaSizeOO[sizeKey] || 0)
         : (store?.goaOO?.[goaKey] || 0);
+      const oo = ooRaw < 0 ? 0 : ooRaw;
+
       const ohEff = ohOriginal + r.qty;
-      // Venta mensual
+
+      // Venta mensual: prioriza VTA3M si existe
       let ventaMensual = 0;
       if (tallaKey !== 'UNICA' && tallaKey !== 'N/A') {
-        const v3m = store?.goaSizeTrend3M?.[sizeKey] || 0;
+        const v3m = Math.max(0, store?.goaSizeTrend3M?.[sizeKey] || 0);
         if (v3m > 0) ventaMensual = v3m / 3;
-        else ventaMensual = (store?.goaSizeSales?.[sizeKey] || 0) / 12;
+        else ventaMensual = Math.max(0, store?.goaSizeSales?.[sizeKey] || 0) / 12;
       } else {
-        const v3m = store?.goaTrend3M?.[goaKey] || 0;
+        const v3m = Math.max(0, store?.goaTrend3M?.[goaKey] || 0);
         if (v3m > 0) ventaMensual = v3m / 3;
-        else ventaMensual = (store?.goaSales?.[goaKey] || 0) / 12;
+        else ventaMensual = Math.max(0, store?.goaSales?.[goaKey] || 0) / 12;
       }
       const mos = ventaMensual > 0 ? (ohEff + oo) / ventaMensual : (ohEff + oo > 0 ? 999 : 0);
-      const ventaAnual = (tallaKey !== 'UNICA' && tallaKey !== 'N/A')
-        ? (store?.goaSizeSales?.[sizeKey] || 0)
-        : (store?.goaSales?.[goaKey] || 0);
+      const ventaAnualNivelGoaTalla = (tallaKey !== 'UNICA' && tallaKey !== 'N/A')
+        ? Math.max(0, store?.goaSizeSales?.[sizeKey] || 0)
+        : Math.max(0, store?.goaSales?.[goaKey] || 0);
+
       return {
         ...r,
-        ohOriginal, oo, ohEff,
+        ohRaw, ohOriginal, ohNegativeFlag, oo, ohEff,
         mos: Math.min(mos, 999),
-        ventaAnual,
+        ventaAnual: ventaAnualNivelGoaTalla,
+        ventaMensual,
       };
     });
 
@@ -2461,7 +2475,7 @@ useEffect(() => {
     const avgMos = validMos.length > 0 ? validMos.reduce((s, r) => s + r.mos, 0) / validMos.length : 0;
     const maxMos = validMos.length > 0 ? Math.max(...validMos.map(r => r.mos)) : 0;
 
-    return { rows, avgQty, maxQty, avgMos, maxMos };
+    return { rows, avgQty, maxQty, avgMos, maxMos, negativeOHCount };
   }, [filteredDistResult, stores]);
 
   const summaryFiltered = useMemo(() => {
@@ -3970,6 +3984,12 @@ useEffect(() => {
                       <span className="text-amber-500">🔥 = En el máximo (top opportunity)</span>
                     </div>
 
+                    {summaryData.negativeOHCount > 0 && (
+                      <div className={`mb-3 p-2 rounded-lg border-l-4 border-amber-500 text-[11px] ${theme==='dark'?'bg-amber-900/20 text-amber-300':'bg-amber-50 text-amber-800'}`}>
+                        ⚠️ <strong>{summaryData.negativeOHCount} combinaciones con OH negativo</strong> (mermas, ajustes contables, devoluciones mal capturadas). El sistema los trata como OH=0 para no romper el cálculo de MOS. Revísalos en SAP.
+                      </div>
+                    )}
+
                     <div className="overflow-auto max-h-[60vh] custom-scrollbar">
                       <table className="w-full text-left border-collapse text-xs">
                         <thead className="sticky top-0 z-10">
@@ -3978,20 +3998,22 @@ useEffect(() => {
                             <th className="p-2">Cluster</th>
                             <th className="p-2">GOA / Modelo</th>
                             <th className="p-2">Talla</th>
-                            <th className="p-2 text-right">Qty</th>
-                            <th className="p-2 text-right">Venta Anual</th>
-                            <th className="p-2 text-right">OH+Qty</th>
-                            <th className="p-2 text-right">MOS</th>
+                            <th className="p-2 text-right">Qty enviada</th>
+                            <th className="p-2 text-right" title="Venta histórica agregada a nivel GOA/Talla en esta tienda (suma de todos los SKUs de esa talla en ese GOA)">Vta 12M (GOA/Talla)</th>
+                            <th className="p-2 text-right" title="OH inicial sanitizado: si era negativo se trata como 0">OH inicial</th>
+                            <th className="p-2 text-right">OO</th>
+                            <th className="p-2 text-right" title="OH inicial + OO + Qty enviada">Total OH+OO+Qty</th>
+                            <th className="p-2 text-right" title="MOS = (OH+OO+Qty) / venta_mensual. Usa VTA3M si está disponible, sino vta_anual / 12">MOS Final</th>
                           </tr>
                         </thead>
                         <tbody className={`divide-y ${theme==='dark'?'divide-zinc-800/50':'divide-gray-200'}`}>
                           {summaryFiltered.slice(0, 200).map((r, i) => {
                             const isMaxQty = r.qty >= summaryData.maxQty * 0.95;
                             const isAboveAvgQty = r.qty > summaryData.avgQty;
-                            const isMaxVenta = r.ventaAnual > 0 && r.ventaAnual >= summaryData.maxQty * 12 * 0.5;
                             const mosValid = r.mos < 100;
                             const isMosHigh = mosValid && r.mos > summaryData.avgMos * 1.3;
                             const isMosLow = mosValid && r.mos < summaryData.avgMos * 0.7 && r.mos > 0;
+                            const totalFinal = r.ohOriginal + r.oo + r.qty;
                             return (
                               <tr key={i} className={`${theme==='dark'?'hover:bg-zinc-800/30':'hover:bg-gray-50'}`}>
                                 <td className={`p-2 ${t.textMain}`}>
@@ -4003,14 +4025,18 @@ useEffect(() => {
                                 </td>
                                 <td className={`p-2 ${t.textMain}`}>
                                   <div className="font-bold">{r.goa}</div>
-                                  <div className={`text-[10px] ${t.textMuted}`}>{r.modelo} · {r.marca}</div>
+                                  <div className={`text-[10px] ${t.textMuted}`}>{r.modelo} · {r.marca} · <span className="font-mono">{r.sku}</span></div>
                                 </td>
                                 <td className={`p-2 font-mono font-bold text-amber-500`}>{r.talla}</td>
                                 <td className={`p-2 text-right font-mono font-bold ${isMaxQty ? 'text-amber-400 bg-amber-500/10' : isAboveAvgQty ? 'text-emerald-400' : t.textMain}`}>
                                   {isMaxQty ? '🔥 ' : isAboveAvgQty ? '🌟 ' : ''}{r.qty}
                                 </td>
                                 <td className={`p-2 text-right font-mono ${t.textMuted}`}>{Math.round(r.ventaAnual).toLocaleString()}</td>
-                                <td className={`p-2 text-right font-mono ${t.textMain}`}>{r.ohEff}</td>
+                                <td className={`p-2 text-right font-mono ${r.ohNegativeFlag ? 'text-amber-500' : t.textMuted}`}>
+                                  {r.ohNegativeFlag ? `${r.ohRaw} ⚠` : r.ohOriginal}
+                                </td>
+                                <td className={`p-2 text-right font-mono ${t.textMuted}`}>{r.oo}</td>
+                                <td className={`p-2 text-right font-mono font-bold ${t.textMain}`}>{totalFinal}</td>
                                 <td className={`p-2 text-right font-mono font-bold ${!mosValid ? 'text-gray-500' : isMosHigh ? 'text-red-500 bg-red-500/10' : isMosLow ? 'text-emerald-500 bg-emerald-500/10' : t.textMain}`}>
                                   {!mosValid ? '∞' : `${r.mos.toFixed(1)}m`}
                                 </td>
