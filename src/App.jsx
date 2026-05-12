@@ -15,10 +15,8 @@ import ModuleTraslados from './modules/ModuleTraslados';
 import ModulePlanning from "./modules/ModulePlanning" ;
 
 import {
-  Layers, Menu, Bell, Sun, Moon,
-  TrendingUp, ShoppingCart, Map, RefreshCw, LayoutDashboard,
-  HelpCircle, X, Zap, ArrowLeftRight,
-} from 'lucide-react';
+  Layers, Bell, Sun, Moon, ShoppingCart, Map, LayoutDashboard,
+  HelpCircle, Zap,} from 'lucide-react';
 
 // ─── Paletas de tema ──────────────────────────────────────────────────────────
 export const THEMES = {
