@@ -38,8 +38,8 @@ const BarCompare = ({ data, theme }) => {
     <div className="space-y-2 mt-2">
       {data.slice(0, 12).map((d, i) => (
         <div key={i} className="flex items-center gap-2 text-[10px]">
-          <span className={`w-24 truncate text-right font-mono ${isDark ? 'text-gray-400' : 'text-gray-500'}`} title={d.centro}>
-            {d.centro}
+          <span className={`w-36 truncate text-right font-mono ${isDark ? 'text-gray-400' : 'text-gray-500'}`} title={`${d.nombre || d.centro} (${d.centro})`}>
+            {d.nombre ? `${d.nombre}` : d.centro} <span className="opacity-50">({d.centro})</span>
           </span>
           <div className="flex-1 flex flex-col gap-0.5">
             <div className="relative h-2 rounded-full bg-zinc-700/30 overflow-hidden">
@@ -112,7 +112,8 @@ export default function Traslados() {
   const theme    = gState?.theme || 'light';
   const isDark   = theme === 'dark';
 
-  const [activeTab, setActiveTab] = useState(1);
+  const [activeTab, setActiveTab] = useState(0); // 0=Dashboard, 1=Excedente, 2=Necesidad
+  const [mesActual, setMesActual] = useState(5); // mes del año para MOS
 
   // ── Temas ──────────────────────────────────────────────────────────────
   const themes = {
@@ -171,8 +172,84 @@ export default function Traslados() {
   const [filterMarca,   setFilterMarca]   = useState('ALL');
   const [filterGoa,     setFilterGoa]     = useState('ALL');
 
-  const [excResult, setExcResult] = useState([]);   // traslados calculados
+  const [excResult, setExcResult] = useState([]);
   const [excLoading, setExcLoading] = useState(false);
+
+  // Dashboard: artículos de temporada fuera de zona (antes de ejecutar traslados)
+  const dashboardData = useMemo(() => {
+    if (!rawData.length || !Object.keys(goasTemporada).length) return null;
+
+    const CLIMA_COMP = {
+      FRIO:  (tc) => ['FRIO','EXTREMOSO','TEMPLADO',''].includes(tc),
+      CALOR: (tc) => ['CALOR','PLAYA','EXTREMOSO','TEMPLADO',''].includes(tc),
+      PLAYA: (tc) => ['PLAYA','CALOR'].includes(tc),
+    };
+
+    const fuera = rawData.filter(r => {
+      const tipoClima = goasTemporada[r.goa];
+      if (!tipoClima || tipoClima === 'TODO') return false;
+      if (r.oh <= 0) return false;
+      const tc = (climaMatrix[r.centro] || r.tipoCentro || '').toUpperCase();
+      const ok = CLIMA_COMP[tipoClima]?.(tc) ?? true;
+      return !ok;
+    });
+
+    if (!fuera.length) return { fuera: [], totalPzs: 0, totalPesos: 0, porGoa: [], porDesc: [], porCentro: [] };
+
+    const totalPzs   = fuera.reduce((s, r) => s + r.oh, 0);
+    const totalPesos = fuera.reduce((s, r) => s + r.oh * r.precio, 0);
+    const totalVta   = fuera.reduce((s, r) => s + r.vta, 0);
+    const vtaMes     = mesActual > 0 ? totalVta / mesActual : 0;
+    const mos        = vtaMes > 0 ? +(totalPzs / vtaMes).toFixed(1) : null;
+
+    // Por GOA
+    const goaMap = {};
+    fuera.forEach(r => {
+      if (!goaMap[r.goa]) goaMap[r.goa] = { pzs: 0, pesos: 0, vta: 0, conDesc: 0, sinDesc: 0 };
+      goaMap[r.goa].pzs   += r.oh;
+      goaMap[r.goa].pesos += r.oh * r.precio;
+      goaMap[r.goa].vta   += r.vta;
+      if (r.letraDesc) goaMap[r.goa].conDesc += r.oh; else goaMap[r.goa].sinDesc += r.oh;
+    });
+    const porGoa = Object.entries(goaMap)
+      .map(([goa, d]) => ({
+        goa, ...d,
+        mos: d.vta > 0 && mesActual > 0 ? +(d.pzs / (d.vta / mesActual)).toFixed(1) : null,
+        pctPzs: totalPzs > 0 ? +((d.pzs / totalPzs) * 100).toFixed(1) : 0,
+      }))
+      .sort((a, b) => b.pesos - a.pesos);
+
+    // Por letra de descuento
+    const descMap = {};
+    fuera.forEach(r => {
+      const k = r.letraDesc || 'Sin descuento';
+      if (!descMap[k]) descMap[k] = { pzs: 0, pesos: 0 };
+      descMap[k].pzs   += r.oh;
+      descMap[k].pesos += r.oh * r.precio;
+    });
+    const porDesc = Object.entries(descMap)
+      .map(([letra, d]) => ({ letra, ...d, pct: totalPzs > 0 ? +((d.pzs/totalPzs)*100).toFixed(1) : 0 }))
+      .sort((a, b) => b.pesos - a.pesos);
+
+    // Por centro (top 15 por pesos)
+    const centroMap = {};
+    fuera.forEach(r => {
+      const k = r.centro;
+      if (!centroMap[k]) centroMap[k] = { nombre: r.nCentro || r.centro, pzs: 0, pesos: 0, vta: 0 };
+      centroMap[k].pzs   += r.oh;
+      centroMap[k].pesos += r.oh * r.precio;
+      centroMap[k].vta   += r.vta;
+    });
+    const porCentro = Object.entries(centroMap)
+      .map(([id, d]) => ({
+        id, ...d,
+        mos: d.vta > 0 && mesActual > 0 ? +(d.pzs / (d.vta / mesActual)).toFixed(1) : null,
+      }))
+      .sort((a, b) => b.pesos - a.pesos)
+      .slice(0, 15);
+
+    return { fuera, totalPzs, totalPesos, totalVta, mos, porGoa, porDesc, porCentro };
+  }, [rawData, goasTemporada, climaMatrix, mesActual]);
 
   // Persistencia Tab 1
   useEffect(() => {
@@ -209,21 +286,21 @@ export default function Traslados() {
       const H = rows[0].map(h => h.toUpperCase().trim());
       const idx = (names) => names.map(n => H.findIndex(h => h === n || h.includes(n))).find(i => i >= 0) ?? -1;
 
-      const iSeccion  = idx(['SECCION', 'SECCIÓN', 'SECTION']);
-      const iNumSec   = idx(['NUM_SECCION', 'NUMSEC', 'NUMERO_SECCION', 'NUM SEC']);
-      const iGoa      = idx(['GOA', 'FAMILIA']);
-      const iSku      = idx(['SKU', 'ARTICULO', 'MATERIAL']);
-      const iNSku     = idx(['NSKU', 'N_SKU', 'DESC_SKU', 'NOMBRE_SKU', 'DESCRIPCION', 'DESC']);
-      const iModelo   = idx(['MODELO', 'MODEL']);
-      const iMarca    = idx(['MARCA', 'BRAND']);
-      const iCentro   = idx(['CENTRO', 'ID', 'TIENDA']);
-      const iNCentro  = idx(['N_CENTRO', 'NCENTRO', 'NUM_CENTRO', 'ID_CENTRO', 'COD_CENTRO']);
-      const iOH       = idx(['OH', 'INV', 'INVENTARIO', 'STOCK', 'EXISTENCIAS']);
-      const iPrecio   = idx(['PRECIO', 'PVP', 'PRICE', 'COSTO']);
+      const iSeccion    = idx(['SECCION', 'SECCIÓN', 'SECTION']);
+      const iNomSec     = idx(['NOMBRE', 'NOM_SECCION', 'NOMBRE_SECCION']); // NOMBRE = nombre de sección
+      const iGoa        = idx(['GOA', 'FAMILIA']);
+      const iSku        = idx(['SKU', 'ARTICULO', 'MATERIAL']);
+      const iNSku       = idx(['NSKU', 'N_SKU', 'DESC_SKU', 'NOMBRE_SKU', 'DESCRIPCION']);
+      const iModelo     = idx(['MODELO', 'MODEL']);
+      const iMarca      = idx(['MARCA', 'BRAND']);
+      const iCentro     = idx(['CENTRO', 'ID_CENTRO', 'NUM_CENTRO']); // número de centro
+      const iNCentro    = idx(['N_CENTRO', 'NCENTRO', 'NOMBRE_CENTRO', 'NOM_CENTRO']); // nombre tienda
+      const iOH         = idx(['OH', 'INV', 'INVENTARIO', 'STOCK', 'EXISTENCIAS']);
+      const iPrecio     = idx(['PRECIO', 'PVP', 'PRICE', 'COSTO']);
       const iTipoCentro = idx(['TIPO_CENTRO', 'TIPO CENTRO', 'TIPO', 'TIPO_TIENDA']);
-      const iZona     = idx(['ZONA', 'REGION', 'DISTRITO', 'ZONA_CENTRO']);
-      const iVta      = idx(['VTA', 'VENTAS', 'VTAS', 'SALES']);
-      const iNombre   = idx(['NOMBRE', 'NOMBRE_CENTRO', 'DESC CENTRO']);
+      const iZona       = idx(['ZONA', 'REGION', 'DISTRITO', 'ZONA_CENTRO']);
+      const iVta        = idx(['VTA', 'VENTAS', 'VTAS', 'SALES']);
+      const iLetraDesc  = idx(['LETRA _DESC', 'LETRA_DESC', 'LETRA DESC', 'DESC', 'DESCUENTO']);
 
       if (iGoa === -1 || iSku === -1 || iCentro === -1) {
         alert('El CSV debe tener mínimo: GOA, SKU, CENTRO'); return;
@@ -234,21 +311,21 @@ export default function Traslados() {
         const r = rows[i];
         if (!r[iCentro] || !r[iGoa]) continue;
         extracted.push({
-          seccion:    iSeccion   >= 0 ? r[iSeccion].trim()   : 'GENERAL',
-          numSeccion: iNumSec    >= 0 ? r[iNumSec].trim()    : '',
+          numSeccion: iSeccion   >= 0 ? r[iSeccion].trim()    : '',   // número sección
+          seccion:    iNomSec    >= 0 ? r[iNomSec].trim()     : 'GENERAL', // nombre sección
           goa:        r[iGoa].trim().toUpperCase(),
-          sku:        iSku       >= 0 ? r[iSku].trim()       : '',
-          nsku:       iNSku      >= 0 ? r[iNSku].trim()      : '',
-          modelo:     iModelo    >= 0 ? r[iModelo].trim().toUpperCase() : '',
-          marca:      iMarca     >= 0 ? r[iMarca].trim().toUpperCase() : '',
-          centro:     r[iCentro].trim(),
-          nCentro:    iNCentro   >= 0 ? r[iNCentro].trim()   : '',
-          nombre:     iNombre    >= 0 ? r[iNombre].trim()    : r[iCentro].trim(),
+          sku:        iSku       >= 0 ? r[iSku].trim()        : '',
+          nsku:       iNSku      >= 0 ? r[iNSku].trim()       : '',
+          modelo:     iModelo    >= 0 ? r[iModelo].trim().toUpperCase()  : '',
+          marca:      iMarca     >= 0 ? r[iMarca].trim().toUpperCase()   : '',
+          centro:     r[iCentro].trim(),                                // número de centro
+          nCentro:    iNCentro   >= 0 ? r[iNCentro].trim()    : '',    // nombre tienda
           oh:         num(iOH    >= 0 ? r[iOH]     : 0),
-          precio:     num(iPrecio >= 0 ? r[iPrecio]  : 0),
+          precio:     num(iPrecio >= 0 ? r[iPrecio] : 0),
           tipoCentro: iTipoCentro >= 0 ? r[iTipoCentro].trim().toUpperCase() : '',
-          zona:       iZona      >= 0 ? r[iZona].trim().toUpperCase()    : '',
+          zona:       iZona      >= 0 ? r[iZona].trim().toUpperCase()   : '',
           vta:        num(iVta   >= 0 ? r[iVta]    : 0),
+          letraDesc:  iLetraDesc >= 0 ? r[iLetraDesc].trim()  : '',
         });
       }
       setRawData(extracted);
@@ -457,15 +534,17 @@ export default function Traslados() {
           if (!receptor) return;
 
           resultado.push({
-            seccion:    meta.seccion,
-            numSeccion: meta.numSeccion,
-            sku:        meta.sku,
+            seccion:            meta.seccion,       // nombre sección
+            numSeccion:         meta.numSeccion,    // número sección
+            sku:                meta.sku,
             marca,
             goa,
-            centroSalida:       centroOrigen,
-            nombreSalida:       dataOrigen.nombre || centroOrigen,
-            centroReceptor:     receptor.centro,
-            nombreReceptor:     receptor.data.nombre || receptor.centro,
+            // Salida: nCentro=nombre tienda, centro=número
+            centroSalida:       meta.sku ? dataOrigen.centro : centroOrigen, // número
+            nombreSalida:       dataOrigen.nCentro || centroOrigen,           // nombre tienda
+            // Receptor
+            centroReceptor:     receptor.centro,                              // número
+            nombreReceptor:     receptor.data.nCentro || receptor.centro,     // nombre tienda
             pzs:                dataOrigen.oh,
             pesos:              dataOrigen.oh * (dataOrigen.precio || 0),
             precio:             dataOrigen.precio,
@@ -500,9 +579,12 @@ export default function Traslados() {
       salidas[r.centroSalida] += r.pzs;
     });
 
+    const nombrePorCentro = {};
+    rawData.forEach(r => { if (r.centro) nombrePorCentro[r.centro] = r.nCentro || r.centro; });
     const centros = new Set([...Object.keys(byOrigen), ...Object.keys(byReceptor)]);
     return Array.from(centros).map(c => ({
       centro: c,
+      nombre: nombrePorCentro[c] || c,
       antes:  byOrigen[c]   || 0,
       despues: Math.max(0, (byOrigen[c] || 0) - (salidas[c] || 0) + (byReceptor[c] || 0)),
     })).sort((a, b) => b.antes - a.antes).slice(0, 15);
@@ -926,6 +1008,9 @@ export default function Traslados() {
       {/* ── TABS ── */}
       <div className={`rounded-2xl border overflow-hidden ${t.card}`}>
         <div className={`flex border-b ${t.border} px-2`}>
+          <button className={tabStyle(0)} onClick={() => setActiveTab(0)}>
+            📊 Dashboard
+          </button>
           <button className={tabStyle(1)} onClick={() => setActiveTab(1)}>
             🔁 Excedente de Temporada
           </button>
@@ -933,6 +1018,134 @@ export default function Traslados() {
             📦 Por Necesidad
           </button>
         </div>
+
+        {/* ══════════ TAB 0: DASHBOARD ══════════ */}
+        {activeTab === 0 && (
+          <div className="p-5 space-y-5">
+            {/* Mes actual config */}
+            <div className={`flex items-center gap-4 p-4 rounded-xl border ${t.cardInner}`}>
+              <span className={`text-xs font-black uppercase tracking-widest ${t.textMuted}`}>Mes actual (para MOS)</span>
+              <input type="number" min={1} max={12} value={mesActual}
+                onChange={e => setMesActual(Number(e.target.value))}
+                className={`w-20 text-xs px-3 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`} />
+              <span className={`text-[10px] ${t.textMuted}`}>MOS = OH ÷ (VTA acum ÷ mes)</span>
+            </div>
+
+            {dashboardData && dashboardData.fuera.length > 0 ? (
+              <>
+                {/* KPIs principales */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {[
+                    { label: 'SKUs fuera de zona', val: dashboardData.fuera.length, color: 'text-red-400' },
+                    { label: 'Piezas en riesgo',   val: fmt(dashboardData.totalPzs), color: t.textAccent1 },
+                    { label: 'Importe en riesgo',  val: fmtMXN(dashboardData.totalPesos), color: 'text-amber-400' },
+                    { label: 'MOS global',         val: dashboardData.mos != null ? `${dashboardData.mos} meses` : 'N/D', color: dashboardData.mos > 3 ? 'text-red-400' : 'text-emerald-400' },
+                  ].map(({ label, val, color }) => (
+                    <div key={label} className={`p-4 rounded-xl border ${t.cardInner}`}>
+                      <div className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} mb-1`}>{label}</div>
+                      <div className={`text-lg font-black ${color}`}>{val}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Por GOA */}
+                <div className={`p-4 rounded-xl border ${t.cardInner}`}>
+                  <h4 className={`text-sm font-bold mb-3 ${t.textMain}`}>📦 Por GOA</h4>
+                  <div className="overflow-x-auto custom-scrollbar">
+                    <table className="w-full text-left text-xs min-w-max">
+                      <thead>
+                        <tr className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} border-b ${t.border}`}>
+                          {['GOA', 'Pzs', '% del total', 'Importe', 'MOS', 'Con desc', 'Sin desc'].map(h =>
+                            <th key={h} className="p-2 whitespace-nowrap">{h}</th>)}
+                        </tr>
+                      </thead>
+                      <tbody className={`divide-y ${isDark ? 'divide-zinc-800/50' : 'divide-gray-100'}`}>
+                        {dashboardData.porGoa.map((r, i) => (
+                          <tr key={i} className="hover:opacity-80 transition-opacity">
+                            <td className="p-2"><span className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${t.badge}`}>{r.goa}</span></td>
+                            <td className={`p-2 font-black ${t.textMain}`}>{fmt(r.pzs)}</td>
+                            <td className="p-2">
+                              <div className="flex items-center gap-2">
+                                <div className={`h-1.5 rounded-full ${isDark ? 'bg-zinc-700' : 'bg-gray-200'} w-20 overflow-hidden`}>
+                                  <div className="h-full rounded-full bg-orange-400" style={{width: `${r.pctPzs}%`}} />
+                                </div>
+                                <span className={`text-[10px] font-mono ${t.textMuted}`}>{r.pctPzs}%</span>
+                              </div>
+                            </td>
+                            <td className={`p-2 font-mono text-amber-400`}>{fmtMXN(r.pesos)}</td>
+                            <td className={`p-2 font-black ${r.mos == null ? t.textMuted : r.mos > 3 ? 'text-red-400' : 'text-emerald-400'}`}>
+                              {r.mos != null ? `${r.mos}m` : 'N/D'}
+                            </td>
+                            <td className={`p-2 text-emerald-400 font-mono`}>{fmt(r.conDesc)}</td>
+                            <td className={`p-2 text-red-400 font-mono`}>{fmt(r.sinDesc)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Por descuento */}
+                <div className={`p-4 rounded-xl border ${t.cardInner}`}>
+                  <h4 className={`text-sm font-bold mb-3 ${t.textMain}`}>🏷️ Por Letra de Descuento</h4>
+                  <div className="flex flex-wrap gap-3">
+                    {dashboardData.porDesc.map((r, i) => (
+                      <div key={i} className={`p-3 rounded-xl border flex-1 min-w-[120px] ${t.cardInner}`}>
+                        <div className={`text-[10px] font-black uppercase ${t.textMuted} mb-1`}>{r.letra}</div>
+                        <div className={`text-base font-black ${t.textMain}`}>{fmt(r.pzs)} pzs</div>
+                        <div className={`text-[10px] text-amber-400 font-mono`}>{fmtMXN(r.pesos)}</div>
+                        <div className={`text-[9px] ${t.textMuted} mt-0.5`}>{r.pct}% del total</div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Por centro (top 15) */}
+                <div className={`p-4 rounded-xl border ${t.cardInner}`}>
+                  <h4 className={`text-sm font-bold mb-3 ${t.textMain}`}>🏪 Top 15 Centros con Mayor Importe Fuera de Zona</h4>
+                  <div className="space-y-2">
+                    {dashboardData.porCentro.map((r, i) => {
+                      const maxPesos = dashboardData.porCentro[0]?.pesos || 1;
+                      return (
+                        <div key={i} className="flex items-center gap-3">
+                          <span className={`w-40 truncate text-[10px] font-bold text-right ${t.textMain}`} title={r.nombre}>
+                            {r.nombre} <span className={`font-mono ${t.textMuted}`}>({r.id})</span>
+                          </span>
+                          <div className="flex-1 relative h-5 rounded-lg overflow-hidden bg-zinc-700/20">
+                            <div className="absolute left-0 top-0 h-full rounded-lg bg-orange-400/70 flex items-center pl-2"
+                              style={{width: `${(r.pesos/maxPesos)*100}%`, minWidth: '1%'}}>
+                            </div>
+                            <span className={`absolute left-2 top-0 h-full flex items-center text-[9px] font-black ${r.pesos/maxPesos > 0.3 ? 'text-black' : t.textMain}`}>
+                              {fmtMXN(r.pesos)} · {fmt(r.pzs)} pzs
+                            </span>
+                          </div>
+                          <span className={`w-14 text-right text-[10px] font-black ${r.mos == null ? t.textMuted : r.mos > 3 ? 'text-red-400' : 'text-emerald-400'}`}>
+                            {r.mos != null ? `${r.mos}m` : 'N/D'}
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="flex gap-4 mt-3 text-[9px]">
+                    <span className={t.textMuted}>Barra = importe</span>
+                    <span className="text-emerald-400">Verde = MOS ≤3 meses (ok)</span>
+                    <span className="text-red-400">Rojo = MOS &gt;3 (crítico)</span>
+                  </div>
+                </div>
+              </>
+            ) : (
+              <div className={`p-10 rounded-xl border flex flex-col items-center justify-center text-center ${t.cardInner}`}>
+                <Icons.BarChart2 size={36} className={`${isDark ? 'text-zinc-600' : 'text-gray-300'} mb-3`} />
+                <p className={`text-sm font-bold ${t.textMain}`}>Dashboard listo</p>
+                <p className={`text-xs mt-1 ${t.textMuted}`}>
+                  {!rawData.length ? 'Carga el CSV de artículos primero.' :
+                   !Object.keys(goasTemporada).length ? 'Configura los GOAs de temporada en la tab "Excedente de Temporada".' :
+                   'No se detectaron artículos de temporada fuera de zona con los GOAs configurados.'}
+                </p>
+              </div>
+            )}
+          </div>
+        )}
 
         {/* ══════════ TAB 1: EXCEDENTE ══════════ */}
         {activeTab === 1 && (
