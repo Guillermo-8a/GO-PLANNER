@@ -461,7 +461,7 @@ export default function Forecast() {
         return next;
       });
 
-      const maxAnio = Math.max(...extracted.map(r => r.anio));
+      const maxAnio = extracted.reduce((max, r) => r.anio > max ? r.anio : max, 0);
       if (maxAnio) setAnioPlan(maxAnio + 1);
 
       if (histInputRef.current) histInputRef.current.value = '';
@@ -865,7 +865,7 @@ export default function Forecast() {
   // Año actual y plan
   const anioActual = useMemo(() => {
     if (!historico.length) return new Date().getFullYear();
-    return Math.max(...historico.map(r => r.anio));
+    return historico.reduce((max, r) => r.anio > max ? r.anio : max, 0);
   }, [historico]);
 
   const aniosCerrados = useMemo(() => {
