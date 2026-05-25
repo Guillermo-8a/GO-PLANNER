@@ -122,30 +122,30 @@ export default function Traslados() {
       card: 'bg-zinc-900 border-zinc-800 shadow-sm',
       cardInner: 'bg-zinc-950 border-zinc-800',
       textMain: 'text-white', textMuted: 'text-gray-400',
-      textAccent1: 'text-orange-400', textAccent2: 'text-teal-400',
+      textAccent1: 'text-yellow-400', textAccent2: 'text-violet-400',
       border: 'border-zinc-800',
       input: 'bg-zinc-950 border-zinc-700 text-white focus:ring-orange-500',
-      btnPrimary: 'bg-orange-500 text-black hover:bg-orange-400 shadow-[0_0_15px_rgba(249,115,22,0.2)]',
-      btnSecondary: 'bg-teal-600 text-white hover:bg-teal-500',
+      btnPrimary: 'bg-yellow-400 text-black hover:bg-yellow-300 shadow-[0_0_15px_rgba(234,179,8,0.3)]',
+      btnSecondary: 'bg-violet-600 text-white hover:bg-violet-500',
       btnGhost: 'bg-zinc-800 text-gray-300 hover:text-white hover:bg-zinc-700',
-      tabActive: 'border-orange-500 text-orange-400',
-      badge: 'bg-orange-900/30 text-orange-400 border-orange-500/40',
-      badgeTeal: 'bg-teal-900/30 text-teal-400 border-teal-500/40',
+      tabActive: 'border-violet-500 text-violet-400',
+      badge: 'bg-yellow-900/30 text-yellow-400 border-yellow-500/40',
+      badgeTeal: 'bg-violet-900/30 text-violet-400 border-violet-500/40',
     },
     light: {
       appBg: 'bg-transparent text-gray-800',
       card: 'bg-white border-gray-200 shadow-sm',
       cardInner: 'bg-gray-50 border-gray-200',
       textMain: 'text-gray-900', textMuted: 'text-gray-500',
-      textAccent1: 'text-orange-600', textAccent2: 'text-teal-600',
+      textAccent1: 'text-yellow-500', textAccent2: 'text-violet-600',
       border: 'border-gray-200',
       input: 'bg-white border-gray-300 text-gray-900 focus:ring-orange-500',
-      btnPrimary: 'bg-orange-500 text-white hover:bg-orange-600 shadow-md',
-      btnSecondary: 'bg-teal-600 text-white hover:bg-teal-700 shadow-md',
+      btnPrimary: 'bg-yellow-400 text-black hover:bg-yellow-300 shadow-md',
+      btnSecondary: 'bg-violet-600 text-white hover:bg-violet-700 shadow-md',
       btnGhost: 'bg-gray-100 text-gray-600 hover:text-gray-900 hover:bg-gray-200',
-      tabActive: 'border-orange-500 text-orange-600',
-      badge: 'bg-orange-50 text-orange-700 border-orange-200',
-      badgeTeal: 'bg-teal-50 text-teal-700 border-teal-200',
+      tabActive: 'border-violet-600 text-violet-600',
+      badge: 'bg-yellow-50 text-yellow-700 border-yellow-200',
+      badgeTeal: 'bg-violet-50 text-violet-700 border-violet-200',
     },
   };
   const t = themes[theme] || themes.light;
@@ -893,10 +893,10 @@ export default function Traslados() {
       return;
     }
 
-    ejecutarCalculo(chequera, surtidoresList, tallasCache, minCorridasAlto, minCorridasResto);
+    ejecutarCalculo(chequera, surtidoresList, matchSurtidor, tallasCache, minCorridasAlto, minCorridasResto);
   }, [chequeraText, centrosSurtidores, rawData, tallasCache, minCorridasAlto, minCorridasResto, buildMatchSurtidor]);
 
-  const ejecutarCalculo = useCallback((chequera, surtidoresList, cache, minAlto, minResto) => {
+  const ejecutarCalculo = useCallback((chequera, surtidoresList, matchSurtidor, cache, minAlto, minResto) => {
     setNecesLoading(true);
     setTimeout(() => {
       // ── Inventario: centro → modeloKey → talla → [rows] ──────────────
@@ -1083,7 +1083,7 @@ export default function Traslados() {
       setNecesResult(resultado);
       setNecesLoading(false);
     }, 300);
-  }, [rawData, extraerTalla, lookupCentro, buildMatchSurtidor]);
+  }, [rawData, extraerTalla, lookupCentro]);
 
   // Confirmar talla manual en el modal
   const confirmarTallaModal = () => {
@@ -1104,7 +1104,8 @@ export default function Traslados() {
       const surtidoresList = centrosSurtidores
         ? centrosSurtidores.split(',').map(c => c.trim()).filter(Boolean)
         : null;
-      ejecutarCalculo(chequera, surtidoresList, newCache, minCorridasAlto, minCorridasResto);
+      const ms = buildMatchSurtidor(surtidoresList);
+      ejecutarCalculo(chequera, surtidoresList, ms, newCache, minCorridasAlto, minCorridasResto);
     }
   };
 
@@ -1146,7 +1147,7 @@ export default function Traslados() {
         <div className="flex items-start justify-between flex-wrap gap-4">
           <div>
             <h1 className={`text-2xl font-black tracking-tight flex items-center gap-2 ${t.textMain}`}>
-              <span className={`p-2 rounded-xl ${isDark ? 'bg-orange-500/20' : 'bg-orange-50'}`}>
+              <span className={`p-2 rounded-xl ${isDark ? 'bg-violet-500/20' : 'bg-violet-50'}`}>
                 <Icons.ArrowLeftRight size={22} className={t.textAccent1} />
               </span>
               Traslados
@@ -1555,19 +1556,37 @@ export default function Traslados() {
                 {/* Resumen por zonas */}
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className={`p-4 rounded-xl border ${t.cardInner}`}>
-                    <h4 className={`text-sm font-bold mb-3 ${t.textMain}`}>🗺️ Movimientos entre Zonas</h4>
-                    <div className="space-y-1.5 max-h-48 overflow-y-auto custom-scrollbar">
-                      {zonaResumen.map((z, i) => (
-                        <div key={i} className="flex items-center justify-between gap-2 text-xs">
-                          <span className={`flex items-center gap-1 ${z.mismaZona ? 'text-emerald-400' : 'text-amber-400'}`}>
-                            {z.mismaZona ? '✓' : '⚠️'}
-                            <span className={t.textMain}>{z.origen}</span>
-                            <span className={t.textMuted}>→</span>
-                            <span className={t.textMain}>{z.destino}</span>
-                          </span>
-                          <span className={`font-black ${t.textAccent1} whitespace-nowrap`}>{fmt(z.pzs)} pzs · {fmtMXN(z.pesos)}</span>
-                        </div>
-                      ))}
+                    <h4 className={`text-sm font-bold mb-3 ${t.textMain}`}>🗺️ Flujo entre Zonas</h4>
+                    <div className="space-y-2 max-h-64 overflow-y-auto custom-scrollbar pr-1">
+                      {zonaResumen.map((z, i) => {
+                        const maxPzs = zonaResumen[0]?.pzs || 1;
+                        const pct = (z.pzs / maxPzs) * 100;
+                        return (
+                          <div key={i} className={`rounded-lg p-2.5 border ${z.mismaZona ? (isDark ? 'border-violet-500/20 bg-violet-900/10' : 'border-violet-200 bg-violet-50') : (isDark ? 'border-yellow-500/20 bg-yellow-900/10' : 'border-yellow-200 bg-yellow-50')}`}>
+                            <div className="flex items-center justify-between mb-1.5">
+                              <div className="flex items-center gap-2 text-[10px] font-black">
+                                <span className={`px-1.5 py-0.5 rounded text-[9px] ${z.mismaZona ? 'bg-violet-500/20 text-violet-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
+                                  {z.mismaZona ? 'MISMA' : '⚠️ CRUZA'}
+                                </span>
+                                <span className={t.textMain}>{z.origen}</span>
+                                <span className={isDark ? 'text-zinc-500' : 'text-gray-400'}>━▶</span>
+                                <span className={t.textMain}>{z.destino}</span>
+                              </div>
+                              <div className="text-right">
+                                <span className={`text-[10px] font-black ${z.mismaZona ? 'text-violet-400' : 'text-yellow-400'}`}>{fmt(z.pzs)} pzs</span>
+                                <span className={`text-[9px] ${t.textMuted} ml-1`}>{fmtMXN(z.pesos)}</span>
+                              </div>
+                            </div>
+                            <div className={`h-1 rounded-full overflow-hidden ${isDark ? 'bg-zinc-700' : 'bg-gray-200'}`}>
+                              <div className={`h-full rounded-full ${z.mismaZona ? 'bg-violet-500' : 'bg-yellow-400'}`} style={{width: `${pct}%`}} />
+                            </div>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="flex gap-4 mt-2 text-[9px]">
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-violet-500 inline-block"/> Misma zona</span>
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-yellow-400 inline-block"/> Cruza zona ⚠️</span>
                     </div>
                   </div>
 
