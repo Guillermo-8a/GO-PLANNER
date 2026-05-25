@@ -172,6 +172,7 @@ export default function Traslados() {
   const [filterMarca,        setFilterMarca]        = useState('ALL');
   const [filterGoa,          setFilterGoa]          = useState('ALL');
   const [letrasExcluidas,    setLetrasExcluidas]    = useState(new Set()); // letras de descuento a excluir
+  const [filterZona,         setFilterZona]         = useState('ALL');
   const [costoPorPza,        setCostoPorPza]        = useState(35); // costo logístico por pieza
 
   const [excResult, setExcResult] = useState([]);
@@ -457,6 +458,7 @@ export default function Traslados() {
   // Opciones de filtros
   const opcionesGoa     = useMemo(() => ['ALL', ...new Set(rawData.map(r => r.goa).filter(Boolean))], [rawData]);
   const opcionesLetras  = useMemo(() => [...new Set(rawData.map(r => r.letraDesc).filter(Boolean))].sort(), [rawData]);
+  const opcionesZona    = useMemo(() => ['ALL', ...new Set(rawData.map(r => r.zona).filter(Boolean)).values()], [rawData]);
   const opcionesSku    = useMemo(() => ['ALL', ...new Set(rawData.map(r => r.sku).filter(Boolean))], [rawData]);
   const opcionesMarca  = useMemo(() => ['ALL', ...new Set(rawData.map(r => r.marca).filter(Boolean))], [rawData]);
   const opcionesSeccion = useMemo(() => ['ALL', ...new Set(rawData.map(r => r.seccion).filter(Boolean))], [rawData]);
@@ -508,6 +510,7 @@ export default function Traslados() {
         if (filterSku      !== 'ALL' && meta.sku     !== filterSku)     return;
         if (filterMarca    !== 'ALL' && marca        !== filterMarca)   return;
         if (filterSeccion  !== 'ALL' && meta.seccion !== filterSeccion) return;
+        if (filterZona     !== 'ALL' && meta.zona    !== filterZona)    return;
 
         Object.entries(centros).forEach(([centroOrigen, dataOrigen]) => {
           if (dataOrigen.oh <= 0) return;
@@ -584,7 +587,7 @@ export default function Traslados() {
       setExcLoading(false);
     }, 300);
   }, [rawData, brandMatrix, climaMatrix, goasTemporada, filterGoa, filterSku, filterMarca,
-      filterSeccion, filterTipoCentro, letrasExcluidas, costoPorPza, mesActual]);
+      filterSeccion, filterTipoCentro, filterZona, letrasExcluidas, costoPorPza, mesActual]);
 
   // Datos para gráfica excedente
   const chartDataExc = useMemo(() => {
@@ -616,9 +619,53 @@ export default function Traslados() {
     })).sort((a, b) => b.antes - a.antes).slice(0, 15);
   }, [excResult, rawData]);
 
+  // Resumen de movimientos entre zonas
+  const zonaResumen = useMemo(() => {
+    if (!excResult.length) return [];
+    const map = {};
+    excResult.forEach(r => {
+      const origen = rawData.find(d => d.centro === r.centroSalida)?.zona || r.centroSalida;
+      const destino = rawData.find(d => d.centro === r.centroReceptor)?.zona || r.centroReceptor;
+      const key = `${origen} → ${destino}`;
+      if (!map[key]) map[key] = { origen, destino, pzs: 0, pesos: 0, mismaZona: origen === destino };
+      map[key].pzs   += r.pzs;
+      map[key].pesos += r.pesos;
+    });
+    return Object.values(map).sort((a,b) => b.pzs - a.pzs);
+  }, [excResult, rawData]);
+
+  // Datos dispersión R² — OH antes vs después por centro (para scatter)
+  const scatterData = useMemo(() => {
+    if (!excResult.length || !rawData.length) return { antes: [], despues: [] };
+    const ohPorCentro = {};
+    rawData.forEach(r => {
+      if (!ohPorCentro[r.centro]) ohPorCentro[r.centro] = { nombre: r.nCentro || r.centro, zona: r.zona, oh: 0, vta: 0 };
+      ohPorCentro[r.centro].oh  += r.oh;
+      ohPorCentro[r.centro].vta += r.vta;
+    });
+    const salidas = {}, entradas = {};
+    excResult.forEach(r => {
+      salidas[r.centroSalida]   = (salidas[r.centroSalida]   || 0) + r.pzs;
+      entradas[r.centroReceptor] = (entradas[r.centroReceptor] || 0) + r.pzs;
+    });
+    return Object.entries(ohPorCentro).map(([id, d]) => ({
+      id, nombre: d.nombre, zona: d.zona,
+      antes:   d.oh,
+      despues: Math.max(0, d.oh - (salidas[id] || 0) + (entradas[id] || 0)),
+      vta:     d.vta,
+    })).filter(d => d.antes > 0);
+  }, [excResult, rawData]);
+
   const exportExcedente = () => {
-    const header = ['Sección', 'Núm. Sección', 'SKU', 'Marca', 'GOA', 'Centro Salida', 'Centro Receptor', 'Piezas', 'Importe ($)'];
-    const rows = excResult.map(r => [r.seccion, r.numSeccion, r.sku, r.marca, r.goa, r.centroSalida, r.centroReceptor, r.pzs, r.pesos]);
+    // Layout: División | Sección # | Sección Nom | Marca | GOA | Modelo | SKU | N SKU | PV | # Centro Origen | Tienda Origen | Stock | Pzs a trasladar | # Centro Destino | Tienda Destino | Monto a Traspasar | Costo Traslado | Razón
+    const header = ['División','Sección','Nombre Sección','Marca','GOA','Modelo','SKU','N SKU','PV','# Centro Origen','Tienda Origen','Stock','Pzs a Trasladar','# Centro Destino','Tienda Destino','Monto a Traspasar','Costo Traslado','Razón'];
+    const rows = excResult.map(r => [
+      '', r.numSeccion, r.seccion, r.marca, r.goa, r.goa,
+      r.sku, '', r.precio,
+      r.centroSalida, r.nombreSalida, r.pzs,
+      r.pzs, r.centroReceptor, r.nombreReceptor,
+      r.pesos, r.costoTraslado, r.razon
+    ]);
     downloadExcel([header, ...rows], 'Traslados_Excedente.csv');
   };
 
@@ -628,6 +675,17 @@ export default function Traslados() {
 
   const [chequeraText,      setChequeraText]      = useState('');
   const [centrosSurtidores, setCentrosSurtidores] = useState('');
+
+  // Helper: match centro por número o nombre, usado en tab 2
+  const buildMatchSurtidor = useCallback((lista) => {
+    if (!lista || !lista.length) return () => true;
+    return (r) => lista.some(s => {
+      const sq = s.toUpperCase().trim();
+      return r.centro?.toUpperCase().trim() === sq ||
+             r.nCentro?.toUpperCase().trim() === sq;
+    });
+  }, []);
+
   const [necesResult,       setNecesResult]       = useState([]);
   const [necesLoading,      setNecesLoading]      = useState(false);
 
@@ -761,6 +819,7 @@ export default function Traslados() {
     const surtidoresList = centrosSurtidores
       ? centrosSurtidores.split(',').map(c => c.trim()).filter(Boolean)
       : null;
+    const matchSurtidor  = buildMatchSurtidor(surtidoresList);
 
     // Detectar SKUs sin talla parseable que no estén en cache
     const sinTalla = rawData.filter(r => {
@@ -777,7 +836,7 @@ export default function Traslados() {
     }
 
     ejecutarCalculo(chequera, surtidoresList, tallasCache, minCorridasAlto, minCorridasResto);
-  }, [chequeraText, centrosSurtidores, rawData, tallasCache, minCorridasAlto, minCorridasResto]);
+  }, [chequeraText, centrosSurtidores, rawData, tallasCache, minCorridasAlto, minCorridasResto, buildMatchSurtidor]);
 
   const ejecutarCalculo = useCallback((chequera, surtidoresList, cache, minAlto, minResto) => {
     setNecesLoading(true);
@@ -966,7 +1025,7 @@ export default function Traslados() {
       setNecesResult(resultado);
       setNecesLoading(false);
     }, 300);
-  }, [rawData, extraerTalla, lookupCentro]);
+  }, [rawData, extraerTalla, lookupCentro, buildMatchSurtidor]);
 
   // Confirmar talla manual en el modal
   const confirmarTallaModal = () => {
@@ -1083,7 +1142,7 @@ export default function Traslados() {
             🔁 Excedente de Temporada
           </button>
           <button className={tabStyle(2)} onClick={() => setActiveTab(2)}>
-            📦 Por Necesidad
+            📋 Solicitud / Aperturas
           </button>
         </div>
 
@@ -1279,6 +1338,7 @@ export default function Traslados() {
                   { label: 'Marca',       val: filterMarca,      set: setFilterMarca,      opts: opcionesMarca },
                   { label: 'Sección',     val: filterSeccion,    set: setFilterSeccion,    opts: opcionesSeccion },
                   { label: 'Tipo Centro', val: filterTipoCentro, set: setFilterTipoCentro, opts: opcionesTipoCentro },
+                  { label: 'Zona',        val: filterZona,       set: setFilterZona,       opts: opcionesZona },
                 ].map(({ label, val, set, opts }) => (
                   <div key={label}>
                     <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} block mb-1`}>{label}</label>
@@ -1379,8 +1439,84 @@ export default function Traslados() {
                   <BarCompare data={chartDataExc} theme={theme} />
                 </div>
 
+                {/* Resumen por zonas */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div className={`p-4 rounded-xl border ${t.cardInner}`}>
+                    <h4 className={`text-sm font-bold mb-3 ${t.textMain}`}>🗺️ Movimientos entre Zonas</h4>
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto custom-scrollbar">
+                      {zonaResumen.map((z, i) => (
+                        <div key={i} className="flex items-center justify-between gap-2 text-xs">
+                          <span className={`flex items-center gap-1 ${z.mismaZona ? 'text-emerald-400' : 'text-amber-400'}`}>
+                            {z.mismaZona ? '✓' : '⚠️'}
+                            <span className={t.textMain}>{z.origen}</span>
+                            <span className={t.textMuted}>→</span>
+                            <span className={t.textMain}>{z.destino}</span>
+                          </span>
+                          <span className={`font-black ${t.textAccent1} whitespace-nowrap`}>{fmt(z.pzs)} pzs · {fmtMXN(z.pesos)}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Scatter R² antes vs después */}
+                  <div className={`p-4 rounded-xl border ${t.cardInner}`}>
+                    <h4 className={`text-sm font-bold mb-1 ${t.textMain}`}>📊 Dispersión OH — Antes vs Después</h4>
+                    <p className={`text-[9px] mb-3 ${t.textMuted}`}>Cada punto = un centro. Eje X = OH antes, Eje Y = OH después.</p>
+                    <svg viewBox="0 0 280 180" className="w-full">
+                      {/* Grid */}
+                      {[0,1,2,3,4].map(i => (
+                        <line key={i} x1={30} y1={10 + i*34} x2={275} y2={10 + i*34}
+                          stroke={isDark ? '#3f3f46' : '#e5e7eb'} strokeWidth="0.5"/>
+                      ))}
+                      {[0,1,2,3,4].map(i => (
+                        <line key={i} x1={30 + i*61} y1={10} x2={30 + i*61} y2={146}
+                          stroke={isDark ? '#3f3f46' : '#e5e7eb'} strokeWidth="0.5"/>
+                      ))}
+                      {/* Diagonal y=x reference */}
+                      <line x1={30} y1={146} x2={275} y2={10} stroke="#a78bfa" strokeWidth="0.8" strokeDasharray="4,3" opacity="0.5"/>
+                      {/* Points */}
+                      {(() => {
+                        const maxVal = Math.max(...scatterData.map(d => Math.max(d.antes, d.despues)), 1);
+                        const toX = v => 30 + (v/maxVal) * 245;
+                        const toY = v => 146 - (v/maxVal) * 136;
+                        return scatterData.slice(0,80).map((d, i) => {
+                          const changed = d.antes !== d.despues;
+                          return (
+                            <circle key={i}
+                              cx={toX(d.antes)} cy={toY(d.despues)}
+                              r={changed ? 3.5 : 2}
+                              fill={changed ? '#fbbf24' : '#a78bfa'}
+                              opacity={changed ? 0.85 : 0.45}
+                              stroke={changed ? '#f59e0b' : 'none'}
+                              strokeWidth="0.5">
+                              <title>{d.nombre}: {d.antes}→{d.despues}</title>
+                            </circle>
+                          );
+                        });
+                      })()}
+                      {/* Axes labels */}
+                      <text x={150} y={168} textAnchor="middle" fontSize="7" fill={isDark ? '#71717a' : '#9ca3af'}>OH Antes</text>
+                      <text x={12} y={80} textAnchor="middle" fontSize="7" fill={isDark ? '#71717a' : '#9ca3af'} transform="rotate(-90,12,80)">OH Después</text>
+                    </svg>
+                    <div className="flex gap-4 text-[9px] mt-1">
+                      <span className="flex items-center gap-1"><circle cx={5} cy={5} r={4} fill="#fbbf24" className="inline-block w-2 h-2 rounded-full bg-yellow-400"/> Con cambio</span>
+                      <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-violet-400"/> Sin cambio</span>
+                      <span className="flex items-center gap-1"><span className="inline-block w-4 border-t border-dashed border-violet-400"/> y=x</span>
+                    </div>
+                  </div>
+                </div>
+
                 {/* Tabla de traslados */}
                 <div className={`rounded-xl border overflow-hidden ${t.cardInner}`}>
+                  <div className={`flex items-center justify-between px-4 py-2 border-b ${t.border}`}>
+                    <span className={`text-[10px] font-black uppercase tracking-widest ${t.textMuted}`}>
+                      {excResult.length} traslados · {excResult.filter(r=>r.fueraZona).length} fuera de zona ⚠️
+                    </span>
+                    <button onClick={exportExcedente}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black transition-all ${t.btnSecondary}`}>
+                      <Icons.Download size={12} /> Exportar Excel
+                    </button>
+                  </div>
                   <div className="overflow-x-auto max-h-[55vh] custom-scrollbar">
                     <table className="w-full text-left min-w-max">
                       <thead>
@@ -1397,14 +1533,16 @@ export default function Traslados() {
                             <td className={`p-2 font-mono text-[10px] ${t.textMuted}`}>{r.numSeccion}</td>
                             <td className={`p-2 font-mono font-black ${t.textMain}`}>{r.sku}</td>
                             <td className={`p-2 ${t.textMuted}`}>{r.marca}</td>
-                            <td className="p-2">
-                              <span className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${t.badge}`}>{r.goa}</span>
+                            <td className="p-2"><span className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${t.badge}`}>{r.goa}</span></td>
+                            <td className={`p-2 font-bold ${t.textMain}`}>{r.nombreSalida} <span className={`font-mono text-[9px] ${t.textMuted}`}>({r.centroSalida})</span></td>
+                            <td className={`p-2 font-bold ${r.fueraZona ? 'text-amber-400' : 'text-emerald-400'}`}>
+                              {r.fueraZona && <span title="Receptor fuera de zona">⚠️ </span>}
+                              {r.nombreReceptor} <span className={`font-mono text-[9px] ${t.textMuted}`}>({r.centroReceptor})</span>
                             </td>
-                            <td className={`p-2 font-bold ${t.textMain}`}>{r.nombreSalida} <span className={`text-[9px] font-mono ${t.textMuted}`}>({r.centroSalida})</span></td>
-                            <td className={`p-2 font-bold text-emerald-400`}>{r.nombreReceptor} <span className={`text-[9px] font-mono ${t.textMuted}`}>({r.centroReceptor})</span></td>
                             <td className={`p-2 text-[10px] ${t.textMuted}`}>{r.tipoCentroReceptor}</td>
                             <td className={`p-2 font-black ${t.textAccent1}`}>{fmt(r.pzs)}</td>
                             <td className={`p-2 font-mono text-emerald-400`}>{fmtMXN(r.pesos)}</td>
+                            <td className={`p-2 font-mono text-[10px] ${r.fueraZona ? 'text-amber-400' : t.textMuted}`}>{fmtMXN(r.costoTraslado)}</td>
                             <td className={`p-2 text-[9px] max-w-[160px] truncate ${t.textMuted}`} title={r.razon}>{r.razon}</td>
                           </tr>
                         ))}
@@ -1512,7 +1650,7 @@ export default function Traslados() {
               {/* Chequera */}
               <div className={`p-4 rounded-xl border ${t.cardInner}`}>
                 <h3 className={`text-xs font-black uppercase tracking-widest mb-2 ${t.textMuted}`}>
-                  Chequera de Necesidad
+                  Chequera de Solicitud
                 </h3>
                 <p className={`text-[10px] mb-3 ${t.textMuted}`}>
                   Un identificador por línea: <code className="opacity-60">Modelo / GOA / Marca | Ppto ($) | Centro Receptor</code>
@@ -1669,7 +1807,7 @@ export default function Traslados() {
             {!necesResult.length && rawData.length > 0 && (
               <div className={`p-8 rounded-xl border flex flex-col items-center justify-center text-center ${t.cardInner}`}>
                 <Icons.Package size={32} className={`${isDark ? 'text-zinc-600' : 'text-gray-300'} mb-3`} />
-                <p className={`text-sm font-bold ${t.textMain}`}>Herramienta de necesidad lista</p>
+                <p className={`text-sm font-bold ${t.textMain}`}>Herramienta de solicitud lista</p>
                 <p className={`text-xs mt-1 ${t.textMuted}`}>Llena la chequera. La herramienta detecta la corrida automáticamente por las tallas del nombre del SKU.</p>
               </div>
             )}
