@@ -1598,9 +1598,10 @@ export default function Traslados() {
                   )}
                   </div>
                 </div>
-              </div> {/* <-- AQUÍ ESTÁ EL CULPABLE, ESTE DIV FALTABA */}
               )}
             </div>
+            </div>
+            {/* end panel config */}
 
             {/* Resultados excedente */}
             {excResult.length > 0 ? (
