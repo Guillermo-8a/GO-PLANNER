@@ -3,15 +3,20 @@ import * as Icons from '../utils/icons';
 
 // Theme local con localStorage — independiente de GlobalContext
 const useThemeLocal = () => {
-  const [theme, setTheme] = useState(() => {
-    try { return localStorage.getItem('gop_theme') || 'dark'; } catch { return 'dark'; }
-  });
+  const read = () => {
+    try {
+      if (document.documentElement.classList.contains('dark')) return 'dark';
+      const ls = localStorage.getItem('gop_theme');
+      return ls || 'dark';
+    } catch { return 'dark'; }
+  };
+  const [theme, setTheme] = useState(read);
   useEffect(() => {
-    const sync = () => {
-      try { setTheme(localStorage.getItem('gop_theme') || 'dark'); } catch {}
-    };
+    const sync = () => setTheme(read());
     window.addEventListener('storage', sync);
-    return () => window.removeEventListener('storage', sync);
+    const obs = new MutationObserver(sync);
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => { window.removeEventListener('storage', sync); obs.disconnect(); };
   }, []);
   return { theme };
 };
@@ -69,8 +74,8 @@ const LineForecast = ({ historico, proyeccion, theme, height = 120 }) => {
   const isDark = theme === 'dark';
   const all = [...historico, ...proyeccion];
   if (!all.length) return null;
-  const max = Math.max(...all.map(p => p.y), 1);
-  const min = Math.min(...all.map(p => p.y), 0);
+  const max = all.reduce((m, p) => p.y > m ? p.y : m, 1);
+  const min = all.reduce((m, p) => p.y < m ? p.y : m, 0);
   const range = max - min || 1;
   const w = 600, h = height, pad = 20;
   const xStep = (w - pad * 2) / Math.max(all.length - 1, 1);
@@ -100,7 +105,7 @@ const LineForecast = ({ historico, proyeccion, theme, height = 120 }) => {
 
 // ─── SPARKLINE DE BARRAS (estacionalidad mini) ──────────────────────────────
 const SparklineBarras = ({ valores, color = '#a78bfa', height = 24 }) => {
-  const max = Math.max(...valores, 1);
+  const max = valores.reduce((m, v) => v > m ? v : m, 1);
   return (
     <div className="flex items-end gap-0.5" style={{ height, minWidth: 80 }}>
       {valores.map((v, i) => (
@@ -191,7 +196,7 @@ export default function Forecast() {
   // ── Temas ──────────────────────────────────────────────────────────────
   const themes = {
     dark: {
-      appBg: 'bg-transparent text-gray-100',
+      appBg: 'bg-black text-gray-100',
       card: 'bg-zinc-900 border-zinc-800 shadow-sm',
       cardInner: 'bg-zinc-950 border-zinc-800',
       textMain: 'text-white', textMuted: 'text-gray-400',
@@ -217,7 +222,7 @@ export default function Forecast() {
       menuItem:    'hover:bg-zinc-800 text-gray-200',
     },
     light: {
-      appBg: 'bg-transparent text-gray-800',
+      appBg: 'bg-gray-50 text-gray-800',
       card: 'bg-white border-gray-200 shadow-sm',
       cardInner: 'bg-gray-50 border-gray-200',
       textMain: 'text-gray-900', textMuted: 'text-gray-500',
@@ -461,7 +466,7 @@ export default function Forecast() {
         return next;
       });
 
-      const maxAnio = extracted.reduce((max, r) => r.anio > max ? r.anio : max, 0);
+      const maxAnio = extracted.reduce((m, r) => r.anio > m ? r.anio : m, 0);
       if (maxAnio) setAnioPlan(maxAnio + 1);
 
       if (histInputRef.current) histInputRef.current.value = '';
@@ -639,43 +644,43 @@ export default function Forecast() {
   // Matriz GOA × Centro: toggle activo/inactivo del cruce
   const toggleCruce = (centro, goa) => {
     setMatrizGoaCentro(prev => {
-      const next = { ...prev };
-      if (!next[centro]) next[centro] = {};
-      const actual = next[centro][goa];
-      if (actual?.activo) {
-        next[centro][goa] = { ...actual, activo: false };
-      } else {
-        next[centro][goa] = {
-          activo: true,
-          meses: actual?.meses?.length ? actual.meses : [1,2,3,4,5,6,7,8,9,10,11,12]
-        };
-      }
-      return next;
+      const actual = prev[centro]?.[goa];
+      const nuevo = actual?.activo
+        ? { ...actual, activo: false }
+        : { activo: true, meses: actual?.meses?.length ? actual.meses : [1,2,3,4,5,6,7,8,9,10,11,12] };
+      return {
+        ...prev,
+        [centro]: { ...(prev[centro] || {}), [goa]: nuevo }
+      };
     });
   };
 
   // Toggle de mes específico para un cruce GOA × Centro
   const toggleMesCruce = (centro, goa, mes) => {
     setMatrizGoaCentro(prev => {
-      const next = { ...prev };
-      if (!next[centro]) next[centro] = {};
-      const actual = next[centro][goa] || { activo: true, meses: [] };
+      const actual = prev[centro]?.[goa] || { activo: true, meses: [] };
       const meses = actual.meses.includes(mes)
         ? actual.meses.filter(m => m !== mes)
         : [...actual.meses, mes].sort((a,b) => a-b);
-      next[centro][goa] = { activo: meses.length > 0, meses };
-      return next;
+      return {
+        ...prev,
+        [centro]: {
+          ...(prev[centro] || {}),
+          [goa]: { activo: meses.length > 0, meses }
+        }
+      };
     });
   };
 
   // Marcar todos los meses (todo el año) en un cruce
   const setMesesCruce = (centro, goa, meses) => {
-    setMatrizGoaCentro(prev => {
-      const next = { ...prev };
-      if (!next[centro]) next[centro] = {};
-      next[centro][goa] = { activo: meses.length > 0, meses: [...meses].sort((a,b) => a-b) };
-      return next;
-    });
+    setMatrizGoaCentro(prev => ({
+      ...prev,
+      [centro]: {
+        ...(prev[centro] || {}),
+        [goa]: { activo: meses.length > 0, meses: [...meses].sort((a,b) => a-b) }
+      }
+    }));
   };
 
   // Helpers GOA-maestro
@@ -865,7 +870,7 @@ export default function Forecast() {
   // Año actual y plan
   const anioActual = useMemo(() => {
     if (!historico.length) return new Date().getFullYear();
-    return historico.reduce((max, r) => r.anio > max ? r.anio : max, 0);
+    return historico.reduce((m, r) => r.anio > m ? r.anio : m, 0);
   }, [historico]);
 
   const aniosCerrados = useMemo(() => {
@@ -1137,6 +1142,27 @@ export default function Forecast() {
     return { mapa, baseAnio };
   }, [historico, histCxG, anioActual, anioPlan, mesesActualReales, matrizGoaCentro, thresholds]);
 
+  // Estacionalidad promedio por GOA (de cruces con histórico) — para tiendas apertura
+  const estacionalidadPorGoa = useMemo(() => {
+    const acum = {}; // goa -> [12] suma de factores
+    const cnt = {};  // goa -> num cruces
+    Object.entries(forecastL1.mapa).forEach(([key, r]) => {
+      if (r.insuficiente || !r.factores) return;
+      const goa = key.split('|')[1];
+      if (!acum[goa]) { acum[goa] = Array(12).fill(0); cnt[goa] = 0; }
+      for (let m = 1; m <= 12; m++) acum[goa][m-1] += (r.factores[m] || 1);
+      cnt[goa] += 1;
+    });
+    const out = {};
+    Object.keys(acum).forEach(goa => {
+      const arr = acum[goa].map(v => cnt[goa] > 0 ? v / cnt[goa] : 1);
+      const suma = arr.reduce((a,b) => a+b, 0);
+      // normalizar a fracción que sume 1 (para repartir venta anual)
+      out[goa] = suma > 0 ? arr.map(v => v / suma) : Array(12).fill(1/12);
+    });
+    return out;
+  }, [forecastL1]);
+
   // ══════════════════════════════════════════════════════════════════════
   // L2 — APLICA OVERRIDES + ESCENARIO ACTIVO PARA UN CRUCE
   // Operación O(12) por cruce, ultra ligera. Se llama solo cuando se
@@ -1298,6 +1324,8 @@ export default function Forecast() {
     mgPct:    Array(12).fill(null),
     modoVta:  'mensual',
     modoMg:   'total',
+    modoRot:  'anual',     // 'anual' | 'mensual'
+    rotAnual: null,        // rotación anual única
     totalVta: null,
     totalMg:  null,
   });
@@ -1314,6 +1342,8 @@ export default function Forecast() {
   const [t5Vista, setT5Vista]                   = useState('porGoa');
   const [pctBonifApertura, setPctBonifApertura] = useState(0.012);
   const [mgObjetivoCentro, setMgObjetivoCentro] = useState({});
+  // Venta objetivo anual para tiendas apertura/nuevas (sin histórico): { "centro|goa": montoAnual }
+  const [ventaObjetivoApertura, setVentaObjetivoApertura] = useState({});
 
   // Persistencia
   useEffect(() => {
@@ -1331,6 +1361,7 @@ export default function Forecast() {
         if (d.otbMaster)               setOtbMaster(d.otbMaster);
         if (d.pctBonifApertura != null) setPctBonifApertura(d.pctBonifApertura);
         if (d.mgObjetivoCentro)        setMgObjetivoCentro(d.mgObjetivoCentro);
+        if (d.ventaObjetivoApertura)   setVentaObjetivoApertura(d.ventaObjetivoApertura);
         if (d.t4Locks)                 setT4Locks(new Set(d.t4Locks));
         if (d.t4Overrides)             setT4Overrides(d.t4Overrides);
       }
@@ -1341,14 +1372,14 @@ export default function Forecast() {
       try {
         localStorage.setItem('gop_forecast_drivers', JSON.stringify({
           otbTotal, otbOverridesGoa, crecGoa, crecCentro, rotOverrides, msiPct, mkdPctGoa,
-          otbMaster, pctBonifApertura, mgObjetivoCentro,
+          otbMaster, pctBonifApertura, mgObjetivoCentro, ventaObjetivoApertura,
           t4Locks: Array.from(t4Locks), t4Overrides
         }));
       } catch {}
     }, 1000);
     return () => clearTimeout(t);
   }, [otbTotal, otbOverridesGoa, crecGoa, crecCentro, rotOverrides, msiPct, mkdPctGoa,
-      otbMaster, pctBonifApertura, mgObjetivoCentro, t4Locks, t4Overrides]);
+      otbMaster, pctBonifApertura, mgObjetivoCentro, ventaObjetivoApertura, t4Locks, t4Overrides]);
 
   // ── Lógica de distribución y cálculos ────────────────────────────────
 
@@ -1424,15 +1455,15 @@ export default function Forecast() {
   const mgHistPromedio = useMemo(() => {
     const map = {};
     historico.forEach(r => {
-      if (!r.goa || !r.mg || r.mg === 0) return;
+      if (!r.goa || !r.mg || r.mg === 0 || !r.venta) return;
       const k = `${r.centro}|${r.goa}`;
-      if (!map[k]) map[k] = { sum: 0, cnt: 0 };
-      map[k].sum += r.mg;
-      map[k].cnt += 1;
+      if (!map[k]) map[k] = { sumMgVenta: 0, sumVenta: 0 };
+      map[k].sumMgVenta += r.mg * r.venta;
+      map[k].sumVenta   += r.venta;
     });
     const out = {};
     Object.entries(map).forEach(([k, v]) => {
-      out[k] = v.cnt > 0 ? v.sum / v.cnt : 0;
+      out[k] = v.sumVenta > 0 ? v.sumMgVenta / v.sumVenta : 0;
     });
     return out;
   }, [historico]);
@@ -1489,18 +1520,40 @@ export default function Forecast() {
   // BLOQUE MAESTRO EXCEL (Tab 3) — cascada contable mensual
   // ══════════════════════════════════════════════════════════════════════
   const otbMasterCalc = useMemo(() => {
-    // Sugeridos por mes desde el plan completo (suma todos los cruces)
+    // Sugeridos de venta por mes (suma plan de todos los cruces)
     const sugVta = Array(12).fill(0);
+    const sugMkd = Array(12).fill(0);
+    const sugMg  = Array(12).fill(0);  // suma ponderada mg×venta por mes (histórico)
+    const sugVtaMg = Array(12).fill(0); // venta histórica por mes (para ponderar mg)
+
     planCruceCompleto.forEach(r => {
       const cruce = forecastL1.mapa[`${r.centro}|${r.goa}`];
       if (!cruce || cruce.insuficiente) return;
       const planEsc = cruce.planEsc[escenarioActivo === 'editable' ? 'base' : escenarioActivo];
       planEsc.forEach((m, i) => sugVta[i] += m.valor);
     });
+
+    // Markdown y Mg% mensual desde el HISTÓRICO (estacionalidad real)
+    // Promediamos el patrón mensual de markdown/venta y mg/venta de años cerrados
+    const mkdMesHist = Array(12).fill(0);
+    const vtaMesHist = Array(12).fill(0);
+    const mgVtaMesHist = Array(12).fill(0);
+    historico.forEach(r => {
+      if (r.anio >= anioActual) return; // solo años cerrados
+      const idx = r.mes - 1;
+      if (idx < 0 || idx > 11) return;
+      vtaMesHist[idx] += r.venta || 0;
+      mkdMesHist[idx] += r.markdown || 0;
+      if (r.mg) mgVtaMesHist[idx] += (r.mg * (r.venta || 0));
+    });
+    // % markdown por mes (sobre venta de ese mes) y mg% ponderado por mes
+    const mkdPctMes = mkdMesHist.map((mkd, i) => vtaMesHist[i] > 0 ? mkd / vtaMesHist[i] : 0);
+    const mgPctMesHist = mgVtaMesHist.map((s, i) => vtaMesHist[i] > 0 ? s / vtaMesHist[i] : 0);
+
     const totSugVta = sugVta.reduce((a,b) => a+b, 0);
     const factorEstacional = sugVta.map(v => totSugVta > 0 ? v / totSugVta : 1/12);
 
-    // Ventas finales
+    // VENTAS finales (override mes > total distribuido > sugerido)
     const vtaFinal = Array(12).fill(0).map((_, i) => {
       if (otbMaster.vta[i] != null) return otbMaster.vta[i];
       if (otbMaster.modoVta === 'total' && otbMaster.totalVta) {
@@ -1509,49 +1562,71 @@ export default function Forecast() {
       return sugVta[i];
     });
 
-    // Mg% mensual
-    const mgHistProm = planCruceCompleto.length
-      ? planCruceCompleto.reduce((s,r) => s + r.mgHist, 0) / planCruceCompleto.length
-      : 0.40;
+    // MG% mensual:
+    //   - si hay override mensual → ese
+    //   - si modo total: tomamos el Mg anual objetivo y lo MODULAMOS por la estacionalidad
+    //     histórica del mg (meses con más mkd tienen menos mg), preservando el promedio anual = objetivo
+    const mgPromHistGlobal = mgPctMesHist.reduce((a,b)=>a+b,0) / 12 || 0.40;
     const mgFinal = Array(12).fill(0).map((_, i) => {
       if (otbMaster.mgPct[i] != null) return otbMaster.mgPct[i];
-      if (otbMaster.modoMg === 'total' && otbMaster.totalMg != null) return otbMaster.totalMg;
-      return mgHistProm;
+      if (otbMaster.modoMg === 'total' && otbMaster.totalMg != null) {
+        // Modular: mgMes = mgObjetivo + (mgMesHist - mgPromHist)
+        const desv = (mgPctMesHist[i] || mgPromHistGlobal) - mgPromHistGlobal;
+        return Math.max(0, otbMaster.totalMg + desv);
+      }
+      // sin objetivo: usa el mg histórico del mes
+      return mgPctMesHist[i] || mgPromHistGlobal;
     });
 
-    // Rotación mensual
-    const rotProm = planCruceCompleto.length
+    // ROTACIÓN: modo anual (una sola) o mensual (override por mes)
+    const rotPromHist = planCruceCompleto.length
       ? planCruceCompleto.reduce((s,r) => s + (r.rotAplicada || 1.5), 0) / planCruceCompleto.length
       : 1.5;
-    const rotFinal = otbMaster.rot.map((v) => v ?? rotProm);
+    const rotAnualUsada = otbMaster.rotAnual ?? rotPromHist;
+    const rotFinal = Array(12).fill(0).map((_, i) => {
+      if (otbMaster.modoRot === 'mensual' && otbMaster.rot[i] != null) return otbMaster.rot[i];
+      return rotAnualUsada; // misma rot para todos los meses en modo anual
+    });
 
-    // Inv Inicial Ene (input crítico)
-    const invIniEne = otbMaster.invIni[0] ?? (vtaFinal[0] / (rotFinal[0] || 1.5));
+    // INV INICIAL ENE: input directo, o derivado de venta/rot
+    const invIniEne = otbMaster.invIni[0] ?? (vtaFinal[0] / (rotAnualUsada || 1.5));
+    // INV FINAL ENE (= "Ene_" del siguiente año): si lo capturas, sirve de cierre
+    const invFinalCierre = otbMaster.invIni[12] ?? null;
 
-    // Cascada
+    // Inventario objetivo por mes = venta / rotación (anualizada → mensual implícito)
+    // Inv promedio mensual = venta_mes / (rot/12)?  → usamos rot anual: inv = venta_anual/rot
+    // Para mensual: inv objetivo mes = venta_mes / (rot/12)  (rota 'rot' veces al año)
+    const rotMensual = rotAnualUsada / 12;
+
     const filas = [];
     let invInicial = invIniEne;
     for (let i = 0; i < 12; i++) {
       const venta = vtaFinal[i];
       const rot = rotFinal[i];
-      const mgPct = mgFinal[i];
-      const invFinal = otbMaster.invIni[i+1] ?? (i < 11 ? vtaFinal[i+1] / (rot || 1.5) : venta / (rot || 1.5));
-      // Markdowns derivados (suma de plan por GOA proporcional)
-      const mkdProrr = planCruceCompleto.reduce((s,r) => s + (r.mkdMonto || 0), 0) * factorEstacional[i];
+      // Inv final del mes: objetivo por cobertura (venta del próximo mes / rot mensual)
+      let invFinal;
+      if (i === 11 && invFinalCierre != null) {
+        invFinal = invFinalCierre; // cierre capturado (Ene del año siguiente)
+      } else {
+        const ventaSig = i < 11 ? vtaFinal[i+1] : venta;
+        invFinal = rotMensual > 0 ? ventaSig / rotMensual : 0;
+      }
+      const mkd = venta * (mkdPctMes[i] || 0);   // markdown derivado del % histórico mensual
       const msi = venta * msiPct;
       const compra = venta + (invFinal - invInicial);
+      const mgPct = mgFinal[i];
       const utilidadBruta = venta * mgPct;
 
       filas.push({
         mes: i+1,
-        invInicial, venta, mkd: mkdProrr, msi,
+        invInicial, venta, mkd, msi,
         compra, utilidadBruta, mgPct,
         invFinal, rot,
       });
       invInicial = invFinal;
     }
-    return { filas, sugVta, factorEstacional };
-  }, [otbMaster, planCruceCompleto, forecastL1, escenarioActivo, msiPct]);
+    return { filas, sugVta, factorEstacional, mkdPctMes, mgPctMesHist, rotAnualUsada };
+  }, [otbMaster, planCruceCompleto, forecastL1, escenarioActivo, msiPct, historico, anioActual]);
 
   // ══════════════════════════════════════════════════════════════════════
   // ROTACIÓN — históricos por año + sugerencia inteligente
@@ -1675,7 +1750,7 @@ export default function Forecast() {
   const planCrucesMensual = useMemo(() => {
     if (!historico.length) return [];
 
-    return planCruceCompleto.map(r => {
+    const base = planCruceCompleto.map(r => {
       const cruceL1 = forecastL1.mapa[`${r.centro}|${r.goa}`];
       if (!cruceL1?.planEsc) return null;
 
@@ -1816,8 +1891,101 @@ export default function Forecast() {
         alertas,
       };
     }).filter(Boolean);
+
+    // ── CRUCES SINTÉTICOS DE APERTURA (sin histórico) ──
+    // Para cada tienda apertura/nueva, por cada GOA activo en su matriz,
+    // si el planner capturó una venta objetivo anual, generamos el plan distribuido.
+    const crucesApertura = [];
+    Object.keys(aperturas).forEach(centro => {
+      const tipoCentro = centros[centro]?.tipo || 'NUEVA';
+      const mesApertura = centros[centro]?.mesApertura || aperturas[centro]?.mesApertura || 1;
+      const nombre = centros[centro]?.nombre || aperturas[centro]?.nombre || centro;
+      const goasCentro = matrizGoaCentro[centro] || {};
+
+      Object.entries(goasCentro).forEach(([goa, cfg]) => {
+        if (!cfg.activo) return;
+        const k = `${centro}|${goa}`;
+        const ventaAnual = ventaObjetivoApertura[k];
+        if (!ventaAnual || ventaAnual <= 0) return; // sin objetivo capturado, no hay plan
+
+        const estac = estacionalidadPorGoa[goa] || Array(12).fill(1/12);
+        const mesesActivos = new Set(cfg.meses || []);
+
+        // Distribuir venta anual por estacionalidad, solo en meses >= apertura y activos
+        let pesoValido = 0;
+        const pesos = estac.map((p, i) => {
+          const mes = i + 1;
+          const activo = (mesesActivos.size === 0 || mesesActivos.has(mes)) && mes >= mesApertura;
+          if (activo) { pesoValido += p; return p; }
+          return 0;
+        });
+        const ventaMensual = pesos.map(p => pesoValido > 0 ? ventaAnual * (p / pesoValido) : 0);
+
+        const rotAnual = otbMasterCalc.rotAnualUsada || 1.5;
+        const rotMensual = rotAnual / 12;
+        const mgObjetivo = mgObjetivoCentro[k] != null ? mgObjetivoCentro[k] : 0.40;
+        const mesPreApertura = mesApertura > 1 ? mesApertura - 1 : null;
+
+        // Cascada
+        const filasMensual = [];
+        let invInicial = 0; // apertura arranca sin inventario
+        // Markdown y MSI simples
+        for (let i = 0; i < 12; i++) {
+          const venta = ventaMensual[i];
+          const ventaSig = i < 11 ? ventaMensual[i+1] : venta;
+          const invFinal = rotMensual > 0 ? ventaSig / rotMensual : 0;
+          const mkd = 0; // apertura sin historial de markdown
+          const msi = venta * msiPct;
+          let compra = venta + (invFinal - invInicial);
+          // Compra de surtido inicial: en mes apertura, compra incluye el inv inicial de arranque
+          if ((i + 1) === mesApertura) {
+            compra = venta + invFinal; // arranca de 0, surte todo
+          }
+          if (compra < 0) compra = 0;
+
+          let bonif = 0;
+          if (mesPreApertura && (i + 1) === mesPreApertura) {
+            // Bonif = 1.2% de la compra del mes apertura (surtido inicial)
+            const ventaAp = ventaMensual[mesApertura - 1] || 0;
+            const invFinAp = mesApertura < 12 ? ventaMensual[mesApertura] / rotMensual : ventaAp / rotMensual;
+            const compraAp = ventaAp + invFinAp;
+            bonif = compraAp * pctBonifApertura;
+          }
+
+          const utilidad = venta * mgObjetivo + bonif;
+          const costo = venta - mkd - msi + bonif - utilidad;
+
+          filasMensual.push({
+            mes: i+1, invInicial, venta, mkd, msi, costo, compra, invFinal,
+            utilidad, mgPct: venta > 0 ? utilidad/venta : 0, bonif, rotacion: rotAnual,
+            invObjetivo: invFinal, esPico: false, compraRebalanceada: false,
+            aplica: venta > 0,
+          });
+          invInicial = invFinal;
+        }
+
+        const tot = filasMensual.reduce((acc, f) => ({
+          venta: acc.venta + f.venta, mkd: acc.mkd + f.mkd, msi: acc.msi + f.msi,
+          costo: acc.costo + f.costo, compra: acc.compra + f.compra,
+          utilidad: acc.utilidad + f.utilidad, bonif: acc.bonif + f.bonif,
+        }), { venta:0, mkd:0, msi:0, costo:0, compra:0, utilidad:0, bonif:0 });
+
+        crucesApertura.push({
+          centro, nombre, goa,
+          filasMensual, totales: tot,
+          mgRealTotal: tot.venta > 0 ? tot.utilidad / tot.venta : 0,
+          tipoCentro, mesApertura, mesPreApertura, esApertura: true,
+          mgObjetivo, mgOverrideCxG: mgObjetivoCentro[k] != null,
+          esSintetico: true,
+          alertas: [],
+        });
+      });
+    });
+
+    return [...base, ...crucesApertura];
   }, [planCruceCompleto, forecastL1, escenarioActivo, msiPct, mgObjetivoCentro,
-      pctBonifApertura, centros, aperturas, historico, otbMasterCalc]);
+      pctBonifApertura, centros, aperturas, historico, otbMasterCalc,
+      matrizGoaCentro, ventaObjetivoApertura, estacionalidadPorGoa]);
 
   // Agregado por centro (vista consolidada)
   const planPorCentro = useMemo(() => {
@@ -1919,7 +2087,7 @@ export default function Forecast() {
               <span className={`p-2 rounded-xl ${isDark ? 'bg-orange-500/20' : 'bg-orange-50'}`}>
                 <Icons.TrendingUp size={22} className={t.textAccent1} />
               </span>
-              Forecast
+              Planning
             </h1>
             <p className={`text-xs mt-1 ml-10 ${t.textMuted}`}>
               Plan por tienda · Regresión histórica · Distribución GOA × Centro · OTB
@@ -2771,7 +2939,7 @@ export default function Forecast() {
                     const totSeccionPlan = arr.reduce((s,g) => s + g.plan, 0);
                     const totSeccionInS  = arr.reduce((s,g) => s + g.inSeason, 0);
                     const totSeccionUlt  = arr.reduce((s,g) => s + g.ultAnio, 0);
-                    const maxBarra = Math.max(...arr.map(g => g.plan), 1);
+                    const maxBarra = arr.reduce((m, g) => g.plan > m ? g.plan : m, 1);
 
                     return (
                       <>
@@ -3299,9 +3467,24 @@ export default function Forecast() {
                                     const arr = [...prev.mgPct]; arr[i] = v != null ? v/100 : null;
                                     return { ...prev, mgPct: arr };
                                   })}
-                                  className={`w-16 text-right font-mono px-1.5 py-0.5 rounded border ${t.input}`} />
+                                  className={`w-16 text-right font-mono px-1.5 py-0.5 rounded border ${
+                                    otbMaster.mgPct[i] != null
+                                      ? (isDark ? 'bg-amber-500/20 border-amber-400 text-amber-200' : 'bg-amber-100 border-amber-400 text-amber-900')
+                                      : t.input
+                                  }`} />
                               ) : (
-                                <span className={`font-mono ${t.textMuted}`}>{(f.mgPct*100).toFixed(1)}%</span>
+                                <NumberInputDeferred
+                                  value={otbMaster.mgPct[i] != null ? (otbMaster.mgPct[i]*100).toFixed(1) : (f.mgPct*100).toFixed(1)}
+                                  onCommit={(v) => setOtbMaster(prev => {
+                                    const arr = [...prev.mgPct]; arr[i] = v != null ? v/100 : null;
+                                    return { ...prev, mgPct: arr };
+                                  })}
+                                  className={`w-16 text-right font-mono px-1.5 py-0.5 rounded border ${
+                                    otbMaster.mgPct[i] != null
+                                      ? (isDark ? 'bg-amber-500/20 border-amber-400 text-amber-200' : 'bg-amber-100 border-amber-400 text-amber-900')
+                                      : t.input
+                                  }`}
+                                  title="Modulado por estacionalidad histórica · edítalo para fijar este mes" />
                               )}
                             </td>
                           ))}
@@ -3331,24 +3514,48 @@ export default function Forecast() {
 
                         {/* Rotación */}
                         <tr>
-                          <td className={`p-2 font-bold sticky left-0 bg-inherit ${t.textMain}`}>Rotación</td>
+                          <td className={`p-2 font-bold sticky left-0 bg-inherit ${t.textMain}`}>
+                            Rotación
+                            <select
+                              value={otbMaster.modoRot}
+                              onChange={e => setOtbMaster(prev => ({ ...prev, modoRot: e.target.value }))}
+                              className={`ml-2 text-[9px] px-1 py-0.5 rounded ${t.input}`}>
+                              <option value="anual">Anual</option>
+                              <option value="mensual">Mensual</option>
+                            </select>
+                          </td>
                           {otbMasterCalc.filas.map((f, i) => (
                             <td key={i} className="p-1 text-right">
-                              <NumberInputDeferred
-                                value={otbMaster.rot[i] ?? f.rot.toFixed(2)}
-                                onCommit={(v) => setOtbMaster(prev => {
-                                  const arr = [...prev.rot]; arr[i] = v;
-                                  return { ...prev, rot: arr };
-                                })}
-                                className={`w-14 text-right font-mono px-1.5 py-0.5 rounded border ${
-                                  otbMaster.rot[i] != null
-                                    ? (isDark ? 'bg-amber-500/20 border-amber-400 text-amber-200' : 'bg-amber-100 border-amber-400 text-amber-900')
-                                    : t.input
-                                }`} />
+                              {otbMaster.modoRot === 'mensual' ? (
+                                <NumberInputDeferred
+                                  value={otbMaster.rot[i] ?? f.rot.toFixed(2)}
+                                  onCommit={(v) => setOtbMaster(prev => {
+                                    const arr = [...prev.rot]; arr[i] = v;
+                                    return { ...prev, rot: arr };
+                                  })}
+                                  className={`w-14 text-right font-mono px-1.5 py-0.5 rounded border ${
+                                    otbMaster.rot[i] != null
+                                      ? (isDark ? 'bg-amber-500/20 border-amber-400 text-amber-200' : 'bg-amber-100 border-amber-400 text-amber-900')
+                                      : t.input
+                                  }`} />
+                              ) : (
+                                <span className={`font-mono ${t.textMuted}`}>{f.rot.toFixed(2)}</span>
+                              )}
                             </td>
                           ))}
-                          <td className={`p-2 text-right font-mono font-black ${t.textPurple}`}>
-                            {(otbMasterCalc.filas.reduce((s,f) => s+f.rot, 0) / 12).toFixed(2)}
+                          <td className="p-2 text-right">
+                            {otbMaster.modoRot === 'anual' ? (
+                              <NumberInputDeferred
+                                value={otbMaster.rotAnual ?? otbMasterCalc.rotAnualUsada.toFixed(2)}
+                                onCommit={(v) => setOtbMaster(prev => ({ ...prev, rotAnual: v }))}
+                                className={`w-16 text-right font-mono font-black px-2 py-1 rounded border ${
+                                  isDark ? 'bg-amber-500/20 border-amber-400 text-amber-200' : 'bg-amber-100 border-amber-400 text-amber-900'
+                                }`} />
+                            ) : (
+                              <span className={`font-mono font-black ${t.textPurple}`}>
+                                {(otbMasterCalc.filas.reduce((s,f) => s+f.rot, 0) / 12).toFixed(2)}
+                              </span>
+                            )}
                           </td>
                         </tr>
 
@@ -3479,7 +3686,26 @@ export default function Forecast() {
                                   <td className={`p-2 text-right font-mono font-black ${tieneOverride ? t.textYellow : t.textPurple}`}>
                                     {fmtMXN(d.aplicado)}
                                   </td>
-                                  <td className={`p-2 text-right font-mono ${t.textMuted}`}>{fmtPct(d.partApl)}</td>
+                                  <td className="p-2 text-right">
+                                    <div className="inline-flex items-center gap-1">
+                                      <NumberInputDeferred
+                                        value={(d.partApl * 100).toFixed(1)}
+                                        onCommit={(parsed) => {
+                                          const otbBase = otbTotal > 0 ? otbTotal : planSugeridoTotal;
+                                          setOtbOverridesGoa(prev => ({
+                                            ...prev,
+                                            [g]: (parsed || 0) / 100 * otbBase
+                                          }));
+                                        }}
+                                        className={`w-16 text-right font-mono text-xs px-1.5 py-1 rounded border ${
+                                          tieneOverride
+                                            ? (isDark ? 'bg-amber-500/20 border-amber-400 text-amber-200' : 'bg-amber-100 border-amber-400 text-amber-900')
+                                            : t.input
+                                        } focus:outline-none focus:ring-1`}
+                                        title="Edita % o monto $ — el otro se recalcula" />
+                                      <span className={`text-[10px] ${t.textMuted}`}>%</span>
+                                    </div>
+                                  </td>
                                   <td className="p-2 text-center">
                                     {tieneOverride && (
                                       <button onClick={() => setOtbOverridesGoa(prev => { const n = { ...prev }; delete n[g]; return n; })}
@@ -4187,6 +4413,52 @@ export default function Forecast() {
                         <button onClick={() => setT5Centro('')} className={`text-xs px-3 py-1.5 rounded ${t.btnGhost}`}>← Volver</button>
                       </div>
                     </div>
+
+                    {/* Panel captura venta objetivo (solo aperturas/nuevas) */}
+                    {(centros[t5Centro]?.tipo === 'APERTURA' || centros[t5Centro]?.tipo === 'NUEVA') && (
+                      <div className={`p-4 rounded-xl border ${isDark ? 'bg-amber-900/10 border-amber-500/30' : 'bg-amber-50 border-amber-200'}`}>
+                        <h3 className={`text-xs font-black uppercase tracking-widest mb-1 ${t.textYellow}`}>
+                          🆕 Venta Objetivo Anual por GOA
+                        </h3>
+                        <p className={`text-[10px] mb-3 ${t.textMuted}`}>
+                          Esta tienda no tiene histórico. Captura la venta objetivo anual de cada GOA y el sistema la distribuye con la estacionalidad promedio de esa categoría (desde el mes de apertura).
+                        </p>
+                        <div className="grid grid-cols-1 md:grid-cols-3 gap-2">
+                          {Object.entries(matrizGoaCentro[t5Centro] || {})
+                            .filter(([, cfg]) => cfg.activo)
+                            .map(([goa]) => {
+                              const k = `${t5Centro}|${goa}`;
+                              return (
+                                <div key={goa} className={`p-2 rounded-lg border ${t.cardInner} flex items-center justify-between gap-2`}>
+                                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${t.badgePurple}`}>{goa}</span>
+                                  <div className="flex items-center gap-1">
+                                    <span className={`text-[10px] ${t.textMuted}`}>$</span>
+                                    <NumberInputDeferred
+                                      value={ventaObjetivoApertura[k] ?? ''}
+                                      placeholder="Venta anual"
+                                      onCommit={(parsed) => setVentaObjetivoApertura(prev => {
+                                        const n = { ...prev };
+                                        if (parsed === null) delete n[k];
+                                        else n[k] = parsed;
+                                        return n;
+                                      })}
+                                      className={`w-28 text-right font-mono text-xs px-2 py-1 rounded border ${
+                                        ventaObjetivoApertura[k]
+                                          ? (isDark ? 'bg-amber-500/20 border-amber-400 text-amber-200' : 'bg-amber-100 border-amber-400 text-amber-900')
+                                          : t.input
+                                      }`} />
+                                  </div>
+                                </div>
+                              );
+                            })}
+                        </div>
+                        {Object.keys(matrizGoaCentro[t5Centro] || {}).filter(g => matrizGoaCentro[t5Centro][g].activo).length === 0 && (
+                          <p className={`text-[10px] ${t.textMuted} italic`}>
+                            ⚠️ Activa GOAs para esta tienda en Tab 1 (matriz) antes de capturar venta objetivo.
+                          </p>
+                        )}
+                      </div>
+                    )}
 
                     {/* Consolidado */}
                     {t5Vista === 'consolidado' && (() => {
