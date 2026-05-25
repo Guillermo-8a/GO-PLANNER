@@ -1598,6 +1598,7 @@ export default function Traslados() {
                   )}
                   </div>
                 </div>
+              </div> {/* <-- AQUÍ ESTÁ EL CULPABLE, ESTE DIV FALTABA */}
               )}
             </div>
 
