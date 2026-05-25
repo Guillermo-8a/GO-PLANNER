@@ -43,23 +43,23 @@ const BarCompare = ({ data, theme }) => {
           </span>
           <div className="flex-1 flex flex-col gap-0.5">
             <div className="relative h-2 rounded-full bg-zinc-700/30 overflow-hidden">
-              <div className="absolute left-0 top-0 h-full rounded-full bg-amber-400/70"
+              <div className="absolute left-0 top-0 h-full rounded-full bg-yellow-400/80"
                 style={{ width: `${(d.antes / max) * 100}%` }} />
             </div>
             <div className="relative h-2 rounded-full bg-zinc-700/30 overflow-hidden">
-              <div className="absolute left-0 top-0 h-full rounded-full bg-emerald-400"
+              <div className="absolute left-0 top-0 h-full rounded-full bg-violet-500"
                 style={{ width: `${(d.despues / max) * 100}%` }} />
             </div>
           </div>
           <div className="flex flex-col items-end w-14">
-            <span className="text-amber-400 font-mono">{fmt(d.antes)}</span>
-            <span className="text-emerald-400 font-mono">{fmt(d.despues)}</span>
+            <span className="text-yellow-400 font-mono">{fmt(d.antes)}</span>
+            <span className="text-violet-400 font-mono">{fmt(d.despues)}</span>
           </div>
         </div>
       ))}
       <div className="flex gap-4 mt-2 text-[9px]">
-        <span className="flex items-center gap-1"><span className="w-3 h-2 rounded-full bg-amber-400/70 inline-block" /> Antes</span>
-        <span className="flex items-center gap-1"><span className="w-3 h-2 rounded-full bg-emerald-400 inline-block" /> Después</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-2 rounded-full bg-yellow-400/80 inline-block" /> Antes</span>
+        <span className="flex items-center gap-1"><span className="w-3 h-2 rounded-full bg-violet-500 inline-block" /> Después</span>
       </div>
     </div>
   );
@@ -173,6 +173,11 @@ export default function Traslados() {
   const [filterGoa,          setFilterGoa]          = useState('ALL');
   const [letrasExcluidas,    setLetrasExcluidas]    = useState(new Set()); // letras de descuento a excluir
   const [filterZona,         setFilterZona]         = useState('ALL');
+  const [minPzsTraslado,     setMinPzsTraslado]     = useState(0);   // mínimo pzs para considerar traslado
+  const [minPesosTraslado,   setMinPesosTraslado]   = useState(0);   // mínimo pesos para considerar traslado
+  // Zonas adyacentes: { ZONA: Set<ZONA> } — define qué zonas pueden recibir entre sí
+  const [zonasAdyacentes,    setZonasAdyacentes]    = useState({});
+  const [showPanelZonas,     setShowPanelZonas]     = useState(false);
   const [costoPorPza,        setCostoPorPza]        = useState(35); // costo logístico por pieza
 
   const [excResult, setExcResult] = useState([]);
@@ -520,7 +525,8 @@ export default function Traslados() {
           const tcOrigen   = climaMatrix[dataOrigen.centro] || dataOrigen.tipoCentro || '';
           if (zonaValida(tipoClima, tcOrigen)) return; // ya está en zona correcta
 
-          // Score receptor: clima + misma zona + permiso marca + mayor vta + MOS alto
+          // Score receptor: clima + zona (misma > adyacente > cualquiera) + permiso + vta + MOS
+          const adyacentesOrigen = zonasAdyacentes[zonaOrigen] || new Set();
           const allReceptores = Object.entries(centros)
             .filter(([c]) => c !== centroOrigen)
             .map(([c, d]) => {
@@ -529,17 +535,17 @@ export default function Traslados() {
               const tcRec        = climaMatrix[c] || d.tipoCentro || '';
               const climaOK      = zonaValida(tipoClima, tcRec);
               const mismaZona    = d.zona === zonaOrigen;
+              const zonaAdyacente = !mismaZona && adyacentesOrigen.has(d.zona || '');
               const vtaMes       = mesActual > 0 ? (d.vta || 0) / mesActual : 0;
               const mos          = vtaMes > 0 ? d.oh / vtaMes : 99;
-              // Score: clima primero, luego zona, luego vta y capacidad de absorber
               const score = (climaOK ? 1000 : 0)
-                          + (mismaZona ? 500 : 0)
+                          + (mismaZona ? 600 : zonaAdyacente ? 300 : 0)
                           + (tienePermiso ? 200 : 0)
                           + (d.vta || 0)
                           - mos * 10;
-              return { centro: c, data: d, tienePermiso, climaOK, mismaZona, score, mos };
+              return { centro: c, data: d, tienePermiso, climaOK, mismaZona, zonaAdyacente, score, mos };
             })
-            .filter(r => r.climaOK) // clima siempre requerido
+            .filter(r => r.climaOK)
             .sort((a, b) => b.score - a.score);
 
           const receptor = allReceptores[0];
@@ -558,6 +564,11 @@ export default function Traslados() {
 
           const costoTraslado = dataOrigen.oh * costoPorPza;
           const fueraZona     = !receptor.mismaZona;
+          const esFueraAdyacente = fueraZona && !receptor.zonaAdyacente;
+
+          // Filtro mínimo pzs y pesos
+          if (minPzsTraslado > 0 && dataOrigen.oh < minPzsTraslado) return;
+          if (minPesosTraslado > 0 && (dataOrigen.oh * dataOrigen.precio) < minPesosTraslado) return;
 
           resultado.push({
             seccion:            meta.seccion,
@@ -574,7 +585,7 @@ export default function Traslados() {
             precio:             dataOrigen.precio,
             costoTraslado,
             fueraZona,
-            razon:              `${goa} (${tipoClima}) en ${tcOrigen}${fueraZona ? ' ⚠️ fuera de zona' : ''}`,
+            razon:              `${goa} (${tipoClima}) en ${tcOrigen}${fueraZona ? (esFueraAdyacente ? ' ⚠️ zona no adyacente' : ' zona adyacente') : ''}`,
             tipoCentroOrigen:   dataOrigen.tipoCentro,
             tipoCentroReceptor: receptor.data.tipoCentro,
             letraDesc:          dataOrigen.letraDesc || '',
@@ -587,7 +598,8 @@ export default function Traslados() {
       setExcLoading(false);
     }, 300);
   }, [rawData, brandMatrix, climaMatrix, goasTemporada, filterGoa, filterSku, filterMarca,
-      filterSeccion, filterTipoCentro, filterZona, letrasExcluidas, costoPorPza, mesActual]);
+      filterSeccion, filterTipoCentro, filterZona, letrasExcluidas, costoPorPza, mesActual,
+      minPzsTraslado, minPesosTraslado, zonasAdyacentes]);
 
   // Datos para gráfica excedente
   const chartDataExc = useMemo(() => {
@@ -634,27 +646,73 @@ export default function Traslados() {
     return Object.values(map).sort((a,b) => b.pzs - a.pzs);
   }, [excResult, rawData]);
 
-  // Datos dispersión R² — OH antes vs después por centro (para scatter)
+  // Scatter VTA vs OH — antes y después, con forecast basado en uplift de datos
   const scatterData = useMemo(() => {
-    if (!excResult.length || !rawData.length) return { antes: [], despues: [] };
-    const ohPorCentro = {};
+    if (!rawData.length) return [];
+
+    // Calcular uplift por GOA: ratio VTA/OH en centros con clima correcto vs incorrecto
+    const upliftPorGoa = {};
+    const CLIMA_COMP = {
+      FRIO:  (tc) => ['FRIO','EXTREMOSO','TEMPLADO',''].includes(tc),
+      CALOR: (tc) => ['CALOR','PLAYA','EXTREMOSO','TEMPLADO',''].includes(tc),
+      PLAYA: (tc) => ['PLAYA','CALOR'].includes(tc),
+    };
+    const byGoa = {};
     rawData.forEach(r => {
-      if (!ohPorCentro[r.centro]) ohPorCentro[r.centro] = { nombre: r.nCentro || r.centro, zona: r.zona, oh: 0, vta: 0 };
-      ohPorCentro[r.centro].oh  += r.oh;
-      ohPorCentro[r.centro].vta += r.vta;
+      const tc = (climaMatrix[r.centro] || r.tipoCentro || '').toUpperCase();
+      const tipoClima = goasTemporada[r.goa];
+      if (!tipoClima || tipoClima === 'TODO') return;
+      const enZonaCorrecta = CLIMA_COMP[tipoClima]?.(tc) ?? true;
+      if (!byGoa[r.goa]) byGoa[r.goa] = { vtaOK: 0, ohOK: 0, vtaKO: 0, ohKO: 0 };
+      if (enZonaCorrecta) {
+        byGoa[r.goa].vtaOK += r.vta; byGoa[r.goa].ohOK += r.oh;
+      } else {
+        byGoa[r.goa].vtaKO += r.vta; byGoa[r.goa].ohKO += r.oh;
+      }
     });
+    Object.entries(byGoa).forEach(([goa, d]) => {
+      const ratioOK = d.ohOK > 0 ? d.vtaOK / d.ohOK : null;
+      const ratioKO = d.ohKO > 0 ? d.vtaKO / d.ohKO : null;
+      upliftPorGoa[goa] = ratioOK && ratioKO && ratioKO > 0 ? ratioOK / ratioKO : 1.0;
+    });
+
+    // Agregar por centro
+    const porCentro = {};
+    rawData.forEach(r => {
+      if (!porCentro[r.centro]) porCentro[r.centro] = { nombre: r.nCentro || r.centro, zona: r.zona, oh: 0, vta: 0, goas: {} };
+      porCentro[r.centro].oh  += r.oh;
+      porCentro[r.centro].vta += r.vta;
+      if (!porCentro[r.centro].goas[r.goa]) porCentro[r.centro].goas[r.goa] = { oh: 0, vta: 0 };
+      porCentro[r.centro].goas[r.goa].oh  += r.oh;
+      porCentro[r.centro].goas[r.goa].vta += r.vta;
+    });
+
     const salidas = {}, entradas = {};
     excResult.forEach(r => {
-      salidas[r.centroSalida]   = (salidas[r.centroSalida]   || 0) + r.pzs;
+      salidas[r.centroSalida]    = (salidas[r.centroSalida]    || 0) + r.pzs;
       entradas[r.centroReceptor] = (entradas[r.centroReceptor] || 0) + r.pzs;
     });
-    return Object.entries(ohPorCentro).map(([id, d]) => ({
-      id, nombre: d.nombre, zona: d.zona,
-      antes:   d.oh,
-      despues: Math.max(0, d.oh - (salidas[id] || 0) + (entradas[id] || 0)),
-      vta:     d.vta,
-    })).filter(d => d.antes > 0);
-  }, [excResult, rawData]);
+
+    return Object.entries(porCentro).map(([id, d]) => {
+      const ohDespues = Math.max(0, d.oh - (salidas[id] || 0) + (entradas[id] || 0));
+      // Forecast VTA: aplica uplift a la VTA de cada GOA que recibió mercancía
+      let vtaFcst = d.vta;
+      if (entradas[id]) {
+        // Centro receptor — estimar uplift promedio de los GOAs que llegan
+        const upliftProm = excResult
+          .filter(r => r.centroReceptor === id)
+          .reduce((s, r) => s + (upliftPorGoa[r.goa] || 1), 0) /
+          Math.max(1, excResult.filter(r => r.centroReceptor === id).length);
+        vtaFcst = d.vta * upliftProm;
+      }
+      return {
+        id, nombre: d.nombre, zona: d.zona,
+        ohAntes: d.oh, vtaAntes: d.vta,
+        ohDespues, vtaFcst,
+        cambia: d.oh !== ohDespues,
+      };
+    }).filter(d => d.ohAntes > 0 || d.vtaAntes > 0);
+  }, [excResult, rawData, climaMatrix, goasTemporada]);
 
   const exportExcedente = () => {
     // Layout: División | Sección # | Sección Nom | Marca | GOA | Modelo | SKU | N SKU | PV | # Centro Origen | Tienda Origen | Stock | Pzs a trasladar | # Centro Destino | Tienda Destino | Monto a Traspasar | Costo Traslado | Razón
@@ -1383,15 +1441,70 @@ export default function Traslados() {
                 </div>
               )}
 
-              {/* Costo logístico */}
-              <div className="mt-3 flex items-center gap-3">
-                <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} whitespace-nowrap`}>
-                  Costo traslado por pza ($)
-                </label>
-                <input type="number" min={1} value={costoPorPza}
-                  onChange={e => setCostoPorPza(Number(e.target.value))}
-                  className={`w-24 text-xs px-3 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`} />
-                <span className={`text-[9px] ${t.textMuted}`}>Se usa para comparar vs costo de descuentar</span>
+              {/* Mínimos y costo logístico */}
+              <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
+                <div className="flex items-center gap-2">
+                  <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} whitespace-nowrap`}>Mín. pzs</label>
+                  <input type="number" min={0} value={minPzsTraslado}
+                    onChange={e => setMinPzsTraslado(Number(e.target.value))}
+                    className={`w-20 text-xs px-2 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`} />
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} whitespace-nowrap`}>Mín. $ traslado</label>
+                  <input type="number" min={0} value={minPesosTraslado}
+                    onChange={e => setMinPesosTraslado(Number(e.target.value))}
+                    className={`w-24 text-xs px-2 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`} />
+                </div>
+                <div className="flex items-center gap-2">
+                  <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} whitespace-nowrap`}>Costo/pza ($)</label>
+                  <input type="number" min={1} value={costoPorPza}
+                    onChange={e => setCostoPorPza(Number(e.target.value))}
+                    className={`w-20 text-xs px-2 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`} />
+                </div>
+              </div>
+
+              {/* Panel de zonas adyacentes */}
+              <div className="mt-3">
+                <div className="flex items-center justify-between mb-2">
+                  <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted}`}>
+                    Zonas adyacentes (traslados entre estas zonas tienen prioridad)
+                  </label>
+                  <button onClick={() => setShowPanelZonas(v => !v)}
+                    className={`text-[10px] font-bold px-3 py-1 rounded-lg border transition-all ${t.btnGhost}`}>
+                    {showPanelZonas ? 'Ocultar' : 'Configurar'}
+                  </button>
+                </div>
+                {showPanelZonas && (
+                  <div className="space-y-2">
+                    {opcionesZona.filter(z => z !== 'ALL').map(zona => (
+                      <div key={zona} className="flex items-center gap-3 flex-wrap">
+                        <span className={`text-[10px] font-black w-28 truncate ${t.textMain}`}>{zona}</span>
+                        <span className={`text-[9px] ${t.textMuted}`}>puede enviar a:</span>
+                        <div className="flex flex-wrap gap-1.5">
+                          {opcionesZona.filter(z => z !== 'ALL' && z !== zona).map(z2 => {
+                            const sel = zonasAdyacentes[zona]?.has(z2);
+                            return (
+                              <button key={z2} onClick={() => setZonasAdyacentes(prev => {
+                                const next = { ...prev };
+                                if (!next[zona]) next[zona] = new Set();
+                                else next[zona] = new Set(next[zona]);
+                                sel ? next[zona].delete(z2) : next[zona].add(z2);
+                                return next;
+                              })}
+                                className={`px-2 py-0.5 rounded-full text-[9px] font-bold border transition-all ${
+                                  sel
+                                    ? 'bg-violet-500/20 border-violet-500 text-violet-400'
+                                    : isDark ? 'bg-zinc-800 border-zinc-600 text-gray-500' : 'bg-gray-100 border-gray-300 text-gray-400'
+                                }`}>
+                                {z2}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
 
               <div className="mt-4 flex gap-3 flex-wrap">
@@ -1458,50 +1571,55 @@ export default function Traslados() {
                     </div>
                   </div>
 
-                  {/* Scatter R² antes vs después */}
+                  {/* Scatter VTA vs OH: Antes y Después */}
                   <div className={`p-4 rounded-xl border ${t.cardInner}`}>
-                    <h4 className={`text-sm font-bold mb-1 ${t.textMain}`}>📊 Dispersión OH — Antes vs Después</h4>
-                    <p className={`text-[9px] mb-3 ${t.textMuted}`}>Cada punto = un centro. Eje X = OH antes, Eje Y = OH después.</p>
-                    <svg viewBox="0 0 280 180" className="w-full">
-                      {/* Grid */}
-                      {[0,1,2,3,4].map(i => (
-                        <line key={i} x1={30} y1={10 + i*34} x2={275} y2={10 + i*34}
-                          stroke={isDark ? '#3f3f46' : '#e5e7eb'} strokeWidth="0.5"/>
+                    <h4 className={`text-sm font-bold mb-1 ${t.textMain}`}>📊 VTA vs OH — Antes / Después + Forecast</h4>
+                    <p className={`text-[9px] mb-2 ${t.textMuted}`}>Eje X = OH · Eje Y = VTA. 🟡 Antes · 🟣 Después (con fcst de uplift por zona)</p>
+                    <svg viewBox="0 0 280 170" className="w-full">
+                      {[0,1,2,3].map(i => (
+                        <g key={i}>
+                          <line x1={30} y1={10+i*38} x2={275} y2={10+i*38} stroke={isDark?'#3f3f46':'#e5e7eb'} strokeWidth="0.5"/>
+                          <line x1={30+i*61} y1={10} x2={30+i*61} y2={124} stroke={isDark?'#3f3f46':'#e5e7eb'} strokeWidth="0.5"/>
+                        </g>
                       ))}
-                      {[0,1,2,3,4].map(i => (
-                        <line key={i} x1={30 + i*61} y1={10} x2={30 + i*61} y2={146}
-                          stroke={isDark ? '#3f3f46' : '#e5e7eb'} strokeWidth="0.5"/>
-                      ))}
-                      {/* Diagonal y=x reference */}
-                      <line x1={30} y1={146} x2={275} y2={10} stroke="#a78bfa" strokeWidth="0.8" strokeDasharray="4,3" opacity="0.5"/>
-                      {/* Points */}
                       {(() => {
-                        const maxVal = Math.max(...scatterData.map(d => Math.max(d.antes, d.despues)), 1);
-                        const toX = v => 30 + (v/maxVal) * 245;
-                        const toY = v => 146 - (v/maxVal) * 136;
-                        return scatterData.slice(0,80).map((d, i) => {
-                          const changed = d.antes !== d.despues;
-                          return (
-                            <circle key={i}
-                              cx={toX(d.antes)} cy={toY(d.despues)}
-                              r={changed ? 3.5 : 2}
-                              fill={changed ? '#fbbf24' : '#a78bfa'}
-                              opacity={changed ? 0.85 : 0.45}
-                              stroke={changed ? '#f59e0b' : 'none'}
-                              strokeWidth="0.5">
-                              <title>{d.nombre}: {d.antes}→{d.despues}</title>
+                        const maxOH  = Math.max(...scatterData.map(d => Math.max(d.ohAntes, d.ohDespues)), 1);
+                        const maxVTA = Math.max(...scatterData.map(d => Math.max(d.vtaAntes, d.vtaFcst)), 1);
+                        const toX = v => 30 + (v/maxOH)  * 242;
+                        const toY = v => 124 - (v/maxVTA) * 112;
+                        return scatterData.slice(0,100).map((d, i) => (
+                          <g key={i}>
+                            {/* Línea connecting antes→después */}
+                            {d.cambia && (
+                              <line
+                                x1={toX(d.ohAntes)}  y1={toY(d.vtaAntes)}
+                                x2={toX(d.ohDespues)} y2={toY(d.vtaFcst)}
+                                stroke="#a78bfa" strokeWidth="0.6" opacity="0.3"/>
+                            )}
+                            {/* Punto antes (amarillo) */}
+                            <circle cx={toX(d.ohAntes)} cy={toY(d.vtaAntes)}
+                              r={d.cambia ? 3 : 2} fill="#facc15"
+                              opacity={d.cambia ? 0.9 : 0.35}>
+                              <title>{d.nombre} — Antes: OH {d.ohAntes} / VTA {d.vtaAntes}</title>
                             </circle>
-                          );
-                        });
+                            {/* Punto después (morado) solo si cambia */}
+                            {d.cambia && (
+                              <circle cx={toX(d.ohDespues)} cy={toY(d.vtaFcst)}
+                                r={3.5} fill="#a78bfa" opacity="0.9"
+                                stroke="#7c3aed" strokeWidth="0.5">
+                                <title>{d.nombre} — Después: OH {d.ohDespues} / VTA fcst {Math.round(d.vtaFcst)}</title>
+                              </circle>
+                            )}
+                          </g>
+                        ));
                       })()}
-                      {/* Axes labels */}
-                      <text x={150} y={168} textAnchor="middle" fontSize="7" fill={isDark ? '#71717a' : '#9ca3af'}>OH Antes</text>
-                      <text x={12} y={80} textAnchor="middle" fontSize="7" fill={isDark ? '#71717a' : '#9ca3af'} transform="rotate(-90,12,80)">OH Después</text>
+                      <text x={152} y={158} textAnchor="middle" fontSize="7" fill={isDark?'#71717a':'#9ca3af'}>OH</text>
+                      <text x={12} y={67} textAnchor="middle" fontSize="7" fill={isDark?'#71717a':'#9ca3af'} transform="rotate(-90,12,67)">VTA</text>
                     </svg>
-                    <div className="flex gap-4 text-[9px] mt-1">
-                      <span className="flex items-center gap-1"><circle cx={5} cy={5} r={4} fill="#fbbf24" className="inline-block w-2 h-2 rounded-full bg-yellow-400"/> Con cambio</span>
-                      <span className="flex items-center gap-1"><span className="inline-block w-2 h-2 rounded-full bg-violet-400"/> Sin cambio</span>
-                      <span className="flex items-center gap-1"><span className="inline-block w-4 border-t border-dashed border-violet-400"/> y=x</span>
+                    <div className="flex gap-4 text-[9px] mt-1 flex-wrap">
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-400 inline-block"/> Antes</span>
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-violet-400 inline-block"/> Después + fcst</span>
+                      <span className={`${t.textMuted}`}>Líneas = centros que cambian</span>
                     </div>
                   </div>
                 </div>
