@@ -1417,7 +1417,7 @@ export default function Traslados() {
               </button>
 
               {showPanelGoas && (
-                <div className="px-5 pb-5 space-y-5 border-t ${t.border}">
+                <div className={`px-5 pb-5 space-y-5 border-t ${t.border}`}>
                   {/* Sub-panel: GOAs de Temporada */}
                   <div className="pt-4">
                     <h3 className={`text-[10px] font-black uppercase tracking-widest mb-3 ${t.textMuted}`}>GOAs de Temporada</h3>
