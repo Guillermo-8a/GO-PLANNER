@@ -166,14 +166,17 @@ export default function Traslados() {
   const [goasTemporada, setGoasTemporada] = useState({});
   const [showPanelGoas, setShowPanelGoas] = useState(false);
 
-  const [filterSku,     setFilterSku]     = useState('ALL');
-  const [filterTipoCentro, setFilterTipoCentro] = useState('ALL');
-  const [filterSeccion, setFilterSeccion] = useState('ALL');
-  const [filterMarca,   setFilterMarca]   = useState('ALL');
-  const [filterGoa,     setFilterGoa]     = useState('ALL');
+  const [filterSku,          setFilterSku]          = useState('ALL');
+  const [filterTipoCentro,   setFilterTipoCentro]   = useState('ALL');
+  const [filterSeccion,      setFilterSeccion]      = useState('ALL');
+  const [filterMarca,        setFilterMarca]        = useState('ALL');
+  const [filterGoa,          setFilterGoa]          = useState('ALL');
+  const [letrasExcluidas,    setLetrasExcluidas]    = useState(new Set()); // letras de descuento a excluir
+  const [costoPorPza,        setCostoPorPza]        = useState(35); // costo logístico por pieza
 
   const [excResult, setExcResult] = useState([]);
   const [excLoading, setExcLoading] = useState(false);
+  const [sinReceptorData, setSinReceptorData] = useState([]); // SKUs sin receptor → recomendar descuento
 
   // Dashboard: artículos de temporada fuera de zona (antes de ejecutar traslados)
   const dashboardData = useMemo(() => {
@@ -452,26 +455,28 @@ export default function Traslados() {
   };
 
   // Opciones de filtros
-  const opcionesGoa    = useMemo(() => ['ALL', ...new Set(rawData.map(r => r.goa).filter(Boolean))], [rawData]);
+  const opcionesGoa     = useMemo(() => ['ALL', ...new Set(rawData.map(r => r.goa).filter(Boolean))], [rawData]);
+  const opcionesLetras  = useMemo(() => [...new Set(rawData.map(r => r.letraDesc).filter(Boolean))].sort(), [rawData]);
   const opcionesSku    = useMemo(() => ['ALL', ...new Set(rawData.map(r => r.sku).filter(Boolean))], [rawData]);
   const opcionesMarca  = useMemo(() => ['ALL', ...new Set(rawData.map(r => r.marca).filter(Boolean))], [rawData]);
   const opcionesSeccion = useMemo(() => ['ALL', ...new Set(rawData.map(r => r.seccion).filter(Boolean))], [rawData]);
   const opcionesTipoCentro = useMemo(() => ['ALL', ...new Set(rawData.map(r => r.tipoCentro).filter(Boolean))], [rawData]);
 
-  // HERRAMIENTA EXCEDENTE — usa goasTemporada configurado por el usuario
+  // HERRAMIENTA EXCEDENTE
   const calcularExcedentes = useCallback(() => {
     if (!rawData.length) return;
     const goasActivos = Object.keys(goasTemporada).filter(g => goasTemporada[g] && goasTemporada[g] !== 'TODO');
     if (goasActivos.length === 0) {
-      alert('Define al menos un GOA de temporada en el panel "GOAs de Temporada" antes de ejecutar la herramienta.');
+      alert('Define al menos un GOA de temporada antes de ejecutar la herramienta.');
       return;
     }
     setExcLoading(true);
 
     setTimeout(() => {
-      // Agrupar OH por SKU x centro
       const centroPorSku = {};
       rawData.forEach(r => {
+        // Excluir mercancía con letra de descuento seleccionada para no mover
+        if (letrasExcluidas.size > 0 && r.letraDesc && letrasExcluidas.has(r.letraDesc)) return;
         const key = `${r.sku}|${r.goa}|${r.marca}|${r.seccion}|${r.numSeccion}`;
         if (!centroPorSku[key]) centroPorSku[key] = { meta: r, centros: {} };
         const prev = centroPorSku[key].centros[r.centro];
@@ -482,83 +487,104 @@ export default function Traslados() {
         };
       });
 
-      // Compatibilidad: compara el clima requerido del GOA vs el TIPO CENTRO
-      // Climas posibles: FRIO, CALOR, PLAYA, TEMPLADO, EXTREMOSO
-      // EXTREMOSO = climas extremos (muy frío o muy caluroso) — admite artículos de ambos extremos
       const zonaValida = (tipoClima, tipoCentro = '') => {
         const tc = tipoCentro.toUpperCase().trim();
         if (tipoClima === 'FRIO')  return ['FRIO','EXTREMOSO','TEMPLADO',''].includes(tc);
         if (tipoClima === 'CALOR') return ['CALOR','PLAYA','EXTREMOSO','TEMPLADO',''].includes(tc);
         if (tipoClima === 'PLAYA') return ['PLAYA','CALOR'].includes(tc);
-        return true; // TODO = va a todos
+        return true;
       };
 
       const resultado = [];
+      const sinReceptor = []; // SKUs donde no hay receptor válido → recomendar descuento
 
       Object.entries(centroPorSku).forEach(([, { meta, centros }]) => {
-        const goa   = meta.goa;
-        const marca = meta.marca;
-        const tipoClima = goasTemporada[goa]; // undefined si no está configurado
-        if (!tipoClima || tipoClima === 'TODO') return; // solo GOAs de temporada
+        const goa       = meta.goa;
+        const marca     = meta.marca;
+        const tipoClima = goasTemporada[goa];
+        if (!tipoClima || tipoClima === 'TODO') return;
 
-        // Filtros del usuario
-        if (filterGoa      !== 'ALL' && goa         !== filterGoa)       return;
-        if (filterSku      !== 'ALL' && meta.sku     !== filterSku)       return;
-        if (filterMarca    !== 'ALL' && marca        !== filterMarca)     return;
-        if (filterSeccion  !== 'ALL' && meta.seccion !== filterSeccion)   return;
+        if (filterGoa      !== 'ALL' && goa         !== filterGoa)     return;
+        if (filterSku      !== 'ALL' && meta.sku     !== filterSku)     return;
+        if (filterMarca    !== 'ALL' && marca        !== filterMarca)   return;
+        if (filterSeccion  !== 'ALL' && meta.seccion !== filterSeccion) return;
 
         Object.entries(centros).forEach(([centroOrigen, dataOrigen]) => {
           if (dataOrigen.oh <= 0) return;
           if (filterTipoCentro !== 'ALL' && dataOrigen.tipoCentro !== filterTipoCentro) return;
 
           const zonaOrigen = dataOrigen.zona || '';
-          // Tipo clima del centro: primero climaMatrix (viene de la matriz), luego col TIPO CENTRO del CSV
-          const tcOrigen = climaMatrix[dataOrigen.nCentro] || climaMatrix[dataOrigen.centro] || dataOrigen.tipoCentro || '';
-          if (zonaValida(tipoClima, tcOrigen)) return;
+          const tcOrigen   = climaMatrix[dataOrigen.centro] || dataOrigen.tipoCentro || '';
+          if (zonaValida(tipoClima, tcOrigen)) return; // ya está en zona correcta
 
-          // Buscar mejor receptor: tipoCentro compatible + mayor venta - menor OH + permiso de marca
-          const posiblesReceptores = Object.entries(centros)
+          // Score receptor: clima + misma zona + permiso marca + mayor vta + MOS alto
+          const allReceptores = Object.entries(centros)
             .filter(([c]) => c !== centroOrigen)
             .map(([c, d]) => {
-              const seccionMarca  = `${meta.seccion}|${marca}`;
-              const tienePermiso  = !brandMatrix[c] || brandMatrix[c].length === 0 || brandMatrix[c].includes(seccionMarca);
-              const tcRec = climaMatrix[d.nCentro] || climaMatrix[d.centro] || d.tipoCentro || '';
-              const climaOK = zonaValida(tipoClima, tcRec);
-              const score         = (d.vta || 0) - (d.oh || 0) * 0.3;
-              return { centro: c, data: d, tienePermiso, climaOK, score };
+              const seccionMarca = `${meta.numSeccion}|${marca}`;
+              const tienePermiso = !brandMatrix[c] || brandMatrix[c].length === 0 || brandMatrix[c].includes(seccionMarca);
+              const tcRec        = climaMatrix[c] || d.tipoCentro || '';
+              const climaOK      = zonaValida(tipoClima, tcRec);
+              const mismaZona    = d.zona === zonaOrigen;
+              const vtaMes       = mesActual > 0 ? (d.vta || 0) / mesActual : 0;
+              const mos          = vtaMes > 0 ? d.oh / vtaMes : 99;
+              // Score: clima primero, luego zona, luego vta y capacidad de absorber
+              const score = (climaOK ? 1000 : 0)
+                          + (mismaZona ? 500 : 0)
+                          + (tienePermiso ? 200 : 0)
+                          + (d.vta || 0)
+                          - mos * 10;
+              return { centro: c, data: d, tienePermiso, climaOK, mismaZona, score, mos };
             })
-            .filter(r => r.tienePermiso && r.climaOK)
+            .filter(r => r.climaOK) // clima siempre requerido
             .sort((a, b) => b.score - a.score);
 
-          const receptor = posiblesReceptores[0];
-          if (!receptor) return;
+          const receptor = allReceptores[0];
+
+          if (!receptor) {
+            // No hay receptor compatible — recomendar descuento
+            sinReceptor.push({
+              sku: meta.sku, goa, marca,
+              seccion: meta.seccion, numSeccion: meta.numSeccion,
+              centroOrigen, nombreOrigen: dataOrigen.nCentro || centroOrigen,
+              pzs: dataOrigen.oh, precio: dataOrigen.precio,
+              costoTraslado: dataOrigen.oh * costoPorPza,
+            });
+            return;
+          }
+
+          const costoTraslado = dataOrigen.oh * costoPorPza;
+          const fueraZona     = !receptor.mismaZona;
 
           resultado.push({
-            seccion:            meta.seccion,       // nombre sección
-            numSeccion:         meta.numSeccion,    // número sección
+            seccion:            meta.seccion,
+            numSeccion:         meta.numSeccion,
             sku:                meta.sku,
             marca,
             goa,
-            // Salida: nCentro=nombre tienda, centro=número
-            centroSalida:       meta.sku ? dataOrigen.centro : centroOrigen, // número
-            nombreSalida:       dataOrigen.nCentro || centroOrigen,           // nombre tienda
-            // Receptor
-            centroReceptor:     receptor.centro,                              // número
-            nombreReceptor:     receptor.data.nCentro || receptor.centro,     // nombre tienda
+            centroSalida:       centroOrigen,
+            nombreSalida:       dataOrigen.nCentro || centroOrigen,
+            centroReceptor:     receptor.centro,
+            nombreReceptor:     receptor.data.nCentro || receptor.centro,
             pzs:                dataOrigen.oh,
             pesos:              dataOrigen.oh * (dataOrigen.precio || 0),
             precio:             dataOrigen.precio,
-            razon:              `${goa} (${tipoClima}) en centro tipo ${tcOrigen} / zona: ${zonaOrigen}`,
+            costoTraslado,
+            fueraZona,
+            razon:              `${goa} (${tipoClima}) en ${tcOrigen}${fueraZona ? ' ⚠️ fuera de zona' : ''}`,
             tipoCentroOrigen:   dataOrigen.tipoCentro,
             tipoCentroReceptor: receptor.data.tipoCentro,
+            letraDesc:          dataOrigen.letraDesc || '',
           });
         });
       });
 
       setExcResult(resultado);
+      setSinReceptorData(sinReceptor);
       setExcLoading(false);
     }, 300);
-  }, [rawData, brandMatrix, goasTemporada, filterGoa, filterSku, filterMarca, filterSeccion, filterTipoCentro]);
+  }, [rawData, brandMatrix, climaMatrix, goasTemporada, filterGoa, filterSku, filterMarca,
+      filterSeccion, filterTipoCentro, letrasExcluidas, costoPorPza, mesActual]);
 
   // Datos para gráfica excedente
   const chartDataExc = useMemo(() => {
@@ -676,20 +702,55 @@ export default function Traslados() {
   // Parsear chequera: Identificador | Ppto | CentroReceptor
   const parsearChequera = useCallback((texto, datos) => {
     const lines = texto.split('\n').map(l => l.trim()).filter(Boolean);
-    return lines.map(line => {
+    const items = [];
+    lines.forEach(line => {
       const sep   = line.includes('|') ? '|' : line.includes('\t') ? '\t' : ',';
       const parts = line.split(sep).map(p => p.trim());
-      if (parts.length < 2) return null;
-      const idRaw = parts[0] || '';
-      const { tipo, valor } = detectarTipoId(idRaw, datos);
-      return {
-        idRaw,
-        tipo,
-        valor,
-        pptoNeed:       num(parts[1] || '0'),
-        centroReceptor: (parts[2] || 'DESTINO (definir)').trim(),
-      };
-    }).filter(Boolean);
+      if (parts.length < 2) return;
+
+      const idRaw        = parts[0] || '';
+      const pptoNeed     = num(parts[1] || '0');
+      const centroReceptor = (parts[2] || 'DESTINO (definir)').trim();
+
+      // Soporte de múltiples identificadores en el primer campo: "HARRY, WILSON-22, MODELO-X"
+      // Separados por coma (dentro del campo, antes del primer |)
+      const ids = idRaw.split(',').map(s => s.trim()).filter(Boolean);
+
+      if (ids.length === 1) {
+        // Una sola línea normal
+        const { tipo, valor } = detectarTipoId(idRaw, datos);
+        items.push({ idRaw, tipo, valor, pptoNeed, centroReceptor, multiIds: null });
+      } else {
+        // Múltiples identificadores — calcular OH total por id para distribuir ppto proporcionalmente
+        const resueltos = ids.map(id => {
+          const { tipo, valor } = detectarTipoId(id, datos);
+          // OH disponible total para este identificador
+          const ohTotal = datos
+            .filter(r => {
+              if (tipo === 'modelo') return (r.modelo || r.goa).toUpperCase() === valor;
+              if (tipo === 'goa')    return r.goa === valor;
+              if (tipo === 'marca')  return r.marca === valor;
+              return false;
+            })
+            .reduce((s, r) => s + r.oh, 0);
+          return { id, tipo, valor, ohTotal };
+        });
+
+        const ohTotalSum = resueltos.reduce((s, r) => s + r.ohTotal, 0) || 1;
+
+        resueltos.forEach(r => {
+          const ppto = pptoNeed > 0
+            ? Math.round((r.ohTotal / ohTotalSum) * pptoNeed)
+            : 0;
+          items.push({
+            idRaw: r.id, tipo: r.tipo, valor: r.valor,
+            pptoNeed: ppto, centroReceptor,
+            multiIds: ids, // para referencia
+          });
+        });
+      }
+    });
+    return items;
   }, [detectarTipoId]);
 
   // HERRAMIENTA NECESIDAD — corridas por modelo+talla
@@ -703,7 +764,7 @@ export default function Traslados() {
 
     // Detectar SKUs sin talla parseable que no estén en cache
     const sinTalla = rawData.filter(r => {
-      if (surtidoresList && !surtidoresList.includes(r.centro)) return false;
+      if (!matchSurtidor(r)) return false;
       const t = extraerTalla(r.nsku, r.sku, tallasCache);
       return !t && r.oh > 0;
     });
@@ -724,7 +785,7 @@ export default function Traslados() {
       // ── Inventario: centro → modeloKey → talla → [rows] ──────────────
       const inv = {};
       rawData.forEach(r => {
-        if (surtidoresList && !surtidoresList.includes(r.centro)) return;
+        if (!matchSurtidor(r)) return;
         if (r.oh <= 0) return;
         const talla = extraerTalla(r.nsku, r.sku, cache);
         if (!talla) return;
@@ -738,7 +799,14 @@ export default function Traslados() {
       // ── Venta por centro para clasificar alto/bajo volumen ───────────
       const vtaCentro = {};
       rawData.forEach(r => {
-        if (surtidoresList && !surtidoresList.includes(r.centro)) return;
+        if (surtidoresList) {
+          const matchCentro = surtidoresList.some(s => {
+            const sq = s.toUpperCase().trim();
+            return r.centro.toUpperCase().trim() === sq ||
+                   r.nCentro.toUpperCase().trim() === sq;
+          });
+          if (!matchCentro) return;
+        }
         vtaCentro[r.centro] = (vtaCentro[r.centro] || 0) + (r.vta || 0);
       });
       const vtaVals = Object.values(vtaCentro).sort((a,b) => b - a);
@@ -1206,10 +1274,10 @@ export default function Traslados() {
               </h3>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                 {[
-                  { label: 'GOA',       val: filterGoa,        set: setFilterGoa,        opts: opcionesGoa },
-                  { label: 'SKU',       val: filterSku,        set: setFilterSku,        opts: opcionesSku },
-                  { label: 'Marca',     val: filterMarca,      set: setFilterMarca,      opts: opcionesMarca },
-                  { label: 'Sección',   val: filterSeccion,    set: setFilterSeccion,    opts: opcionesSeccion },
+                  { label: 'GOA',         val: filterGoa,        set: setFilterGoa,        opts: opcionesGoa },
+                  { label: 'SKU',         val: filterSku,        set: setFilterSku,        opts: opcionesSku },
+                  { label: 'Marca',       val: filterMarca,      set: setFilterMarca,      opts: opcionesMarca },
+                  { label: 'Sección',     val: filterSeccion,    set: setFilterSeccion,    opts: opcionesSeccion },
                   { label: 'Tipo Centro', val: filterTipoCentro, set: setFilterTipoCentro, opts: opcionesTipoCentro },
                 ].map(({ label, val, set, opts }) => (
                   <div key={label}>
@@ -1221,6 +1289,51 @@ export default function Traslados() {
                   </div>
                 ))}
               </div>
+
+              {/* Letras de descuento a EXCLUIR del traslado */}
+              {opcionesLetras.length > 0 && (
+                <div className="mt-3">
+                  <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} block mb-2`}>
+                    Excluir del traslado — letras con descuento (selecciona las que NO quieres mover)
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {opcionesLetras.map(letra => {
+                      const sel = letrasExcluidas.has(letra);
+                      return (
+                        <button key={letra} onClick={() => setLetrasExcluidas(prev => {
+                          const next = new Set(prev);
+                          sel ? next.delete(letra) : next.add(letra);
+                          return next;
+                        })}
+                          className={`px-3 py-1 rounded-full text-[10px] font-black border transition-all ${
+                            sel
+                              ? 'bg-red-500/20 border-red-500 text-red-400'
+                              : isDark ? 'bg-zinc-800 border-zinc-600 text-gray-400 hover:border-zinc-400' : 'bg-gray-100 border-gray-300 text-gray-500 hover:border-gray-500'
+                          }`}>
+                          {sel ? '✕ ' : ''}{letra}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  {letrasExcluidas.size > 0 && (
+                    <p className={`text-[9px] mt-1 text-red-400`}>
+                      {letrasExcluidas.size} letra(s) excluida(s) — esa mercancía no se trasladará
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {/* Costo logístico */}
+              <div className="mt-3 flex items-center gap-3">
+                <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} whitespace-nowrap`}>
+                  Costo traslado por pza ($)
+                </label>
+                <input type="number" min={1} value={costoPorPza}
+                  onChange={e => setCostoPorPza(Number(e.target.value))}
+                  className={`w-24 text-xs px-3 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`} />
+                <span className={`text-[9px] ${t.textMuted}`}>Se usa para comparar vs costo de descuentar</span>
+              </div>
+
               <div className="mt-4 flex gap-3 flex-wrap">
                 <button onClick={calcularExcedentes} disabled={!rawData.length || excLoading}
                   className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black transition-all disabled:opacity-40 ${t.btnPrimary}`}>
@@ -1272,7 +1385,7 @@ export default function Traslados() {
                     <table className="w-full text-left min-w-max">
                       <thead>
                         <tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark ? 'bg-zinc-900 text-gray-400 border-b border-zinc-800' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
-                          {['Sección', 'Núm.', 'SKU', 'Marca', 'GOA', 'Centro Salida', 'Centro Receptor', 'Tipo Rec.', 'Pzs', 'Importe', 'Razón'].map(h => (
+                          {['Sección', 'Núm.', 'SKU', 'Marca', 'GOA', 'Centro Salida', 'Centro Receptor', 'Tipo Rec.', 'Pzs', 'Importe', 'Costo Traslado', 'Razón'].map(h => (
                             <th key={h} className="p-2 whitespace-nowrap">{h}</th>
                           ))}
                         </tr>
@@ -1299,6 +1412,45 @@ export default function Traslados() {
                     </table>
                   </div>
                 </div>
+
+                {/* ── Panel: Mejor descuentas ── */}
+                {sinReceptorData.length > 0 && (
+                  <div className={`p-4 rounded-xl border border-red-500/30 ${isDark ? 'bg-red-950/20' : 'bg-red-50'}`}>
+                    <h4 className="text-sm font-black text-red-400 mb-1 flex items-center gap-2">
+                      <Icons.AlertCircle size={15} /> Mejor descuentas estos SKUs — no encontramos receptor rentable
+                    </h4>
+                    <p className={`text-[10px] mb-3 ${t.textMuted}`}>
+                      No hay tienda compatible en clima con capacidad. Costo de trasladar &gt; beneficio estimado.
+                    </p>
+                    <div className="overflow-x-auto custom-scrollbar">
+                      <table className="w-full text-left text-xs min-w-max">
+                        <thead>
+                          <tr className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} border-b ${t.border}`}>
+                            {['SKU', 'GOA', 'Marca', 'Sección', 'Centro', 'Pzs', 'Precio', 'Costo Traslado', 'Recomendación'].map(h =>
+                              <th key={h} className="p-2 whitespace-nowrap">{h}</th>)}
+                          </tr>
+                        </thead>
+                        <tbody className={`divide-y ${isDark ? 'divide-zinc-800/50' : 'divide-gray-100'}`}>
+                          {sinReceptorData.map((r, i) => (
+                            <tr key={i} className="text-xs">
+                              <td className={`p-2 font-mono ${t.textMain}`}>{r.sku}</td>
+                              <td className="p-2"><span className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${t.badge}`}>{r.goa}</span></td>
+                              <td className={`p-2 ${t.textMuted}`}>{r.marca}</td>
+                              <td className={`p-2 ${t.textMuted}`}>{r.seccion}</td>
+                              <td className={`p-2 font-bold ${t.textMain}`}>{r.nombreOrigen} <span className={`text-[9px] ${t.textMuted}`}>({r.centroOrigen})</span></td>
+                              <td className={`p-2 font-black text-amber-400`}>{fmt(r.pzs)}</td>
+                              <td className={`p-2 font-mono ${t.textMuted}`}>{fmtMXN(r.precio)}</td>
+                              <td className="p-2 font-black text-red-400">{fmtMXN(r.costoTraslado)}</td>
+                              <td className="p-2 text-red-400 text-[10px] font-bold">
+                                💸 Descuenta — traslado costaría {fmtMXN(r.costoTraslado)} para {fmt(r.pzs)} pzs
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
               </>
             ) : rawData.length > 0 ? (
               <div className={`p-8 rounded-xl border flex flex-col items-center justify-center text-center ${t.cardInner}`}>
@@ -1518,7 +1670,7 @@ export default function Traslados() {
               <div className={`p-8 rounded-xl border flex flex-col items-center justify-center text-center ${t.cardInner}`}>
                 <Icons.Package size={32} className={`${isDark ? 'text-zinc-600' : 'text-gray-300'} mb-3`} />
                 <p className={`text-sm font-bold ${t.textMain}`}>Herramienta de necesidad lista</p>
-                <p className={`text-xs mt-1 ${t.textMuted}`}>Llena la chequera. La herramienta detecta la corrida autom\u00e1ticamente por las tallas del nombre del SKU.</p>
+                <p className={`text-xs mt-1 ${t.textMuted}`}>Llena la chequera. La herramienta detecta la corrida automáticamente por las tallas del nombre del SKU.</p>
               </div>
             )}
 
@@ -1526,7 +1678,7 @@ export default function Traslados() {
               <div className={`p-8 rounded-xl border flex flex-col items-center justify-center text-center ${t.cardInner}`}>
                 <Icons.Upload size={32} className={`${isDark ? 'text-zinc-600' : 'text-gray-300'} mb-3`} />
                 <p className={`text-sm font-bold ${t.textMain}`}>Sin inventario base</p>
-                <p className={`text-xs mt-1 ${t.textMuted}`}>Carga el CSV de art\u00edculos desde el bot\u00f3n del encabezado para que la herramienta pueda calcular disponibilidad.</p>
+                <p className={`text-xs mt-1 ${t.textMuted}`}>Carga el CSV de artículos desde el botón del encabezado para que la herramienta pueda calcular disponibilidad.</p>
               </div>
             )}
           </div>
