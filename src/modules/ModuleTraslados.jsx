@@ -33,33 +33,43 @@ const downloadExcel = (rows, filename) => {
 
 const BarCompare = ({ data, theme }) => {
   const isDark = theme === 'dark';
-  const max = Math.max(...data.map(d => Math.max(d.antes, d.despues)), 1);
+  // Solo centros que cambiaron (salida o entrada)
+  const changed = data.filter(d => d.antes !== d.despues);
+  if (!changed.length) return null;
+  const max = Math.max(...changed.map(d => Math.max(d.antes, d.despues)), 1);
   return (
-    <div className="space-y-2 mt-2">
-      {data.slice(0, 12).map((d, i) => (
-        <div key={i} className="flex items-center gap-2 text-[10px]">
-          <span className={`w-36 truncate text-right font-mono ${isDark ? 'text-gray-400' : 'text-gray-500'}`} title={`${d.nombre || d.centro} (${d.centro})`}>
-            {d.nombre ? `${d.nombre}` : d.centro} <span className="opacity-50">({d.centro})</span>
-          </span>
-          <div className="flex-1 flex flex-col gap-0.5">
-            <div className="relative h-2 rounded-full bg-zinc-700/30 overflow-hidden">
-              <div className="absolute left-0 top-0 h-full rounded-full bg-yellow-400/80"
-                style={{ width: `${(d.antes / max) * 100}%` }} />
+    <div className="mt-2">
+      <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1 custom-scrollbar">
+        {changed.map((d, i) => (
+          <div key={i} className="flex items-center gap-2 text-[10px]">
+            <span className={`w-40 truncate text-right text-[9px] ${isDark ? 'text-gray-400' : 'text-gray-500'}`}
+              title={`${d.nombre || d.centro} (${d.centro})`}>
+              {d.nombre || d.centro}
+              <span className="opacity-40 ml-0.5">({d.centro})</span>
+            </span>
+            <div className="flex-1 flex flex-col gap-0.5">
+              {/* Antes */}
+              <div className="relative h-2 rounded-full bg-zinc-700/20 overflow-hidden">
+                <div className="absolute left-0 top-0 h-full rounded-full bg-yellow-400/80"
+                  style={{ width: `${(d.antes / max) * 100}%` }} />
+              </div>
+              {/* Después */}
+              <div className="relative h-2 rounded-full bg-zinc-700/20 overflow-hidden">
+                <div className="absolute left-0 top-0 h-full rounded-full bg-violet-500"
+                  style={{ width: `${(d.despues / max) * 100}%` }} />
+              </div>
             </div>
-            <div className="relative h-2 rounded-full bg-zinc-700/30 overflow-hidden">
-              <div className="absolute left-0 top-0 h-full rounded-full bg-violet-500"
-                style={{ width: `${(d.despues / max) * 100}%` }} />
+            <div className="flex flex-col items-end w-16 shrink-0">
+              <span className="text-yellow-400 font-mono">{fmt(d.antes)}</span>
+              <span className="text-violet-400 font-mono">{fmt(d.despues)}</span>
             </div>
           </div>
-          <div className="flex flex-col items-end w-14">
-            <span className="text-yellow-400 font-mono">{fmt(d.antes)}</span>
-            <span className="text-violet-400 font-mono">{fmt(d.despues)}</span>
-          </div>
-        </div>
-      ))}
+        ))}
+      </div>
       <div className="flex gap-4 mt-2 text-[9px]">
         <span className="flex items-center gap-1"><span className="w-3 h-2 rounded-full bg-yellow-400/80 inline-block" /> Antes</span>
         <span className="flex items-center gap-1"><span className="w-3 h-2 rounded-full bg-violet-500 inline-block" /> Después</span>
+        <span className={`${isDark ? 'text-zinc-500' : 'text-gray-400'}`}>{changed.length} centros con movimiento</span>
       </div>
     </div>
   );
@@ -809,10 +819,12 @@ export default function Traslados() {
   const detectarTipoId = useCallback((id, datos) => {
     const q = id.toUpperCase().trim();
     if (!q) return { tipo: null, valor: q };
+    // Escalera: SKU → Modelo → GOA → Marca
+    if (datos.some(r => r.sku?.toUpperCase() === q))           return { tipo: 'sku',    valor: q };
     if (datos.some(r => (r.modelo || '').toUpperCase() === q)) return { tipo: 'modelo', valor: q };
     if (datos.some(r => r.goa === q))                          return { tipo: 'goa',    valor: q };
     if (datos.some(r => r.marca === q))                        return { tipo: 'marca',  valor: q };
-    return { tipo: 'modelo', valor: q };
+    return { tipo: 'modelo', valor: q }; // fallback
   }, []);
 
   // Parsear chequera: Identificador | Ppto | CentroReceptor
@@ -824,9 +836,24 @@ export default function Traslados() {
       const parts = line.split(sep).map(p => p.trim());
       if (parts.length < 2) return;
 
-      const idRaw        = parts[0] || '';
-      const pptoNeed     = num(parts[1] || '0');
-      const centroReceptor = (parts[2] || 'DESTINO (definir)').trim();
+      const idRaw = parts[0] || '';
+
+      // Detección flexible del resto de campos — no importa orden ni si faltan
+      // Ppto = primer campo numérico después del identificador
+      // Centro = primer campo no-numérico después del identificador
+      let pptoNeed = 0;
+      let centroReceptor = 'DESTINO (definir)';
+      for (let pi = 1; pi < parts.length; pi++) {
+        const v = parts[pi].trim();
+        if (!v) continue;
+        const n = num(v);
+        if (n > 0 && pptoNeed === 0) {
+          pptoNeed = n; // primer número = ppto
+        } else if (isNaN(parseFloat(v.replace(/[$,]/g, ''))) || v.replace(/[$,\d.]/g, '').length > 2) {
+          // tiene letras suficientes = es un centro
+          if (centroReceptor === 'DESTINO (definir)') centroReceptor = v;
+        }
+      }
 
       // Soporte de múltiples identificadores en el primer campo: "HARRY, WILSON-22, MODELO-X"
       // Separados por coma (dentro del campo, antes del primer |)
@@ -872,6 +899,21 @@ export default function Traslados() {
   // HERRAMIENTA NECESIDAD — corridas por modelo+talla
   const calcularNecesidad = useCallback(() => {
     if (!chequeraText.trim() || !rawData.length) return;
+
+    // Validar campos obligatorios en cada línea
+    const lineasRaw = chequeraText.split('\n').map(l => l.trim()).filter(Boolean);
+    const errores = [];
+    lineasRaw.forEach((linea, i) => {
+      const sep = linea.includes('|') ? '|' : linea.includes('\t') ? '\t' : ',';
+      const parts = linea.split(sep).map(p => p.trim());
+      const id = parts[0]?.trim();
+      const hasPpto = parts.slice(1).some(p => num(p) > 0);
+      const hasCentro = parts.slice(1).some(p => p && isNaN(parseFloat(p.replace(/[$,]/g, ''))));
+      if (!id) errores.push(`Línea ${i+1}: falta identificador (marca, GOA, modelo o SKU)`);
+      if (!hasPpto) errores.push(`Línea ${i+1}: falta presupuesto (número > 0)`);
+      if (!hasCentro) errores.push(`Línea ${i+1}: falta centro receptor`);
+    });
+    if (errores.length) { alert('Revisa la chequera:\n' + errores.join('\n')); return; }
 
     const chequera       = parsearChequera(chequeraText, rawData);
     const surtidoresList = centrosSurtidores
@@ -945,24 +987,37 @@ export default function Traslados() {
 
       chequera.forEach(item => {
         const recInfo = lookupCentro(item.centroReceptor, rawData);
-        let pptoRestante = item.pptoNeed || 0;
+        const pptoTotal = item.pptoNeed || 0;
 
-        // Resolver qué modelos aplican según tipo detectado
-        let modelosAplicables = new Set();
-        if (item.tipo === 'modelo') {
-          rawData.filter(r => (r.modelo || r.goa).toUpperCase() === item.valor)
-            .forEach(r => modelosAplicables.add(r.modelo || r.goa));
+        // ── Cascada Marca → GOA → Modelo → Tallas ──────────────────────
+        // 1. Filtrar rows del CSV que aplican al identificador
+        let rowsAplicables = [];
+        if (item.tipo === 'sku') {
+          rowsAplicables = rawData.filter(r => r.sku === item.valor);
+        } else if (item.tipo === 'modelo') {
+          rowsAplicables = rawData.filter(r => (r.modelo || r.goa).toUpperCase() === item.valor);
         } else if (item.tipo === 'goa') {
-          rawData.filter(r => r.goa === item.valor)
-            .forEach(r => modelosAplicables.add(r.modelo || r.goa));
+          rowsAplicables = rawData.filter(r => r.goa === item.valor);
         } else if (item.tipo === 'marca') {
-          rawData.filter(r => r.marca === item.valor)
-            .forEach(r => modelosAplicables.add(r.modelo || r.goa));
+          rowsAplicables = rawData.filter(r => r.marca === item.valor);
         }
-        if (!modelosAplicables.size) return;
+        if (!rowsAplicables.length) return;
+
+        // 2. Calcular OH total por modelo (para ponderación)
+        const ohPorModelo = {};
+        rowsAplicables.forEach(r => {
+          const mk = r.modelo || r.goa;
+          ohPorModelo[mk] = (ohPorModelo[mk] || 0) + r.oh;
+        });
+        const ohTotalAll = Object.values(ohPorModelo).reduce((s,v) => s+v, 0) || 1;
+
+        // 3. Distribuir ppto entre modelos proporcional a OH
+        const modelosAplicables = Object.keys(ohPorModelo);
 
         modelosAplicables.forEach(modeloKey => {
-          if (pptoRestante <= 0 && item.pptoNeed > 0) return;
+          const pptoPorModelo = Math.round((ohPorModelo[modeloKey] / ohTotalAll) * pptoTotal);
+          let pptoRestante = pptoPorModelo;
+          if (pptoRestante <= 0) return;
 
           // Corrida = todas las tallas del modelo en el CSV
           const curva = curvaPorModelo[modeloKey] || {};
@@ -1077,8 +1132,8 @@ export default function Traslados() {
           });
 
           if (pptoRestante > 0) pptoRestante -= asignaciones.reduce((s,a) => s + a.pzsEnv*(a.precio||0), 0);
-        });
-      });
+        }); // end modelosAplicables
+      }); // end chequera
 
       setNecesResult(resultado);
       setNecesLoading(false);
@@ -1337,17 +1392,35 @@ export default function Traslados() {
         {activeTab === 1 && (
           <div className="p-5 space-y-5">
 
-            {/* Panel GOAs de Temporada */}
-            <div className={`p-4 rounded-xl border ${t.cardInner}`}>
-              <div className="flex items-center justify-between mb-3">
-                <h3 className={`text-xs font-black uppercase tracking-widest ${t.textMuted}`}>
-                  GOAs de Temporada
-                </h3>
-                <button onClick={() => setShowPanelGoas(v => !v)}
-                  className={`text-[10px] font-bold px-3 py-1 rounded-lg border transition-all ${t.btnGhost}`}>
-                  {showPanelGoas ? 'Ocultar' : `Configurar (${Object.keys(goasTemporada).length} definidos)`}
-                </button>
-              </div>
+            {/* ── Panel de configuración unificado ── */}
+            <div className={`rounded-xl border ${t.cardInner} overflow-hidden`}>
+              {/* Header colapsable */}
+              <button onClick={() => setShowPanelGoas(v => !v)}
+                className={`w-full flex items-center justify-between px-5 py-3 transition-colors ${isDark ? 'hover:bg-zinc-800/50' : 'hover:bg-gray-50'}`}>
+                <div className="flex items-center gap-3">
+                  <Icons.Sliders size={14} className={t.textAccent2} />
+                  <span className={`text-xs font-black uppercase tracking-widest ${t.textMain}`}>Configuración</span>
+                  <div className="flex gap-1.5 flex-wrap">
+                    {Object.keys(goasTemporada).filter(g => goasTemporada[g]).map(g => (
+                      <span key={g} className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${t.badge}`}>
+                        {g} {goasTemporada[g] === 'CALOR' ? '☀️' : goasTemporada[g] === 'PLAYA' ? '🏖️' : goasTemporada[g] === 'EXTREMOSO' ? '🌡️' : '🌤️'}
+                      </span>
+                    ))}
+                    {letrasExcluidas.size > 0 && (
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-red-500/20 border border-red-500/40 text-red-400">
+                        {letrasExcluidas.size} letras excluidas
+                      </span>
+                    )}
+                  </div>
+                </div>
+                <Icons.ChevronDown size={14} className={`${t.textMuted} transition-transform ${showPanelGoas ? 'rotate-180' : ''}`} />
+              </button>
+
+              {showPanelGoas && (
+                <div className="px-5 pb-5 space-y-5 border-t ${t.border}">
+                  {/* Sub-panel: GOAs de Temporada */}
+                  <div className="pt-4">
+                    <h3 className={`text-[10px] font-black uppercase tracking-widest mb-3 ${t.textMuted}`}>GOAs de Temporada</h3>
               {showPanelGoas && (
                 <div className="space-y-2">
                   <p className={`text-[10px] mb-3 ${t.textMuted}`}>
@@ -1360,11 +1433,12 @@ export default function Traslados() {
                         <select
                           value={goasTemporada[goa] || ''}
                           onChange={e => setGoasTemporada(prev => ({ ...prev, [goa]: e.target.value || undefined }))}
-                          className={`text-[10px] px-2 py-1 rounded border ${t.input} focus:outline-none focus:ring-1 w-28`}>
+                          className={`text-[10px] px-2 py-1 rounded border ${t.input} focus:outline-none focus:ring-1 w-32`}>
                           <option value="">— No aplica —</option>
-                          <option value="FRIO">❄️ Frío</option>
                           <option value="CALOR">☀️ Calor</option>
                           <option value="PLAYA">🏖️ Playa</option>
+                          <option value="TEMPLADO">🌤️ Templado</option>
+                          <option value="EXTREMOSO">🌡️ Extremoso</option>
                         </select>
                       </div>
                     ))}
@@ -1383,13 +1457,13 @@ export default function Traslados() {
                   ))}
                 </div>
               )}
-            </div>
+                  </div>
 
-            {/* Filtros */}
-            <div className={`p-4 rounded-xl border ${t.cardInner}`}>
-              <h3 className={`text-xs font-black uppercase tracking-widest mb-3 ${t.textMuted}`}>
-                Filtros · La herramienta detectará artículos de temporada fuera de su zona ideal
-              </h3>
+                  {/* Sub-panel: Filtros */}
+                  <div>
+                    <h3 className={`text-[10px] font-black uppercase tracking-widest mb-3 ${t.textMuted}`}>
+                      Filtros
+                    </h3>
               <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
                 {[
                   { label: 'GOA',         val: filterGoa,        set: setFilterGoa,        opts: opcionesGoa },
@@ -1477,12 +1551,12 @@ export default function Traslados() {
                 </div>
                 {showPanelZonas && (
                   <div className="space-y-2">
-                    {opcionesZona.filter(z => z !== 'ALL').map(zona => (
+                    {[...opcionesZona].filter(z => z !== 'ALL').sort().map(zona => (
                       <div key={zona} className="flex items-center gap-3 flex-wrap">
                         <span className={`text-[10px] font-black w-28 truncate ${t.textMain}`}>{zona}</span>
                         <span className={`text-[9px] ${t.textMuted}`}>puede enviar a:</span>
                         <div className="flex flex-wrap gap-1.5">
-                          {opcionesZona.filter(z => z !== 'ALL' && z !== zona).map(z2 => {
+                          {[...opcionesZona].filter(z => z !== 'ALL' && z !== zona).sort().map(z2 => {
                             const sel = zonasAdyacentes[zona]?.has(z2);
                             return (
                               <button key={z2} onClick={() => setZonasAdyacentes(prev => {
@@ -1506,22 +1580,25 @@ export default function Traslados() {
                     ))}
                   </div>
                 )}
-              </div>
+                  </div>
 
-              <div className="mt-4 flex gap-3 flex-wrap">
+                  {/* Botones acción */}
+                  <div className="flex gap-3 flex-wrap pt-1">
                 <button onClick={calcularExcedentes} disabled={!rawData.length || excLoading}
                   className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black transition-all disabled:opacity-40 ${t.btnPrimary}`}>
                   {excLoading
                     ? <><Icons.Loader size={15} className="animate-spin" /> Calculando…</>
                     : <><Icons.Zap size={15} /> Ejecutar herramienta</>}
                 </button>
-                {excResult.length > 0 && (
-                  <button onClick={exportExcedente}
-                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black transition-all ${t.btnSecondary}`}>
-                    <Icons.Download size={15} /> Exportar Excel
-                  </button>
-                )}
-              </div>
+                  {excResult.length > 0 && (
+                    <button onClick={exportExcedente}
+                      className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black transition-all ${t.btnSecondary}`}>
+                      <Icons.Download size={15} /> Exportar Excel
+                    </button>
+                  )}
+                  </div>
+                </div>
+              )}
             </div>
 
             {/* Resultados excedente */}
@@ -1557,28 +1634,29 @@ export default function Traslados() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   <div className={`p-4 rounded-xl border ${t.cardInner}`}>
                     <h4 className={`text-sm font-bold mb-3 ${t.textMain}`}>🗺️ Flujo entre Zonas</h4>
-                    <div className="space-y-2 max-h-64 overflow-y-auto custom-scrollbar pr-1">
+                    <div className="space-y-2 max-h-72 overflow-y-auto custom-scrollbar">
                       {zonaResumen.map((z, i) => {
                         const maxPzs = zonaResumen[0]?.pzs || 1;
-                        const pct = (z.pzs / maxPzs) * 100;
+                        const pct = Math.max(4, (z.pzs / maxPzs) * 100);
                         return (
-                          <div key={i} className={`rounded-lg p-2.5 border ${z.mismaZona ? (isDark ? 'border-violet-500/20 bg-violet-900/10' : 'border-violet-200 bg-violet-50') : (isDark ? 'border-yellow-500/20 bg-yellow-900/10' : 'border-yellow-200 bg-yellow-50')}`}>
-                            <div className="flex items-center justify-between mb-1.5">
-                              <div className="flex items-center gap-2 text-[10px] font-black">
-                                <span className={`px-1.5 py-0.5 rounded text-[9px] ${z.mismaZona ? 'bg-violet-500/20 text-violet-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
-                                  {z.mismaZona ? 'MISMA' : '⚠️ CRUZA'}
+                          <div key={i} className={`rounded-lg p-3 ${z.mismaZona ? (isDark ? 'bg-violet-900/20' : 'bg-violet-50') : (isDark ? 'bg-yellow-900/15' : 'bg-yellow-50')}`}>
+                            <div className="flex items-center justify-between mb-2">
+                              <div className="flex items-center gap-2 min-w-0">
+                                <span className={`shrink-0 px-1.5 py-0.5 rounded text-[9px] font-black ${z.mismaZona ? 'bg-violet-500/30 text-violet-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
+                                  {z.mismaZona ? 'MISMA' : '⚠️'}
                                 </span>
-                                <span className={t.textMain}>{z.origen}</span>
-                                <span className={isDark ? 'text-zinc-500' : 'text-gray-400'}>━▶</span>
-                                <span className={t.textMain}>{z.destino}</span>
+                                <span className={`text-[10px] font-bold truncate ${t.textMain}`}>{z.origen}</span>
+                                <span className={`shrink-0 text-[10px] ${isDark ? 'text-zinc-500' : 'text-gray-400'}`}>→</span>
+                                <span className={`text-[10px] font-bold truncate ${t.textMain}`}>{z.destino}</span>
                               </div>
-                              <div className="text-right">
+                              <div className="shrink-0 text-right ml-2">
                                 <span className={`text-[10px] font-black ${z.mismaZona ? 'text-violet-400' : 'text-yellow-400'}`}>{fmt(z.pzs)} pzs</span>
                                 <span className={`text-[9px] ${t.textMuted} ml-1`}>{fmtMXN(z.pesos)}</span>
                               </div>
                             </div>
-                            <div className={`h-1 rounded-full overflow-hidden ${isDark ? 'bg-zinc-700' : 'bg-gray-200'}`}>
-                              <div className={`h-full rounded-full ${z.mismaZona ? 'bg-violet-500' : 'bg-yellow-400'}`} style={{width: `${pct}%`}} />
+                            <div className={`h-1.5 w-full rounded-full ${isDark ? 'bg-zinc-700' : 'bg-gray-200'}`}>
+                              <div className={`h-full rounded-full ${z.mismaZona ? 'bg-violet-500' : 'bg-yellow-400'}`}
+                                style={{width: `${pct}%`, transition: 'width 0.4s ease'}} />
                             </div>
                           </div>
                         );
@@ -1586,7 +1664,7 @@ export default function Traslados() {
                     </div>
                     <div className="flex gap-4 mt-2 text-[9px]">
                       <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-violet-500 inline-block"/> Misma zona</span>
-                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-yellow-400 inline-block"/> Cruza zona ⚠️</span>
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded bg-yellow-400 inline-block"/> Cruza zona</span>
                     </div>
                   </div>
 
@@ -1790,7 +1868,7 @@ export default function Traslados() {
                   Chequera de Solicitud
                 </h3>
                 <p className={`text-[10px] mb-3 ${t.textMuted}`}>
-                  Un identificador por línea: <code className="opacity-60">Modelo / GOA / Marca | Ppto ($) | Centro Receptor</code>
+                  SKU / Modelo / GOA / Marca | Ppto ($) | Centro receptor — los 3 son obligatorios
                 </p>
                 <textarea
                   value={chequeraText}
