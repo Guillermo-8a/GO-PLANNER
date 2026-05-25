@@ -142,10 +142,21 @@ export default function App() {
   const [reportView, setReportView] = useState('sugerido'); 
 
   // --- AUTO-GUARDADO A LOCALSTORAGE ---
+  // OJO: rawStoreData y brandMatrix se EXCLUYEN. Son grandes (miles de filas) y recargables desde CSV.
   useEffect(() => {
-    const stateToSave = { numClusters, clusterStrategy, rawStoreData, scoreWeights, stores, goas, sizeCurves, calcRules, buckets, purchases, suggestedPlans, purchaseMonthBase, modelCatalog, brandMatrix };
-    localStorage.setItem('goplanner_assortment_state', JSON.stringify(stateToSave));
-  }, [numClusters, clusterStrategy, rawStoreData, scoreWeights, stores, goas, sizeCurves, calcRules, buckets, purchases, suggestedPlans, purchaseMonthBase, modelCatalog, brandMatrix]);
+    const stateToSave = { numClusters, clusterStrategy, scoreWeights, stores, goas, sizeCurves, calcRules, buckets, purchases, suggestedPlans, purchaseMonthBase, modelCatalog };
+    try {
+      localStorage.setItem('goplanner_assortment_state', JSON.stringify(stateToSave));
+    } catch (err) {
+      console.warn('LocalStorage autosave skipped:', err.message);
+      try {
+        const lite = { numClusters, clusterStrategy, scoreWeights, stores, goas, sizeCurves, calcRules, buckets, purchases, suggestedPlans, purchaseMonthBase };
+        localStorage.setItem('goplanner_assortment_state', JSON.stringify(lite));
+      } catch (e2) {
+        try { localStorage.removeItem('goplanner_assortment_state'); } catch (_) {}
+      }
+    }
+  }, [numClusters, clusterStrategy, scoreWeights, stores, goas, sizeCurves, calcRules, buckets, purchases, suggestedPlans, purchaseMonthBase, modelCatalog]);
 
   // --- PUBLICAR OTB AL GLOBAL CONTEXT ---
   useEffect(() => {
@@ -2378,7 +2389,7 @@ export default function App() {
                         <CalendarDays className={`mr-3 ${t.textAccent1}`}/> Proyección de Entrega Mensual
                       </h2>
                       <p className={`text-xs mt-1 font-bold ${reportView==='sugerido'?t.textAccent2:t.textAccent1}`}>
-                        Mostrando piezas {reportView==='sugerido'?'sugeridas':'reales'} distribuidas según GO Forecasting.
+                        Piezas {reportView==='sugerido'?'sugeridas':'reales'} · Gastado y OTB restante por GOA y mes (Budget mes = Budget GOA × % Forecast).
                       </p>
                     </div>
                   </div>
@@ -2416,19 +2427,21 @@ export default function App() {
                               const w = monthsWeights[o];
                               const pctVal = Number(w?.value ?? w) || 0;
                               const pzsCalc = useReal ? (realPzsByMonth[o] || 0) : Math.round((g.boughtPzs || 0) * (pctVal / 100));
-                              const pctDisplay = useReal ? ((g.boughtPzs > 0 ? (pzsCalc / g.boughtPzs) * 100 : 0)) : pctVal;
-                              // $ por celda: real -> suma totalRetailValue de compras del mes; sugerido -> proporcional a g.spentValue
+                              // Gastado $ del mes
                               let pesosCalc = 0;
                               if (useReal) {
                                 pesosCalc = goaPurchases.filter(p => p.monthOffset === o).reduce((ss, p) => ss + (p.totalRetailValue || 0), 0);
                               } else {
                                 pesosCalc = Math.round((g.spentValue || 0) * (pctVal / 100));
                               }
+                              // Budget del mes = budget GOA × % curva mensual
+                              const budgetMes = Math.round((g.budget || 0) * (pctVal / 100));
+                              const otbMes = budgetMes - pesosCalc;
                               return (
                                 <td key={`mes-sug-${g.id}-${o}`} className={`p-3 border-r font-medium ${t.border} ${theme==='dark'?'text-gray-300':'text-gray-700'}`}>
-                                  <span className={`block text-[9px] mb-0.5 font-mono ${t.textMuted}`}>{pctDisplay.toFixed(1)}%</span>
-                                  <span className="block">{pzsCalc.toLocaleString()}</span>
-                                  <span className={`block text-[10px] font-bold ${t.textAccent2}`}>${pesosCalc.toLocaleString()}</span>
+                                  <span className="block font-bold">{pzsCalc.toLocaleString()} pzs</span>
+                                  <span className={`block text-[10px] ${t.textMuted}`}>Gast: ${pesosCalc.toLocaleString()}</span>
+                                  <span className={`block text-[10px] font-bold ${otbMes >= 0 ? t.textAccent2 : t.dangerText}`}>OTB: ${otbMes.toLocaleString()}</span>
                                 </td>
                               );
                             })}
@@ -2461,82 +2474,19 @@ export default function App() {
                                const w = (g.months || [16.6,16.6,16.6,16.6,16.6,17])[o];
                                return s + Math.round((g.spentValue || 0) * ((Number(w?.value ?? w) || 0) / 100));
                              }, 0);
+                             const sumMesBudget = filtered.reduce((s, g) => {
+                               const w = (g.months || [16.6,16.6,16.6,16.6,16.6,17])[o];
+                               return s + Math.round((g.budget || 0) * ((Number(w?.value ?? w) || 0) / 100));
+                             }, 0);
+                             const sumMesOtb = sumMesBudget - sumMesPesos;
                              return (
                                <td key={`tot-mes-${o}`} className={`p-3 border-r ${t.textMain}`}>
-                                 <div>{sumMes.toLocaleString()}</div>
-                                 <div className={`text-[10px] font-bold ${t.textAccent2}`}>${sumMesPesos.toLocaleString()}</div>
+                                 <div>{sumMes.toLocaleString()} pzs</div>
+                                 <div className={`text-[10px] ${t.textMuted}`}>Gast: ${sumMesPesos.toLocaleString()}</div>
+                                 <div className={`text-[10px] font-bold ${sumMesOtb >= 0 ? t.textAccent2 : t.dangerText}`}>OTB: ${sumMesOtb.toLocaleString()}</div>
                                </td>
                              );
                           })}
-                        </tr>
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* OTB MENSUAL GENERAL (ppto restante por mes) */}
-                <div className={`rounded-xl border shadow-lg p-6 ${t.card}`}>
-                  <h2 className={`text-lg font-bold mb-1 flex items-center ${t.textMain}`}>
-                    <DollarSign className={`mr-3 ${t.textAccent2}`}/> OTB Mensual General ({reportView === 'sugerido' ? 'Sugerido' : 'Real'})
-                  </h2>
-                  <p className={`text-xs mb-5 ${t.textMuted}`}>Cuánto ppto te queda por mes para comprar. Budget mensual = Budget GOA × % Forecast del mes. Gastado = lo asignado a ese mes.</p>
-                  <div className={`overflow-x-auto rounded-xl border ${t.border}`}>
-                    <table className="w-full text-center text-sm border-collapse">
-                      <thead>
-                        <tr className={`text-[10px] uppercase border-b tracking-wider ${t.tableHead}`}>
-                          <th className={`p-3 font-bold text-left border-r ${t.border}`}>Mes</th>
-                          <th className={`p-3 font-bold border-r ${t.border}`}>Budget Mensual</th>
-                          <th className={`p-3 font-bold border-r ${t.border}`}>Gastado / Sugerido</th>
-                          <th className={`p-3 font-bold border-r ${t.border}`}>OTB Restante</th>
-                          <th className={`p-3 font-bold ${t.border}`}>% Consumo</th>
-                        </tr>
-                      </thead>
-                      <tbody className={`divide-y ${t.border}`}>
-                        {[0,1,2,3,4,5].map(o => {
-                          const filtered = reportData.goaMetrics.filter(g => (g.boughtPzs || 0) > 0 || (g.budget || 0) > 0);
-                          let budgetMes = 0, spentMes = 0;
-                          filtered.forEach(g => {
-                            const w = (g.months || [16.6,16.6,16.6,16.6,16.6,17])[o];
-                            const pctVal = Number(w?.value ?? w) || 0;
-                            budgetMes += (g.budget || 0) * (pctVal / 100);
-                            const goaPurchases = (purchases || []).filter(p => p.goaId === g.id && p.monthOffset !== null && p.monthOffset !== undefined);
-                            const useReal = reportView === 'preventa' && goaPurchases.length > 0;
-                            if (useReal) {
-                              spentMes += goaPurchases.filter(p => p.monthOffset === o).reduce((ss, p) => ss + (p.totalRetailValue || 0), 0);
-                            } else {
-                              spentMes += (g.spentValue || 0) * (pctVal / 100);
-                            }
-                          });
-                          const otb = budgetMes - spentMes;
-                          const pct = budgetMes > 0 ? (spentMes / budgetMes) * 100 : 0;
-                          const overBudget = pct > 100;
-                          return (
-                            <tr key={`otb-mes-${o}`} className={`transition ${t.tableRow}`}>
-                              <td className={`p-3 font-bold text-left border-r ${t.border} ${t.textMain}`}>{getMonthLabel(o)}</td>
-                              <td className={`p-3 border-r ${t.border} ${t.textMuted}`}>${Math.round(budgetMes).toLocaleString()}</td>
-                              <td className={`p-3 border-r font-bold ${t.border} ${t.textAccent2}`}>${Math.round(spentMes).toLocaleString()}</td>
-                              <td className={`p-3 border-r font-black ${t.border} ${otb >= 0 ? t.successText : t.dangerText}`}>${Math.round(otb).toLocaleString()}</td>
-                              <td className={`p-3 font-bold ${overBudget ? t.dangerText : pct >= 90 ? 'text-yellow-500' : t.textMain}`}>{pct.toFixed(1)}%</td>
-                            </tr>
-                          );
-                        })}
-                        <tr className={`font-black border-t-2 ${theme==='dark'?'bg-purple-900/20 border-purple-500/30':'bg-indigo-50 border-indigo-200'}`}>
-                          <td className={`p-3 border-r text-right uppercase text-xs tracking-wider ${theme==='dark'?'border-purple-500/20 text-purple-300':'border-indigo-200 text-indigo-700'}`}>Total</td>
-                          {(() => {
-                            const filtered = reportData.goaMetrics.filter(g => (g.boughtPzs || 0) > 0 || (g.budget || 0) > 0);
-                            const totalBudget = filtered.reduce((s, g) => s + (g.budget || 0), 0);
-                            const totalSpent = filtered.reduce((s, g) => s + (g.spentValue || 0), 0);
-                            const totalOtb = totalBudget - totalSpent;
-                            const totalPct = totalBudget > 0 ? (totalSpent / totalBudget) * 100 : 0;
-                            return (
-                              <>
-                                <td className={`p-3 border-r ${t.textMain}`}>${Math.round(totalBudget).toLocaleString()}</td>
-                                <td className={`p-3 border-r ${t.textAccent2}`}>${Math.round(totalSpent).toLocaleString()}</td>
-                                <td className={`p-3 border-r ${totalOtb >= 0 ? t.successText : t.dangerText}`}>${Math.round(totalOtb).toLocaleString()}</td>
-                                <td className={`p-3 ${t.textMain}`}>{totalPct.toFixed(1)}%</td>
-                              </>
-                            );
-                          })()}
                         </tr>
                       </tbody>
                     </table>
