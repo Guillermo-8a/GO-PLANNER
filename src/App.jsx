@@ -13,6 +13,7 @@ import ModuleDistribucion from './modules/ModuleDistribucion';
 import ModuleResurtido    from './modules/ModuleReplenishment';
 import ModuleTraslados from './modules/ModuleTraslados';
 import ModulePlanning from "./modules/ModulePlanning" ;
+import ModuleDayli from "./modules/ModuleDayli" ;
 
 import {
   Layers, Bell, Sun, Moon, ShoppingCart, Map, LayoutDashboard,
@@ -100,6 +101,7 @@ const NAV_ITEMS = [
   { id: 'distribucion', label: 'Distribución',   Icon: Map,             desc: 'Surtido a tiendas',     dataKey: 'distributionData' },
   { id: 'resurtido',    label: 'Resurtido',       Icon: RefreshCw,       desc: 'Reposición continua',   dataKey: 'replenishmentData' },
   { id: 'planning',    label: 'Planning',       Icon: TrendingUp,       desc: 'Planeación compuesta',   dataKey: 'planningData' },
+  { id: 'dayli',    label: 'Dayli',       Icon: Map,       desc: 'Ajustes diarios',   dataKey: 'dayliData' },
   { id: 'traslados', label: 'Traslados', Icon: ArrowLeftRight, desc: 'Transferencias entre centros', dataKey: null },
 ];
 
@@ -307,6 +309,7 @@ function Shell() {
   const renderModule = () => {
     switch (activeModule) {
       case 'dashboard':    return <Dashboard {...moduleProps} />;
+      case 'dayli':     return <ModuleDayli {...moduleProps} />;  
       case 'forecast':     return <ModuleForecast {...moduleProps} />;
       case 'assortment':   return <ModuleAssortment {...moduleProps} />;
       case 'distribucion': return <ModuleDistribucion {...moduleProps} />;
