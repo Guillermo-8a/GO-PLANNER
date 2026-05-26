@@ -1397,209 +1397,179 @@ export default function Traslados() {
               {/* Header colapsable */}
               <button onClick={() => setShowPanelGoas(v => !v)}
                 className={`w-full flex items-center justify-between px-5 py-3 transition-colors ${isDark ? 'hover:bg-zinc-800/50' : 'hover:bg-gray-50'}`}>
-                <div className="flex items-center gap-3">
+                <div className="flex items-center gap-3 flex-wrap">
                   <Icons.Sliders size={14} className={t.textAccent2} />
                   <span className={`text-xs font-black uppercase tracking-widest ${t.textMain}`}>Configuración</span>
-                  <div className="flex gap-1.5 flex-wrap">
-                    {Object.keys(goasTemporada).filter(g => goasTemporada[g]).map(g => (
-                      <span key={g} className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${t.badge}`}>
-                        {g} {goasTemporada[g] === 'CALOR' ? '☀️' : goasTemporada[g] === 'PLAYA' ? '🏖️' : goasTemporada[g] === 'EXTREMOSO' ? '🌡️' : '🌤️'}
-                      </span>
-                    ))}
-                    {letrasExcluidas.size > 0 && (
-                      <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-red-500/20 border border-red-500/40 text-red-400">
-                        {letrasExcluidas.size} letras excluidas
-                      </span>
-                    )}
-                  </div>
+                  {Object.keys(goasTemporada).filter(g => goasTemporada[g]).map(g => (
+                    <span key={g} className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${t.badge}`}>
+                      {g} {goasTemporada[g] === 'CALOR' ? '☀️' : goasTemporada[g] === 'PLAYA' ? '🏖️' : goasTemporada[g] === 'EXTREMOSO' ? '🌡️' : '🌤️'}
+                    </span>
+                  ))}
+                  {letrasExcluidas.size > 0 && (
+                    <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-red-500/20 border border-red-500/40 text-red-400">
+                      {letrasExcluidas.size} letras excluidas
+                    </span>
+                  )}
                 </div>
                 <Icons.ChevronDown size={14} className={`${t.textMuted} transition-transform ${showPanelGoas ? 'rotate-180' : ''}`} />
               </button>
 
               {showPanelGoas && (
                 <div className={`px-5 pb-5 space-y-5 border-t ${t.border}`}>
-                  {/* Sub-panel: GOAs de Temporada */}
+
+                  {/* GOAs de Temporada */}
                   <div className="pt-4">
                     <h3 className={`text-[10px] font-black uppercase tracking-widest mb-3 ${t.textMuted}`}>GOAs de Temporada</h3>
-              {showPanelGoas && (
-                <div className="space-y-2">
-                  <p className={`text-[10px] mb-3 ${t.textMuted}`}>
-                    Asigna el clima requerido de cada GOA. La herramienta detectará artículos de ese GOA en centros con <strong>TIPO CENTRO</strong> incompatible (ej. GOA de Calor en centro FRIO → excedente).
-                  </p>
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-52 overflow-y-auto pr-1 custom-scrollbar">
-                    {opcionesGoa.filter(g => g !== 'ALL').map(goa => (
-                      <div key={goa} className={`flex items-center gap-2 p-2 rounded-lg border ${isDark ? 'border-zinc-800 bg-zinc-900' : 'border-gray-200 bg-white'}`}>
-                        <span className={`flex-1 text-xs font-bold truncate ${t.textMain}`}>{goa}</span>
-                        <select
-                          value={goasTemporada[goa] || ''}
-                          onChange={e => setGoasTemporada(prev => ({ ...prev, [goa]: e.target.value || undefined }))}
-                          className={`text-[10px] px-2 py-1 rounded border ${t.input} focus:outline-none focus:ring-1 w-32`}>
-                          <option value="">— No aplica —</option>
-                          <option value="CALOR">☀️ Calor</option>
-                          <option value="PLAYA">🏖️ Playa</option>
-                          <option value="TEMPLADO">🌤️ Templado</option>
-                          <option value="EXTREMOSO">🌡️ Extremoso</option>
-                        </select>
-                      </div>
-                    ))}
-                  </div>
-                  {opcionesGoa.filter(g => g !== 'ALL').length === 0 && (
-                    <p className={`text-xs ${t.textMuted}`}>Carga el CSV primero para ver los GOAs disponibles.</p>
-                  )}
-                </div>
-              )}
-              {!showPanelGoas && Object.keys(goasTemporada).length > 0 && (
-                <div className="flex flex-wrap gap-1.5">
-                  {Object.entries(goasTemporada).filter(([, v]) => v).map(([goa, clima]) => (
-                    <span key={goa} className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${t.badge}`}>
-                      {goa} · {clima === 'FRIO' ? '❄️' : clima === 'CALOR' ? '☀️' : '🏖️'}
-                    </span>
-                  ))}
-                </div>
-              )}
-                  </div>
-
-                  {/* Sub-panel: Filtros */}
-                  <div>
-                    <h3 className={`text-[10px] font-black uppercase tracking-widest mb-3 ${t.textMuted}`}>
-                      Filtros
-                    </h3>
-              <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-                {[
-                  { label: 'GOA',         val: filterGoa,        set: setFilterGoa,        opts: opcionesGoa },
-                  { label: 'SKU',         val: filterSku,        set: setFilterSku,        opts: opcionesSku },
-                  { label: 'Marca',       val: filterMarca,      set: setFilterMarca,      opts: opcionesMarca },
-                  { label: 'Sección',     val: filterSeccion,    set: setFilterSeccion,    opts: opcionesSeccion },
-                  { label: 'Tipo Centro', val: filterTipoCentro, set: setFilterTipoCentro, opts: opcionesTipoCentro },
-                  { label: 'Zona',        val: filterZona,       set: setFilterZona,       opts: opcionesZona },
-                ].map(({ label, val, set, opts }) => (
-                  <div key={label}>
-                    <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} block mb-1`}>{label}</label>
-                    <select value={val} onChange={e => set(e.target.value)}
-                      className={`w-full text-xs px-3 py-2 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}>
-                      {opts.map(o => <option key={o} value={o}>{o === 'ALL' ? 'Todos' : o}</option>)}
-                    </select>
-                  </div>
-                ))}
-              </div>
-
-              {/* Letras de descuento a EXCLUIR del traslado */}
-              {opcionesLetras.length > 0 && (
-                <div className="mt-3">
-                  <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} block mb-2`}>
-                    Excluir del traslado — letras con descuento (selecciona las que NO quieres mover)
-                  </label>
-                  <div className="flex flex-wrap gap-2">
-                    {opcionesLetras.map(letra => {
-                      const sel = letrasExcluidas.has(letra);
-                      return (
-                        <button key={letra} onClick={() => setLetrasExcluidas(prev => {
-                          const next = new Set(prev);
-                          sel ? next.delete(letra) : next.add(letra);
-                          return next;
-                        })}
-                          className={`px-3 py-1 rounded-full text-[10px] font-black border transition-all ${
-                            sel
-                              ? 'bg-red-500/20 border-red-500 text-red-400'
-                              : isDark ? 'bg-zinc-800 border-zinc-600 text-gray-400 hover:border-zinc-400' : 'bg-gray-100 border-gray-300 text-gray-500 hover:border-gray-500'
-                          }`}>
-                          {sel ? '✕ ' : ''}{letra}
-                        </button>
-                      );
-                    })}
-                  </div>
-                  {letrasExcluidas.size > 0 && (
-                    <p className={`text-[9px] mt-1 text-red-400`}>
-                      {letrasExcluidas.size} letra(s) excluida(s) — esa mercancía no se trasladará
-                    </p>
-                  )}
-                </div>
-              )}
-
-              {/* Mínimos y costo logístico */}
-              <div className="mt-3 grid grid-cols-1 md:grid-cols-3 gap-3">
-                <div className="flex items-center gap-2">
-                  <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} whitespace-nowrap`}>Mín. pzs</label>
-                  <input type="number" min={0} value={minPzsTraslado}
-                    onChange={e => setMinPzsTraslado(Number(e.target.value))}
-                    className={`w-20 text-xs px-2 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`} />
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} whitespace-nowrap`}>Mín. $ traslado</label>
-                  <input type="number" min={0} value={minPesosTraslado}
-                    onChange={e => setMinPesosTraslado(Number(e.target.value))}
-                    className={`w-24 text-xs px-2 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`} />
-                </div>
-                <div className="flex items-center gap-2">
-                  <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} whitespace-nowrap`}>Costo/pza ($)</label>
-                  <input type="number" min={1} value={costoPorPza}
-                    onChange={e => setCostoPorPza(Number(e.target.value))}
-                    className={`w-20 text-xs px-2 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`} />
-                </div>
-              </div>
-
-              {/* Panel de zonas adyacentes */}
-              <div className="mt-3">
-                <div className="flex items-center justify-between mb-2">
-                  <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted}`}>
-                    Zonas adyacentes (traslados entre estas zonas tienen prioridad)
-                  </label>
-                  <button onClick={() => setShowPanelZonas(v => !v)}
-                    className={`text-[10px] font-bold px-3 py-1 rounded-lg border transition-all ${t.btnGhost}`}>
-                    {showPanelZonas ? 'Ocultar' : 'Configurar'}
-                  </button>
-                </div>
-                {showPanelZonas && (
-                  <div className="space-y-2">
-                    {[...opcionesZona].filter(z => z !== 'ALL').sort().map(zona => (
-                      <div key={zona} className="flex items-center gap-3 flex-wrap">
-                        <span className={`text-[10px] font-black w-28 truncate ${t.textMain}`}>{zona}</span>
-                        <span className={`text-[9px] ${t.textMuted}`}>puede enviar a:</span>
-                        <div className="flex flex-wrap gap-1.5">
-                          {[...opcionesZona].filter(z => z !== 'ALL' && z !== zona).sort().map(z2 => {
-                            const sel = zonasAdyacentes[zona]?.has(z2);
-                            return (
-                              <button key={z2} onClick={() => setZonasAdyacentes(prev => {
-                                const next = { ...prev };
-                                if (!next[zona]) next[zona] = new Set();
-                                else next[zona] = new Set(next[zona]);
-                                sel ? next[zona].delete(z2) : next[zona].add(z2);
-                                return next;
-                              })}
-                                className={`px-2 py-0.5 rounded-full text-[9px] font-bold border transition-all ${
-                                  sel
-                                    ? 'bg-violet-500/20 border-violet-500 text-violet-400'
-                                    : isDark ? 'bg-zinc-800 border-zinc-600 text-gray-500' : 'bg-gray-100 border-gray-300 text-gray-400'
-                                }`}>
-                                {z2}
-                              </button>
-                            );
-                          })}
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-52 overflow-y-auto pr-1 custom-scrollbar">
+                      {opcionesGoa.filter(g => g !== 'ALL').map(goa => (
+                        <div key={goa} className={`flex items-center gap-2 p-2 rounded-lg border ${isDark ? 'border-zinc-800 bg-zinc-900' : 'border-gray-200 bg-white'}`}>
+                          <span className={`flex-1 text-xs font-bold truncate ${t.textMain}`}>{goa}</span>
+                          <select
+                            value={goasTemporada[goa] || ''}
+                            onChange={e => setGoasTemporada(prev => ({ ...prev, [goa]: e.target.value || undefined }))}
+                            className={`text-[10px] px-2 py-1 rounded border ${t.input} focus:outline-none focus:ring-1 w-32`}>
+                            <option value="">— No aplica —</option>
+                            <option value="CALOR">☀️ Calor</option>
+                            <option value="PLAYA">🏖️ Playa</option>
+                            <option value="TEMPLADO">🌤️ Templado</option>
+                            <option value="EXTREMOSO">🌡️ Extremoso</option>
+                          </select>
                         </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
+                      ))}
+                    </div>
+                    {opcionesGoa.filter(g => g !== 'ALL').length === 0 && (
+                      <p className={`text-xs ${t.textMuted}`}>Carga el CSV primero para ver los GOAs disponibles.</p>
+                    )}
                   </div>
 
-                  {/* Botones acción */}
-                  <div className="flex gap-3 flex-wrap pt-1">
-                <button onClick={calcularExcedentes} disabled={!rawData.length || excLoading}
-                  className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black transition-all disabled:opacity-40 ${t.btnPrimary}`}>
-                  {excLoading
-                    ? <><Icons.Loader size={15} className="animate-spin" /> Calculando…</>
-                    : <><Icons.Zap size={15} /> Ejecutar herramienta</>}
-                </button>
-                  {excResult.length > 0 && (
-                    <button onClick={exportExcedente}
-                      className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black transition-all ${t.btnSecondary}`}>
-                      <Icons.Download size={15} /> Exportar Excel
-                    </button>
-                  )}
+                  {/* Filtros */}
+                  <div>
+                    <h3 className={`text-[10px] font-black uppercase tracking-widest mb-3 ${t.textMuted}`}>Filtros</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+                      {[
+                        { label: 'GOA',         val: filterGoa,        set: setFilterGoa,        opts: opcionesGoa },
+                        { label: 'SKU',         val: filterSku,        set: setFilterSku,        opts: opcionesSku },
+                        { label: 'Marca',       val: filterMarca,      set: setFilterMarca,      opts: opcionesMarca },
+                        { label: 'Sección',     val: filterSeccion,    set: setFilterSeccion,    opts: opcionesSeccion },
+                        { label: 'Tipo Centro', val: filterTipoCentro, set: setFilterTipoCentro, opts: opcionesTipoCentro },
+                        { label: 'Zona',        val: filterZona,       set: setFilterZona,       opts: opcionesZona },
+                      ].map(({ label, val, set, opts }) => (
+                        <div key={label}>
+                          <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} block mb-1`}>{label}</label>
+                          <select value={val} onChange={e => set(e.target.value)}
+                            className={`w-full text-xs px-3 py-2 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}>
+                            {opts.map(o => <option key={o} value={o}>{o === 'ALL' ? 'Todos' : o}</option>)}
+                          </select>
+                        </div>
+                      ))}
+                    </div>
                   </div>
+
+                  {/* Letras de descuento a excluir */}
+                  {opcionesLetras.length > 0 && (
+                    <div>
+                      <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} block mb-2`}>
+                        Excluir del traslado — letras con descuento
+                      </label>
+                      <div className="flex flex-wrap gap-2">
+                        {opcionesLetras.map(letra => {
+                          const sel = letrasExcluidas.has(letra);
+                          return (
+                            <button key={letra} onClick={() => setLetrasExcluidas(prev => {
+                              const next = new Set(prev);
+                              sel ? next.delete(letra) : next.add(letra);
+                              return next;
+                            })}
+                              className={`px-3 py-1 rounded-full text-[10px] font-black border transition-all ${sel ? 'bg-red-500/20 border-red-500 text-red-400' : isDark ? 'bg-zinc-800 border-zinc-600 text-gray-400' : 'bg-gray-100 border-gray-300 text-gray-500'}`}>
+                              {sel ? '✕ ' : ''}{letra}
+                            </button>
+                          );
+                        })}
+                      </div>
+                      {letrasExcluidas.size > 0 && (
+                        <p className="text-[9px] mt-1 text-red-400">{letrasExcluidas.size} letra(s) excluida(s)</p>
+                      )}
+                    </div>
+                  )}
+
+                  {/* Mínimos y costo */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    <div className="flex items-center gap-2">
+                      <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} whitespace-nowrap`}>Mín. pzs</label>
+                      <input type="number" min={0} value={minPzsTraslado}
+                        onChange={e => setMinPzsTraslado(Number(e.target.value))}
+                        className={`w-20 text-xs px-2 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`} />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} whitespace-nowrap`}>Mín. $ traslado</label>
+                      <input type="number" min={0} value={minPesosTraslado}
+                        onChange={e => setMinPesosTraslado(Number(e.target.value))}
+                        className={`w-24 text-xs px-2 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`} />
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} whitespace-nowrap`}>Costo/pza ($)</label>
+                      <input type="number" min={1} value={costoPorPza}
+                        onChange={e => setCostoPorPza(Number(e.target.value))}
+                        className={`w-20 text-xs px-2 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`} />
+                    </div>
+                  </div>
+
+                  {/* Zonas adyacentes */}
+                  <div>
+                    <div className="flex items-center justify-between mb-2">
+                      <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted}`}>Zonas adyacentes</label>
+                      <button onClick={() => setShowPanelZonas(v => !v)}
+                        className={`text-[10px] font-bold px-3 py-1 rounded-lg border transition-all ${t.btnGhost}`}>
+                        {showPanelZonas ? 'Ocultar' : 'Configurar'}
+                      </button>
+                    </div>
+                    {showPanelZonas && (
+                      <div className="space-y-2 max-h-64 overflow-y-auto custom-scrollbar pr-1">
+                        {[...opcionesZona].filter(z => z !== 'ALL').sort().map(zona => (
+                          <div key={zona} className="flex items-center gap-3 flex-wrap">
+                            <span className={`text-[10px] font-black w-28 truncate ${t.textMain}`}>{zona}</span>
+                            <span className={`text-[9px] ${t.textMuted}`}>→</span>
+                            <div className="flex flex-wrap gap-1.5">
+                              {[...opcionesZona].filter(z => z !== 'ALL' && z !== zona).sort().map(z2 => {
+                                const sel = zonasAdyacentes[zona]?.has(z2);
+                                return (
+                                  <button key={z2} onClick={() => setZonasAdyacentes(prev => {
+                                    const next = { ...prev };
+                                    if (!next[zona]) next[zona] = new Set();
+                                    else next[zona] = new Set(next[zona]);
+                                    sel ? next[zona].delete(z2) : next[zona].add(z2);
+                                    return next;
+                                  })}
+                                    className={`px-2 py-0.5 rounded-full text-[9px] font-bold border transition-all ${sel ? 'bg-violet-500/20 border-violet-500 text-violet-400' : isDark ? 'bg-zinc-800 border-zinc-600 text-gray-500' : 'bg-gray-100 border-gray-300 text-gray-400'}`}>
+                                    {z2}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+
+                  {/* Botones ejecutar */}
+                  <div className="flex gap-3 flex-wrap">
+                    <button onClick={calcularExcedentes} disabled={!rawData.length || excLoading}
+                      className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black transition-all disabled:opacity-40 ${t.btnPrimary}`}>
+                      {excLoading
+                        ? <><Icons.Loader size={15} className="animate-spin" /> Calculando…</>
+                        : <><Icons.Zap size={15} /> Ejecutar herramienta</>}
+                    </button>
+                    {excResult.length > 0 && (
+                      <button onClick={exportExcedente}
+                        className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black transition-all ${t.btnSecondary}`}>
+                        <Icons.Download size={15} /> Exportar Excel
+                      </button>
+                    )}
+                  </div>
+
                 </div>
               )}
-            </div>
             </div>
             {/* end panel config */}
 
