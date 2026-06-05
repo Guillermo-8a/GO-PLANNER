@@ -17,7 +17,7 @@ import ModuleDispersion from "./modules/ModuleDispersion" ;
 import ModuleDayli from "./modules/ModuleDayli" ;
 
 import {
-  Layers, Bell, Sun, Moon, ShoppingCart, Map, LayoutDashboard, BarChart2,
+  Layers, Bell, Sun, Moon, ShoppingCart, Map, LayoutDashboard,
   HelpCircle, Zap,} from 'lucide-react';
 
 // ─── Paletas de tema ──────────────────────────────────────────────────────────
