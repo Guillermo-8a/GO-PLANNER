@@ -3,7 +3,7 @@
 // Sidebar: se colapsa a solo iconos al seleccionar módulo, glow en activo
 // Botón Asistencia junto a notificaciones
 // ─────────────────────────────────────────────────────────────────────────────
-import { PackageSearch, Calculator, Boxes, GitMerge, Settings, ChevronRight, Menu, X, Home, UploadCloud, RefreshCw, TrendingUp, ArrowLeftRight } from 'lucide-react';
+import { PackageSearch, Calculator, Boxes, GitMerge, Settings, ChevronRight, Menu, X, Home, UploadCloud, RefreshCw, BarChart2, TrendingUp, ArrowLeftRight } from 'lucide-react';
 
 import { useState, useRef, useEffect } from 'react';
 import { GlobalProvider, useGlobal, useDispatch, globalActions } from './context/GlobalContext';
