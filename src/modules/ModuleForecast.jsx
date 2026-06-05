@@ -9,6 +9,7 @@ import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer,
 } from 'recharts';
+import { useGlobal } from '../context/GlobalContext';
 
 // ─── Motores Matemáticos (sin cambios) ───────────────────────────────────────
 
@@ -89,6 +90,9 @@ export default function App() {
   const [copied, setCopied] = useState(false);
   const [isAssortmentModalOpen, setIsAssortmentModalOpen] = useState(false);
   const [assortmentForm, setAssortmentForm] = useState({ name: '', start: 1, end: 6, budget: 0, historyPzs: 0 });
+
+  const gState = useGlobal();
+  const isDark = (gState?.theme || 'light') === 'dark';
 
   // ── Persistencia localStorage ─────────────────────────────────────────────
   useEffect(() => {
@@ -243,27 +247,28 @@ export default function App() {
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
-    <div className="min-h-screen flex flex-col font-sans text-zinc-700 dark:text-slate-300 overflow-hidden">
+    <div className={`${isDark ? 'dark' : ''} min-h-screen p-4 md:p-6 font-sans text-zinc-700 dark:text-slate-300 animate-fade-in`}>
 
-      {/* HEADER */}
-      <header className="bg-white/80 dark:bg-zinc-900/80 border-b border-zinc-200 dark:border-zinc-800 px-6 py-4 flex justify-between items-center backdrop-blur-md sticky top-0 z-30 shadow-2xl">
-        <div className="flex items-center gap-4">
-          <button
-            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-            className="p-2 hover:bg-zinc-100 dark:hover:bg-zinc-800 rounded-lg text-zinc-600 dark:text-zinc-400 hover:text-zinc-900 dark:hover:text-white transition-all"
-          >
-            {isSidebarOpen ? <ChevronLeft size={20} /> : <ChevronRight size={20} />}
-          </button>
-          <div className="flex items-center gap-3">
-            
-            <h1 className="text-2xl font-black tracking-tighter text-zinc-900 dark:text-white leading-none uppercase">
-              GO <span className="mx-3 text-gray-400 font-light">|</span> <TrendingUp size={22} className="text-violet-500" />
-            </h1>
+      {/* HEADER MÓDULO */}
+      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm p-5 mb-6 flex items-center justify-between flex-wrap gap-4">
+        <div className="flex items-center gap-3">
+          <span className="p-2 rounded-xl bg-violet-100 dark:bg-violet-500/20">
+            <TrendingUp size={22} className="text-violet-500" />
+          </span>
+          <div>
+            <h1 className="text-2xl font-black tracking-tight text-zinc-900 dark:text-white leading-none">Forecasting</h1>
+            <p className="text-xs mt-1 text-zinc-500 dark:text-zinc-400">Predicción multi-modelo · SES · Holt · Holt-Winters</p>
           </div>
         </div>
-        <div className="flex gap-3">
-          <label className="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-900 dark:text-white px-4 py-2.5 rounded-xl text-sm font-bold cursor-pointer transition-all border border-zinc-200 dark:border-zinc-700 shadow-md">
-            <Database size={16} /> Subir BD (CSV)
+        <div className="flex flex-wrap gap-2 items-center">
+          <button
+            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+            className="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 px-3 py-2 rounded-lg text-xs font-bold border border-zinc-200 dark:border-zinc-700 transition-all"
+          >
+            {isSidebarOpen ? <ChevronLeft size={14} /> : <ChevronRight size={14} />} Portafolio
+          </button>
+          <label className="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 px-3 py-2 rounded-lg text-xs font-bold cursor-pointer border border-zinc-200 dark:border-zinc-700 transition-all">
+            <Database size={14} /> Subir BD (CSV)
             <input type="file" className="hidden" accept=".csv" onChange={importDatabase} />
           </label>
           <button
@@ -275,17 +280,19 @@ export default function App() {
               setIsEditing(newId);
               setEditForm({ name: 'Nueva Marca', data: '', unit: 'Meses' });
             }}
-            className="flex items-center gap-2 bg-violet-600 text-white px-5 py-2.5 rounded-xl text-sm font-bold hover:bg-violet-500 shadow-xl transition-all"
+            className="flex items-center gap-2 bg-violet-600 text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-violet-500 shadow-sm transition-all"
           >
-            <Plus size={16} /> Nueva Marca
+            <Plus size={14} /> Nueva Marca
           </button>
         </div>
-      </header>
+      </div>
 
-      <div className="flex flex-1 overflow-hidden relative text-left">
+      {/* CUERPO */}
+      <div className="flex gap-6 items-start text-left">
 
-        {/* SIDEBAR */}
-        <aside className={`sidebar-transition absolute md:relative z-20 h-full bg-white dark:bg-zinc-950 border-r border-zinc-200 dark:border-zinc-800 flex flex-col ${isSidebarOpen ? 'w-80 translate-x-0' : 'w-0 -translate-x-full md:translate-x-0 md:opacity-0 pointer-events-none'}`}>
+        {/* SIDEBAR PORTAFOLIO (en flujo) */}
+        {isSidebarOpen && (
+        <aside className="w-72 shrink-0 self-start sticky top-4 max-h-[calc(100vh-2rem)] bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm flex flex-col overflow-hidden">
           <div className="p-4 bg-zinc-100/30 dark:bg-zinc-900/30 border-b border-zinc-200 dark:border-zinc-800 flex items-center justify-between whitespace-nowrap overflow-hidden">
             <span className="text-[10px] font-black text-zinc-500 uppercase tracking-widest">Portafolio Activo</span>
             <span className="text-[10px] font-bold text-violet-400 bg-violet-400/10 px-2 py-0.5 rounded-full border border-violet-400/20">{brands.length}</span>
@@ -333,10 +340,11 @@ export default function App() {
             </div>
           </div>
         </aside>
+        )}
 
         {/* MAIN */}
-        <main className="flex-1 overflow-y-auto p-8">
-          <div className="max-w-6xl mx-auto space-y-8 animate-fade-in text-left">
+        <main className="flex-1 min-w-0">
+          <div className="w-full space-y-8 animate-fade-in text-left">
 
             {/* PANTALLA VACÍA */}
             {!currentBrand && !isEditing && (
@@ -588,6 +596,8 @@ export default function App() {
           </div>
         </div>
       )}
+
+      <style dangerouslySetInnerHTML={{ __html: `@keyframes fadeIn{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:translateY(0);}}.animate-fade-in{animation:fadeIn .4s ease-out forwards;}` }} />
     </div>
   );
 }
