@@ -1,26 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback, startTransition } from 'react';
 import * as Icons from '../utils/icons';
 
-// Theme local con localStorage — independiente de GlobalContext
-const useThemeLocal = () => {
-  const read = () => {
-    try {
-      if (document.documentElement.classList.contains('dark')) return 'dark';
-      const ls = localStorage.getItem('gop_theme');
-      return ls || 'dark';
-    } catch { return 'dark'; }
-  };
-  const [theme, setTheme] = useState(read);
-  useEffect(() => {
-    const sync = () => setTheme(read());
-    window.addEventListener('storage', sync);
-    const obs = new MutationObserver(sync);
-    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
-    return () => { window.removeEventListener('storage', sync); obs.disconnect(); };
-  }, []);
-  return { theme };
-};
-
 // ─── HELPERS ────────────────────────────────────────────────────────────────
 
 const parseCSVRow = (row, sep) =>
@@ -51,7 +31,6 @@ const downloadExcel = (rows, filename) => {
 const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
 
 // Regresión lineal simple (mínimos cuadrados) sobre [{x,y}]
-// devuelve { slope, intercept, r2, predict(x) }
 const linearRegression = (points) => {
   const n = points.length;
   if (n < 2) return { slope: 0, intercept: points[0]?.y || 0, r2: 0, predict: () => points[0]?.y || 0 };
@@ -68,8 +47,27 @@ const linearRegression = (points) => {
   return { slope, intercept, r2, predict: x => slope * x + intercept };
 };
 
-// ─── MINI-CHART: LÍNEA HISTÓRICO + PROYECCIÓN ──────────────────────────────
+// ─── HOOK DE TEMA LOCAL ─────────────────────────────────────────────────────
+const useThemeLocal = () => {
+  const read = () => {
+    try {
+      if (document.documentElement.classList.contains('dark')) return 'dark';
+      const ls = localStorage.getItem('gop_theme');
+      return ls || 'dark';
+    } catch { return 'dark'; }
+  };
+  const [theme, setTheme] = useState(read);
+  useEffect(() => {
+    const sync = () => setTheme(read());
+    window.addEventListener('storage', sync);
+    const obs = new MutationObserver(sync);
+    obs.observe(document.documentElement, { attributes: true, attributeFilter: ['class'] });
+    return () => { window.removeEventListener('storage', sync); obs.disconnect(); };
+  }, []);
+  return { theme };
+};
 
+// ─── MINI-CHART: LÍNEA HISTÓRICO + PROYECCIÓN ──────────────────────────────
 const LineForecast = ({ historico, proyeccion, theme, height = 120 }) => {
   const isDark = theme === 'dark';
   const all = [...historico, ...proyeccion];
@@ -125,18 +123,16 @@ const SparklineBarras = ({ valores, color = '#a78bfa', height = 24 }) => {
 };
 
 // ─── INPUT NUMÉRICO CON LOCAL STATE + onBlur ────────────────────────────────
-// Patrón crítico de performance: el state global (overrides, drivers) solo se
-// actualiza cuando el usuario sale del input (onBlur) o presiona Enter.
-// Mientras tipea, el valor vive en el local state — sin re-renders del padre.
-// Memoizado para evitar re-mounts.
+// El estado global solo se actualiza al salir del input (onBlur) o Enter.
+// Mientras tipea, el valor vive en estado local — sin re-renders del padre.
 const NumberInputDeferred = React.memo(function NumberInputDeferred({
-  value,                  // valor controlado externo (puede ser null/undefined)
-  onCommit,               // callback al sacar foco o Enter: (parsedValue, rawString) => void
+  value,
+  onCommit,
   placeholder,
   step = 'any',
   className = '',
-  formatter,              // opcional: (n) => string para mostrar al perder foco
-  parseValue,             // opcional: (str) => num | null
+  formatter,
+  parseValue,
   ...rest
 }) {
   const fmtIn  = useCallback((v) => {
@@ -153,7 +149,6 @@ const NumberInputDeferred = React.memo(function NumberInputDeferred({
   const [local, setLocal] = useState(() => fmtIn(value));
   const [focused, setFocused] = useState(false);
 
-  // Sincronizar valor externo cuando NO está focuseado (evita pisar lo que tipea)
   useEffect(() => {
     if (!focused) setLocal(fmtIn(value));
   }, [value, focused, fmtIn]);
@@ -185,6 +180,7 @@ const NumberInputDeferred = React.memo(function NumberInputDeferred({
 // ═══════════════════════════════════════════════════════════════════════════
 // COMPONENTE PRINCIPAL
 // ═══════════════════════════════════════════════════════════════════════════
+
 
 export default function Forecast() {
   const gState = useThemeLocal();
@@ -1345,6 +1341,15 @@ export default function Forecast() {
   // Venta objetivo anual para tiendas apertura/nuevas (sin histórico): { "centro|goa": montoAnual }
   const [ventaObjetivoApertura, setVentaObjetivoApertura] = useState({});
 
+  // Tab 6 - Canales
+  // Mix objetivo override por canal (global). Si null, usa el histórico.
+  const [mixObjetivo, setMixObjetivo] = useState({
+    fisico: null,   // fracción 0-1 (null = usar histórico)
+    digital: null,
+    kiosko: null,
+  });
+  const [t6Vista, setT6Vista] = useState('mensual'); // 'mensual' | 'goa'
+
   // Persistencia
   useEffect(() => {
     try {
@@ -1362,6 +1367,7 @@ export default function Forecast() {
         if (d.pctBonifApertura != null) setPctBonifApertura(d.pctBonifApertura);
         if (d.mgObjetivoCentro)        setMgObjetivoCentro(d.mgObjetivoCentro);
         if (d.ventaObjetivoApertura)   setVentaObjetivoApertura(d.ventaObjetivoApertura);
+        if (d.mixObjetivo)             setMixObjetivo(d.mixObjetivo);
         if (d.t4Locks)                 setT4Locks(new Set(d.t4Locks));
         if (d.t4Overrides)             setT4Overrides(d.t4Overrides);
       }
@@ -1372,14 +1378,14 @@ export default function Forecast() {
       try {
         localStorage.setItem('gop_forecast_drivers', JSON.stringify({
           otbTotal, otbOverridesGoa, crecGoa, crecCentro, rotOverrides, msiPct, mkdPctGoa,
-          otbMaster, pctBonifApertura, mgObjetivoCentro, ventaObjetivoApertura,
+          otbMaster, pctBonifApertura, mgObjetivoCentro, ventaObjetivoApertura, mixObjetivo,
           t4Locks: Array.from(t4Locks), t4Overrides
         }));
       } catch {}
     }, 1000);
     return () => clearTimeout(t);
   }, [otbTotal, otbOverridesGoa, crecGoa, crecCentro, rotOverrides, msiPct, mkdPctGoa,
-      otbMaster, pctBonifApertura, mgObjetivoCentro, ventaObjetivoApertura, t4Locks, t4Overrides]);
+      otbMaster, pctBonifApertura, mgObjetivoCentro, ventaObjetivoApertura, mixObjetivo, t4Locks, t4Overrides]);
 
   // ── Lógica de distribución y cálculos ────────────────────────────────
 
@@ -2020,6 +2026,167 @@ export default function Forecast() {
     });
     return Object.values(map).sort((a,b) => b.totales.venta - a.totales.venta);
   }, [planCrucesMensual]);
+
+  // ══════════════════════════════════════════════════════════════════════
+  // TAB 6 — CANALES: reparte el plan total entre Físico/Digital/Kiosko
+  // Mix base = histórico (Físico vs Digital). Kiosko arranca en 0 (sale del Físico).
+  // Override de mix objetivo: el usuario fija un %, el resto se reparte proporcional.
+  // ══════════════════════════════════════════════════════════════════════
+  const planCanales = useMemo(() => {
+    // Mix histórico
+    const totalHist = (resumenHist?.vtaFisico || 0) + (resumenHist?.vtaVirtual || 0);
+    const mixHistFisico  = totalHist > 0 ? resumenHist.vtaFisico / totalHist : 0.95;
+    const mixHistDigital = totalHist > 0 ? resumenHist.vtaVirtual / totalHist : 0.05;
+    const mixHistKiosko  = 0; // no existe aún en datos
+
+    // Mix aplicado: override > histórico
+    // Lógica: si fijas uno o más canales, el resto se ajusta para sumar 1
+    const fijos = {};
+    let sumaFijos = 0;
+    ['fisico', 'digital', 'kiosko'].forEach(c => {
+      if (mixObjetivo[c] != null) { fijos[c] = mixObjetivo[c]; sumaFijos += mixObjetivo[c]; }
+    });
+    const baseMix = { fisico: mixHistFisico, digital: mixHistDigital, kiosko: mixHistKiosko };
+    const libres = ['fisico', 'digital', 'kiosko'].filter(c => mixObjetivo[c] == null);
+    const sumaLibresBase = libres.reduce((s,c) => s + baseMix[c], 0);
+    const restante = Math.max(0, 1 - sumaFijos);
+
+    const mixAplicado = {};
+    ['fisico', 'digital', 'kiosko'].forEach(c => {
+      if (mixObjetivo[c] != null) {
+        mixAplicado[c] = mixObjetivo[c];
+      } else {
+        mixAplicado[c] = sumaLibresBase > 0 ? (baseMix[c] / sumaLibresBase) * restante : restante / libres.length;
+      }
+    });
+
+    // Plan total mensual (suma de todos los cruces)
+    const planMensualTotal = Array(12).fill(0);
+    planCrucesMensual.forEach(c => {
+      c.filasMensual.forEach((f, i) => planMensualTotal[i] += f.venta);
+    });
+    const planTotalAnual = planMensualTotal.reduce((s,v) => s+v, 0);
+
+    // Repartir por canal
+    const canales = ['fisico', 'digital', 'kiosko'].map(c => {
+      const mensual = planMensualTotal.map(v => v * mixAplicado[c]);
+      return {
+        canal: c,
+        label: c === 'fisico' ? 'Físico (Piso)' : c === 'digital' ? 'Digital' : 'Kiosko',
+        mix: mixAplicado[c],
+        mixHist: baseMix[c],
+        esOverride: mixObjetivo[c] != null,
+        mensual,
+        total: mensual.reduce((s,v) => s+v, 0),
+      };
+    });
+
+    // Plan por canal × GOA (para vista detallada)
+    const porGoa = {};
+    planCrucesMensual.forEach(c => {
+      if (!porGoa[c.goa]) porGoa[c.goa] = { goa: c.goa, total: 0 };
+      porGoa[c.goa].total += c.totales.venta;
+    });
+    const goaCanales = Object.values(porGoa).map(g => ({
+      goa: g.goa,
+      total: g.total,
+      fisico: g.total * mixAplicado.fisico,
+      digital: g.total * mixAplicado.digital,
+      kiosko: g.total * mixAplicado.kiosko,
+    })).sort((a,b) => b.total - a.total);
+
+    return { canales, mixAplicado, planMensualTotal, planTotalAnual, goaCanales,
+             mixHist: { fisico: mixHistFisico, digital: mixHistDigital, kiosko: mixHistKiosko } };
+  }, [planCrucesMensual, resumenHist, mixObjetivo]);
+
+  // ══════════════════════════════════════════════════════════════════════
+  // TAB 7 — RESUMEN OTB: consolidado ejecutivo + comparativo por GOA
+  // ══════════════════════════════════════════════════════════════════════
+  const resumenOTB = useMemo(() => {
+    // Consolidado mensual de toda la sección (los 8 ratios)
+    const meses = Array(12).fill(null).map((_, i) => ({
+      mes: i+1, invInicial: 0, venta: 0, mkd: 0, msi: 0, costo: 0,
+      compra: 0, invFinal: 0, utilidad: 0, bonif: 0,
+    }));
+    planCrucesMensual.forEach(c => {
+      c.filasMensual.forEach((f, i) => {
+        ['invInicial','venta','mkd','msi','costo','compra','invFinal','utilidad','bonif'].forEach(k => {
+          meses[i][k] += f[k];
+        });
+      });
+    });
+    meses.forEach(m => { m.mgPct = m.venta > 0 ? m.utilidad / m.venta : 0; });
+
+    const tot = meses.reduce((acc, m) => ({
+      venta: acc.venta + m.venta, mkd: acc.mkd + m.mkd, msi: acc.msi + m.msi,
+      costo: acc.costo + m.costo, compra: acc.compra + m.compra,
+      utilidad: acc.utilidad + m.utilidad, bonif: acc.bonif + m.bonif,
+    }), { venta:0, mkd:0, msi:0, costo:0, compra:0, utilidad:0, bonif:0 });
+    const mgGlobal = tot.venta > 0 ? tot.utilidad / tot.venta : 0;
+
+    // Comparativo por GOA: plan vs año anterior
+    const porGoa = {};
+    planCrucesMensual.forEach(c => {
+      if (!porGoa[c.goa]) porGoa[c.goa] = { goa: c.goa, plan: 0, mkd: 0, utilidad: 0, ultAnio: 0, centros: new Set() };
+      porGoa[c.goa].plan     += c.totales.venta;
+      porGoa[c.goa].mkd      += c.totales.mkd;
+      porGoa[c.goa].utilidad += c.totales.utilidad;
+      porGoa[c.goa].centros.add(c.centro);
+    });
+    // Año anterior por GOA (del histórico)
+    historico.forEach(r => {
+      if (r.anio !== anioActual - 1 || !r.goa) return;
+      if (porGoa[r.goa]) porGoa[r.goa].ultAnio += r.venta || 0;
+    });
+    const comparativo = Object.values(porGoa).map(g => ({
+      goa: g.goa,
+      plan: g.plan,
+      ultAnio: g.ultAnio,
+      crec: g.ultAnio > 0 ? (g.plan - g.ultAnio) / g.ultAnio : 0,
+      mgPct: g.plan > 0 ? g.utilidad / g.plan : 0,
+      mkdRatio: g.plan > 0 ? g.mkd / g.plan : 0,
+      numCentros: g.centros.size,
+    })).sort((a,b) => b.plan - a.plan);
+
+    return { meses, tot, mgGlobal, comparativo };
+  }, [planCrucesMensual, historico, anioActual]);
+
+  // Export OTB general (consolidado mensual de la sección)
+  const exportOTBGeneral = () => {
+    const header = ['Concepto', ...MESES, 'Total'];
+    const filas = [
+      ['Inv Inicial', ...resumenOTB.meses.map(m => Math.round(m.invInicial)), ''],
+      ['Ventas', ...resumenOTB.meses.map(m => Math.round(m.venta)), Math.round(resumenOTB.tot.venta)],
+      ['Markdowns', ...resumenOTB.meses.map(m => Math.round(m.mkd)), Math.round(resumenOTB.tot.mkd)],
+      ['MSI', ...resumenOTB.meses.map(m => Math.round(m.msi)), Math.round(resumenOTB.tot.msi)],
+      ['Compras', ...resumenOTB.meses.map(m => Math.round(m.compra)), Math.round(resumenOTB.tot.compra)],
+      ['Bonificacion', ...resumenOTB.meses.map(m => Math.round(m.bonif)), Math.round(resumenOTB.tot.bonif)],
+      ['Utilidad', ...resumenOTB.meses.map(m => Math.round(m.utilidad)), Math.round(resumenOTB.tot.utilidad)],
+      ['Mg %', ...resumenOTB.meses.map(m => (m.mgPct*100).toFixed(1)), (resumenOTB.mgGlobal*100).toFixed(1)],
+      ['Inv Final', ...resumenOTB.meses.map(m => Math.round(m.invFinal)), ''],
+    ];
+    downloadExcel([header, ...filas], `OTB_General_${anioPlan}.csv`);
+  };
+
+  // Export plan por combinación para O9: Seccion | Centro | GOA | Canal × Meses
+  const exportPlanO9 = () => {
+    const seccion = resumenHist?.seccionNum || '';
+    const nSeccion = resumenHist?.seccionNombre || '';
+    const mix = planCanales.mixAplicado;
+    // Header de 2 niveles aplanado: por cada canal, los 12 meses
+    const canales = [['FISICO', mix.fisico], ['DIGITAL', mix.digital], ['KIOSKO', mix.kiosko]];
+    const header1 = ['', '', '', '', ...canales.flatMap(([c]) => Array(12).fill(c))];
+    const header2 = ['Seccion', 'N_Seccion', 'Centro', 'GOA', ...canales.flatMap(() => MESES)];
+    const filas = planCrucesMensual.map(c => {
+      const ventaMensual = c.filasMensual.map(f => f.venta);
+      const fila = [seccion, nSeccion, c.centro, c.goa];
+      canales.forEach(([, frac]) => {
+        ventaMensual.forEach(v => fila.push(Math.round(v * frac)));
+      });
+      return fila;
+    });
+    downloadExcel([header1, header2, ...filas], `Plan_O9_${seccion}_${anioPlan}.csv`);
+  };
 
   // Filtros Tab 3
   const [t3Tab, setT3Tab]           = useState('otb'); // otb | crec | rot | mkdmsi
@@ -4610,15 +4777,318 @@ export default function Forecast() {
           </div>
         )}
 
-        {/* ══════════ TAB 6-7: PLACEHOLDERS ══════════ */}
-        {activeTab >= 6 && (
-          <div className="p-8 flex flex-col items-center justify-center text-center min-h-[40vh]">
-            <Icons.Settings size={32} className={`${isDark ? 'text-zinc-600' : 'text-gray-300'} mb-3`} />
-            <p className={`text-sm font-bold ${t.textMain}`}>
-              {activeTab === 6 && 'Canales'}
-              {activeTab === 7 && 'Resumen OTB'}
-            </p>
-            <p className={`text-xs mt-1 ${t.textMuted} max-w-md`}>Tab pendiente de implementación.</p>
+        {/* ══════════ TAB 6: CANALES ══════════ */}
+        {activeTab === 6 && (
+          <div className="p-5 space-y-5">
+            {!historico.length && (
+              <div className={`p-8 rounded-xl border flex flex-col items-center justify-center text-center ${t.cardInner}`}>
+                <p className={`text-sm font-bold ${t.textMain}`}>Carga el histórico (Tab 1) y arma el plan</p>
+              </div>
+            )}
+            {historico.length > 0 && planCrucesMensual.length > 0 && (
+              <>
+                {/* KPIs por canal */}
+                <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                  {planCanales.canales.map(c => (
+                    <div key={c.canal} className={`p-4 rounded-xl border ${t.cardInner}`}>
+                      <div className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} mb-1`}>{c.label}</div>
+                      <div className={`text-lg font-black ${c.canal === 'digital' ? t.textAccent2 : t.textAccent1}`}>{fmtMXN(c.total)}</div>
+                      <div className={`text-[10px] ${t.textMuted}`}>
+                        {fmtPct(c.mix)} {c.esOverride && <span className={t.textYellow}>(objetivo)</span>}
+                      </div>
+                    </div>
+                  ))}
+                  {/* Vista agrupada Piso + Kiosko */}
+                  <div className={`p-4 rounded-xl border ${isDark ? 'bg-violet-900/10 border-violet-500/30' : 'bg-violet-50/50 border-violet-200'}`}>
+                    <div className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} mb-1`}>Piso + Kiosko</div>
+                    <div className={`text-lg font-black ${t.textPurple}`}>
+                      {fmtMXN((planCanales.canales.find(c=>c.canal==='fisico')?.total||0) + (planCanales.canales.find(c=>c.canal==='kiosko')?.total||0))}
+                    </div>
+                    <div className={`text-[10px] ${t.textMuted}`}>Presencial total</div>
+                  </div>
+                </div>
+
+                {/* Editor de mix objetivo */}
+                <div className={`p-4 rounded-xl border ${t.cardInner}`}>
+                  <h3 className={`text-xs font-black uppercase tracking-widest mb-1 ${t.textMuted}`}>Mix Objetivo de Canales</h3>
+                  <p className={`text-[10px] mb-3 ${t.textMuted}`}>
+                    Mix base = histórico. Fija un objetivo en cualquier canal (ej. llegar a 10% Digital) y el resto se reparte proporcionalmente. Deja vacío para usar el histórico.
+                  </p>
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {['fisico', 'digital', 'kiosko'].map(c => {
+                      const cn = planCanales.canales.find(x => x.canal === c);
+                      return (
+                        <div key={c} className={`p-3 rounded-lg border ${t.cardInner}`}>
+                          <div className="flex items-center justify-between mb-2">
+                            <span className={`text-[10px] font-black uppercase tracking-widest ${t.textMain}`}>{cn.label}</span>
+                            <span className={`text-[9px] ${t.textMuted}`}>Hist: {fmtPct(cn.mixHist)}</span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <NumberInputDeferred
+                              value={mixObjetivo[c] != null ? (mixObjetivo[c]*100).toFixed(1) : ''}
+                              placeholder={`${(cn.mixHist*100).toFixed(1)} (hist)`}
+                              onCommit={(parsed) => setMixObjetivo(prev => ({
+                                ...prev, [c]: parsed != null ? parsed/100 : null
+                              }))}
+                              className={`w-full text-right font-mono text-xs px-2 py-1.5 rounded border ${
+                                mixObjetivo[c] != null
+                                  ? (isDark ? 'bg-amber-500/20 border-amber-400 text-amber-200' : 'bg-amber-100 border-amber-400 text-amber-900')
+                                  : t.input
+                              }`} />
+                            <span className={`text-xs ${t.textMuted}`}>%</span>
+                          </div>
+                          <div className={`text-[10px] mt-1 ${t.textMuted}`}>Aplicado: <strong className={t.textMain}>{fmtPct(cn.mix)}</strong></div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  {Object.values(mixObjetivo).some(v => v != null) && (
+                    <button onClick={() => setMixObjetivo({ fisico: null, digital: null, kiosko: null })}
+                      className={`mt-3 text-[10px] font-bold px-3 py-1.5 rounded ${t.btnGhost}`}>
+                      ↺ Restaurar mix histórico
+                    </button>
+                  )}
+                </div>
+
+                {/* Toggle vista */}
+                <div className={`flex rounded-lg border ${t.border} overflow-hidden w-fit`}>
+                  <button onClick={() => setT6Vista('mensual')}
+                    className={`px-3 py-1.5 text-xs font-bold ${t6Vista === 'mensual' ? t.btnPurple : t.btnGhost}`}>Mensual</button>
+                  <button onClick={() => setT6Vista('goa')}
+                    className={`px-3 py-1.5 text-xs font-bold ${t6Vista === 'goa' ? t.btnPurple : t.btnGhost}`}>Por GOA</button>
+                </div>
+
+                {/* Tabla mensual por canal */}
+                {t6Vista === 'mensual' && (
+                  <div className={`p-4 rounded-xl border ${t.cardInner}`}>
+                    <h3 className={`text-xs font-black uppercase tracking-widest mb-3 ${t.textMuted}`}>Plan Mensual por Canal</h3>
+                    <div className="overflow-x-auto custom-scrollbar">
+                      <table className="w-full text-left min-w-max text-xs">
+                        <thead>
+                          <tr className={`text-[9px] uppercase font-black tracking-widest ${isDark ? 'bg-zinc-900 text-gray-400 border-b border-zinc-800' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+                            <th className="p-2 sticky left-0 bg-inherit">Canal</th>
+                            {MESES.map(m => <th key={m} className="p-2 text-right">{m}</th>)}
+                            <th className="p-2 text-right">Total</th>
+                          </tr>
+                        </thead>
+                        <tbody className={`divide-y ${isDark ? 'divide-zinc-800/50' : 'divide-gray-100'}`}>
+                          {planCanales.canales.map(c => (
+                            <tr key={c.canal}>
+                              <td className={`p-2 font-bold sticky left-0 bg-inherit ${t.textMain}`}>{c.label}</td>
+                              {c.mensual.map((v, i) => (
+                                <td key={i} className={`p-2 text-right font-mono ${c.canal === 'digital' ? t.textAccent2 : t.textMuted}`}>{fmt(v, 0)}</td>
+                              ))}
+                              <td className={`p-2 text-right font-mono font-black ${t.textPurple}`}>{fmt(c.total, 0)}</td>
+                            </tr>
+                          ))}
+                          <tr className={`font-black ${isDark ? 'bg-violet-900/10' : 'bg-violet-50/50'}`}>
+                            <td className={`p-2 sticky left-0 bg-inherit ${t.textPurple}`}>TOTAL</td>
+                            {planCanales.planMensualTotal.map((v, i) => (
+                              <td key={i} className={`p-2 text-right font-mono ${t.textPurple}`}>{fmt(v, 0)}</td>
+                            ))}
+                            <td className={`p-2 text-right font-mono ${t.textPurple}`}>{fmt(planCanales.planTotalAnual, 0)}</td>
+                          </tr>
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tabla por GOA × canal */}
+                {t6Vista === 'goa' && (
+                  <div className={`p-4 rounded-xl border ${t.cardInner}`}>
+                    <h3 className={`text-xs font-black uppercase tracking-widest mb-3 ${t.textMuted}`}>Plan por GOA × Canal</h3>
+                    <div className="overflow-x-auto custom-scrollbar max-h-[60vh]">
+                      <table className="w-full text-left min-w-max text-xs">
+                        <thead>
+                          <tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark ? 'bg-zinc-900 text-gray-400 border-b border-zinc-800' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+                            <th className="p-2">GOA</th>
+                            <th className="p-2 text-right">Total Plan</th>
+                            <th className="p-2 text-right">Físico</th>
+                            <th className="p-2 text-right">Digital</th>
+                            <th className="p-2 text-right">Kiosko</th>
+                            <th className="p-2 text-right">Piso+Kiosko</th>
+                          </tr>
+                        </thead>
+                        <tbody className={`divide-y ${isDark ? 'divide-zinc-800/50' : 'divide-gray-100'}`}>
+                          {planCanales.goaCanales.map(g => (
+                            <tr key={g.goa} className={isDark ? 'hover:bg-zinc-800/30' : 'hover:bg-violet-50/30'}>
+                              <td className="p-2"><span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${t.badgePurple}`}>{g.goa}</span></td>
+                              <td className={`p-2 text-right font-mono font-bold ${t.textPurple}`}>{fmt(g.total, 0)}</td>
+                              <td className={`p-2 text-right font-mono ${t.textMuted}`}>{fmt(g.fisico, 0)}</td>
+                              <td className={`p-2 text-right font-mono ${t.textAccent2}`}>{fmt(g.digital, 0)}</td>
+                              <td className={`p-2 text-right font-mono ${t.textMuted}`}>{fmt(g.kiosko, 0)}</td>
+                              <td className={`p-2 text-right font-mono ${t.textMain}`}>{fmt(g.fisico + g.kiosko, 0)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+        )}
+
+        {/* ══════════ TAB 7: RESUMEN OTB ══════════ */}
+        {activeTab === 7 && (
+          <div className="p-5 space-y-5">
+            {!historico.length && (
+              <div className={`p-8 rounded-xl border flex flex-col items-center justify-center text-center ${t.cardInner}`}>
+                <p className={`text-sm font-bold ${t.textMain}`}>Carga el histórico y arma el plan primero</p>
+              </div>
+            )}
+            {historico.length > 0 && planCrucesMensual.length > 0 && (
+              <>
+                {/* Encabezado con exports */}
+                <div className={`p-4 rounded-xl border ${t.cardInner} flex items-center justify-between flex-wrap gap-3`}>
+                  <div>
+                    <h3 className={`text-sm font-black ${t.textMain}`}>
+                      Resumen OTB · {resumenHist?.seccionNum} {resumenHist?.seccionNombre} · Plan {anioPlan}
+                    </h3>
+                    <p className={`text-[10px] ${t.textMuted}`}>Vista consolidada final de la sección</p>
+                  </div>
+                  <div className="flex gap-2">
+                    <button onClick={exportOTBGeneral}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold ${t.btnSecondary}`}>
+                      <Icons.Download size={13} /> OTB General
+                    </button>
+                    <button onClick={exportPlanO9}
+                      className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold ${t.btnPrimary || t.btnPurple}`}>
+                      <Icons.Download size={13} /> Plan O9 (por combinación)
+                    </button>
+                  </div>
+                </div>
+
+                {/* KPIs ejecutivos */}
+                <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3">
+                  {[
+                    { label: 'Venta Plan', val: fmtMXN(resumenOTB.tot.venta), color: t.textPurple },
+                    { label: 'Compras', val: fmtMXN(resumenOTB.tot.compra), color: t.textYellow },
+                    { label: 'Markdowns', val: fmtMXN(resumenOTB.tot.mkd), color: t.textMuted },
+                    { label: 'MSI', val: fmtMXN(resumenOTB.tot.msi), color: t.textMuted },
+                    { label: 'Bonificación', val: fmtMXN(resumenOTB.tot.bonif), color: t.textYellow },
+                    { label: 'Utilidad', val: fmtMXN(resumenOTB.tot.utilidad), color: 'text-emerald-500' },
+                    { label: 'Mg% Global', val: fmtPct(resumenOTB.mgGlobal), color: 'text-emerald-500' },
+                  ].map((k, i) => (
+                    <div key={i} className={`p-4 rounded-xl border ${t.cardInner}`}>
+                      <div className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} mb-1`}>{k.label}</div>
+                      <div className={`text-base font-black ${k.color}`}>{k.val}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Tabla consolidada mensual */}
+                <div className={`p-4 rounded-xl border ${t.cardInner}`}>
+                  <h3 className={`text-xs font-black uppercase tracking-widest mb-3 ${t.textMuted}`}>Plan Mensual Consolidado · Sección</h3>
+                  <div className="overflow-x-auto custom-scrollbar">
+                    <table className="w-full text-left min-w-max text-xs">
+                      <thead>
+                        <tr className={`text-[9px] uppercase font-black tracking-widest ${isDark ? 'bg-zinc-900 text-gray-400 border-b border-zinc-800' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+                          <th className="p-2 sticky left-0 bg-inherit">Ratio</th>
+                          {MESES.map(m => <th key={m} className="p-2 text-right">{m}</th>)}
+                          <th className="p-2 text-right">Total</th>
+                        </tr>
+                      </thead>
+                      <tbody className={`divide-y ${isDark ? 'divide-zinc-800/50' : 'divide-gray-100'}`}>
+                        {[
+                          { k: 'invInicial', label: 'Inv. Inicial', color: t.textMuted },
+                          { k: 'venta',      label: 'Ventas',      color: t.textPurple, bold: true },
+                          { k: 'mkd',        label: 'Markdowns',   color: t.textMuted },
+                          { k: 'msi',        label: 'MSI',         color: t.textMuted },
+                          { k: 'compra',     label: 'Compras',     color: t.textYellow, bold: true },
+                          { k: 'bonif',      label: 'Bonificación', color: t.textYellow },
+                          { k: 'utilidad',   label: 'Utilidad',    color: 'text-emerald-500', bold: true },
+                          { k: 'mgPct',      label: 'Mg %',        color: 'text-emerald-500', isPct: true },
+                          { k: 'invFinal',   label: 'Inv. Final',  color: t.textMuted },
+                        ].map(({k, label, color, isPct, bold}) => {
+                          const total = isPct ? resumenOTB.mgGlobal : resumenOTB.tot[k];
+                          return (
+                            <tr key={k} className={bold ? (isDark ? 'bg-violet-900/5' : 'bg-violet-50/30') : ''}>
+                              <td className={`p-2 sticky left-0 bg-inherit ${bold ? 'font-black' : 'font-bold'} ${color}`}>{label}</td>
+                              {resumenOTB.meses.map((m, i) => (
+                                <td key={i} className={`p-2 text-right font-mono ${color} ${bold ? 'font-bold' : ''}`}>
+                                  {isPct ? fmtPct(m[k]) : (m[k] !== 0 ? fmt(m[k], 0) : '—')}
+                                </td>
+                              ))}
+                              <td className={`p-2 text-right font-mono font-black ${color}`}>
+                                {isPct ? fmtPct(total) : (total != null ? fmt(total, 0) : '—')}
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+
+                {/* Comparativo por GOA: Plan vs Año anterior */}
+                <div className={`p-4 rounded-xl border ${t.cardInner}`}>
+                  <h3 className={`text-xs font-black uppercase tracking-widest mb-3 ${t.textMuted}`}>
+                    Comparativo por GOA · Plan {anioPlan} vs {anioActual - 1}
+                  </h3>
+                  <div className="overflow-x-auto custom-scrollbar">
+                    <table className="w-full text-left min-w-max text-xs">
+                      <thead>
+                        <tr className={`text-[9px] uppercase font-black tracking-widest ${isDark ? 'bg-zinc-900 text-gray-400 border-b border-zinc-800' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+                          <th className="p-2">GOA</th>
+                          <th className="p-2 text-right">Centros</th>
+                          <th className="p-2 text-right">{anioActual - 1}</th>
+                          <th className="p-2 text-right">Plan {anioPlan}</th>
+                          <th className="p-2 text-right">% Crec</th>
+                          <th className="p-2 text-right">Mg%</th>
+                          <th className="p-2 text-right">Mkd%</th>
+                          <th className="p-2 text-center">Estatus</th>
+                        </tr>
+                      </thead>
+                      <tbody className={`divide-y ${isDark ? 'divide-zinc-800/50' : 'divide-gray-100'}`}>
+                        {resumenOTB.comparativo.map(g => {
+                          const semaforo = g.crec >= 0.05 ? 'ok' : g.crec >= -0.05 ? 'warn' : 'bad';
+                          return (
+                            <tr key={g.goa} className={isDark ? 'hover:bg-zinc-800/30' : 'hover:bg-violet-50/30'}>
+                              <td className="p-2"><span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${t.badgePurple}`}>{g.goa}</span></td>
+                              <td className={`p-2 text-right font-mono ${t.textMuted}`}>{g.numCentros}</td>
+                              <td className={`p-2 text-right font-mono ${t.textMuted}`}>{fmt(g.ultAnio, 0)}</td>
+                              <td className={`p-2 text-right font-mono font-bold ${t.textPurple}`}>{fmt(g.plan, 0)}</td>
+                              <td className={`p-2 text-right font-mono font-bold ${g.crec >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
+                                {g.crec >= 0 ? '↑' : '↓'} {fmtPct(Math.abs(g.crec))}
+                              </td>
+                              <td className={`p-2 text-right font-mono ${g.mgPct >= 0.35 ? 'text-emerald-500' : t.textYellow}`}>{fmtPct(g.mgPct)}</td>
+                              <td className={`p-2 text-right font-mono ${g.mkdRatio > 0.15 ? 'text-red-500' : t.textMuted}`}>{fmtPct(g.mkdRatio)}</td>
+                              <td className="p-2 text-center">
+                                <span className={`inline-block w-2.5 h-2.5 rounded-full ${
+                                  semaforo === 'ok' ? 'bg-emerald-500' : semaforo === 'warn' ? 'bg-amber-500' : 'bg-red-500'
+                                }`} title={semaforo === 'ok' ? 'Crecimiento sano' : semaforo === 'warn' ? 'Plano' : 'Caída'}></span>
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                      <tfoot>
+                        <tr className={`font-black ${isDark ? 'bg-violet-900/10' : 'bg-violet-50/50'}`}>
+                          <td className={`p-2 ${t.textPurple}`}>TOTAL</td>
+                          <td className="p-2"></td>
+                          <td className={`p-2 text-right font-mono ${t.textMuted}`}>
+                            {fmt(resumenOTB.comparativo.reduce((s,g) => s+g.ultAnio, 0), 0)}
+                          </td>
+                          <td className={`p-2 text-right font-mono ${t.textPurple}`}>{fmt(resumenOTB.tot.venta, 0)}</td>
+                          <td className={`p-2 text-right font-mono ${t.textMuted}`}>
+                            {(() => {
+                              const ult = resumenOTB.comparativo.reduce((s,g) => s+g.ultAnio, 0);
+                              const crec = ult > 0 ? (resumenOTB.tot.venta - ult) / ult : 0;
+                              return (crec >= 0 ? '↑ ' : '↓ ') + fmtPct(Math.abs(crec));
+                            })()}
+                          </td>
+                          <td className={`p-2 text-right font-mono ${t.textMuted}`}>{fmtPct(resumenOTB.mgGlobal)}</td>
+                          <td colSpan={2}></td>
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+              </>
+            )}
           </div>
         )}
       </div>
