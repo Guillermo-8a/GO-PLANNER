@@ -1250,15 +1250,26 @@ export default function Forecast() {
     }).sort((a,b) => b.totalPlan - a.totalPlan);
   }, [crucesActivos, forecastL1, historico, centros, aperturas, escenarioActivo, inSeasonOverrides, anioActual]);
 
+  const [t2OrdenCol, setT2OrdenCol] = useState('totalPlan'); // totalPlan|crecPlan|crecYoY|r2
+  const [t2OrdenDir, setT2OrdenDir] = useState('desc');      // asc|desc
+  const toggleOrdenT2 = (col) => {
+    if (t2OrdenCol === col) setT2OrdenDir(d => d === 'desc' ? 'asc' : 'desc');
+    else { setT2OrdenCol(col); setT2OrdenDir('desc'); }
+  };
+
   const resumenCrucesFiltrado = useMemo(() => {
-    if (!t2Filtro.trim()) return resumenCruces;
-    const q = t2Filtro.toLowerCase();
-    return resumenCruces.filter(r =>
-      r.centro.toLowerCase().includes(q) ||
-      r.nombre.toLowerCase().includes(q) ||
-      r.goa.toLowerCase().includes(q)
-    );
-  }, [resumenCruces, t2Filtro]);
+    let arr = resumenCruces;
+    if (t2Filtro.trim()) {
+      const q = t2Filtro.toLowerCase();
+      arr = arr.filter(r =>
+        r.centro.toLowerCase().includes(q) ||
+        r.nombre.toLowerCase().includes(q) ||
+        r.goa.toLowerCase().includes(q)
+      );
+    }
+    const dir = t2OrdenDir === 'desc' ? -1 : 1;
+    return [...arr].sort((a, b) => ((a[t2OrdenCol] || 0) - (b[t2OrdenCol] || 0)) * dir);
+  }, [resumenCruces, t2Filtro, t2OrdenCol, t2OrdenDir]);
 
   // Auto-seleccionar primer cruce al entrar a Tab 2
   useEffect(() => {
@@ -1584,40 +1595,69 @@ export default function Forecast() {
       return mgPctMesHist[i] || mgPromHistGlobal;
     });
 
-    // ROTACIÓN: modo anual (una sola) o mensual (override por mes)
+    // ── ROTACIÓN E INVENTARIO (fórmula del usuario) ──
+    // Flujo: editas rot_anual (celda Total). De ahí:
+    //   inv_mes = (venta_anual / rot_anual) + (venta_mes - prom_venta_12m)
+    // Las rot mensuales acumuladas son LECTURA derivada de los inventarios.
+    // Override: se hace sobre el INVENTARIO de un mes; el exceso/faltante se
+    //   reparte entre los demás meses (no bloqueados) para mantener la rot anual.
     const rotPromHist = planCruceCompleto.length
       ? planCruceCompleto.reduce((s,r) => s + (r.rotAplicada || 1.5), 0) / planCruceCompleto.length
       : 1.5;
     const rotAnualUsada = otbMaster.rotAnual ?? rotPromHist;
-    const rotFinal = Array(12).fill(0).map((_, i) => {
-      if (otbMaster.modoRot === 'mensual' && otbMaster.rot[i] != null) return otbMaster.rot[i];
-      return rotAnualUsada; // misma rot para todos los meses en modo anual
+
+    const ventaAnual = vtaFinal.reduce((a,b) => a+b, 0);
+    const promVenta12 = ventaAnual / 12;
+
+    // Inventario objetivo base por mes (fórmula del usuario)
+    const invBase = vtaFinal.map(v =>
+      Math.max(0, (rotAnualUsada > 0 ? ventaAnual / rotAnualUsada : 0) + (v - promVenta12))
+    );
+
+    // Aplicar overrides de inventario (otbMaster.invIni[i] para i=0..11) con Hold & Spread
+    // Los meses con override se mantienen fijos; el delta total se reparte en los libres
+    // proporcionalmente a su inv base, para preservar el inv anual promedio (→ rot anual).
+    const invObjetivoTotal = invBase.reduce((a,b) => a+b, 0);
+    const overrideIdx = [];
+    let sumaOverride = 0;
+    for (let i = 0; i < 12; i++) {
+      if (otbMaster.invIni[i] != null) { overrideIdx.push(i); sumaOverride += otbMaster.invIni[i]; }
+    }
+    const libresIdx = [];
+    for (let i = 0; i < 12; i++) if (otbMaster.invIni[i] == null) libresIdx.push(i);
+    const sumaLibreBase = libresIdx.reduce((s,i) => s + invBase[i], 0);
+    const restanteLibre = Math.max(0, invObjetivoTotal - sumaOverride);
+
+    const invInicialArr = Array(12).fill(0).map((_, i) => {
+      if (otbMaster.invIni[i] != null) return otbMaster.invIni[i];
+      // repartir el restante proporcional al peso base
+      return sumaLibreBase > 0 ? (invBase[i] / sumaLibreBase) * restanteLibre : restanteLibre / Math.max(libresIdx.length,1);
     });
 
-    // INV INICIAL ENE: input directo, o derivado de venta/rot
-    const invIniEne = otbMaster.invIni[0] ?? (vtaFinal[0] / (rotAnualUsada || 1.5));
-    // INV FINAL ENE (= "Ene_" del siguiente año): si lo capturas, sirve de cierre
+    // Inv final del mes = inv inicial del mes siguiente (cobertura encadenada)
+    // El cierre (Inv Final Dic) usa el inv inicial de "Ene siguiente" si se capturó (invIni[12])
     const invFinalCierre = otbMaster.invIni[12] ?? null;
 
-    // Inventario objetivo por mes = venta / rotación (anualizada → mensual implícito)
-    // Inv promedio mensual = venta_mes / (rot/12)?  → usamos rot anual: inv = venta_anual/rot
-    // Para mensual: inv objetivo mes = venta_mes / (rot/12)  (rota 'rot' veces al año)
-    const rotMensual = rotAnualUsada / 12;
+    // Rotación mensual acumulada (lectura): Rot M = venta(Ene→M) / prom(inv Ene→M+1)
+    const rotMensualAcum = Array(12).fill(0);
+    let ventaAcum = 0;
+    for (let i = 0; i < 12; i++) {
+      ventaAcum += vtaFinal[i];
+      // promedio de inv inicial de Ene..M+1 (incluye el cierre si es Dic)
+      const invsParaProm = [];
+      for (let j = 0; j <= i; j++) invsParaProm.push(invInicialArr[j]);
+      const invSiguiente = (i < 11) ? invInicialArr[i+1] : (invFinalCierre ?? invInicialArr[i]);
+      invsParaProm.push(invSiguiente);
+      const promInv = invsParaProm.reduce((a,b)=>a+b,0) / invsParaProm.length;
+      rotMensualAcum[i] = promInv > 0 ? ventaAcum / promInv : 0;
+    }
 
     const filas = [];
-    let invInicial = invIniEne;
     for (let i = 0; i < 12; i++) {
       const venta = vtaFinal[i];
-      const rot = rotFinal[i];
-      // Inv final del mes: objetivo por cobertura (venta del próximo mes / rot mensual)
-      let invFinal;
-      if (i === 11 && invFinalCierre != null) {
-        invFinal = invFinalCierre; // cierre capturado (Ene del año siguiente)
-      } else {
-        const ventaSig = i < 11 ? vtaFinal[i+1] : venta;
-        invFinal = rotMensual > 0 ? ventaSig / rotMensual : 0;
-      }
-      const mkd = venta * (mkdPctMes[i] || 0);   // markdown derivado del % histórico mensual
+      const invInicial = invInicialArr[i];
+      const invFinal = (i < 11) ? invInicialArr[i+1] : (invFinalCierre ?? invInicial);
+      const mkd = venta * (mkdPctMes[i] || 0);
       const msi = venta * msiPct;
       const compra = venta + (invFinal - invInicial);
       const mgPct = mgFinal[i];
@@ -1627,11 +1667,10 @@ export default function Forecast() {
         mes: i+1,
         invInicial, venta, mkd, msi,
         compra, utilidadBruta, mgPct,
-        invFinal, rot,
+        invFinal, rot: rotMensualAcum[i],
       });
-      invInicial = invFinal;
     }
-    return { filas, sugVta, factorEstacional, mkdPctMes, mgPctMesHist, rotAnualUsada };
+    return { filas, sugVta, factorEstacional, mkdPctMes, mgPctMesHist, rotAnualUsada, invBase, promVenta12, ventaAnual };
   }, [otbMaster, planCruceCompleto, forecastL1, escenarioActivo, msiPct, historico, anioActual]);
 
   // ══════════════════════════════════════════════════════════════════════
@@ -2033,59 +2072,93 @@ export default function Forecast() {
   // Override de mix objetivo: el usuario fija un %, el resto se reparte proporcional.
   // ══════════════════════════════════════════════════════════════════════
   const planCanales = useMemo(() => {
-    // Mix histórico
+    // Mix histórico (peso anual de cada canal)
     const totalHist = (resumenHist?.vtaFisico || 0) + (resumenHist?.vtaVirtual || 0);
     const mixHistFisico  = totalHist > 0 ? resumenHist.vtaFisico / totalHist : 0.95;
     const mixHistDigital = totalHist > 0 ? resumenHist.vtaVirtual / totalHist : 0.05;
-    const mixHistKiosko  = 0; // no existe aún en datos
+    const mixHistKiosko  = 0;
 
-    // Mix aplicado: override > histórico
-    // Lógica: si fijas uno o más canales, el resto se ajusta para sumar 1
-    const fijos = {};
+    // Mix aplicado: override fija el peso anual, el resto se reparte proporcional
     let sumaFijos = 0;
     ['fisico', 'digital', 'kiosko'].forEach(c => {
-      if (mixObjetivo[c] != null) { fijos[c] = mixObjetivo[c]; sumaFijos += mixObjetivo[c]; }
+      if (mixObjetivo[c] != null) sumaFijos += mixObjetivo[c];
     });
     const baseMix = { fisico: mixHistFisico, digital: mixHistDigital, kiosko: mixHistKiosko };
     const libres = ['fisico', 'digital', 'kiosko'].filter(c => mixObjetivo[c] == null);
     const sumaLibresBase = libres.reduce((s,c) => s + baseMix[c], 0);
     const restante = Math.max(0, 1 - sumaFijos);
-
     const mixAplicado = {};
     ['fisico', 'digital', 'kiosko'].forEach(c => {
-      if (mixObjetivo[c] != null) {
-        mixAplicado[c] = mixObjetivo[c];
-      } else {
-        mixAplicado[c] = sumaLibresBase > 0 ? (baseMix[c] / sumaLibresBase) * restante : restante / libres.length;
-      }
+      mixAplicado[c] = mixObjetivo[c] != null
+        ? mixObjetivo[c]
+        : (sumaLibresBase > 0 ? (baseMix[c] / sumaLibresBase) * restante : restante / Math.max(libres.length,1));
     });
 
-    // Plan total mensual (suma de todos los cruces)
+    // ── ESTACIONALIDAD POR CANAL (del histórico, con fallback al total) ──
+    // Patrón mensual de venta por canal en años cerrados → fracción que suma 1.
+    const vtaMesCanal = { FISICO: Array(12).fill(0), VIRTUAL: Array(12).fill(0) };
+    const vtaMesTotal = Array(12).fill(0);
+    historico.forEach(r => {
+      if (r.anio >= anioActual) return;
+      const idx = r.mes - 1;
+      if (idx < 0 || idx > 11) return;
+      vtaMesTotal[idx] += r.venta || 0;
+      if (r.canal === 'FISICO') vtaMesCanal.FISICO[idx] += r.venta || 0;
+      else if (r.canal === 'VIRTUAL') vtaMesCanal.VIRTUAL[idx] += r.venta || 0;
+    });
+    const normaliza = (arr) => {
+      const s = arr.reduce((a,b) => a+b, 0);
+      return s > 0 ? arr.map(v => v / s) : Array(12).fill(1/12);
+    };
+    const estacTotal = normaliza(vtaMesTotal);
+    // ¿hay datos confiables por canal? (al menos 6 meses con venta)
+    const tieneDatosFisico  = vtaMesCanal.FISICO.filter(v => v > 0).length >= 6;
+    const tieneDatosDigital = vtaMesCanal.VIRTUAL.filter(v => v > 0).length >= 6;
+    const estacFisico  = tieneDatosFisico  ? normaliza(vtaMesCanal.FISICO)  : estacTotal;
+    const estacDigital = tieneDatosDigital ? normaliza(vtaMesCanal.VIRTUAL) : estacTotal;
+    const estacKiosko  = estacTotal; // sin datos propios, usa total
+    const estacionalidadCanal = { fisico: estacFisico, digital: estacDigital, kiosko: estacKiosko };
+    const usaEstacReal = { fisico: tieneDatosFisico, digital: tieneDatosDigital, kiosko: false };
+
+    // Plan total mensual + compra mensual (suma de todos los cruces)
     const planMensualTotal = Array(12).fill(0);
+    const compraMensualTotal = Array(12).fill(0);
     planCrucesMensual.forEach(c => {
-      c.filasMensual.forEach((f, i) => planMensualTotal[i] += f.venta);
+      c.filasMensual.forEach((f, i) => {
+        planMensualTotal[i]   += f.venta;
+        compraMensualTotal[i] += f.compra;
+      });
     });
     const planTotalAnual = planMensualTotal.reduce((s,v) => s+v, 0);
+    const compraTotalAnual = compraMensualTotal.reduce((s,v) => s+v, 0);
 
-    // Repartir por canal
+    // Repartir por canal: peso anual (mix) distribuido por la estacionalidad PROPIA del canal
     const canales = ['fisico', 'digital', 'kiosko'].map(c => {
-      const mensual = planMensualTotal.map(v => v * mixAplicado[c]);
+      const totalCanal = planTotalAnual * mixAplicado[c];
+      const compraCanal = compraTotalAnual * mixAplicado[c];
+      const estac = estacionalidadCanal[c];
+      const mensual = estac.map(f => totalCanal * f);          // venta mensual con su ciclicidad
+      const compraMensual = estac.map(f => compraCanal * f);   // compra mensual con su ciclicidad
       return {
         canal: c,
         label: c === 'fisico' ? 'Físico (Piso)' : c === 'digital' ? 'Digital' : 'Kiosko',
         mix: mixAplicado[c],
         mixHist: baseMix[c],
         esOverride: mixObjetivo[c] != null,
+        usaEstacReal: usaEstacReal[c],
         mensual,
-        total: mensual.reduce((s,v) => s+v, 0),
+        compraMensual,
+        total: totalCanal,
+        compraTotal: compraCanal,
       };
     });
 
-    // Plan por canal × GOA (para vista detallada)
+    // Plan por canal × GOA (peso anual por canal aplicado al total del GOA)
     const porGoa = {};
     planCrucesMensual.forEach(c => {
-      if (!porGoa[c.goa]) porGoa[c.goa] = { goa: c.goa, total: 0 };
-      porGoa[c.goa].total += c.totales.venta;
+      if (!porGoa[c.goa]) porGoa[c.goa] = { goa: c.goa, total: 0, compra: 0 };
+      porGoa[c.goa].total  += c.totales.venta;
+      porGoa[c.goa].compra += c.totales.compra;
     });
     const goaCanales = Object.values(porGoa).map(g => ({
       goa: g.goa,
@@ -2095,9 +2168,18 @@ export default function Forecast() {
       kiosko: g.total * mixAplicado.kiosko,
     })).sort((a,b) => b.total - a.total);
 
+    // Ratios totales de la sección (no se reparten por canal, son globales)
+    const ratiosTotales = planCrucesMensual.reduce((acc, c) => ({
+      mkd: acc.mkd + c.totales.mkd,
+      msi: acc.msi + c.totales.msi,
+      utilidad: acc.utilidad + c.totales.utilidad,
+      compra: acc.compra + c.totales.compra,
+    }), { mkd: 0, msi: 0, utilidad: 0, compra: 0 });
+
     return { canales, mixAplicado, planMensualTotal, planTotalAnual, goaCanales,
+             usaEstacReal, ratiosTotales,
              mixHist: { fisico: mixHistFisico, digital: mixHistDigital, kiosko: mixHistKiosko } };
-  }, [planCrucesMensual, resumenHist, mixObjetivo]);
+  }, [planCrucesMensual, resumenHist, mixObjetivo, historico, anioActual]);
 
   // ══════════════════════════════════════════════════════════════════════
   // TAB 7 — RESUMEN OTB: consolidado ejecutivo + comparativo por GOA
@@ -3390,10 +3472,19 @@ export default function Forecast() {
                           <th className="p-2">GOA</th>
                           <th className="p-2 text-right">{anioActual - 1}</th>
                           <th className="p-2 text-right">In Season</th>
-                          <th className="p-2 text-right">% YoY</th>
-                          <th className="p-2 text-right">Plan {anioPlan}</th>
-                          <th className="p-2 text-right">% Crec.</th>
-                          <th className="p-2 text-right">R²</th>
+                          <th className="p-2 text-right cursor-pointer select-none hover:underline" onClick={() => toggleOrdenT2('crecYoY')}
+                            title="Year-over-Year: In Season actual vs año cerrado anterior">
+                            % YoY {t2OrdenCol === 'crecYoY' ? (t2OrdenDir === 'desc' ? '▼' : '▲') : ''}
+                          </th>
+                          <th className="p-2 text-right cursor-pointer select-none hover:underline" onClick={() => toggleOrdenT2('totalPlan')}>
+                            Plan {anioPlan} {t2OrdenCol === 'totalPlan' ? (t2OrdenDir === 'desc' ? '▼' : '▲') : ''}
+                          </th>
+                          <th className="p-2 text-right cursor-pointer select-none hover:underline" onClick={() => toggleOrdenT2('crecPlan')}>
+                            % Crec. {t2OrdenCol === 'crecPlan' ? (t2OrdenDir === 'desc' ? '▼' : '▲') : ''}
+                          </th>
+                          <th className="p-2 text-right cursor-pointer select-none hover:underline" onClick={() => toggleOrdenT2('r2')}>
+                            R² {t2OrdenCol === 'r2' ? (t2OrdenDir === 'desc' ? '▼' : '▲') : ''}
+                          </th>
                           <th className="p-2 text-center">Acción</th>
                         </tr>
                       </thead>
@@ -3512,26 +3603,22 @@ export default function Forecast() {
                       </thead>
                       <tbody className={`divide-y ${isDark ? 'divide-zinc-800/50' : 'divide-gray-100'}`}>
 
-                        {/* Inv Inicial Ene = INPUT, demás derivados */}
+                        {/* Inv Inicial — editable en cualquier mes (override Hold&Spread) */}
                         <tr>
                           <td className={`p-2 font-bold sticky left-0 bg-inherit ${t.textMain}`}>Inv. Inicial $</td>
                           {otbMasterCalc.filas.map((f, i) => (
                             <td key={i} className="p-1 text-right">
-                              {i === 0 ? (
-                                <NumberInputDeferred
-                                  value={otbMaster.invIni[0] ?? Math.round(f.invInicial)}
-                                  onCommit={(v) => setOtbMaster(prev => {
-                                    const arr = [...prev.invIni]; arr[0] = v;
-                                    return { ...prev, invIni: arr };
-                                  })}
-                                  className={`w-20 text-right font-mono px-1.5 py-0.5 rounded border ${
-                                    otbMaster.invIni[0] != null
-                                      ? (isDark ? 'bg-amber-500/20 border-amber-400 text-amber-200' : 'bg-amber-100 border-amber-400 text-amber-900')
-                                      : t.input
-                                  }`} />
-                              ) : (
-                                <span className={`font-mono ${t.textPurple}`}>{fmt(f.invInicial, 0)}</span>
-                              )}
+                              <NumberInputDeferred
+                                value={otbMaster.invIni[i] ?? Math.round(f.invInicial)}
+                                onCommit={(v) => setOtbMaster(prev => {
+                                  const arr = [...prev.invIni]; arr[i] = v;
+                                  return { ...prev, invIni: arr };
+                                })}
+                                className={`w-20 text-right font-mono px-1.5 py-0.5 rounded border ${
+                                  otbMaster.invIni[i] != null
+                                    ? (isDark ? 'bg-amber-500/20 border-amber-400 text-amber-200' : 'bg-amber-100 border-amber-400 text-amber-900')
+                                    : t.input
+                                }`} />
                             </td>
                           ))}
                           <td className={`p-2 text-right font-mono ${t.textMuted}`}>—</td>
@@ -3679,50 +3766,24 @@ export default function Forecast() {
                           <td className={`p-2 text-right font-mono ${t.textMuted}`}>—</td>
                         </tr>
 
-                        {/* Rotación */}
+                        {/* Rotación — meses = lectura acumulada · Total = input anual */}
                         <tr>
                           <td className={`p-2 font-bold sticky left-0 bg-inherit ${t.textMain}`}>
-                            Rotación
-                            <select
-                              value={otbMaster.modoRot}
-                              onChange={e => setOtbMaster(prev => ({ ...prev, modoRot: e.target.value }))}
-                              className={`ml-2 text-[9px] px-1 py-0.5 rounded ${t.input}`}>
-                              <option value="anual">Anual</option>
-                              <option value="mensual">Mensual</option>
-                            </select>
+                            Rotación <span className={`text-[9px] font-normal ${t.textMuted}`}>(acum.)</span>
                           </td>
                           {otbMasterCalc.filas.map((f, i) => (
                             <td key={i} className="p-1 text-right">
-                              {otbMaster.modoRot === 'mensual' ? (
-                                <NumberInputDeferred
-                                  value={otbMaster.rot[i] ?? f.rot.toFixed(2)}
-                                  onCommit={(v) => setOtbMaster(prev => {
-                                    const arr = [...prev.rot]; arr[i] = v;
-                                    return { ...prev, rot: arr };
-                                  })}
-                                  className={`w-14 text-right font-mono px-1.5 py-0.5 rounded border ${
-                                    otbMaster.rot[i] != null
-                                      ? (isDark ? 'bg-amber-500/20 border-amber-400 text-amber-200' : 'bg-amber-100 border-amber-400 text-amber-900')
-                                      : t.input
-                                  }`} />
-                              ) : (
-                                <span className={`font-mono ${t.textMuted}`}>{f.rot.toFixed(2)}</span>
-                              )}
+                              <span className={`font-mono ${t.textMuted}`}>{f.rot.toFixed(2)}</span>
                             </td>
                           ))}
                           <td className="p-2 text-right">
-                            {otbMaster.modoRot === 'anual' ? (
-                              <NumberInputDeferred
-                                value={otbMaster.rotAnual ?? otbMasterCalc.rotAnualUsada.toFixed(2)}
-                                onCommit={(v) => setOtbMaster(prev => ({ ...prev, rotAnual: v }))}
-                                className={`w-16 text-right font-mono font-black px-2 py-1 rounded border ${
-                                  isDark ? 'bg-amber-500/20 border-amber-400 text-amber-200' : 'bg-amber-100 border-amber-400 text-amber-900'
-                                }`} />
-                            ) : (
-                              <span className={`font-mono font-black ${t.textPurple}`}>
-                                {(otbMasterCalc.filas.reduce((s,f) => s+f.rot, 0) / 12).toFixed(2)}
-                              </span>
-                            )}
+                            <NumberInputDeferred
+                              value={otbMaster.rotAnual ?? otbMasterCalc.rotAnualUsada.toFixed(2)}
+                              onCommit={(v) => setOtbMaster(prev => ({ ...prev, rotAnual: v }))}
+                              className={`w-16 text-right font-mono font-black px-2 py-1 rounded border ${
+                                isDark ? 'bg-amber-500/20 border-amber-400 text-amber-200' : 'bg-amber-100 border-amber-400 text-amber-900'
+                              }`}
+                              title="Rotación anual objetivo — de aquí se calculan los inventarios" />
                           </td>
                         </tr>
 
@@ -4861,7 +4922,7 @@ export default function Forecast() {
                 {/* Tabla mensual por canal */}
                 {t6Vista === 'mensual' && (
                   <div className={`p-4 rounded-xl border ${t.cardInner}`}>
-                    <h3 className={`text-xs font-black uppercase tracking-widest mb-3 ${t.textMuted}`}>Plan Mensual por Canal</h3>
+                    <h3 className={`text-xs font-black uppercase tracking-widest mb-3 ${t.textMuted}`}>Plan Mensual por Canal — Venta</h3>
                     <div className="overflow-x-auto custom-scrollbar">
                       <table className="w-full text-left min-w-max text-xs">
                         <thead>
@@ -4874,7 +4935,13 @@ export default function Forecast() {
                         <tbody className={`divide-y ${isDark ? 'divide-zinc-800/50' : 'divide-gray-100'}`}>
                           {planCanales.canales.map(c => (
                             <tr key={c.canal}>
-                              <td className={`p-2 font-bold sticky left-0 bg-inherit ${t.textMain}`}>{c.label}</td>
+                              <td className={`p-2 font-bold sticky left-0 bg-inherit ${t.textMain}`}>
+                                {c.label}
+                                <span className={`ml-1 text-[8px] font-normal px-1 py-0.5 rounded ${c.usaEstacReal ? (isDark?'bg-emerald-900/30 text-emerald-400':'bg-emerald-50 text-emerald-700') : (isDark?'bg-zinc-800 text-zinc-500':'bg-gray-100 text-gray-500')}`}
+                                  title={c.usaEstacReal ? 'Estacionalidad real del canal' : 'Estacionalidad del total (sin datos propios)'}>
+                                  {c.usaEstacReal ? 'estac. real' : 'estac. total'}
+                                </span>
+                              </td>
                               {c.mensual.map((v, i) => (
                                 <td key={i} className={`p-2 text-right font-mono ${c.canal === 'digital' ? t.textAccent2 : t.textMuted}`}>{fmt(v, 0)}</td>
                               ))}
@@ -4890,6 +4957,57 @@ export default function Forecast() {
                           </tr>
                         </tbody>
                       </table>
+                    </div>
+
+                    {/* Compra por canal */}
+                    <h3 className={`text-xs font-black uppercase tracking-widest mb-3 mt-5 ${t.textMuted}`}>Plan Mensual por Canal — Compra</h3>
+                    <div className="overflow-x-auto custom-scrollbar">
+                      <table className="w-full text-left min-w-max text-xs">
+                        <thead>
+                          <tr className={`text-[9px] uppercase font-black tracking-widest ${isDark ? 'bg-zinc-900 text-gray-400 border-b border-zinc-800' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+                            <th className="p-2 sticky left-0 bg-inherit">Canal</th>
+                            {MESES.map(m => <th key={m} className="p-2 text-right">{m}</th>)}
+                            <th className="p-2 text-right">Total</th>
+                          </tr>
+                        </thead>
+                        <tbody className={`divide-y ${isDark ? 'divide-zinc-800/50' : 'divide-gray-100'}`}>
+                          {planCanales.canales.map(c => (
+                            <tr key={c.canal}>
+                              <td className={`p-2 font-bold sticky left-0 bg-inherit ${t.textMain}`}>{c.label}</td>
+                              {c.compraMensual.map((v, i) => (
+                                <td key={i} className={`p-2 text-right font-mono ${t.textYellow}`}>{fmt(v, 0)}</td>
+                              ))}
+                              <td className={`p-2 text-right font-mono font-black ${t.textYellow}`}>{fmt(c.compraTotal, 0)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Ratios totales de la sección (no por canal) */}
+                {t6Vista === 'mensual' && (
+                  <div className={`p-4 rounded-xl border ${t.cardInner}`}>
+                    <h3 className={`text-xs font-black uppercase tracking-widest mb-1 ${t.textMuted}`}>Ratios Totales de la Sección</h3>
+                    <p className={`text-[10px] mb-3 ${t.textMuted}`}>Markdowns, CMSI y Utilidad son globales (no se reparten por canal).</p>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      <div className={`p-3 rounded-lg border ${t.cardInner}`}>
+                        <div className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} mb-1`}>Markdowns</div>
+                        <div className={`text-base font-black ${t.textMuted}`}>{fmtMXN(planCanales.ratiosTotales.mkd)}</div>
+                      </div>
+                      <div className={`p-3 rounded-lg border ${t.cardInner}`}>
+                        <div className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} mb-1`}>Costo MSI</div>
+                        <div className={`text-base font-black ${t.textMuted}`}>{fmtMXN(planCanales.ratiosTotales.msi)}</div>
+                      </div>
+                      <div className={`p-3 rounded-lg border ${t.cardInner}`}>
+                        <div className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} mb-1`}>Compra Total</div>
+                        <div className={`text-base font-black ${t.textYellow}`}>{fmtMXN(planCanales.ratiosTotales.compra)}</div>
+                      </div>
+                      <div className={`p-3 rounded-lg border ${t.cardInner}`}>
+                        <div className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} mb-1`}>Utilidad</div>
+                        <div className={`text-base font-black text-emerald-500`}>{fmtMXN(planCanales.ratiosTotales.utilidad)}</div>
+                      </div>
                     </div>
                   </div>
                 )}
