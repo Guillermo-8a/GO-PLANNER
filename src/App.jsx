@@ -13,6 +13,7 @@ import ModuleDistribucion from './modules/ModuleDistribucion';
 import ModuleResurtido    from './modules/ModuleReplenishment';
 import ModuleTraslados from './modules/ModuleTraslados';
 import ModulePlanning from "./modules/ModulePlanning" ;
+import ModuleDispersion from "./modules/ModuleDispersion" ;
 import ModuleDayli from "./modules/ModuleDayli" ;
 
 import {
@@ -102,6 +103,7 @@ const NAV_ITEMS = [
   { id: 'resurtido',    label: 'Resurtido',       Icon: RefreshCw,       desc: 'Reposición continua',   dataKey: 'replenishmentData' },
   { id: 'planning',    label: 'Planning',       Icon: TrendingUp,       desc: 'Planeación compuesta',   dataKey: 'planningData' },
   { id: 'dayli',    label: 'Dayli',       Icon: Map,       desc: 'Ajustes diarios',   dataKey: 'dayliData' },
+  { id: 'dispersion',    label: 'Dispersión',       Icon: BarChart2,       desc: 'Revisión inventarios',   dataKey: 'dispersionData' },
   { id: 'traslados', label: 'Traslados', Icon: ArrowLeftRight, desc: 'Transferencias entre centros', dataKey: null },
 ];
 
@@ -125,6 +127,7 @@ function AssistPanel({ isDark, onClose }) {
     { Icon: ShoppingCart, color: 'text-yellow-400', label: 'Assortment OTB',   desc: 'Clusters, curvas y presupuesto' },
     { Icon: Map,          color: 'text-blue-400',   label: 'Distribución',      desc: 'Surtido por cluster y chequera' },
     { Icon: RefreshCw,    color: 'text-emerald-400',label: 'Resurtido',         desc: 'CSV, filtros y exportación' },
+    { Icon: BarChart2,    color: 'text-violet-400',label: 'Dispersión',         desc: 'Dispersión de inventarios' },
     { Icon: Zap,          color: 'text-orange-400', label: 'Pipeline de datos', desc: 'Cómo comparten info los módulos' },
   ];
 
@@ -314,7 +317,8 @@ function Shell() {
       case 'assortment':   return <ModuleAssortment {...moduleProps} />;
       case 'distribucion': return <ModuleDistribucion {...moduleProps} />;
       case 'resurtido':    return <ModuleResurtido {...moduleProps} />;
-      case 'traslados': return <ModuleTraslados />;  
+      case 'traslados': return <ModuleTraslados />; 
+      case 'dispersion': return <ModuleDispersion />;   
       case 'planning': return <ModulePlanning {...moduleProps} />;    
       default:             return <Dashboard {...moduleProps} />;
     }
