@@ -2,46 +2,36 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import * as Icons from '../utils/icons';
 import { useGlobal } from '../context/GlobalContext';
 import {
-  ScatterChart, Scatter, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer,
+  ScatterChart, Scatter, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
-
 const parseCSVRow = (row, sep) =>
-  row.split(new RegExp(`\\${sep}(?=(?:(?:[^"]*"){2})*[^"]*$)`))
-     .map(c => c.replace(/^"|"$/g, '').trim());
-
+  row.split(new RegExp(`\\${sep}(?=(?:(?:[^"]*"){2})*[^"]*$)`)).map(c => c.replace(/^"|"$/g, '').trim());
 const num = v => parseFloat(String(v||'0').replace(/[^0-9.,-]/g,'').replace(/\.(?=\d{3}\b)/g,'').replace(',','.'))||0;
 const fmt = (n,d=0) => n==null?'-':n.toLocaleString('es-MX',{minimumFractionDigits:d,maximumFractionDigits:d});
 const stripDiac = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
+const minMax = arr => { let mn=Infinity,mx=-Infinity; for(const v of arr){ if(v<mn)mn=v; if(v>mx)mx=v; } return [mn,mx]; };
+const MESES={ENERO:1,FEBRERO:2,MARZO:3,ABRIL:4,MAYO:5,JUNIO:6,JULIO:7,AGOSTO:8,SEPTIEMBRE:9,OCTUBRE:10,NOVIEMBRE:11,DICIEMBRE:12};
+const mesNum = s => { const u=stripDiac(String(s||'').toUpperCase().trim()); return MESES[u]||parseInt(u)||0; };
 
 const linearRegression = pts => {
   const n=pts.length; if(n<2) return {slope:0,intercept:0,r2:0,n};
-  const sx=pts.reduce((s,p)=>s+p.x,0), sy=pts.reduce((s,p)=>s+p.y,0);
-  const sxy=pts.reduce((s,p)=>s+p.x*p.y,0), sx2=pts.reduce((s,p)=>s+p.x*p.x,0);
-  const slope=(n*sxy-sx*sy)/(n*sx2-sx*sx)||0;
-  const intercept=(sy-slope*sx)/n;
-  const ym=sy/n;
-  const sst=pts.reduce((s,p)=>s+Math.pow(p.y-ym,2),0);
-  const ssr=pts.reduce((s,p)=>s+Math.pow(p.y-(slope*p.x+intercept),2),0);
+  let sx=0,sy=0,sxy=0,sx2=0; for(const p of pts){ sx+=p.x; sy+=p.y; sxy+=p.x*p.y; sx2+=p.x*p.x; }
+  const slope=(n*sxy-sx*sy)/(n*sx2-sx*sx)||0; const intercept=(sy-slope*sx)/n; const ym=sy/n;
+  let sst=0,ssr=0; for(const p of pts){ sst+=Math.pow(p.y-ym,2); ssr+=Math.pow(p.y-(slope*p.x+intercept),2); }
   return {slope,intercept,r2:Math.max(0,sst>0?1-ssr/sst:0),n};
 };
 
-// ─── INDEXEDDB (persistencia local, sin red, sobrevive refresh) ───────────────
+// ─── INDEXEDDB (local, sin red, sobrevive refresh) ────────────────────────────
 const DB='gop_db', STORE='dispersion';
-const idbOpen=()=>new Promise((res,rej)=>{
-  const o=indexedDB.open(DB,1);
+const idbOpen=()=>new Promise((res,rej)=>{ const o=indexedDB.open(DB,1);
   o.onupgradeneeded=()=>{ if(!o.result.objectStoreNames.contains(STORE)) o.result.createObjectStore(STORE); };
-  o.onsuccess=()=>res(o.result); o.onerror=()=>rej(o.error);
-});
-const idbSet=async(key,val)=>{ const db=await idbOpen(); return new Promise((res,rej)=>{
-  const tx=db.transaction(STORE,'readwrite'); tx.objectStore(STORE).put(val,key);
-  tx.oncomplete=()=>{db.close();res();}; tx.onerror=()=>rej(tx.error); }); };
-const idbGet=async key=>{ const db=await idbOpen(); return new Promise((res,rej)=>{
-  const tx=db.transaction(STORE,'readonly'); const rq=tx.objectStore(STORE).get(key);
-  rq.onsuccess=()=>{db.close();res(rq.result);}; rq.onerror=()=>rej(rq.error); }); };
+  o.onsuccess=()=>res(o.result); o.onerror=()=>rej(o.error); });
+const idbSet=async(k,v)=>{ const db=await idbOpen(); return new Promise((res,rej)=>{ const tx=db.transaction(STORE,'readwrite'); tx.objectStore(STORE).put(v,k); tx.oncomplete=()=>{db.close();res();}; tx.onerror=()=>rej(tx.error); }); };
+const idbGet=async k=>{ const db=await idbOpen(); return new Promise((res,rej)=>{ const tx=db.transaction(STORE,'readonly'); const rq=tx.objectStore(STORE).get(k); rq.onsuccess=()=>{db.close();res(rq.result);}; rq.onerror=()=>rej(rq.error); }); };
 
-// ─── CSV PARSER (layout de extracción, blindado acentos/BOM/CRLF) ─────────────
+// ─── CSV PARSER ───────────────────────────────────────────────────────────────
 const parseCSV = text => {
   text=text.replace(/^\uFEFF/,'');
   const sep=text.includes('\t')?'\t':text.includes(';')?';':',';
@@ -50,46 +40,30 @@ const parseCSV = text => {
   const H=rows[0].map(h=>stripDiac(h.toUpperCase().trim()).replace(/\s+/g,'_').replace(/[.()]/g,''));
   const idx=(...ns)=>{ for(const n of ns){ const i=H.findIndex(h=>h===n); if(i>=0) return i; }
                        for(const n of ns){ const i=H.findIndex(h=>h.includes(n)); if(i>=0) return i; } return -1; };
-  const I={
+  const I={ ano:idx('ANO'), mes:idx('MES_NATURAL','MES'),
     direccion:idx('DIRECCION'), division:idx('DIVISION'), seccion:idx('SECCION'),
     norma:idx('NORMA_DE_APROVISIONAMIENTO','NORMA'), goa:idx('GRUPO_ARTICULOS','GRUPO'),
     proveedor:idx('PROVEEDOR'), marca:idx('MARCA'), centro:idx('CENTRO'), tienda:idx('TIENDA'),
     venta:idx('VTAS_PESOS','VTAS','VENTAS'), prom:idx('PROM_INVENTARIO','PROM_INV'),
-    invIni:idx('INVENTARIO_INICIAL','INV_INICIAL'), invFin:idx('INVENTARIO_FINAL','INV_FINAL'),
-    ideal:idx('INVENTARIO_IDEAL','INV_IDEAL','IDEAL'),
-  };
+    invIni:idx('INVENTARIO_INICIAL','INV_INICIAL'), invFin:idx('INVENTARIO_FINAL','INV_FINAL'), ideal:idx('INVENTARIO_IDEAL','INV_IDEAL','IDEAL') };
   const g=(r,k)=>I[k]>=0?(r[I[k]]||'').trim():'';
   const gn=(r,k)=>I[k]>=0?num(r[I[k]]):0;
   const out=[];
-  for(let i=1;i<rows.length;i++){
-    const r=rows[i]; if(!r||r.every(c=>!c)) continue;
-    out.push({
-      direccion:g(r,'direccion')||'GENERAL', division:g(r,'division')||'GENERAL',
-      seccion:g(r,'seccion')||'GENERAL', norma:g(r,'norma')||'SIN NORMA',
-      goa:g(r,'goa')||'SIN GOA', proveedor:g(r,'proveedor')||'SIN PROV',
+  for(let i=1;i<rows.length;i++){ const r=rows[i]; if(!r||r.every(c=>!c)) continue;
+    out.push({ ano:g(r,'ano'), mes:g(r,'mes'),
+      direccion:g(r,'direccion')||'GENERAL', division:g(r,'division')||'GENERAL', seccion:g(r,'seccion')||'GENERAL',
+      norma:g(r,'norma')||'SIN NORMA', goa:g(r,'goa')||'SIN GOA', proveedor:g(r,'proveedor')||'SIN PROV',
       marca:g(r,'marca')||'SIN MARCA', centro:g(r,'centro')||'', tienda:g(r,'tienda')||g(r,'centro')||'',
-      venta:gn(r,'venta'), prom:gn(r,'prom'),
-      invIni:gn(r,'invIni'), invFin:gn(r,'invFin'), ideal:gn(r,'ideal'),
-    });
-  }
-  out._cols=Object.entries(I).filter(([,v])=>v>=0).map(([k])=>k); // diagnóstico
+      venta:gn(r,'venta'), prom:gn(r,'prom'), invIni:gn(r,'invIni'), invFin:gn(r,'invFin'), ideal:gn(r,'ideal') }); }
+  out._cols=Object.entries(I).filter(([,v])=>v>=0).map(([k])=>k);
   return out;
 };
 
 // ─── CONFIG ───────────────────────────────────────────────────────────────
-const MEASURES=[
-  {key:'venta',label:'Vtas. Pesos'},{key:'prom',label:'Prom Inventario'},
-  {key:'invIni',label:'Inv. Inicial'},{key:'invFin',label:'Inv. Final'},{key:'ideal',label:'Inv. Ideal'},
-];
-const LEVELS=[
-  {key:'__row__',label:'Granular'},{key:'tienda',label:'Tienda'},{key:'centro',label:'Centro'},
-  {key:'goa',label:'GOA'},{key:'marca',label:'Marca'},{key:'proveedor',label:'Proveedor'},
-  {key:'seccion',label:'Sección'},{key:'division',label:'División'},
-];
-const FILTER_DIMS=[
-  {key:'division',label:'División'},{key:'seccion',label:'Sección'},{key:'marca',label:'Marca'},
-  {key:'goa',label:'GOA'},{key:'proveedor',label:'Proveedor'},{key:'norma',label:'Norma'},
-];
+const MEASURES=[{key:'venta',label:'Vtas. Pesos'},{key:'prom',label:'Prom Inventario'},{key:'invIni',label:'Inv. Inicial'},{key:'invFin',label:'Inv. Final'},{key:'ideal',label:'Inv. Ideal'}];
+const LEVELS=[{key:'__row__',label:'Granular'},{key:'tienda',label:'Tienda'},{key:'centro',label:'Centro'},{key:'goa',label:'GOA'},{key:'marca',label:'Marca'},{key:'proveedor',label:'Proveedor'},{key:'seccion',label:'Sección'},{key:'division',label:'División'}];
+const FILTER_DIMS=[{key:'division',label:'División'},{key:'seccion',label:'Sección'},{key:'marca',label:'Marca'},{key:'goa',label:'GOA'},{key:'proveedor',label:'Proveedor'},{key:'norma',label:'Norma'}];
+const MAX_PLOT=3000, TABLE_RENDER=500;
 
 // ═══════════════════════════════════════════════════════════════════════════
 export default function ModuleDispersion(){
@@ -99,26 +73,30 @@ export default function ModuleDispersion(){
 
   const themes={
     dark:{
-      appBg:'bg-transparent text-gray-100',card:'bg-zinc-900 border-zinc-800 shadow-sm',
-      cardInner:'bg-zinc-950 border-zinc-800',textMain:'text-white',textMuted:'text-gray-400',
-      accent:'text-violet-400',border:'border-zinc-800',
+      appBg:'bg-transparent text-gray-100', card:'bg-zinc-900 border-zinc-800 shadow-lg',
+      cardInner:'bg-zinc-950/80 border-zinc-800', textMain:'text-white', textMuted:'text-gray-400',
+      accent:'text-violet-400', amber:'text-amber-400', border:'border-zinc-800',
       input:'bg-zinc-950 border-zinc-700 text-white focus:ring-violet-500',
       btnGhost:'bg-zinc-800 text-gray-300 hover:text-white hover:bg-zinc-700 border-zinc-700',
-      badge:'bg-violet-900/30 text-violet-300 border-violet-500/40',
-      badgeAmber:'bg-amber-900/30 text-amber-400 border-amber-500/40',
+      badge:'bg-violet-500/20 text-violet-300 border-violet-400/50 shadow-[0_0_12px_rgba(139,92,246,0.35)]',
+      badgeAmber:'bg-amber-500/20 text-amber-300 border-amber-400/50 shadow-[0_0_12px_rgba(245,158,11,0.35)]',
       badgeGray:'bg-zinc-800/60 text-gray-400 border-zinc-600/40',
-      thBg:'bg-violet-900/40 text-violet-200', rowAlt:'bg-zinc-900/40',
+      thBg:'bg-violet-900/50 text-violet-200', rowAlt:'bg-zinc-900/50',
+      kpiHero:'bg-gradient-to-br from-violet-600/30 to-violet-900/10 border-violet-500/40 shadow-[0_0_20px_rgba(139,92,246,0.25)]',
+      kpiAmber:'bg-gradient-to-br from-amber-500/20 to-amber-900/5 border-amber-500/40',
     },
     light:{
-      appBg:'bg-transparent text-gray-800',card:'bg-white border-gray-200 shadow-sm',
-      cardInner:'bg-gray-50 border-gray-200',textMain:'text-gray-900',textMuted:'text-gray-500',
-      accent:'text-violet-600',border:'border-gray-200',
+      appBg:'bg-transparent text-gray-800', card:'bg-white border-gray-200 shadow-sm',
+      cardInner:'bg-gray-50 border-gray-200', textMain:'text-gray-900', textMuted:'text-gray-500',
+      accent:'text-violet-600', amber:'text-amber-600', border:'border-gray-200',
       input:'bg-white border-gray-300 text-gray-900 focus:ring-violet-500',
       btnGhost:'bg-gray-100 text-gray-600 hover:text-gray-900 hover:bg-gray-200 border-gray-200',
-      badge:'bg-violet-50 text-violet-700 border-violet-200',
-      badgeAmber:'bg-amber-50 text-amber-700 border-amber-200',
+      badge:'bg-violet-100 text-violet-700 border-violet-300 shadow-[0_0_10px_rgba(139,92,246,0.2)]',
+      badgeAmber:'bg-amber-100 text-amber-700 border-amber-300 shadow-[0_0_10px_rgba(245,158,11,0.2)]',
       badgeGray:'bg-gray-100 text-gray-500 border-gray-200',
-      thBg:'bg-violet-100 text-violet-800', rowAlt:'bg-gray-50',
+      thBg:'bg-violet-600 text-white', rowAlt:'bg-violet-50/40',
+      kpiHero:'bg-gradient-to-br from-violet-500 to-violet-700 text-white border-violet-400 shadow-lg',
+      kpiAmber:'bg-gradient-to-br from-amber-400 to-amber-500 text-white border-amber-300 shadow-md',
     },
   };
   const t=themes[theme]||themes.light;
@@ -131,219 +109,207 @@ export default function ModuleDispersion(){
   const [level,setLevel]=useState('tienda');
   const [excludeZeros,setExcludeZeros]=useState(false);
   const [filters,setFilters]=useState({});
+  const [hover,setHover]=useState(null);
+  const [sortKey,setSortKey]=useState('venta');
+  const [search,setSearch]=useState('');
+  const [history,setHistory]=useState([]);
   const [loading,setLoading]=useState(true);
 
-  // Cargar data desde IndexedDB al montar (sobrevive refresh y cambio de módulo)
   useEffect(()=>{ (async()=>{
     try{ const d=await idbGet('data'); if(Array.isArray(d)&&d.length){ setData(d); setCols(d._cols||[]); } }catch{}
+    try{ const h=await idbGet('history'); if(Array.isArray(h)) setHistory(h); }catch{}
     try{ const c=localStorage.getItem('gop_dispersion'); if(c){ const o=JSON.parse(c);
       o.xKey&&setXKey(o.xKey); o.yKey&&setYKey(o.yKey); o.level&&setLevel(o.level);
-      o.excludeZeros!=null&&setExcludeZeros(o.excludeZeros); o.filters&&setFilters(o.filters); } }catch{}
+      o.excludeZeros!=null&&setExcludeZeros(o.excludeZeros); o.filters&&setFilters(o.filters); o.sortKey&&setSortKey(o.sortKey); } }catch{}
     setLoading(false);
   })(); },[]);
-  useEffect(()=>{ if(!loading) try{ localStorage.setItem('gop_dispersion',JSON.stringify({xKey,yKey,level,excludeZeros,filters})); }catch{} },[xKey,yKey,level,excludeZeros,filters,loading]);
+  useEffect(()=>{ if(!loading) try{ localStorage.setItem('gop_dispersion',JSON.stringify({xKey,yKey,level,excludeZeros,filters,sortKey})); }catch{} },[xKey,yKey,level,excludeZeros,filters,sortKey,loading]);
 
-  const handleUpload=e=>{
-    const file=e.target.files[0]; if(!file) return;
-    const reader=new FileReader();
-    reader.onload=ev=>{ const rows=parseCSV(ev.target.result);
-      setData(rows); setCols(rows._cols||[]); setFilters({});
-      idbSet('data',rows).catch(()=>{}); e.target.value=''; };
-    reader.readAsText(file,'UTF-8');
-  };
+  const handleUpload=e=>{ const file=e.target.files[0]; if(!file) return; const reader=new FileReader();
+    reader.onload=ev=>{ const rows=parseCSV(ev.target.result); setData(rows); setCols(rows._cols||[]); setFilters({}); idbSet('data',rows).catch(()=>{}); e.target.value=''; };
+    reader.readAsText(file,'UTF-8'); };
   const clearData=()=>{ if(window.confirm('¿Borrar datos?')){ setData([]); setCols([]); idbSet('data',[]).catch(()=>{}); } };
 
-  // Filtros en cascada: opciones de cada dim = valores válidos dado los OTROS filtros activos
-  const opts=useMemo(()=>{
-    const o={};
-    for(const d of FILTER_DIMS){
-      const rows=data.filter(r=>FILTER_DIMS.every(f=>f.key===d.key||!filters[f.key]||r[f.key]===filters[f.key]));
-      const set=new Set(rows.map(r=>r[d.key]).filter(Boolean));
-      if(filters[d.key]) set.add(filters[d.key]); // mantener el seleccionado aunque se acote
-      o[d.key]=[...set].sort();
-    }
-    return o;
-  },[data,filters]);
-
+  const opts=useMemo(()=>{ const o={};
+    for(const d of FILTER_DIMS){ const rows=data.filter(r=>FILTER_DIMS.every(f=>f.key===d.key||!filters[f.key]||r[f.key]===filters[f.key]));
+      const set=new Set(rows.map(r=>r[d.key]).filter(Boolean)); if(filters[d.key]) set.add(filters[d.key]); o[d.key]=[...set].sort(); }
+    return o; },[data,filters]);
   const passFilters=r=>FILTER_DIMS.every(d=>!filters[d.key]||r[d.key]===filters[d.key]);
 
-  // PIPELINE: filtrar → (excluir 0) → agregar al nivel → puntos
-  const { points, reg, dropped, raw } = useMemo(()=>{
+  const { points, reg, dropped, raw, xMin, xMax } = useMemo(()=>{
     let pairs=data.filter(passFilters).map(r=>({x:r[xKey],y:r[yKey],g:r[level]}));
-    const before=pairs.length;
-    if(excludeZeros) pairs=pairs.filter(p=>p.x!==0&&p.y!==0);
+    const before=pairs.length; if(excludeZeros) pairs=pairs.filter(p=>p.x!==0&&p.y!==0);
     const dropped=before-pairs.length;
-    let pts;
-    if(level==='__row__'){ pts=pairs.map(p=>({x:p.x,y:p.y,name:''})); }
-    else { const m=new Map();
-      for(const p of pairs){ const k=p.g||'N/D'; const a=m.get(k)||{x:0,y:0,name:k}; a.x+=p.x; a.y+=p.y; m.set(k,a); }
-      pts=[...m.values()]; }
-    return { points:pts, reg:linearRegression(pts), dropped, raw:pairs.length };
+    let pts; if(level==='__row__'){ pts=pairs.map(p=>({x:p.x,y:p.y,name:''})); }
+    else { const m=new Map(); for(const p of pairs){ const k=p.g||'N/D'; const a=m.get(k)||{x:0,y:0,name:k}; a.x+=p.x; a.y+=p.y; m.set(k,a); } pts=[...m.values()]; }
+    const [xMin,xMax]=minMax(pts.map(p=>p.x));
+    return { points:pts, reg:linearRegression(pts), dropped, raw:pairs.length, xMin, xMax };
   },[data,filters,xKey,yKey,level,excludeZeros]);
 
-  // Tabla: resumen por nivel (en granular resume por Tienda para no listar 349k filas)
+  const plotPoints=useMemo(()=>{ if(points.length<=MAX_PLOT) return points;
+    const step=Math.ceil(points.length/MAX_PLOT); return points.filter((_,i)=>i%step===0); },[points]);
+
   const tableLevel=level==='__row__'?'tienda':level;
-  const tableRows=useMemo(()=>{
-    const m=new Map();
-    for(const r of data){ if(!passFilters(r)) continue;
-      const k=r[tableLevel]||'N/D';
+  const tableRows=useMemo(()=>{ const m=new Map();
+    for(const r of data){ if(!passFilters(r)) continue; const k=r[tableLevel]||'N/D';
       const a=m.get(k)||{name:k,venta:0,prom:0,invIni:0,invFin:0,ideal:0,n:0};
       a.venta+=r.venta;a.prom+=r.prom;a.invIni+=r.invIni;a.invFin+=r.invFin;a.ideal+=r.ideal;a.n++; m.set(k,a); }
-    return [...m.values()].map(a=>({...a,dif:a.ideal-a.invFin})).sort((x,y)=>y.venta-x.venta);
-  },[data,filters,tableLevel]);
+    let arr=[...m.values()].map(a=>({...a,dif:a.ideal-a.invFin}));
+    if(search.trim()){ const q=search.toLowerCase(); arr=arr.filter(r=>r.name.toLowerCase().includes(q)); }
+    arr.sort((x,y)=>Math.abs(y[sortKey])-Math.abs(x[sortKey]));
+    return arr; },[data,filters,tableLevel,sortKey,search]);
   const totals=useMemo(()=>tableRows.reduce((s,r)=>({venta:s.venta+r.venta,prom:s.prom+r.prom,invIni:s.invIni+r.invIni,invFin:s.invFin+r.invFin,ideal:s.ideal+r.ideal,dif:s.dif+r.dif}),{venta:0,prom:0,invIni:0,invFin:0,ideal:0,dif:0}),[tableRows]);
 
-  const gridC=isDark?'#27272a':'#f0f0f0';
-  const axisC=isDark?'#52525b':'#d1d5db';
+  // Snapshot mensual
+  const saveSnapshot=async()=>{
+    const anos=[...new Set(data.filter(passFilters).map(r=>r.ano).filter(Boolean))];
+    const mess=[...new Set(data.filter(passFilters).map(r=>r.mes).filter(Boolean))];
+    const sug=`${mess.join('/')} ${anos.join('/')}`.trim()||new Date().toLocaleDateString('es-MX');
+    const label=window.prompt('Etiqueta del mes (ej. MAYO 2026):',sug); if(label==null) return;
+    const scope=FILTER_DIMS.filter(d=>filters[d.key]).map(d=>`${d.label}:${filters[d.key]}`).join(', ')||'Todo';
+    const snap={ id:Date.now(), label:label.trim(), ts:Date.now(),
+      ano:parseInt(anos[0])||0, mesNum:mesNum(mess[0]), scope, level,
+      venta:totals.venta, prom:totals.prom, invFin:totals.invFin, ideal:totals.ideal, dif:totals.dif, r2:reg.r2 };
+    const next=[...history.filter(h=>h.label!==snap.label), snap].sort((a,b)=>(a.ano-b.ano)||(a.mesNum-b.mesNum)||(a.ts-b.ts));
+    setHistory(next); idbSet('history',next).catch(()=>{});
+  };
+  const delSnapshot=id=>{ const next=history.filter(h=>h.id!==id); setHistory(next); idbSet('history',next).catch(()=>{}); };
+  const clearHistory=()=>{ if(window.confirm('¿Borrar histórico?')){ setHistory([]); idbSet('history',[]).catch(()=>{}); } };
+
+  const gridC=isDark?'#27272a':'#ede9fe';
+  const axisC=isDark?'#52525b':'#c4b5fd';
   const txtC=isDark?'#a1a1aa':'#6b7280';
   const xLabel=MEASURES.find(m=>m.key===xKey)?.label;
   const yLabel=MEASURES.find(m=>m.key===yKey)?.label;
   const r2=reg.r2;
   const r2Badge=r2>0.7?t.badge:r2>0.4?t.badgeAmber:t.badgeGray;
   const hasData=data.length>0;
-  const TABLE_LIMIT=200;
+  const SORTS=[{k:'venta',label:'Vta'},{k:'invFin',label:'Inv'},{k:'dif',label:'Dif'}];
+
+  const heroText=isDark?'':'text-white';
 
   return (
     <div className={`min-h-screen p-4 md:p-6 ${t.appBg} animate-fade-in-up`}>
-
       {/* HEADER */}
       <div className={`p-5 rounded-2xl border mb-6 ${t.card}`}>
         <div className="flex items-start justify-between flex-wrap gap-4">
           <div>
             <h1 className={`text-2xl font-black tracking-tight flex items-center gap-2 ${t.textMain}`}>
-              <span className={`p-2 rounded-xl ${isDark?'bg-violet-500/20':'bg-violet-50'}`}>
-                <Icons.BarChart2 size={22} className={t.accent}/>
-              </span>
+              <span className={`p-2 rounded-xl ${isDark?'bg-violet-500/20':'bg-violet-100'}`}><Icons.BarChart2 size={22} className={t.accent}/></span>
               Dispersión
             </h1>
-            <p className={`text-xs mt-1 ml-10 ${t.textMuted}`}>R² multinivel · Venta vs Inventario · agrega como tabla dinámica según el nivel</p>
+            <p className={`text-xs mt-1 ml-10 ${t.textMuted}`}>R² multinivel · Venta vs Inventario · histórico mensual</p>
           </div>
           <div className="flex flex-wrap gap-2 items-center">
+            {hasData&&<button onClick={saveSnapshot} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${t.badge}`}><Icons.Save size={14}/> Guardar mes</button>}
             <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden" onChange={handleUpload}/>
-            <button onClick={()=>fileRef.current?.click()} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${t.btnGhost}`}>
-              <Icons.Upload size={14}/> CSV Extracción
-            </button>
+            <button onClick={()=>fileRef.current?.click()} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${t.btnGhost}`}><Icons.Upload size={14}/> CSV Extracción</button>
             {hasData&&<span className={`px-3 py-1 rounded-full text-[10px] font-black border ${t.badge}`}>{data.length.toLocaleString()} filas</span>}
             {hasData&&<button onClick={clearData} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${t.btnGhost} opacity-40 hover:opacity-100`}><Icons.Trash2 size={14}/></button>}
           </div>
         </div>
-        {hasData&&cols.length>0&&(
-          <p className={`text-[9px] mt-3 ${t.textMuted}`}>Columnas detectadas: {cols.join(' · ')}</p>
-        )}
+        {hasData&&cols.length>0&&<p className={`text-[9px] mt-3 ${t.textMuted}`}>Columnas detectadas: {cols.join(' · ')}</p>}
       </div>
 
       {!hasData?(
         <div className={`p-12 rounded-xl border flex flex-col items-center justify-center text-center ${t.cardInner}`}>
           <Icons.Upload size={36} className="text-gray-400 mb-3"/>
           <p className={`text-sm font-bold ${t.textMain}`}>Carga tu CSV de extracción</p>
-          <p className={`text-xs mt-1 ${t.textMuted}`}>La data queda guardada localmente (IndexedDB) y sobrevive al refresh.</p>
+          <p className={`text-xs mt-1 ${t.textMuted}`}>La data se guarda localmente (IndexedDB) y sobrevive al refresh.</p>
         </div>
       ):(
         <div className="space-y-4">
-
           {/* CONTROLES */}
           <div className={`flex flex-wrap items-end gap-3 p-3 rounded-xl border ${t.cardInner}`}>
             <Ctrl label="Eje X" t={t}><select value={xKey} onChange={e=>setXKey(e.target.value)} className={`text-xs px-3 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}>{MEASURES.map(m=><option key={m.key} value={m.key}>{m.label}</option>)}</select></Ctrl>
             <Ctrl label="Eje Y" t={t}><select value={yKey} onChange={e=>setYKey(e.target.value)} className={`text-xs px-3 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}>{MEASURES.map(m=><option key={m.key} value={m.key}>{m.label}</option>)}</select></Ctrl>
             <Ctrl label="Excluir ceros" t={t}><button onClick={()=>setExcludeZeros(v=>!v)} className={`text-xs px-3 py-1.5 rounded-lg border font-bold ${excludeZeros?t.badge:t.btnGhost}`}>{excludeZeros?'Sí':'No'}</button></Ctrl>
           </div>
-
           {/* NIVEL */}
           <div className={`flex flex-wrap items-center gap-2 p-3 rounded-xl border ${t.cardInner}`}>
             <span className={`text-[10px] font-black uppercase tracking-widest ${t.textMuted} mr-1`}><Icons.BarChart2 size={11} className="inline mr-1"/>Nivel (cada punto =)</span>
             {LEVELS.map(l=><button key={l.key} onClick={()=>setLevel(l.key)} className={`text-[10px] px-3 py-1 rounded-full border font-black transition-all ${level===l.key?t.badge:t.btnGhost}`}>{l.label}</button>)}
           </div>
-
-          {/* FILTROS (cascada) */}
+          {/* FILTROS cascada */}
           <div className={`flex flex-wrap gap-2 p-3 rounded-xl border ${t.cardInner}`}>
             {FILTER_DIMS.map(d=>(
-              <select key={d.key} value={filters[d.key]||''} onChange={e=>setFilters(f=>({...f,[d.key]:e.target.value}))}
-                className={`text-xs px-3 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}>
+              <select key={d.key} value={filters[d.key]||''} onChange={e=>setFilters(f=>({...f,[d.key]:e.target.value}))} className={`text-xs px-3 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}>
                 <option value="">{d.label}: Todos ({opts[d.key]?.length||0})</option>
                 {opts[d.key]?.map(v=><option key={v} value={v}>{v}</option>)}
               </select>
             ))}
             {Object.values(filters).some(Boolean)&&<button onClick={()=>setFilters({})} className={`text-xs px-3 py-1.5 rounded-lg border font-bold ${t.btnGhost}`}>✕ Limpiar</button>}
           </div>
-
           {/* KPIs */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-            {[
-              {label:'R²',val:fmt(r2,3),color:t.accent},
-              {label:'Puntos (n)',val:fmt(points.length),color:t.accent,sub:`${fmt(raw)} filas en scope`},
-              {label:'Pendiente',val:fmt(reg.slope,4),color:t.textMuted},
-              {label:'Filas excluidas (0)',val:excludeZeros?fmt(dropped):'—',color:t.textMuted},
-            ].map(({label,val,color,sub})=>(
+            <div className={`p-3 rounded-xl border ${t.kpiHero}`}>
+              <div className={`text-[9px] font-black uppercase tracking-widest ${isDark?'text-violet-300':heroText} opacity-80 mb-0.5`}>R²</div>
+              <div className={`text-2xl font-black ${isDark?'text-violet-200':heroText}`}>{fmt(r2,3)}</div>
+            </div>
+            {[{label:'Puntos (n)',val:fmt(points.length),sub:`${fmt(raw)} filas en scope`},
+              {label:'Pendiente',val:fmt(reg.slope,4)},
+              {label:'Excluidas (0)',val:excludeZeros?fmt(dropped):'—'}].map(({label,val,sub})=>(
               <div key={label} className={`p-3 rounded-xl border ${t.cardInner}`}>
                 <div className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} mb-0.5`}>{label}</div>
-                <div className={`text-xl font-black ${color}`}>{val}</div>
+                <div className={`text-xl font-black ${t.accent}`}>{val}</div>
                 {sub&&<div className={`text-[9px] ${t.textMuted}`}>{sub}</div>}
               </div>
             ))}
           </div>
-
           {/* SCATTER */}
           <div className={`p-4 rounded-xl border ${t.cardInner}`}>
             <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
               <h4 className={`text-sm font-bold ${t.textMain}`}>🟣 {xLabel} vs {yLabel} · por {LEVELS.find(l=>l.key===level)?.label}</h4>
               <span className={`text-[10px] font-black px-2 py-1 rounded-full border ${r2Badge}`}>R² = {r2.toFixed(2)}</span>
             </div>
-            {points.length<2?(
-              <p className={`text-xs ${t.textMuted} py-8 text-center`}>Se necesitan ≥2 puntos. Ajusta filtros o nivel.</p>
-            ):(
+            {points.length<2?(<p className={`text-xs ${t.textMuted} py-8 text-center`}>Se necesitan ≥2 puntos. Ajusta filtros o nivel.</p>):(
               <ResponsiveContainer width="100%" height={340}>
                 <ScatterChart margin={{top:10,right:20,left:0,bottom:20}}>
                   <CartesianGrid strokeDasharray="3 3" stroke={gridC}/>
-                  <XAxis dataKey="x" name={xLabel} type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC}
-                    tickFormatter={v=>Math.abs(v)>=1000?(v/1000).toFixed(0)+'k':fmt(v)}
-                    label={{value:xLabel,position:'insideBottom',offset:-10,fontSize:10,fill:txtC}}/>
-                  <YAxis dataKey="y" name={yLabel} type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC}
-                    tickFormatter={v=>Math.abs(v)>=1000?(v/1000).toFixed(0)+'k':fmt(v)}
-                    label={{value:yLabel,angle:-90,position:'insideLeft',fontSize:10,fill:txtC}}/>
-                  <Tooltip content={({active,payload})=>{
-                    if(!active||!payload?.length) return null; const d=payload[0]?.payload;
-                    return <div className={`p-3 rounded-xl border text-xs shadow-xl ${t.card}`}>
-                      {d?.name&&<p className={`font-bold mb-1 ${t.textMain}`}>{d.name}</p>}
-                      <p className="text-gray-400">{xLabel}: {fmt(d?.x,1)}</p>
-                      <p className={t.accent}>{yLabel}: {fmt(d?.y,1)}</p>
-                    </div>; }}/>
-                  <Scatter data={points} fill="#9ca3af" fillOpacity={0.65}/>
-                  {reg.n>=2&&(()=>{ const xs=points.map(d=>d.x); const xMin=Math.min(...xs),xMax=Math.max(...xs);
-                    return <Scatter data={[{x:xMin,y:reg.slope*xMin+reg.intercept},{x:xMax,y:reg.slope*xMax+reg.intercept}]}
-                      fill="none" line={{stroke:'#8b5cf6',strokeWidth:2.5}} shape={()=>null} legendType="none"/>; })()}
+                  <XAxis dataKey="x" name={xLabel} type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} domain={['dataMin','dataMax']} tickFormatter={v=>Math.abs(v)>=1000?(v/1000).toFixed(0)+'k':fmt(v)} label={{value:xLabel,position:'insideBottom',offset:-10,fontSize:10,fill:txtC}}/>
+                  <YAxis dataKey="y" name={yLabel} type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>Math.abs(v)>=1000?(v/1000).toFixed(0)+'k':fmt(v)} label={{value:yLabel,angle:-90,position:'insideLeft',fontSize:10,fill:txtC}}/>
+                  <Tooltip cursor={{strokeDasharray:'3 3'}} content={({active,payload})=>{ if(!active||!payload?.length) return null; const d=payload[0]?.payload;
+                    return <div className={`p-3 rounded-xl border text-xs shadow-xl ${t.card}`}>{d?.name&&<p className={`font-bold mb-1 ${t.textMain}`}>{d.name}</p>}<p className="text-gray-400">{xLabel}: {fmt(d?.x,1)}</p><p className={t.accent}>{yLabel}: {fmt(d?.y,1)}</p></div>; }}/>
+                  <Scatter data={plotPoints} shape={(p)=>{ const on=p.payload?.name&&p.payload.name===hover;
+                    return <circle cx={p.cx} cy={p.cy} r={on?7:4} fill={on?'#fbbf24':'#9ca3af'} fillOpacity={on?1:0.6} stroke={on?'#f59e0b':'none'} strokeWidth={on?2:0} style={{filter:on?'drop-shadow(0 0 6px #fbbf24)':'none',cursor:'pointer'}} onMouseEnter={()=>p.payload?.name&&setHover(p.payload.name)} onMouseLeave={()=>setHover(null)}/>; }}/>
+                  {reg.n>=2&&<Scatter data={[{x:xMin,y:reg.slope*xMin+reg.intercept},{x:xMax,y:reg.slope*xMax+reg.intercept}]} fill="none" line={{stroke:'#8b5cf6',strokeWidth:2.5}} shape={()=>null} legendType="none"/>}
                 </ScatterChart>
               </ResponsiveContainer>
             )}
-            <p className={`text-[9px] mt-2 ${t.textMuted}`}>Granular = cada fila un punto (R² fina, baja). Agregar suma combinaciones por grupo (como tabla dinámica) → R² más alta. Filtros se aplican antes de agregar.</p>
+            <p className={`text-[9px] mt-2 ${t.textMuted}`}>Granular muestrea hasta {MAX_PLOT.toLocaleString()} puntos para dibujar (R² se calcula sobre todas). Agregar suma combinaciones por grupo, como tabla dinámica.</p>
           </div>
-
           {/* TABLA */}
           <div className={`p-4 rounded-xl border ${t.cardInner}`}>
             <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-              <h4 className={`text-sm font-bold ${t.textMain}`}>Detalle por {LEVELS.find(l=>l.key===tableLevel)?.label}</h4>
-              <span className={`text-[10px] ${t.textMuted}`}>{tableRows.length.toLocaleString()} grupos{tableRows.length>TABLE_LIMIT?` · mostrando top ${TABLE_LIMIT} por venta`:''}</span>
+              <h4 className={`text-sm font-bold ${t.textMain}`}>Detalle por {LEVELS.find(l=>l.key===tableLevel)?.label} <span className={`text-[10px] font-normal ${t.textMuted}`}>· {tableRows.length.toLocaleString()} grupos</span></h4>
+              <div className="flex items-center gap-2 flex-wrap">
+                <div className="relative">
+                  <Icons.Search size={12} className={`absolute left-2 top-1/2 -translate-y-1/2 ${t.textMuted}`}/>
+                  <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar tienda/centro" className={`text-xs pl-7 pr-2 py-1.5 rounded-lg border w-40 ${t.input} focus:outline-none focus:ring-1`}/>
+                </div>
+                <span className={`text-[9px] font-black uppercase ${t.textMuted}`}>Ordenar:</span>
+                {SORTS.map(s=><button key={s.k} onClick={()=>setSortKey(s.k)} className={`text-[10px] px-2.5 py-1 rounded-full border font-black ${sortKey===s.k?t.badge:t.btnGhost}`}>{s.label}</button>)}
+              </div>
             </div>
-            <div className="overflow-x-auto rounded-lg">
+            <div className="overflow-auto rounded-lg" style={{maxHeight:320}}>
               <table className="w-full text-xs">
-                <thead><tr className={`${t.thBg}`}>
-                  {[LEVELS.find(l=>l.key===tableLevel)?.label,'Vtas $','Prom Inv','Inv Inicial','Inv Final','Inv Ideal','Diferencia'].map((h,i)=>(
-                    <th key={i} className={`px-3 py-2 font-black uppercase tracking-wide text-[9px] ${i===0?'text-left':'text-right'}`}>{h}</th>
-                  ))}
+                <thead className="sticky top-0 z-10"><tr className={`${t.thBg}`}>
+                  {[LEVELS.find(l=>l.key===tableLevel)?.label,'Vtas $','Prom Inv','Inv Inicial','Inv Final','Inv Ideal','Diferencia'].map((h,i)=><th key={i} className={`px-3 py-2 font-black uppercase tracking-wide text-[9px] ${i===0?'text-left':'text-right'}`}>{h}</th>)}
                 </tr></thead>
                 <tbody>
-                  {tableRows.slice(0,TABLE_LIMIT).map((r,i)=>(
-                    <tr key={r.name} className={`${i%2?t.rowAlt:''} border-b ${t.border}`}>
+                  {tableRows.slice(0,TABLE_RENDER).map((r,i)=>(
+                    <tr key={r.name} onMouseEnter={()=>setHover(r.name)} onMouseLeave={()=>setHover(null)} className={`${i%2?t.rowAlt:''} ${hover===r.name?(isDark?'!bg-amber-500/10':'!bg-amber-50'):''} border-b ${t.border} cursor-pointer transition-colors`}>
                       <td className={`px-3 py-1.5 font-bold ${t.textMain} truncate max-w-[160px]`}>{r.name}</td>
                       <td className={`px-3 py-1.5 text-right ${t.accent} font-bold`}>{fmt(r.venta)}</td>
                       <td className={`px-3 py-1.5 text-right ${t.textMuted}`}>{fmt(r.prom)}</td>
                       <td className={`px-3 py-1.5 text-right ${t.textMuted}`}>{fmt(r.invIni)}</td>
                       <td className={`px-3 py-1.5 text-right ${t.textMuted}`}>{fmt(r.invFin)}</td>
                       <td className={`px-3 py-1.5 text-right ${t.textMuted}`}>{fmt(r.ideal)}</td>
-                      <td className={`px-3 py-1.5 text-right font-bold ${r.dif>=0?'text-amber-500':t.accent}`}>{fmt(r.dif)}</td>
+                      <td className={`px-3 py-1.5 text-right font-bold ${r.dif>=0?t.amber:t.accent}`}>{fmt(r.dif)}</td>
                     </tr>
                   ))}
                 </tbody>
-                <tfoot><tr className={`border-t-2 ${t.border} font-black ${t.textMain}`}>
+                <tfoot className="sticky bottom-0"><tr className={`${isDark?'bg-zinc-900':'bg-white'} border-t-2 ${t.border} font-black ${t.textMain}`}>
                   <td className="px-3 py-2 text-left">TOTAL</td>
                   <td className={`px-3 py-2 text-right ${t.accent}`}>{fmt(totals.venta)}</td>
                   <td className="px-3 py-2 text-right">{fmt(totals.prom)}</td>
@@ -354,18 +320,42 @@ export default function ModuleDispersion(){
                 </tr></tfoot>
               </table>
             </div>
+            {tableRows.length>TABLE_RENDER&&<p className={`text-[9px] mt-2 ${t.textMuted}`}>Mostrando {TABLE_RENDER} de {tableRows.length.toLocaleString()} (usa buscar/ordenar para acotar).</p>}
           </div>
+          {/* HISTÓRICO */}
+          {history.length>0&&(
+            <div className={`p-4 rounded-xl border ${t.cardInner}`}>
+              <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                <h4 className={`text-sm font-bold ${t.textMain}`}>📈 Histórico mensual <span className={`text-[10px] font-normal ${t.textMuted}`}>· {history.length} meses</span></h4>
+                <button onClick={clearHistory} className={`text-[10px] px-2.5 py-1 rounded-full border font-black ${t.btnGhost}`}>Limpiar histórico</button>
+              </div>
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart data={history} margin={{top:5,right:10,left:0,bottom:5}}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={gridC}/>
+                  <XAxis dataKey="label" tick={{fontSize:9,fill:txtC}} stroke={axisC}/>
+                  <YAxis tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>Math.abs(v)>=1000?(v/1000).toFixed(0)+'k':fmt(v)}/>
+                  <Tooltip content={({active,payload,label})=>{ if(!active||!payload?.length) return null; const d=payload[0]?.payload;
+                    return <div className={`p-3 rounded-xl border text-xs shadow-xl ${t.card}`}><p className={`font-bold mb-1 ${t.textMain}`}>{label}</p><p className={t.accent}>Prom Inv: {fmt(d.prom)}</p><p className={t.amber}>Diferencia: {fmt(d.dif)}</p><p className={t.textMuted}>R²: {fmt(d.r2,3)} · {d.scope}</p></div>; }}/>
+                  <Legend wrapperStyle={{fontSize:10}}/>
+                  <Line type="monotone" dataKey="prom" name="Prom Inventario" stroke="#8b5cf6" strokeWidth={2.5} dot={{r:3,fill:'#8b5cf6'}}/>
+                  <Line type="monotone" dataKey="dif" name="Diferencia" stroke="#f59e0b" strokeWidth={2.5} dot={{r:3,fill:'#f59e0b'}}/>
+                </LineChart>
+              </ResponsiveContainer>
+              <div className="flex flex-wrap gap-2 mt-3">
+                {history.map(h=>(
+                  <span key={h.id} className={`flex items-center gap-2 text-[10px] px-2.5 py-1 rounded-full border ${t.badgeGray}`}>
+                    <b className={t.textMain}>{h.label}</b> R² {fmt(h.r2,2)}
+                    <button onClick={()=>delSnapshot(h.id)} className="opacity-50 hover:opacity-100">✕</button>
+                  </span>
+                ))}
+              </div>
+              <p className={`text-[9px] mt-2 ${t.textMuted}`}>Cada punto = una "foto" guardada con el botón “Guardar mes” (usa el scope de filtros activo en ese momento). Prom Inventario bajando + Diferencia tendiendo a 0 = mejora.</p>
+            </div>
+          )}
         </div>
       )}
-
-      <style dangerouslySetInnerHTML={{__html:`
-        @keyframes fadeInUp{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}
-        .animate-fade-in-up{animation:fadeInUp 0.4s ease-out forwards;}
-      `}}/>
+      <style dangerouslySetInnerHTML={{__html:`@keyframes fadeInUp{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}.animate-fade-in-up{animation:fadeInUp 0.4s ease-out forwards;}`}}/>
     </div>
   );
 }
-
-const Ctrl=({label,t,children})=>(
-  <div><div className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} mb-1`}>{label}</div>{children}</div>
-);
+const Ctrl=({label,t,children})=>(<div><div className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} mb-1`}>{label}</div>{children}</div>);
