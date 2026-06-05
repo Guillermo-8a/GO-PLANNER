@@ -111,19 +111,21 @@ export default function ModuleDispersion(){
   const [filters,setFilters]=useState({});
   const [hover,setHover]=useState(null);
   const [sortKey,setSortKey]=useState('venta');
+  const [sortDir,setSortDir]=useState('desc');
   const [search,setSearch]=useState('');
   const [history,setHistory]=useState([]);
   const [loading,setLoading]=useState(true);
+  const [saveModal,setSaveModal]=useState(null); // {label, sug} cuando abierto
 
   useEffect(()=>{ (async()=>{
     try{ const d=await idbGet('data'); if(Array.isArray(d)&&d.length){ setData(d); setCols(d._cols||[]); } }catch{}
     try{ const h=await idbGet('history'); if(Array.isArray(h)) setHistory(h); }catch{}
     try{ const c=localStorage.getItem('gop_dispersion'); if(c){ const o=JSON.parse(c);
       o.xKey&&setXKey(o.xKey); o.yKey&&setYKey(o.yKey); o.level&&setLevel(o.level);
-      o.excludeZeros!=null&&setExcludeZeros(o.excludeZeros); o.filters&&setFilters(o.filters); o.sortKey&&setSortKey(o.sortKey); } }catch{}
+      o.excludeZeros!=null&&setExcludeZeros(o.excludeZeros); o.filters&&setFilters(o.filters); o.sortKey&&setSortKey(o.sortKey); o.sortDir&&setSortDir(o.sortDir); } }catch{}
     setLoading(false);
   })(); },[]);
-  useEffect(()=>{ if(!loading) try{ localStorage.setItem('gop_dispersion',JSON.stringify({xKey,yKey,level,excludeZeros,filters,sortKey})); }catch{} },[xKey,yKey,level,excludeZeros,filters,sortKey,loading]);
+  useEffect(()=>{ if(!loading) try{ localStorage.setItem('gop_dispersion',JSON.stringify({xKey,yKey,level,excludeZeros,filters,sortKey,sortDir})); }catch{} },[xKey,yKey,level,excludeZeros,filters,sortKey,sortDir,loading]);
 
   const handleUpload=e=>{ const file=e.target.files[0]; if(!file) return; const reader=new FileReader();
     reader.onload=ev=>{ const rows=parseCSV(ev.target.result); setData(rows); setCols(rows._cols||[]); setFilters({}); idbSet('data',rows).catch(()=>{}); e.target.value=''; };
@@ -156,22 +158,25 @@ export default function ModuleDispersion(){
       a.venta+=r.venta;a.prom+=r.prom;a.invIni+=r.invIni;a.invFin+=r.invFin;a.ideal+=r.ideal;a.n++; m.set(k,a); }
     let arr=[...m.values()].map(a=>({...a,dif:a.ideal-a.invFin}));
     if(search.trim()){ const q=search.toLowerCase(); arr=arr.filter(r=>r.name.toLowerCase().includes(q)); }
-    arr.sort((x,y)=>Math.abs(y[sortKey])-Math.abs(x[sortKey]));
-    return arr; },[data,filters,tableLevel,sortKey,search]);
+    arr.sort((x,y)=>{ const d=Math.abs(y[sortKey])-Math.abs(x[sortKey]); return sortDir==='desc'?d:-d; });
+    return arr; },[data,filters,tableLevel,sortKey,sortDir,search]);
   const totals=useMemo(()=>tableRows.reduce((s,r)=>({venta:s.venta+r.venta,prom:s.prom+r.prom,invIni:s.invIni+r.invIni,invFin:s.invFin+r.invFin,ideal:s.ideal+r.ideal,dif:s.dif+r.dif}),{venta:0,prom:0,invIni:0,invFin:0,ideal:0,dif:0}),[tableRows]);
 
   // Snapshot mensual
-  const saveSnapshot=async()=>{
+  const openSaveModal=()=>{
     const anos=[...new Set(data.filter(passFilters).map(r=>r.ano).filter(Boolean))];
     const mess=[...new Set(data.filter(passFilters).map(r=>r.mes).filter(Boolean))];
-    const sug=`${mess.join('/')} ${anos.join('/')}`.trim()||new Date().toLocaleDateString('es-MX');
-    const label=window.prompt('Etiqueta del mes (ej. MAYO 2026):',sug); if(label==null) return;
+    const sug=`${mess.join('/')} ${anos.join('/')}`.trim().toUpperCase()||new Date().toLocaleDateString('es-MX');
+    setSaveModal({label:sug, anos, mess});
+  };
+  const confirmSave=()=>{
+    const {label,anos,mess}=saveModal; if(!label.trim()){ setSaveModal(null); return; }
     const scope=FILTER_DIMS.filter(d=>filters[d.key]).map(d=>`${d.label}:${filters[d.key]}`).join(', ')||'Todo';
     const snap={ id:Date.now(), label:label.trim(), ts:Date.now(),
       ano:parseInt(anos[0])||0, mesNum:mesNum(mess[0]), scope, level,
       venta:totals.venta, prom:totals.prom, invFin:totals.invFin, ideal:totals.ideal, dif:totals.dif, r2:reg.r2 };
     const next=[...history.filter(h=>h.label!==snap.label), snap].sort((a,b)=>(a.ano-b.ano)||(a.mesNum-b.mesNum)||(a.ts-b.ts));
-    setHistory(next); idbSet('history',next).catch(()=>{});
+    setHistory(next); idbSet('history',next).catch(()=>{}); setSaveModal(null);
   };
   const delSnapshot=id=>{ const next=history.filter(h=>h.id!==id); setHistory(next); idbSet('history',next).catch(()=>{}); };
   const clearHistory=()=>{ if(window.confirm('¿Borrar histórico?')){ setHistory([]); idbSet('history',[]).catch(()=>{}); } };
@@ -201,7 +206,7 @@ export default function ModuleDispersion(){
             <p className={`text-xs mt-1 ml-10 ${t.textMuted}`}>R² multinivel · Venta vs Inventario · histórico mensual</p>
           </div>
           <div className="flex flex-wrap gap-2 items-center">
-            {hasData&&<button onClick={saveSnapshot} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${t.badge}`}><Icons.Save size={14}/> Guardar mes</button>}
+            {hasData&&<button onClick={openSaveModal} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${t.badge}`}><Icons.Save size={14}/> Guardar mes</button>}
             <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden" onChange={handleUpload}/>
             <button onClick={()=>fileRef.current?.click()} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${t.btnGhost}`}><Icons.Upload size={14}/> CSV Extracción</button>
             {hasData&&<span className={`px-3 py-1 rounded-full text-[10px] font-black border ${t.badge}`}>{data.length.toLocaleString()} filas</span>}
@@ -242,14 +247,14 @@ export default function ModuleDispersion(){
           </div>
           {/* KPIs */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
-            <div className={`p-3 rounded-xl border ${t.kpiHero}`}>
+            <div className={`p-3 rounded-xl border text-center ${t.kpiHero}`}>
               <div className={`text-[9px] font-black uppercase tracking-widest ${isDark?'text-violet-300':heroText} opacity-80 mb-0.5`}>R²</div>
               <div className={`text-2xl font-black ${isDark?'text-violet-200':heroText}`}>{fmt(r2,3)}</div>
             </div>
             {[{label:'Puntos (n)',val:fmt(points.length),sub:`${fmt(raw)} filas en scope`},
               {label:'Pendiente',val:fmt(reg.slope,4)},
               {label:'Excluidas (0)',val:excludeZeros?fmt(dropped):'—'}].map(({label,val,sub})=>(
-              <div key={label} className={`p-3 rounded-xl border ${t.cardInner}`}>
+              <div key={label} className={`p-3 rounded-xl border text-center ${t.cardInner}`}>
                 <div className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} mb-0.5`}>{label}</div>
                 <div className={`text-xl font-black ${t.accent}`}>{val}</div>
                 {sub&&<div className={`text-[9px] ${t.textMuted}`}>{sub}</div>}
@@ -288,7 +293,7 @@ export default function ModuleDispersion(){
                   <input value={search} onChange={e=>setSearch(e.target.value)} placeholder="Buscar tienda/centro" className={`text-xs pl-7 pr-2 py-1.5 rounded-lg border w-40 ${t.input} focus:outline-none focus:ring-1`}/>
                 </div>
                 <span className={`text-[9px] font-black uppercase ${t.textMuted}`}>Ordenar:</span>
-                {SORTS.map(s=><button key={s.k} onClick={()=>setSortKey(s.k)} className={`text-[10px] px-2.5 py-1 rounded-full border font-black ${sortKey===s.k?t.badge:t.btnGhost}`}>{s.label}</button>)}
+                {SORTS.map(s=><button key={s.k} onClick={()=>{ if(sortKey===s.k) setSortDir(d=>d==='desc'?'asc':'desc'); else { setSortKey(s.k); setSortDir('desc'); } }} className={`text-[10px] px-2.5 py-1 rounded-full border font-black ${sortKey===s.k?t.badge:t.btnGhost}`}>{s.label}{sortKey===s.k?(sortDir==='desc'?' ↓':' ↑'):''}</button>)}
               </div>
             </div>
             <div className="overflow-auto rounded-lg" style={{maxHeight:320}}>
@@ -342,18 +347,49 @@ export default function ModuleDispersion(){
                 </LineChart>
               </ResponsiveContainer>
               <div className="flex flex-wrap gap-2 mt-3">
-                {history.map(h=>(
+                {history.map((h,i)=>{ const prev=history[i-1]; const dPct=prev&&prev.prom?((h.prom-prev.prom)/Math.abs(prev.prom))*100:null;
+                  return (
                   <span key={h.id} className={`flex items-center gap-2 text-[10px] px-2.5 py-1 rounded-full border ${t.badgeGray}`}>
-                    <b className={t.textMain}>{h.label}</b> R² {fmt(h.r2,2)}
+                    <b className={t.textMain}>{h.label}</b>
+                    <span className={t.textMuted}>R² {fmt(h.r2,2)}</span>
+                    {dPct!=null&&<span className={`font-black ${dPct<=0?'text-emerald-400':'text-red-400'}`}>{dPct<=0?'▼':'▲'}{Math.abs(dPct).toFixed(1)}%</span>}
                     <button onClick={()=>delSnapshot(h.id)} className="opacity-50 hover:opacity-100">✕</button>
                   </span>
-                ))}
+                ); })}
               </div>
-              <p className={`text-[9px] mt-2 ${t.textMuted}`}>Cada punto = una "foto" guardada con el botón “Guardar mes” (usa el scope de filtros activo en ese momento). Prom Inventario bajando + Diferencia tendiendo a 0 = mejora.</p>
+              <p className={`text-[9px] mt-2 ${t.textMuted}`}>Cada punto = una "foto" guardada con “Guardar mes” (usa el scope de filtros activo). El % en cada chip es el cambio de Prom Inventario vs el mes anterior: verde ▼ = baja inventario (mejora), rojo ▲ = sube.</p>
             </div>
           )}
         </div>
       )}
+      {/* MODAL GUARDAR MES */}
+      {saveModal&&(
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{background:isDark?'rgba(9,9,11,0.6)':'rgba(255,255,255,0.5)',backdropFilter:'blur(6px)'}} onClick={()=>setSaveModal(null)}>
+          <div onClick={e=>e.stopPropagation()} className={`w-full max-w-sm p-5 rounded-2xl border ${t.card} ${isDark?'shadow-[0_0_40px_rgba(139,92,246,0.3)]':'shadow-2xl'}`}>
+            <div className="flex items-center gap-2 mb-1">
+              <span className={`p-1.5 rounded-lg ${isDark?'bg-violet-500/20':'bg-violet-100'}`}><Icons.Save size={16} className={t.accent}/></span>
+              <h3 className={`text-sm font-black ${t.textMain}`}>Guardar mes</h3>
+            </div>
+            <p className={`text-[10px] mb-3 ${t.textMuted}`}>Foto del scope actual: {FILTER_DIMS.filter(d=>filters[d.key]).map(d=>filters[d.key]).join(' · ')||'Todo'} · nivel {LEVELS.find(l=>l.key===level)?.label}</p>
+            <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted}`}>Etiqueta del mes</label>
+            <input autoFocus value={saveModal.label} onChange={e=>setSaveModal(m=>({...m,label:e.target.value}))} onKeyDown={e=>{ if(e.key==='Enter') confirmSave(); if(e.key==='Escape') setSaveModal(null); }}
+              placeholder="ej. MAYO 2026" className={`w-full mt-1 text-sm px-3 py-2 rounded-lg border ${t.input} focus:outline-none focus:ring-2`}/>
+            <div className="grid grid-cols-2 gap-2 mt-4">
+              {[{label:'Vtas',v:totals.venta},{label:'Prom Inv',v:totals.prom},{label:'Diferencia',v:totals.dif},{label:'R²',v:reg.r2,d:3}].map(x=>(
+                <div key={x.label} className={`px-3 py-2 rounded-lg ${t.cardInner} border text-center`}>
+                  <div className={`text-[8px] font-black uppercase ${t.textMuted}`}>{x.label}</div>
+                  <div className={`text-sm font-black ${t.accent}`}>{fmt(x.v,x.d||0)}</div>
+                </div>
+              ))}
+            </div>
+            <div className="flex justify-end gap-2 mt-4">
+              <button onClick={()=>setSaveModal(null)} className={`text-xs px-4 py-2 rounded-lg border font-bold ${t.btnGhost}`}>Cancelar</button>
+              <button onClick={confirmSave} className={`text-xs px-4 py-2 rounded-lg border font-bold ${t.badge}`}>Guardar</button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <style dangerouslySetInnerHTML={{__html:`@keyframes fadeInUp{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}.animate-fade-in-up{animation:fadeInUp 0.4s ease-out forwards;}`}}/>
     </div>
   );
