@@ -2,7 +2,7 @@
 
 export {
   Activity, AlertCircle, ArrowUpDown, ArrowLeftRight,
-  BarChart2, BarChart3,  Box, Bar, 
+  BarChart2, BarChart3,  Box, Bar, BarChart,
   Calendar, Check, CheckCircle2, CheckSquare, ChevronDown, ChevronLeft,
   ChevronUp, ChevronRight, Copy, Calculator, Clock,
   Database, Download, DollarSign,
@@ -13,8 +13,8 @@ export {
   MapIcon as MapIcon, Menu, Moon, Map, MoreVertical, MapPin,
   Package, Plus,
   RefreshCw, Rocket,
-  Save, Search, Settings, Settings2, ShoppingCart,
-  Store, Sun, Sliders, ShoppingBag,
+  Save, Search, Settings, Settings2, ShoppingCart, Scatter,
+  Store, Sun, Sliders, ShoppingBag, ScatterChart,
   Table, Trash2, TrendingUp, Trophy, ToggleLeft, Tag,
   ToggleRight,Truck,
   Upload,
