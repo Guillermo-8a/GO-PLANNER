@@ -57,9 +57,9 @@ const dayType = d => holidayName(d)?'festivo':isWeekend(d)?'finde':'normal';
 const DeltaBadge = ({value}) => {
   if(value==null) return <span className="text-gray-400 text-[10px]">N/D</span>;
   const pos=value>=0;
-  return <span className={`text-[10px] font-black ${pos?'text-emerald-400':'text-red-400'}`}>{pos?'▲':'▼'} {Math.abs(value).toFixed(1)}%</span>;
+  return <span className={`text-[10px] font-black ${pos?'text-violet-400':'text-red-400'}`}>{pos?'▲':'▼'} {Math.abs(value).toFixed(1)}%</span>;
 };
-const MiniBar = ({value,max,color='bg-emerald-500',isDark}) => (
+const MiniBar = ({value,max,color='bg-violet-500',isDark}) => (
   <div className={`w-full h-1.5 rounded-full ${isDark?'bg-zinc-700/40':'bg-gray-200'} overflow-hidden`}>
     <div className={`h-1.5 rounded-full ${color} transition-all duration-500`} style={{width:`${Math.min(100,max>0?(value/max)*100:0)}%`}}/>
   </div>
@@ -96,7 +96,7 @@ const DateRangePicker = ({from,to,onChange,t,isDark}) => {
     for(let d=1;d<=days;d++){ const iso=`${y}-${String(m+1).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
       const ep=iso===from||iso===to, inR=inRange(iso);
       cells.push(<button key={iso} onMouseEnter={()=>selStart&&setHov(iso)} onClick={()=>handleDay(iso)}
-        className={`text-[11px] h-7 w-7 rounded-full flex items-center justify-center transition-all font-medium ${ep?'bg-emerald-500 text-white font-black':inR?(isDark?'bg-emerald-900/40 text-emerald-300':'bg-emerald-100 text-emerald-700'):(isDark?'text-gray-300 hover:bg-zinc-700':'text-gray-700 hover:bg-gray-100')}`}>{d}</button>);
+        className={`text-[11px] h-7 w-7 rounded-full flex items-center justify-center transition-all font-medium ${ep?'bg-violet-500 text-white font-black':inR?(isDark?'bg-violet-900/40 text-violet-300':'bg-violet-100 text-violet-700'):(isDark?'text-gray-300 hover:bg-zinc-700':'text-gray-700 hover:bg-gray-100')}`}>{d}</button>);
     } return cells; };
   const prevM=()=>setView(v=>v.month===0?{year:v.year-1,month:11}:{...v,month:v.month-1});
   const nextM=()=>setView(v=>v.month===11?{year:v.year+1,month:0}:{...v,month:v.month+1});
@@ -203,16 +203,16 @@ export default function ModuleDaily(){
 
   const themes={
     dark:{appBg:'bg-transparent text-gray-100',card:'bg-zinc-900 border-zinc-800 shadow-sm',cardInner:'bg-zinc-950 border-zinc-800',
-      textMain:'text-white',textMuted:'text-gray-400',textAccent1:'text-emerald-300',textAccent2:'text-teal-300',border:'border-zinc-800',
-      input:'bg-zinc-950 border-zinc-700 text-white focus:ring-emerald-500',btnPrimary:'bg-emerald-500 text-white hover:bg-emerald-400 shadow-[0_0_18px_rgba(16,185,129,0.4)]',
+      textMain:'text-white',textMuted:'text-gray-400',textAccent1:'text-violet-300',textAccent2:'text-purple-300',border:'border-zinc-800',
+      input:'bg-zinc-950 border-zinc-700 text-white focus:ring-violet-500',btnPrimary:'bg-violet-500 text-white hover:bg-violet-400 shadow-[0_0_18px_rgba(139,92,246,0.4)]',
       btnGhost:'bg-zinc-800 text-gray-300 hover:text-white hover:bg-zinc-700 border-zinc-700',
-      badge:'bg-emerald-500/25 text-emerald-300 border-emerald-400/60',badgeTeal:'bg-teal-500/25 text-teal-300 border-teal-400/60',
+      badge:'bg-violet-500/25 text-violet-300 border-violet-400/60',badgeTeal:'bg-purple-500/25 text-purple-300 border-purple-400/60',
       badgeAmber:'bg-amber-500/25 text-amber-300 border-amber-400/60',badgeRed:'bg-rose-500/25 text-rose-300 border-rose-400/60'},
     light:{appBg:'bg-transparent text-gray-800',card:'bg-white border-gray-200 shadow-sm',cardInner:'bg-gray-50 border-gray-200',
-      textMain:'text-gray-900',textMuted:'text-gray-500',textAccent1:'text-emerald-600',textAccent2:'text-teal-600',border:'border-gray-200',
-      input:'bg-white border-gray-300 text-gray-900 focus:ring-emerald-500',btnPrimary:'bg-emerald-600 text-white hover:bg-emerald-700 shadow-md',
+      textMain:'text-gray-900',textMuted:'text-gray-500',textAccent1:'text-violet-600',textAccent2:'text-purple-600',border:'border-gray-200',
+      input:'bg-white border-gray-300 text-gray-900 focus:ring-violet-500',btnPrimary:'bg-violet-600 text-white hover:bg-violet-700 shadow-md',
       btnGhost:'bg-gray-100 text-gray-600 hover:text-gray-900 hover:bg-gray-200 border-gray-200',
-      badge:'bg-emerald-100 text-emerald-700 border-emerald-300',badgeTeal:'bg-teal-100 text-teal-700 border-teal-300',
+      badge:'bg-violet-100 text-violet-700 border-violet-300',badgeTeal:'bg-purple-100 text-purple-700 border-purple-300',
       badgeAmber:'bg-amber-100 text-amber-700 border-amber-300',badgeRed:'bg-rose-100 text-rose-700 border-rose-300'},
   };
   const t=themes[theme]||themes.light;
@@ -239,7 +239,9 @@ export default function ModuleDaily(){
   const [showInv,setShowInv]=useState(true);
   const [fcstOverridePct,setFcstOverridePct]=useState(0);
   const [scenarioSel,setScenarioSel]=useState('actual');
+  const [moneyK,setMoneyK]=useState(true); // columnas $ vienen en miles → PVP ×1000
   const [cmpMode,setCmpMode]=useState(0);
+  const [tblBasis,setTblBasis]=useState('mtd'); // 'mtd' (al día) | 'close' (cierre con fcst)
   const [cmpDayMode,setCmpDayMode]=useState('avg'); // 'avg' | 'seq'
   const [scatterLevel,setScatterLevel]=useState(0);
 
@@ -250,12 +252,13 @@ export default function ModuleDaily(){
     if(d.promoEntries) setPromoEntries(d.promoEntries);
     if(d.manualPromo) setManualPromo(d.manualPromo);
     if(d.defaultUplift!=null) setDefaultUplift(d.defaultUplift);
+    if(d.moneyK!=null) setMoneyK(d.moneyK);
     if(d.dateFrom) setDateFrom(d.dateFrom); if(d.dateTo) setDateTo(d.dateTo);
     if(d.fCanal) setFCanal(d.fCanal); if(d.fDiv) setFDiv(d.fDiv); if(d.fSec) setFSec(d.fSec);
     if(d.fMarca) setFMarca(d.fMarca); if(d.fNorma) setFNorma(d.fNorma); if(d.fPago) setFPago(d.fPago);
   }}catch{} },[]);
-  useEffect(()=>{ try{ localStorage.setItem('gop_daily_v3',JSON.stringify({allData,invData,promoEntries,manualPromo,defaultUplift,dateFrom,dateTo,fCanal,fDiv,fSec,fMarca,fNorma,fPago})); }catch{} },
-    [allData,invData,promoEntries,manualPromo,defaultUplift,dateFrom,dateTo,fCanal,fDiv,fSec,fMarca,fNorma,fPago]);
+  useEffect(()=>{ try{ localStorage.setItem('gop_daily_v3',JSON.stringify({allData,invData,promoEntries,manualPromo,defaultUplift,moneyK,dateFrom,dateTo,fCanal,fDiv,fSec,fMarca,fNorma,fPago})); }catch{} },
+    [allData,invData,promoEntries,manualPromo,defaultUplift,moneyK,dateFrom,dateTo,fCanal,fDiv,fSec,fMarca,fNorma,fPago]);
 
   const decodeBuf=buf=>{ let txt=new TextDecoder('utf-8',{fatal:false}).decode(buf);
     if(txt.includes('\uFFFD')) txt=new TextDecoder('windows-1252').decode(buf); return txt; };
@@ -266,11 +269,15 @@ export default function ModuleDaily(){
   const dimsOk=useCallback(r=>(fCanal==='ALL'||r.canal===fCanal)&&(fDiv==='ALL'||r.division===fDiv)&&(fSec==='ALL'||r.seccion===fSec)&&
     (fMarca==='ALL'||r.marca===fMarca)&&(fNorma==='ALL'||r.norma===fNorma)&&(fPago==='ALL'||r.pago===fPago),
     [fCanal,fDiv,fSec,fMarca,fNorma,fPago]);
+  // Último día con data TY (global, ignora filtro de fecha) → tope para comparación justa
+  const lastTYAll=useMemo(()=>{ const d=allData.filter(r=>r.year===tyYear&&r.fecha).map(r=>r.fecha); return d.length?new Date(Math.max(...d)):null; },[allData,tyYear]);
   const applyFor=useCallback((year)=>{ const shift=iso=>iso?`${year}-${iso.slice(5)}`:'';
     const from=shift(dateFrom),to=shift(dateTo);
+    const cut=lastTYAll?new Date(year,lastTYAll.getMonth(),lastTYAll.getDate(),23,59,59):null;
     return allData.filter(r=>r.year===year&&dimsOk(r)&&
-      (!from||!r.fecha||r.fecha>=new Date(from+'T00:00:00'))&&(!to||!r.fecha||r.fecha<=new Date(to+'T23:59:59')));
-  },[allData,dimsOk,dateFrom,dateTo]);
+      (!from||!r.fecha||r.fecha>=new Date(from+'T00:00:00'))&&(!to||!r.fecha||r.fecha<=new Date(to+'T23:59:59'))&&
+      (!cut||!r.fecha||r.fecha<=cut));
+  },[allData,dimsOk,dateFrom,dateTo,lastTYAll]);
   const applyInvF=useCallback(rows=>rows.filter(r=>(fDiv==='ALL'||r.division===fDiv)&&(fSec==='ALL'||r.seccion===fSec)&&
     (fMarca==='ALL'||r.marca===fMarca)&&(fNorma==='ALL'||r.norma===fNorma)),[fDiv,fSec,fMarca,fNorma]);
 
@@ -345,7 +352,23 @@ export default function ModuleDaily(){
     tyData.forEach(r=>{ if(!r.fecha) return; const k=isoOf(r.fecha); if(!map[k])map[k]={fecha:k,ty:0,ly:null}; map[k].ty+=r.ventaP; });
     lyData.forEach(r=>{ if(!r.fecha) return; const sh=new Date(r.fecha); sh.setFullYear(tyYear); const k=isoOf(sh);
       if(!map[k])map[k]={fecha:k,ty:0,ly:0}; map[k].ly=(map[k].ly||0)+r.ventaP; });
-    return Object.values(map).sort((a,b)=>a.fecha.localeCompare(b.fecha)); },[tyData,lyData,tyYear]);
+    return Object.values(map).sort((a,b)=>a.fecha.localeCompare(b.fecha))
+      .map(d=>({...d,crec:(d.ly!=null&&d.ly!==0)?((d.ty-d.ly)/Math.abs(d.ly))*100:null})); },[tyData,lyData,tyYear]);
+
+  // ── Métricas de tendencia (3 meses / acum / mes actual), LY topado a MTD ──
+  const trendStats=useMemo(()=>{
+    if(!lastDateTY) return null;
+    const month=lastDateTY.getMonth(),diaActual=lastDateTY.getDate();
+    const sum=rows=>rows.reduce((s,r)=>s+r.ventaP,0);
+    // Mes actual MTD
+    const tyMes=sum(tyData.filter(r=>r.fecha&&r.fecha.getMonth()===month&&r.fecha.getFullYear()===tyYear));
+    const lyMes=sum(lyData.filter(r=>r.fecha&&r.fecha.getMonth()===month&&r.fecha.getFullYear()===lyYear&&r.fecha.getDate()<=diaActual));
+    // Últimos 3 meses (mes actual parcial + 2 previos completos)
+    const in3=(r,y)=>{ if(!r.fecha||r.fecha.getFullYear()!==y) return false; const m=r.fecha.getMonth();
+      if(m===month) return r.fecha.getDate()<=diaActual||y===tyYear; return m===month-1||m===month-2; };
+    const ty3=sum(tyData.filter(r=>in3(r,tyYear))), ly3=sum(lyData.filter(r=>in3(r,lyYear)));
+    return { acum:delta(kpiTY.ventaP,kpiLY.ventaP), mes:delta(tyMes,lyMes), tres:delta(ty3,ly3) };
+  },[tyData,lyData,lastDateTY,tyYear,lyYear,kpiTY,kpiLY]);
 
   // ── Heatmap: TODAS las semanas del rango ──
   const heatmap=useMemo(()=>{
@@ -371,17 +394,20 @@ export default function ModuleDaily(){
       tendencia:delta(g.ventaP,lyM[g.key]), fcst:diaActual>0?g.ventaP/diaActual*diasMes:g.ventaP })).sort((a,b)=>b.ventaP-a.ventaP);
   },[tyData,lyData,lastDateTY]);
 
-  // Versión MES CORRIENTE (para tablas marca/sección/goa → cuadra con forecast y resultado)
+  // Versión MES CORRIENTE (para tablas marca/sección/goa). LY topado a MTD para comparación justa.
   const byKeyMonth=useCallback((key)=>{
     if(!lastDateTY) return [];
     const month=lastDateTY.getMonth(),year=lastDateTY.getFullYear();
     const diaActual=lastDateTY.getDate(),diasMes=new Date(year,month+1,0).getDate();
-    const tyM={},lyM={};
+    const tyM={},lyMTD={},lyFull={};
     tyData.forEach(r=>{ if(!r.fecha||r.fecha.getMonth()!==month||r.fecha.getFullYear()!==year) return; const k=r[key]||'N/D';
       if(!tyM[k])tyM[k]={key:k,ventaP:0,ventaU:0,utilidad:0,markdown:0}; tyM[k].ventaP+=r.ventaP; tyM[k].ventaU+=r.ventaU; tyM[k].utilidad+=r.utilidad; tyM[k].markdown+=r.markdown; });
-    lyData.forEach(r=>{ if(!r.fecha||r.fecha.getMonth()!==month||r.fecha.getFullYear()!==lyYear) return; const k=r[key]||'N/D'; lyM[k]=(lyM[k]||0)+r.ventaP; });
-    return Object.values(tyM).map(g=>({ ...g, mgPct:g.ventaP>0?g.utilidad/g.ventaP*100:0,
-      tendencia:delta(g.ventaP,lyM[g.key]), fcst:diaActual>0?g.ventaP/diaActual*diasMes:g.ventaP })).sort((a,b)=>b.ventaP-a.ventaP);
+    lyData.forEach(r=>{ if(!r.fecha||r.fecha.getMonth()!==month||r.fecha.getFullYear()!==lyYear) return; const k=r[key]||'N/D';
+      lyFull[k]=(lyFull[k]||0)+r.ventaP; if(r.fecha.getDate()<=diaActual) lyMTD[k]=(lyMTD[k]||0)+r.ventaP; });
+    return Object.values(tyM).map(g=>{ const fcst=diaActual>0?g.ventaP/diaActual*diasMes:g.ventaP;
+      return { ...g, fcst, mgPct:g.ventaP>0?g.utilidad/g.ventaP*100:0,
+        tendMTD:delta(g.ventaP,lyMTD[g.key]), tendClose:delta(fcst,lyFull[g.key]),
+        lyMTD:lyMTD[g.key]||0, lyFull:lyFull[g.key]||0 }; }).sort((a,b)=>b.ventaP-a.ventaP);
   },[tyData,lyData,lastDateTY,lyYear]);
 
   const byCanal=useMemo(()=>byKeyFcst('canal'),[byKeyFcst]);
@@ -481,13 +507,18 @@ export default function ModuleDaily(){
   // ── Sub-componentes UI ──
   const FilterBar=()=>(
     <div className={`flex flex-wrap gap-2 p-3 rounded-xl border items-center ${t.cardInner}`}>
-      <DateRangePicker from={dateFrom} to={dateTo} onChange={({from,to})=>{setDateFrom(from);setDateTo(to);}} t={t} isDark={isDark}/>
-      {(()=>{ const ref=lastDateTY||new Date(tyYear,0,1); const iso=d=>isoOf(d);
+      <div className="flex items-center gap-1">
+        <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} className={`text-xs px-2 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}/>
+        <span className={`text-xs ${t.textMuted}`}>→</span>
+        <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)} className={`text-xs px-2 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}/>
+      </div>
+      {(()=>{ const ref=lastTYAll||new Date(tyYear,0,1); const iso=d=>isoOf(d);
+        const lastDay=(y,m)=>new Date(y,m+1,0);
         const presets=[
           {l:'7d',f:()=>{const a=new Date(ref);a.setDate(ref.getDate()-6);return[iso(a),iso(ref)];}},
           {l:'30d',f:()=>{const a=new Date(ref);a.setDate(ref.getDate()-29);return[iso(a),iso(ref)];}},
-          {l:'Mes actual',f:()=>[iso(new Date(ref.getFullYear(),ref.getMonth(),1)),iso(ref)]},
-          {l:'Mes pasado',f:()=>[iso(new Date(ref.getFullYear(),ref.getMonth()-1,1)),iso(new Date(ref.getFullYear(),ref.getMonth(),0))]},
+          {l:'Mes actual',f:()=>[iso(new Date(ref.getFullYear(),ref.getMonth(),1)),iso(lastDay(ref.getFullYear(),ref.getMonth()))]},
+          {l:'Mes pasado',f:()=>[iso(new Date(ref.getFullYear(),ref.getMonth()-1,1)),iso(lastDay(ref.getFullYear(),ref.getMonth()-1))]},
           {l:'YTD',f:()=>[iso(new Date(ref.getFullYear(),0,1)),iso(ref)]},
           {l:'Todo',f:()=>['','']},
         ];
@@ -501,7 +532,10 @@ export default function ModuleDaily(){
           {['ALL',...ops].map(o=><option key={o} value={o}>{o==='ALL'?`${label}: Todos`:o}</option>)}
         </select>))}
       <label className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border font-bold cursor-pointer ${t.btnGhost}`}>
-        <input type="checkbox" checked={showInv} onChange={e=>setShowInv(e.target.checked)} className="accent-emerald-500"/> Inventario
+        <input type="checkbox" checked={showInv} onChange={e=>setShowInv(e.target.checked)} className="accent-violet-500"/> Inventario
+      </label>
+      <label className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border font-bold cursor-pointer ${t.btnGhost}`}>
+        <input type="checkbox" checked={moneyK} onChange={e=>setMoneyK(e.target.checked)} className="accent-violet-500"/> $ en miles
       </label>
       {(fCanal!=='ALL'||fDiv!=='ALL'||fSec!=='ALL'||fMarca!=='ALL'||fNorma!=='ALL'||fPago!=='ALL'||dateFrom||dateTo)&&(
         <button onClick={()=>{setFCanal('ALL');setFDiv('ALL');setFSec('ALL');setFMarca('ALL');setFNorma('ALL');setFPago('ALL');setDateFrom('');setDateTo('');}}
@@ -511,12 +545,12 @@ export default function ModuleDaily(){
 
   const KPIStrip=()=>(
     <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
-      {[{label:'Venta TY',val:fmtM(kpiTY.ventaP),d:delta(kpiTY.ventaP,kpiLY.ventaP),c:'text-emerald-400'},
+      {[{label:'Venta TY',val:fmtM(kpiTY.ventaP),d:delta(kpiTY.ventaP,kpiLY.ventaP),c:'text-violet-400'},
         {label:`vs LY (${lyYear})`,val:fmtM(kpiLY.ventaP),d:null,c:t.textMuted},
-        {label:'MG %',val:fmtP(kpiTY.mgPct),d:null,c:kpiTY.mgPct>=45?'text-emerald-400':kpiTY.mgPct>=35?'text-amber-400':'text-red-400'},
-        {label:'Utilidad',val:fmtM(kpiTY.utilidad),d:null,c:'text-teal-400'},
+        {label:'MG %',val:fmtP(kpiTY.mgPct),d:null,c:kpiTY.mgPct>=45?'text-violet-400':kpiTY.mgPct>=35?'text-amber-400':'text-red-400'},
+        {label:'Utilidad',val:fmtM(kpiTY.utilidad),d:null,c:'text-purple-400'},
         {label:'Markdowns',val:fmtM(kpiTY.markdown),d:null,c:'text-amber-400'},
-        {label:'PVP Prom',val:fmtMd(kpiTY.atv),d:null,c:t.textAccent1,sub:'venta/pza'}].map(({label,val,d,c,sub})=>(
+        {label:'PVP Prom',val:fmtMd(kpiTY.atv*(moneyK?1000:1)),d:null,c:t.textAccent1,sub:moneyK?'venta/pza (pesos)':'venta/pza'}].map(({label,val,d,c,sub})=>(
         <div key={label} className={`p-3 rounded-xl border ${t.cardInner}`}>
           <div className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} mb-0.5`}>{label}</div>
           <div className={`text-base font-black ${c}`}>{val}</div>{sub&&<div className={`text-[9px] ${t.textMuted}`}>{sub}</div>}
@@ -527,36 +561,38 @@ export default function ModuleDaily(){
 
   // Tabla con tendencia + fcst (mes corriente) + fila TOTAL
   const FcstTable=({title,data,accent})=>{
-    const tot=data.reduce((a,r)=>({v:a.v+r.ventaP,u:a.u+r.ventaU,util:a.util+r.utilidad,f:a.f+r.fcst}),{v:0,u:0,util:0,f:0});
-    const lyTot=data.reduce((a,r)=>{ const ly=r.tendencia!=null?r.ventaP/(1+r.tendencia/100):r.ventaP; return a+ly; },0);
+    const tot=data.reduce((a,r)=>({v:a.v+r.ventaP,u:a.u+r.ventaU,util:a.util+r.utilidad,f:a.f+r.fcst,lyM:a.lyM+(r.lyMTD||0),lyF:a.lyF+(r.lyFull||0)}),{v:0,u:0,util:0,f:0,lyM:0,lyF:0});
+    const mtd=tblBasis==='mtd';
+    const tendOf=r=>mtd?r.tendMTD:r.tendClose;
+    const totTend=mtd?delta(tot.v,tot.lyM):delta(tot.f,tot.lyF);
     return (
     <div className={`p-4 rounded-xl border ${t.cardInner}`}>
       <div className="flex items-center justify-between mb-3">
         <h4 className={`text-sm font-bold ${t.textMain}`}>{title}</h4>
-        <span className={`text-[8px] px-2 py-0.5 rounded-full border font-black ${t.badge}`}>mes corriente · {data.length} ítems</span>
+        <span className={`text-[8px] px-2 py-0.5 rounded-full border font-black ${t.badge}`}>{data.length} ítems</span>
       </div>
       <div className="overflow-x-auto custom-scrollbar max-h-[260px]">
         <table className="w-full text-left text-xs min-w-max">
           <thead><tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark?'bg-zinc-950 text-gray-400 border-b border-zinc-800':'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
-            {['Nombre','Venta $','PZS','MG%','Tend. vs LY','Fcst Mes'].map(h=><th key={h} className="p-2 whitespace-nowrap">{h}</th>)}
+            {['Nombre','Venta MTD','PZS','MG%',mtd?'Tend MTD':'Tend cierre','Fcst Mes'].map(h=><th key={h} className="p-2 whitespace-nowrap">{h}</th>)}
           </tr></thead>
           <tbody className={`divide-y ${isDark?'divide-zinc-800/50':'divide-gray-100'}`}>
             {data.slice(0,12).map((r,i)=>(
-              <tr key={i} className={`transition-colors ${isDark?'hover:bg-zinc-800/30':'hover:bg-emerald-50/30'}`}>
+              <tr key={i} className={`transition-colors ${isDark?'hover:bg-zinc-800/30':'hover:bg-violet-50/30'}`}>
                 <td className={`p-2 font-bold ${t.textMain} max-w-[110px] truncate`} title={r.key}>{r.key}</td>
-                <td className={`p-2 font-mono ${accent||'text-emerald-400'}`}>{fmtM(r.ventaP)}</td>
+                <td className={`p-2 font-mono ${accent||'text-violet-400'}`}>{fmtM(r.ventaP)}</td>
                 <td className={`p-2 font-mono ${t.textMuted}`}>{fmt(r.ventaU)}</td>
-                <td className={`p-2 font-bold ${r.mgPct>=45?'text-emerald-400':r.mgPct>=35?'text-amber-400':'text-rose-400'}`}>{fmtP(r.mgPct)}</td>
-                <td className="p-2"><DeltaBadge value={r.tendencia}/></td>
+                <td className={`p-2 font-bold ${r.mgPct>=45?'text-violet-400':r.mgPct>=35?'text-amber-400':'text-rose-400'}`}>{fmtP(r.mgPct)}</td>
+                <td className="p-2"><DeltaBadge value={tendOf(r)}/></td>
                 <td className={`p-2 font-mono font-bold ${t.textAccent2}`}>{fmtM(r.fcst)}</td>
               </tr>))}
           </tbody>
-          <tfoot><tr className={`font-black sticky bottom-0 ${isDark?'bg-zinc-900 border-t-2 border-emerald-500/50':'bg-emerald-50 border-t-2 border-emerald-300'}`}>
+          <tfoot><tr className={`font-black sticky bottom-0 ${isDark?'bg-zinc-900 border-t-2 border-violet-500/50':'bg-violet-50 border-t-2 border-violet-300'}`}>
             <td className={`p-2 ${t.textMain}`}>TOTAL</td>
-            <td className={`p-2 font-mono ${accent||'text-emerald-400'}`}>{fmtM(tot.v)}</td>
+            <td className={`p-2 font-mono ${accent||'text-violet-400'}`}>{fmtM(tot.v)}</td>
             <td className={`p-2 font-mono ${t.textMain}`}>{fmt(tot.u)}</td>
-            <td className={`p-2 ${tot.v>0&&tot.util/tot.v*100>=45?'text-emerald-400':'text-amber-400'}`}>{fmtP(tot.v>0?tot.util/tot.v*100:0)}</td>
-            <td className="p-2"><DeltaBadge value={delta(tot.v,lyTot)}/></td>
+            <td className={`p-2 ${tot.v>0&&tot.util/tot.v*100>=45?'text-violet-400':'text-amber-400'}`}>{fmtP(tot.v>0?tot.util/tot.v*100:0)}</td>
+            <td className="p-2"><DeltaBadge value={totTend}/></td>
             <td className={`p-2 font-mono ${t.textAccent2}`}>{fmtM(tot.f)}</td>
           </tr></tfoot>
         </table>
@@ -575,7 +611,7 @@ export default function ModuleDaily(){
         <div className="flex items-start justify-between flex-wrap gap-4">
           <div>
             <h1 className={`text-2xl font-black tracking-tight flex items-center gap-2 ${t.textMain}`}>
-              <span className={`p-2 rounded-xl ${isDark?'bg-emerald-500/20':'bg-emerald-50'}`}><BarIcon size={22} className={t.textAccent1}/></span>
+              <span className={`p-2 rounded-xl ${isDark?'bg-violet-500/20':'bg-violet-50'}`}><BarIcon size={22} className={t.textAccent1}/></span>
               Daily
             </h1>
             <p className={`text-xs mt-1 ml-10 ${t.textMuted}`}>Desempeño diario · Venta, margen e inventario · {tyYear} vs {lyYear}</p>
@@ -606,7 +642,7 @@ export default function ModuleDaily(){
           <FilterBar/>
           <KPIStrip/>
           <p className={`text-[10px] -mt-2 ${t.textMuted}`}>
-            Comparando <strong className={t.textAccent1}>{dateFrom?fmtDate(new Date(dateFrom)):'inicio'} → {dateTo?fmtDate(new Date(dateTo)):'hoy'}</strong> de {tyYear} contra el mismo rango de {lyYear}. Sin filtro de fecha = todo lo cargado de cada año.
+            TY hasta <strong className={t.textAccent1}>{lastTYAll?fmtDate(lastTYAll):'—'}</strong> (último día con data) vs LY topado al mismo día. Así la desv% es justa (no compara año parcial contra año completo).
           </p>
 
           {/* SEMÁFOROS mejorados */}
@@ -620,8 +656,8 @@ export default function ModuleDaily(){
                 {label:'Sell Through',val:invKPI.st,txt:invKPI.st!=null?fmtP(invKPI.st):'Sin inv',target:'≥ 60%',ok:invKPI.st!=null?invKPI.st>=60:null,warn:invKPI.st!=null?invKPI.st>=45:null},
                 {label:'Cobertura',val:invKPI.cob,txt:invKPI.cob!=null?`${invKPI.cob.toFixed(0)} d`:'Sin inv',target:'< 60 d',ok:invKPI.cob!=null?invKPI.cob<=60:null,warn:invKPI.cob!=null?invKPI.cob<=90:null},
               ].map(({label,txt,target,ok,warn})=>{
-                const color=ok===true?'emerald':ok===false&&warn?'amber':ok==null?'gray':'red';
-                const cmap={emerald:{t:'text-emerald-400',b:'bg-emerald-500',bd:isDark?'border-emerald-500/40':'border-emerald-300'},
+                const color=ok===true?'violet':ok===false&&warn?'amber':ok==null?'gray':'red';
+                const cmap={violet:{t:'text-violet-400',b:'bg-violet-500',bd:isDark?'border-violet-500/40':'border-violet-300'},
                   amber:{t:'text-amber-400',b:'bg-amber-400',bd:isDark?'border-amber-500/40':'border-amber-300'},
                   red:{t:'text-red-400',b:'bg-red-500',bd:isDark?'border-red-500/40':'border-red-300'},
                   gray:{t:t.textMuted,b:'bg-gray-400',bd:t.border}}[color];
@@ -665,7 +701,7 @@ export default function ModuleDaily(){
                     <YAxis tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
                     <Tooltip content={<TTip/>}/><Legend wrapperStyle={{fontSize:10}}/>
                     <Bar dataKey="ly" name={`LY ${lyYear}`} fill={isDark?'#71717a':'#94a3b8'} radius={[4,4,0,0]}/>
-                    <Bar dataKey="ty" name={`TY ${tyYear}`} fill="#10b981" radius={[4,4,0,0]}/>
+                    <Bar dataKey="ty" name={`TY ${tyYear}`} fill="#8b5cf6" radius={[4,4,0,0]}/>
                   </BarChart>
                 </ResponsiveContainer>
               </>):(<>
@@ -676,7 +712,7 @@ export default function ModuleDaily(){
                     <YAxis tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
                     <Tooltip content={<TTip/>}/><Legend wrapperStyle={{fontSize:10}}/>
                     <Line type="monotone" dataKey="ly" name={`LY ${lyYear}`} stroke={isDark?'#a1a1aa':'#94a3b8'} dot={false} strokeWidth={1.5} strokeDasharray="4 2"/>
-                    <Line type="monotone" dataKey="ty" name={`TY ${tyYear}`} stroke="#10b981" dot={false} strokeWidth={2.5} activeDot={{r:4}}/>
+                    <Line type="monotone" dataKey="ty" name={`TY ${tyYear}`} stroke="#8b5cf6" dot={false} strokeWidth={2.5} activeDot={{r:4}}/>
                   </LineChart>
                 </ResponsiveContainer>
               </>)}
@@ -690,7 +726,7 @@ export default function ModuleDaily(){
                   <YAxis tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
                   <Tooltip content={<TTip/>}/><Legend wrapperStyle={{fontSize:10}}/>
                   <Line type="monotone" dataKey="ly" name={`LY ${lyYear}`} stroke={axisC} dot={false} strokeWidth={1.5} strokeDasharray="4 2"/>
-                  <Line type="monotone" dataKey="ty" name={`TY ${tyYear}`} stroke="#10b981" dot={{r:2}} strokeWidth={2}/>
+                  <Line type="monotone" dataKey="ty" name={`TY ${tyYear}`} stroke="#8b5cf6" dot={{r:2}} strokeWidth={2}/>
                 </LineChart>
               </ResponsiveContainer>
               {cmpDayMonth.warnings.length>0&&(
@@ -706,10 +742,10 @@ export default function ModuleDaily(){
                 <EmptyState icon={null} t={t} title="Sin días de promo marcados" sub="Marca días en el Promo Calendar abajo o carga el CSV de promos."/>
               ):(
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                  {[{l:`Venta Promo TY (${cmpPromo.tyN}d)`,v:fmtM(cmpPromo.tySum),c:'text-emerald-400'},
+                  {[{l:`Venta Promo TY (${cmpPromo.tyN}d)`,v:fmtM(cmpPromo.tySum),c:'text-violet-400'},
                     {l:`Venta Promo LY (${cmpPromo.lyN}d)`,v:fmtM(cmpPromo.lySum),c:t.textMuted},
-                    {l:'Avg/día Promo TY',v:fmtM(cmpPromo.avgTY),c:'text-teal-400'},
-                    {l:'Δ vs LY',v:cmpPromo.delta!=null?fmtP(cmpPromo.delta):'N/D',c:(cmpPromo.delta||0)>=0?'text-emerald-400':'text-red-400'}].map(({l,v,c})=>(
+                    {l:'Avg/día Promo TY',v:fmtM(cmpPromo.avgTY),c:'text-purple-400'},
+                    {l:'Δ vs LY',v:cmpPromo.delta!=null?fmtP(cmpPromo.delta):'N/D',c:(cmpPromo.delta||0)>=0?'text-violet-400':'text-red-400'}].map(({l,v,c})=>(
                     <div key={l} className={`p-3 rounded-xl border ${t.cardInner}`}><div className={`text-[9px] uppercase font-black ${t.textMuted}`}>{l}</div><div className={`text-base font-black ${c}`}>{v}</div></div>))}
                 </div>)}
               {cmpPromo.perDay.length>0&&(
@@ -717,7 +753,7 @@ export default function ModuleDaily(){
                   <BarChart data={cmpPromo.perDay}><CartesianGrid strokeDasharray="3 3" stroke={gridC}/>
                     <XAxis dataKey="label" tick={{fontSize:9,fill:txtC}} stroke={axisC}/>
                     <YAxis tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
-                    <Tooltip content={<TTip/>}/><Bar dataKey="ty" name="Venta promo" fill="#10b981" radius={[4,4,0,0]}/>
+                    <Tooltip content={<TTip/>}/><Bar dataKey="ty" name="Venta promo" fill="#8b5cf6" radius={[4,4,0,0]}/>
                   </BarChart>
                 </ResponsiveContainer>)}
             </>)}
@@ -742,37 +778,58 @@ export default function ModuleDaily(){
           {/* TENDENCIA */}
           {serieDiaria.length>1&&(
             <div className={`p-4 rounded-2xl border ${t.card}`}>
-              <h4 className={`text-sm font-bold mb-4 ${t.textMain}`}>📈 Tendencia Diaria TY vs LY</h4>
+              <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                <h4 className={`text-sm font-bold ${t.textMain}`}>📈 Tendencia Diaria TY vs LY</h4>
+                {trendStats&&(
+                  <div className="flex gap-2 flex-wrap">
+                    {[{l:'Últ. 3 meses',v:trendStats.tres},{l:'Mes actual',v:trendStats.mes},{l:'Acumulado',v:trendStats.acum}].map(({l,v})=>(
+                      <div key={l} className={`px-3 py-1.5 rounded-xl border ${t.cardInner}`}>
+                        <span className={`text-[8px] font-black uppercase tracking-widest ${t.textMuted} block`}>{l}</span>
+                        <span className={`text-sm font-black ${v==null?t.textMuted:v>=0?'text-violet-400':'text-rose-400'}`}>{v==null?'N/D':`${v>=0?'▲':'▼'} ${Math.abs(v).toFixed(1)}%`}</span>
+                      </div>))}
+                  </div>)}
+              </div>
               <ResponsiveContainer width="100%" height={230}>
                 <LineChart data={serieDiaria}><CartesianGrid strokeDasharray="3 3" stroke={gridC}/>
                   <XAxis dataKey="fecha" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>v?.slice(5)}/>
                   <YAxis tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
-                  <Tooltip content={<TTip/>}/><Legend wrapperStyle={{fontSize:10}}/>
-                  {lyData.length>0&&<Line type="monotone" dataKey="ly" name={`LY ${lyYear}`} stroke={axisC} dot={false} strokeWidth={1.5} strokeDasharray="4 2"/>}
-                  <Line type="monotone" dataKey="ty" name={`TY ${tyYear}`} stroke="#10b981" dot={false} strokeWidth={2.5} activeDot={{r:4}}/>
+                  <Tooltip content={({active,payload,label})=>{ if(!active||!payload?.length) return null; const d=payload[0]?.payload;
+                    return <div className={`p-3 rounded-xl border text-xs shadow-xl ${t.card}`}>
+                      <p className={`font-bold mb-1 ${t.textMain}`}>{label}</p>
+                      <p style={{color:'#8b5cf6'}}>TY: {fmtM(d?.ty)}</p>
+                      {d?.ly!=null&&<p className={t.textMuted}>LY: {fmtM(d?.ly)}</p>}
+                      {d?.crec!=null&&<p className={`font-black ${d.crec>=0?'text-violet-400':'text-rose-400'}`}>Crec: {d.crec>=0?'+':''}{d.crec.toFixed(1)}%</p>}
+                    </div>; }}/>
+                  <Legend wrapperStyle={{fontSize:10}}/>
+                  {lyData.length>0&&<Line type="monotone" dataKey="ly" name={`LY ${lyYear}`} stroke={isDark?'#a1a1aa':'#94a3b8'} dot={false} strokeWidth={1.5} strokeDasharray="4 2"/>}
+                  <Line type="monotone" dataKey="ty" name={`TY ${tyYear}`} stroke="#8b5cf6" dot={false} strokeWidth={2.5} activeDot={{r:4}}/>
                 </LineChart>
               </ResponsiveContainer>
             </div>)}
 
-          {/* BARRAS canal + division */}
+          {/* BARRAS canal + division con crecimiento inline */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {[{title:'Por Canal',data:byCanal,fill:'#10b981'},{title:'Por División',data:byDiv,fill:'#14b8a6'}].map(({title,data,fill})=>(
+            {[{title:'Por Canal',data:byCanal,color:'bg-violet-500'},{title:'Por División',data:byDiv,color:'bg-purple-500'}].map(({title,data,color})=>{
+              const mx=data[0]?.ventaP||1;
+              return (
               <div key={title} className={`p-4 rounded-2xl border ${t.card}`}>
                 <h4 className={`text-sm font-bold mb-4 ${t.textMain}`}>{title}</h4>
-                <ResponsiveContainer width="100%" height={180}>
-                  <BarChart data={data.slice(0,6)} layout="vertical" margin={{top:0,right:10,left:0,bottom:0}}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={gridC} horizontal={false}/>
-                    <XAxis type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
-                    <YAxis type="category" dataKey="key" tick={{fontSize:9,fill:txtC}} stroke={axisC} width={80}/>
-                    <Tooltip content={<TTip/>}/><Bar dataKey="ventaP" name="Venta $" fill={fill} radius={[0,4,4,0]}/>
-                  </BarChart>
-                </ResponsiveContainer>
-              </div>))}
+                <div className="space-y-2.5">
+                  {data.slice(0,7).map(d=>(
+                    <div key={d.key}>
+                      <div className="flex justify-between items-center mb-0.5">
+                        <span className={`text-xs font-bold ${t.textMain} truncate max-w-[140px]`} title={d.key}>{d.key}</span>
+                        <div className="flex items-center gap-2"><DeltaBadge value={d.tendencia}/><span className="text-xs font-mono text-violet-400">{fmtM(d.ventaP)}</span></div>
+                      </div>
+                      <MiniBar value={d.ventaP} max={mx} color={color} isDark={isDark}/>
+                    </div>))}
+                </div>
+              </div>); })}
           </div>
 
           {/* PAGO + NORMA */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {[{title:'Tipo de Pago',data:byPago,colors:['bg-emerald-500','bg-teal-500','bg-blue-500','bg-purple-500']},
+            {[{title:'Tipo de Pago',data:byPago,colors:['bg-violet-500','bg-purple-500','bg-blue-500','bg-purple-500']},
               {title:'Norma de Compra',data:byNorma,colors:['bg-amber-500','bg-orange-500','bg-yellow-500']}].map(({title,data,colors})=>(
               <div key={title} className={`p-4 rounded-2xl border ${t.card}`}>
                 <h4 className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} mb-3`}>{title}</h4>
@@ -780,8 +837,8 @@ export default function ModuleDaily(){
                   {data.map((p,i)=>{ const mx=data[0]?.ventaP||1; return (
                     <div key={p.key}>
                       <div className="flex justify-between mb-0.5"><span className={`text-xs font-bold ${t.textMain}`}>{p.key}</span>
-                        <div className="flex items-center gap-2"><span className={`text-[9px] ${t.textMuted}`}>{fmtP(kpiTY.ventaP>0?p.ventaP/kpiTY.ventaP*100:0)}</span>
-                          <span className="text-xs font-mono text-emerald-400">{fmtM(p.ventaP)}</span></div></div>
+                        <div className="flex items-center gap-2"><DeltaBadge value={p.tendencia}/><span className={`text-[9px] ${t.textMuted}`}>{fmtP(kpiTY.ventaP>0?p.ventaP/kpiTY.ventaP*100:0)}</span>
+                          <span className="text-xs font-mono text-violet-400">{fmtM(p.ventaP)}</span></div></div>
                       <MiniBar value={p.ventaP} max={mx} color={colors[i%colors.length]} isDark={isDark}/>
                     </div>); })}
                 </div>
@@ -801,7 +858,7 @@ export default function ModuleDaily(){
                       <div className={`text-[9px] font-black ${t.textMuted} flex items-center`}>{d}</div>
                       {heatmap.weeks.map(w=>{ const v=heatmap.cells[`${di}-${w.idx}`]; const it=v?v/heatmap.max:0;
                         return <div key={w.idx} title={v?fmtM(v):''} className="h-7 rounded-md flex items-center justify-center text-[8px] font-bold"
-                          style={{background:v?`rgba(16,185,129,${0.22+it*0.78})`:(isDark?'rgba(39,39,42,0.4)':'rgba(243,244,246,0.7)'),color:it>0.35?'white':(isDark?'#71717a':'#9ca3af')}}>
+                          style={{background:v?`rgba(139,92,246,${0.22+it*0.78})`:(isDark?'rgba(39,39,42,0.4)':'rgba(243,244,246,0.7)'),color:it>0.35?'white':(isDark?'#71717a':'#9ca3af')}}>
                           {v?(v/1000).toFixed(0):'·'}</div>; })}
                     </React.Fragment>))}
                 </div>
@@ -821,8 +878,8 @@ export default function ModuleDaily(){
               <div className="flex items-center gap-3 flex-wrap">
                 <div className="flex items-center gap-2">
                   <span className={`text-[9px] font-black uppercase ${t.textMuted}`}>Uplift default</span>
-                  <input type="range" min={5} max={50} value={defaultUplift} onChange={e=>setDefaultUplift(Number(e.target.value))} className="w-24 accent-emerald-500"/>
-                  <span className="text-xs font-black text-emerald-400 w-10">+{defaultUplift}%</span>
+                  <input type="range" min={5} max={50} value={defaultUplift} onChange={e=>setDefaultUplift(Number(e.target.value))} className="w-24 accent-violet-500"/>
+                  <span className="text-xs font-black text-violet-400 w-10">+{defaultUplift}%</span>
                 </div>
                 {manualPromo.length>0&&<button onClick={()=>setManualPromo([])} className={`text-[10px] px-3 py-1 rounded-lg border font-bold ${t.btnGhost}`}>Limpiar marcados</button>}
               </div>
@@ -832,7 +889,7 @@ export default function ModuleDaily(){
               for(let d=1;d<=days;d++){ const date=new Date(year,month,d); const iso=isoOf(date); const promo=isPromoDate(iso);
                 const hol=holidayName(date); const we=isWeekend(date);
                 cells.push(<button key={iso} onClick={()=>togglePromo(iso)} title={hol||''}
-                  className={`relative h-12 rounded-lg flex flex-col items-center justify-center text-[10px] font-bold border transition-all ${promo?'bg-emerald-500 text-white border-emerald-400':(isDark?`bg-zinc-900 border-zinc-700 ${we?'text-amber-400':'text-gray-300'} hover:border-emerald-500`:`bg-white border-gray-200 ${we?'text-amber-600':'text-gray-700'} hover:border-emerald-400`)}`}>
+                  className={`relative h-12 rounded-lg flex flex-col items-center justify-center text-[10px] font-bold border transition-all ${promo?'bg-violet-500 text-white border-violet-400':(isDark?`bg-zinc-900 border-zinc-700 ${we?'text-amber-400':'text-gray-300'} hover:border-violet-500`:`bg-white border-gray-200 ${we?'text-amber-600':'text-gray-700'} hover:border-violet-400`)}`}>
                   <span>{d}</span>{hol&&<span className="absolute top-0.5 right-0.5 text-[7px]">🎉</span>}
                   {promo&&<span className="text-[7px]">promo</span>}
                 </button>); }
@@ -852,23 +909,23 @@ export default function ModuleDaily(){
                   <span className={`text-[9px] ${t.textMuted}`}>Día {forecastMes.diaActual}/{forecastMes.diasMes} · run rate {fmtM(forecastMes.runRate)}/d · {forecastMes.promoDaysAhead} días promo restantes{forecastMes.lyMesTotal>0&&` · crec LY ${fmtP(forecastMes.crecLY*100)}`}</span>
                   <div className="flex items-center gap-2">
                     <span className={`text-[9px] font-black uppercase ${t.textMuted}`}>Override</span>
-                    <input type="range" min={-30} max={30} value={fcstOverridePct} onChange={e=>setFcstOverridePct(Number(e.target.value))} className="w-20 accent-emerald-500"/>
-                    <span className={`text-xs font-black w-10 ${fcstOverridePct>0?'text-emerald-400':fcstOverridePct<0?'text-red-400':t.textMuted}`}>{fcstOverridePct>0?'+':''}{fcstOverridePct}%</span>
+                    <input type="range" min={-30} max={30} value={fcstOverridePct} onChange={e=>setFcstOverridePct(Number(e.target.value))} className="w-20 accent-violet-500"/>
+                    <span className={`text-xs font-black w-10 ${fcstOverridePct>0?'text-violet-400':fcstOverridePct<0?'text-red-400':t.textMuted}`}>{fcstOverridePct>0?'+':''}{fcstOverridePct}%</span>
                   </div>
                 </div>
               </div>
               <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                 {[{key:'cons',label:'Conservador',icon:'🛡️',color:'text-blue-400',bar:'bg-blue-400'},
-                  {key:'neut',label:'Neutral',icon:'⚖️',color:'text-emerald-400',bar:'bg-emerald-400'},
+                  {key:'neut',label:'Neutral',icon:'⚖️',color:'text-violet-400',bar:'bg-violet-400'},
                   {key:'risk',label:'Arriesgado',icon:'🚀',color:'text-amber-400',bar:'bg-amber-400'}].map(({key,label,icon,color,bar})=>{
                   const s=forecastMes[key]; const sel=scenarioSel===key;
                   return (
                     <button key={key} onClick={()=>setScenarioSel(sel?'actual':key)}
-                      className={`text-left p-4 rounded-xl border transition-all ${sel?'border-emerald-500 ring-1 ring-emerald-500':(isDark?'bg-zinc-900 border-zinc-700':'bg-white border-gray-200')}`}>
+                      className={`text-left p-4 rounded-xl border transition-all ${sel?'border-violet-500 ring-1 ring-violet-500':(isDark?'bg-zinc-900 border-zinc-700':'bg-white border-gray-200')}`}>
                       <div className="flex items-center justify-between mb-2"><span className="flex items-center gap-2"><span>{icon}</span><span className={`text-xs font-black uppercase ${color}`}>{label}</span></span>{sel&&<span className={`text-[8px] px-2 py-0.5 rounded-full border font-black ${t.badge}`}>activo</span>}</div>
                       <div className={`text-2xl font-black ${color}`}>{fmtM(s.ventaP)}</div>
                       <div className={`text-[10px] ${t.textMuted} mt-0.5`}>{fmt(s.ventaU)} pzs · MG {fmtP(s.ventaP>0?s.mg/s.ventaP*100:0)}</div>
-                      {forecastMes.lyMesTotal>0&&<div className={`text-[10px] mt-1 font-bold ${delta(s.ventaP,forecastMes.lyMesTotal)>=0?'text-emerald-400':'text-red-400'}`}>{delta(s.ventaP,forecastMes.lyMesTotal)>=0?'▲':'▼'} {Math.abs(delta(s.ventaP,forecastMes.lyMesTotal)).toFixed(1)}% vs LY mes</div>}
+                      {forecastMes.lyMesTotal>0&&<div className={`text-[10px] mt-1 font-bold ${delta(s.ventaP,forecastMes.lyMesTotal)>=0?'text-violet-400':'text-red-400'}`}>{delta(s.ventaP,forecastMes.lyMesTotal)>=0?'▲':'▼'} {Math.abs(delta(s.ventaP,forecastMes.lyMesTotal)).toFixed(1)}% vs LY mes</div>}
                       <div className="mt-3"><MiniBar value={s.ventaP} max={forecastMes.risk.ventaP*1.1} color={bar} isDark={isDark}/></div>
                     </button>); })}
               </div>
@@ -887,11 +944,11 @@ export default function ModuleDaily(){
                 </div>
                 {r?(
                   <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
-                    {[{label:'Venta',val:fmtM(r.venta),c:'text-emerald-400'},
+                    {[{label:'Venta',val:fmtM(r.venta),c:'text-violet-400'},
                       {label:'Costo Vendido',val:fmtM(r.costo),c:'text-rose-400'},
-                      {label:'Utilidad',val:fmtM(r.util),c:'text-teal-400'},
+                      {label:'Utilidad',val:fmtM(r.util),c:'text-purple-400'},
                       {label:'Markdowns',val:fmtM(r.markdown),c:'text-amber-400'},
-                      {label:'MG % Final',val:fmtP(r.mgFinal),c:r.mgFinal>=45?'text-emerald-400':r.mgFinal>=35?'text-amber-400':'text-rose-400'}].map(({label,val,c})=>(
+                      {label:'MG % Final',val:fmtP(r.mgFinal),c:r.mgFinal>=45?'text-violet-400':r.mgFinal>=35?'text-amber-400':'text-rose-400'}].map(({label,val,c})=>(
                       <div key={label} className={`p-3 rounded-lg border ${isDark?'border-zinc-800 bg-zinc-950':'border-gray-100 bg-gray-50'}`}>
                         <div className={`text-[9px] uppercase font-black ${t.textMuted}`}>{label}</div><div className={`text-base font-black ${c}`}>{val}</div>
                       </div>))}
@@ -902,9 +959,17 @@ export default function ModuleDaily(){
           </div>
 
           {/* TABLAS con tendencia + fcst */}
+          <div className="flex items-center justify-between flex-wrap gap-2">
+            <h3 className={`text-sm font-bold ${t.textMain}`}>Detalle por segmento — mes corriente</h3>
+            <div className="flex items-center gap-1">
+              <span className={`text-[10px] ${t.textMuted}`}>Tendencia:</span>
+              {[['mtd','Al día (MTD)'],['close','Cierre c/ fcst']].map(([v,l])=>(
+                <button key={v} onClick={()=>setTblBasis(v)} className={`text-[10px] px-3 py-1 rounded-full border font-black transition-all ${tblBasis===v?t.badge:t.btnGhost}`}>{l}</button>))}
+            </div>
+          </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <FcstTable title="Top Marcas" data={byMarca}/>
-            <FcstTable title="Por Sección" data={bySecMes} accent="text-teal-400"/>
+            <FcstTable title="Por Sección" data={bySecMes} accent="text-purple-400"/>
           </div>
           <FcstTable title="Top GOA" data={byGoa} accent="text-blue-400"/>
 
@@ -915,10 +980,10 @@ export default function ModuleDaily(){
                 <div className={`p-4 rounded-2xl border ${t.card}`}>
                   <h3 className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} mb-3`}>Inventario Actual</h3>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-                    {[{label:'On Hand (OH)',val:fmt(invKPI.oh),sub:'disponibles',c:'text-emerald-400'},
-                      {label:'On Order (OO)',val:fmt(invKPI.oo),sub:'en tránsito',c:'text-teal-400'},
+                    {[{label:'On Hand (OH)',val:fmt(invKPI.oh),sub:'disponibles',c:'text-violet-400'},
+                      {label:'On Order (OO)',val:fmt(invKPI.oo),sub:'en tránsito',c:'text-purple-400'},
                       {label:'Total',val:fmt(invKPI.total),sub:'OH+OO',c:t.textAccent1},
-                      {label:'Sell Through',val:invKPI.st!=null?fmtP(invKPI.st):'N/D',sub:'pzs vend/(OH+vend)',c:invKPI.st==null?t.textMuted:invKPI.st>=60?'text-emerald-400':invKPI.st>=40?'text-amber-400':'text-rose-400'}].map(({label,val,sub,c})=>(
+                      {label:'Sell Through',val:invKPI.st!=null?fmtP(invKPI.st):'N/D',sub:'pzs vend/(OH+vend)',c:invKPI.st==null?t.textMuted:invKPI.st>=60?'text-violet-400':invKPI.st>=40?'text-amber-400':'text-rose-400'}].map(({label,val,sub,c})=>(
                       <div key={label} className={`p-4 rounded-xl border ${t.cardInner}`}><div className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} mb-1`}>{label}</div><div className={`text-xl font-black ${c}`}>{val}</div><div className={`text-[9px] ${t.textMuted}`}>{sub}</div></div>))}
                   </div>
                   {/* Por tipo ubicación */}
@@ -926,8 +991,8 @@ export default function ModuleDaily(){
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
                     {['LOGISTICO','BODEGA','PLAN','TIENDA'].map(tipo=>{ const rows=filtInv.filter(r=>r.tipo===tipo);
                       const oh=rows.reduce((s,r)=>s+r.oh,0),oo=rows.reduce((s,r)=>s+r.oo,0),n=new Set(rows.map(r=>r.ubicacion)).size;
-                      const col={LOGISTICO:'text-blue-400',BODEGA:'text-purple-400',PLAN:'text-amber-400',TIENDA:'text-emerald-400'}[tipo];
-                      const barc={LOGISTICO:'bg-blue-400',BODEGA:'bg-purple-400',PLAN:'bg-amber-400',TIENDA:'bg-emerald-400'}[tipo];
+                      const col={LOGISTICO:'text-blue-400',BODEGA:'text-purple-400',PLAN:'text-amber-400',TIENDA:'text-violet-400'}[tipo];
+                      const barc={LOGISTICO:'bg-blue-400',BODEGA:'bg-purple-400',PLAN:'bg-amber-400',TIENDA:'bg-violet-400'}[tipo];
                       return (<div key={tipo} className={`p-4 rounded-xl border ${isDark?'bg-zinc-900 border-zinc-700':'bg-white border-gray-200'}`}>
                         <div className="flex items-center justify-between mb-2"><span className={`text-[9px] font-black uppercase ${col}`}>{tipo}</span>{n>0&&<span className={`text-[9px] px-2 py-0.5 rounded-full border font-black ${t.badge}`}>{n} ub.</span>}</div>
                         <div className={`text-xl font-black ${col}`}>{fmt(oh)}</div><div className={`text-[9px] ${t.textMuted}`}>OH · {fmt(oo)} OO</div>
@@ -937,8 +1002,8 @@ export default function ModuleDaily(){
                   {/* Detalle ubicaciones */}
                   {(()=>{ const u={}; filtInv.forEach(r=>{ if(!u[r.ubicacion])u[r.ubicacion]={ubicacion:r.ubicacion,tipo:r.tipo,oh:0,oo:0}; u[r.ubicacion].oh+=r.oh; u[r.ubicacion].oo+=r.oo; });
                     const sorted=Object.values(u).sort((a,b)=>b.oh-a.oh); const mx=sorted[0]?.oh||1; if(!sorted.length) return null;
-                    const tc={LOGISTICO:'bg-blue-400',BODEGA:'bg-purple-400',PLAN:'bg-amber-400',TIENDA:'bg-emerald-500'};
-                    const txc={LOGISTICO:'text-blue-400',BODEGA:'text-purple-400',PLAN:'text-amber-400',TIENDA:'text-emerald-400'};
+                    const tc={LOGISTICO:'bg-blue-400',BODEGA:'bg-purple-400',PLAN:'bg-amber-400',TIENDA:'bg-violet-500'};
+                    const txc={LOGISTICO:'text-blue-400',BODEGA:'text-purple-400',PLAN:'text-amber-400',TIENDA:'text-violet-400'};
                     return <div className="space-y-2"><h5 className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} mb-2`}>Detalle por Ubicación</h5>
                       {sorted.map(x=>(<div key={x.ubicacion} className="flex items-center gap-3">
                         <span className={`w-32 truncate text-[10px] font-bold text-right ${t.textMain}`} title={x.ubicacion}>{x.ubicacion}</span>
@@ -955,9 +1020,9 @@ export default function ModuleDaily(){
                     <h3 className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} mb-3`}>Compras</h3>
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                       {[{label:'Comprado Total',val:fmtM(invKPI.comprado),c:'text-blue-400'},
-                        {label:'Nacional',val:fmtM(invKPI.nacional),sub:fmtP(invKPI.nacional/invKPI.comprado*100),c:'text-emerald-400'},
+                        {label:'Nacional',val:fmtM(invKPI.nacional),sub:fmtP(invKPI.nacional/invKPI.comprado*100),c:'text-violet-400'},
                         {label:'Importación',val:fmtM(invKPI.importacion),sub:fmtP(invKPI.importacion/invKPI.comprado*100),c:'text-purple-400'},
-                        {label:'Cobertura',val:invKPI.cob>0?`${invKPI.cob.toFixed(0)} días`:'N/D',sub:'OH/run rate',c:invKPI.cob>60?'text-red-400':invKPI.cob>30?'text-amber-400':'text-emerald-400'}].map(({label,val,sub,c})=>(
+                        {label:'Cobertura',val:invKPI.cob>0?`${invKPI.cob.toFixed(0)} días`:'N/D',sub:'OH/run rate',c:invKPI.cob>60?'text-red-400':invKPI.cob>30?'text-amber-400':'text-violet-400'}].map(({label,val,sub,c})=>(
                         <div key={label} className={`p-4 rounded-xl border ${t.cardInner}`}><div className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} mb-1`}>{label}</div><div className={`text-xl font-black ${c}`}>{val}</div>{sub&&<div className={`text-[9px] ${t.textMuted}`}>{sub}</div>}</div>))}
                     </div>
                   </div>)}
@@ -979,8 +1044,8 @@ export default function ModuleDaily(){
                         <XAxis dataKey="x" name="Venta $" type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'} label={{value:'Venta $',position:'insideBottom',offset:-10,fontSize:10,fill:txtC}}/>
                         <YAxis dataKey="y" name="OH+OO" type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>fmt(v)} label={{value:'OH+OO',angle:-90,position:'insideLeft',fontSize:10,fill:txtC}}/>
                         <Tooltip content={({active,payload})=>{ if(!active||!payload?.length) return null; const d=payload[0]?.payload;
-                          return <div className={`p-3 rounded-xl border text-xs shadow-xl ${t.card}`}><p className={`font-bold mb-1 ${t.textMain}`}>{d?.name}</p><p className="text-emerald-400">Venta: {fmtM(d?.x)}</p><p className="text-teal-400">OH+OO: {fmt(d?.y)}</p></div>; }}/>
-                        <Scatter data={scatterData} fill="#10b981" fillOpacity={0.75}/>
+                          return <div className={`p-3 rounded-xl border text-xs shadow-xl ${t.card}`}><p className={`font-bold mb-1 ${t.textMain}`}>{d?.name}</p><p className="text-violet-400">Venta: {fmtM(d?.x)}</p><p className="text-purple-400">OH+OO: {fmt(d?.y)}</p></div>; }}/>
+                        <Scatter data={scatterData} fill="#8b5cf6" fillOpacity={0.75}/>
                         {scatterReg&&(()=>{ const xs=scatterData.map(d=>d.x); const xn=Math.min(...xs),xx=Math.max(...xs);
                           return <Scatter data={[{x:xn,y:scatterReg.slope*xn+scatterReg.intercept},{x:xx,y:scatterReg.slope*xx+scatterReg.intercept}]} fill="none" line={{stroke:'#f59e0b',strokeWidth:2,strokeDasharray:'6 3'}} shape={()=>null} legendType="none"/>; })()}
                       </ScatterChart>
@@ -995,15 +1060,15 @@ export default function ModuleDaily(){
                     <div className="space-y-2">{byDiv.map((d,i)=>{ const inv=filtInv.filter(r=>r.division===d.key); const oh=inv.reduce((s,r)=>s+r.oh,0);
                       const st=(oh+d.ventaU)>0?d.ventaU/(oh+d.ventaU)*100:null; return (
                       <div key={i}><div className="flex justify-between mb-0.5"><span className={`text-[10px] font-bold ${t.textMain}`}>{d.key}</span>
-                        <span className={`text-[10px] font-black ${st!=null?(st>=60?'text-emerald-400':st>=40?'text-amber-400':'text-red-400'):t.textMuted}`}>{st!=null?fmtP(st):'N/D'}</span></div>
-                        {st!=null&&<MiniBar value={st} max={100} color={st>=60?'bg-emerald-500':st>=40?'bg-amber-400':'bg-red-400'} isDark={isDark}/>}</div>); })}</div>
+                        <span className={`text-[10px] font-black ${st!=null?(st>=60?'text-violet-400':st>=40?'text-amber-400':'text-red-400'):t.textMuted}`}>{st!=null?fmtP(st):'N/D'}</span></div>
+                        {st!=null&&<MiniBar value={st} max={100} color={st>=60?'bg-violet-500':st>=40?'bg-amber-400':'bg-red-400'} isDark={isDark}/>}</div>); })}</div>
                   </div>
                   <div className={`p-4 rounded-2xl border ${t.card}`}>
                     <h4 className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} mb-3`}>Cobertura por División (semanas)</h4>
                     <div className="space-y-2">{byDiv.map((d,i)=>{ const inv=filtInv.filter(r=>r.division===d.key); const oh=inv.reduce((s,r)=>s+r.oh,0);
                       const dias=lastDateTY?lastDateTY.getDate():30; const rr=d.ventaU/(dias||1); const cob=rr>0?oh/rr:null; const sem=cob!=null?(cob/7).toFixed(1):null;
                       return <div key={i} className="flex items-center justify-between"><span className={`text-[10px] font-bold ${t.textMain} truncate max-w-[120px]`}>{d.key}</span>
-                        <span className={`text-[10px] font-black ${sem!=null?(parseFloat(sem)>12?'text-red-400':parseFloat(sem)>8?'text-amber-400':'text-emerald-400'):t.textMuted}`}>{sem!=null?`${sem} sem`:'N/D'}</span></div>; })}</div>
+                        <span className={`text-[10px] font-black ${sem!=null?(parseFloat(sem)>12?'text-red-400':parseFloat(sem)>8?'text-amber-400':'text-violet-400'):t.textMuted}`}>{sem!=null?`${sem} sem`:'N/D'}</span></div>; })}</div>
                     <p className={`text-[9px] mt-3 ${t.textMuted}`}>&gt;12 sem = riesgo · &lt;4 sem = ok</p>
                   </div>
                 </div>
