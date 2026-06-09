@@ -2,14 +2,14 @@
 
 export {
   Activity, AlertCircle, ArrowUpDown, ArrowLeftRight,
-  BarChart2, BarChart3,  Box,
+  BarChart2, BarChart3,  Box, Bar, 
   Calendar, Check, CheckCircle2, CheckSquare, ChevronDown, ChevronLeft,
   ChevronUp, ChevronRight, Copy, Calculator, Clock,
   Database, Download, DollarSign,
   Edit3, Edit,
   FileSpreadsheet, FileText, Filter,
   Globe,
-  Layers, ListPlus, Loader,
+  Layers, ListPlus, Loader, LineChart, Line,
   MapIcon as MapIcon, Menu, Moon, Map, MoreVertical, MapPin,
   Package, Plus,
   RefreshCw, Rocket,
