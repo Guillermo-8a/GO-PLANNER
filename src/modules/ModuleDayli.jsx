@@ -13,6 +13,7 @@ const num  = v  => parseFloat(String(v||'0').replace(/[^0-9.-]+/g,''))||0;
 const fmt  = (n,d=0) => n==null?'-':n.toLocaleString('es-MX',{minimumFractionDigits:d,maximumFractionDigits:d});
 const fmtP = (n,d=1) => n==null?'-':n.toFixed(d)+'%';
 const fmtM = (n)     => n==null?'-':'$'+n.toLocaleString('es-MX',{minimumFractionDigits:0,maximumFractionDigits:0});
+const fmtMd= (n,d=2) => n==null?'-':'$'+n.toLocaleString('es-MX',{minimumFractionDigits:d,maximumFractionDigits:d});
 const delta = (curr,prev) => prev&&prev!==0?((curr-prev)/Math.abs(prev))*100:null;
 const isoOf = d => d instanceof Date ? `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` : d;
 const mdOf  = d => `${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
@@ -138,7 +139,7 @@ const parseSalesCSV = text => {
   if(rows.length<2) return [];
   const H=rows[0].map(h=>h.toUpperCase().trim().replace(/\s+/g,'_').replace(/[#ÁÉÍÓÚ]/g,c=>({'#':'NUM',Á:'A',É:'E',Í:'I',Ó:'O',Ú:'U'}[c]||c)));
   const idx=(...ns)=>ns.map(n=>H.findIndex(h=>h===n||h.includes(n))).find(i=>i>=0)??-1;
-  const I={div:idx('DIVISION','DIV'),sec:idx('SECCION','SECTION'),numSec:idx('NUM_SECCION','_SECCION'),goa:idx('GOA','FAMILIA'),
+  const I={div:idx('DIVISION','DIV'),sec:idx('SECCION','SECTION'),numSec:idx('NUMSECCION','NUM_SECCION','_SECCION'),goa:idx('GOA','FAMILIA'),
     marca:idx('MARCA','PROVEEDOR','BRAND'),norma:idx('NORMA','TIPO_COMPRA'),canal:idx('CANAL','CHANNEL'),
     pago:idx('TIPO_PAGO','PAGO','PAYMENT'),fecha:idx('FECHA','DATE','DIA'),vp:idx('VENTA_','VENTA$','VENTA_PESOS','VENTAS'),
     vu:idx('VENTA_U','UNIDADES','PIEZAS'),mg:idx('MG','MARGEN'),util:idx('UTILIDAD','UTIL'),md:idx('MARKDOWN','DESCUENTO','MD')};
@@ -146,8 +147,10 @@ const parseSalesCSV = text => {
   for(let i=1;i<rows.length;i++){ const r=rows[i]; if(!r||r.every(c=>!c)) continue;
     const fecha=I.fecha>=0?parseDate(r[I.fecha]):null; const vp=num(I.vp>=0?r[I.vp]:0);
     if(!vp&&!fecha) continue;
-    out.push({ division:I.div>=0?r[I.div].trim().toUpperCase():'GENERAL', seccion:I.sec>=0?r[I.sec].trim().toUpperCase():'GENERAL',
-      numSec:I.numSec>=0?r[I.numSec].trim():'', goa:I.goa>=0?r[I.goa].trim().toUpperCase():'', marca:I.marca>=0?r[I.marca].trim().toUpperCase():'SIN MARCA',
+    const secRaw=I.sec>=0?r[I.sec].trim():''; const secName=I.numSec>=0?r[I.numSec].trim():'';
+    const seccion=(/^\d+$/.test(secRaw)&&secName&&!/^\d+$/.test(secName))?secName.toUpperCase():(secRaw.toUpperCase()||'GENERAL');
+    out.push({ division:I.div>=0?r[I.div].trim().toUpperCase():'GENERAL', seccion,
+      numSec:secRaw, goa:I.goa>=0?r[I.goa].trim().toUpperCase():'', marca:I.marca>=0?r[I.marca].trim().toUpperCase():'SIN MARCA',
       norma:I.norma>=0?r[I.norma].trim().toUpperCase():'', canal:I.canal>=0?r[I.canal].trim().toUpperCase():'SIN CANAL',
       pago:I.pago>=0?r[I.pago].trim().toUpperCase():'', fecha, year:fecha?fecha.getFullYear():0,
       ventaP:vp, ventaU:num(I.vu>=0?r[I.vu]:0), mg:num(I.mg>=0?r[I.mg]:0), utilidad:num(I.util>=0?r[I.util]:0), markdown:num(I.md>=0?r[I.md]:0) });
@@ -200,17 +203,17 @@ export default function ModuleDaily(){
 
   const themes={
     dark:{appBg:'bg-transparent text-gray-100',card:'bg-zinc-900 border-zinc-800 shadow-sm',cardInner:'bg-zinc-950 border-zinc-800',
-      textMain:'text-white',textMuted:'text-gray-400',textAccent1:'text-emerald-400',textAccent2:'text-teal-400',border:'border-zinc-800',
-      input:'bg-zinc-950 border-zinc-700 text-white focus:ring-emerald-500',btnPrimary:'bg-emerald-600 text-white hover:bg-emerald-500 shadow-[0_0_15px_rgba(16,185,129,0.2)]',
+      textMain:'text-white',textMuted:'text-gray-400',textAccent1:'text-emerald-300',textAccent2:'text-teal-300',border:'border-zinc-800',
+      input:'bg-zinc-950 border-zinc-700 text-white focus:ring-emerald-500',btnPrimary:'bg-emerald-500 text-white hover:bg-emerald-400 shadow-[0_0_18px_rgba(16,185,129,0.4)]',
       btnGhost:'bg-zinc-800 text-gray-300 hover:text-white hover:bg-zinc-700 border-zinc-700',
-      badge:'bg-emerald-900/30 text-emerald-400 border-emerald-500/40',badgeTeal:'bg-teal-900/30 text-teal-400 border-teal-500/40',
-      badgeAmber:'bg-amber-900/30 text-amber-400 border-amber-500/40',badgeRed:'bg-red-900/30 text-red-400 border-red-500/40'},
+      badge:'bg-emerald-500/25 text-emerald-300 border-emerald-400/60',badgeTeal:'bg-teal-500/25 text-teal-300 border-teal-400/60',
+      badgeAmber:'bg-amber-500/25 text-amber-300 border-amber-400/60',badgeRed:'bg-rose-500/25 text-rose-300 border-rose-400/60'},
     light:{appBg:'bg-transparent text-gray-800',card:'bg-white border-gray-200 shadow-sm',cardInner:'bg-gray-50 border-gray-200',
       textMain:'text-gray-900',textMuted:'text-gray-500',textAccent1:'text-emerald-600',textAccent2:'text-teal-600',border:'border-gray-200',
       input:'bg-white border-gray-300 text-gray-900 focus:ring-emerald-500',btnPrimary:'bg-emerald-600 text-white hover:bg-emerald-700 shadow-md',
       btnGhost:'bg-gray-100 text-gray-600 hover:text-gray-900 hover:bg-gray-200 border-gray-200',
-      badge:'bg-emerald-50 text-emerald-700 border-emerald-200',badgeTeal:'bg-teal-50 text-teal-700 border-teal-200',
-      badgeAmber:'bg-amber-50 text-amber-700 border-amber-200',badgeRed:'bg-red-50 text-red-700 border-red-200'},
+      badge:'bg-emerald-100 text-emerald-700 border-emerald-300',badgeTeal:'bg-teal-100 text-teal-700 border-teal-300',
+      badgeAmber:'bg-amber-100 text-amber-700 border-amber-300',badgeRed:'bg-rose-100 text-rose-700 border-rose-300'},
   };
   const t=themes[theme]||themes.light;
   const BarIcon=Icons.BarChart2||(p=><span {...p}>📊</span>);
@@ -237,6 +240,7 @@ export default function ModuleDaily(){
   const [fcstOverridePct,setFcstOverridePct]=useState(0);
   const [scenarioSel,setScenarioSel]=useState('actual');
   const [cmpMode,setCmpMode]=useState(0);
+  const [cmpDayMode,setCmpDayMode]=useState('avg'); // 'avg' | 'seq'
   const [scatterLevel,setScatterLevel]=useState(0);
 
   // Persistencia
@@ -253,20 +257,25 @@ export default function ModuleDaily(){
   useEffect(()=>{ try{ localStorage.setItem('gop_daily_v3',JSON.stringify({allData,invData,promoEntries,manualPromo,defaultUplift,dateFrom,dateTo,fCanal,fDiv,fSec,fMarca,fNorma,fPago})); }catch{} },
     [allData,invData,promoEntries,manualPromo,defaultUplift,dateFrom,dateTo,fCanal,fDiv,fSec,fMarca,fNorma,fPago]);
 
+  const decodeBuf=buf=>{ let txt=new TextDecoder('utf-8',{fatal:false}).decode(buf);
+    if(txt.includes('\uFFFD')) txt=new TextDecoder('windows-1252').decode(buf); return txt; };
   const upload=(ref,setter,parser)=>e=>{ const f=e.target.files[0]; if(!f) return; const rd=new FileReader();
-    rd.onload=ev=>{ setter(parser(ev.target.result)); e.target.value=''; }; rd.readAsText(f,'UTF-8'); };
+    rd.onload=ev=>{ setter(parser(decodeBuf(ev.target.result))); e.target.value=''; }; rd.readAsArrayBuffer(f); };
 
-  // Filtros
-  const applyF=useCallback((rows,year)=>rows.filter(r=>r.year===year&&
-    (fCanal==='ALL'||r.canal===fCanal)&&(fDiv==='ALL'||r.division===fDiv)&&(fSec==='ALL'||r.seccion===fSec)&&
-    (fMarca==='ALL'||r.marca===fMarca)&&(fNorma==='ALL'||r.norma===fNorma)&&(fPago==='ALL'||r.pago===fPago)&&
-    (!dateFrom||!r.fecha||r.fecha>=new Date(dateFrom+'T00:00:00'))&&(!dateTo||!r.fecha||r.fecha<=new Date(dateTo+'T23:59:59'))
-  ),[fCanal,fDiv,fSec,fMarca,fNorma,fPago,dateFrom,dateTo]);
+  // Filtros — el rango de fecha se desplaza al año objetivo (TY absoluto, LY mismo span en su año)
+  const dimsOk=useCallback(r=>(fCanal==='ALL'||r.canal===fCanal)&&(fDiv==='ALL'||r.division===fDiv)&&(fSec==='ALL'||r.seccion===fSec)&&
+    (fMarca==='ALL'||r.marca===fMarca)&&(fNorma==='ALL'||r.norma===fNorma)&&(fPago==='ALL'||r.pago===fPago),
+    [fCanal,fDiv,fSec,fMarca,fNorma,fPago]);
+  const applyFor=useCallback((year)=>{ const shift=iso=>iso?`${year}-${iso.slice(5)}`:'';
+    const from=shift(dateFrom),to=shift(dateTo);
+    return allData.filter(r=>r.year===year&&dimsOk(r)&&
+      (!from||!r.fecha||r.fecha>=new Date(from+'T00:00:00'))&&(!to||!r.fecha||r.fecha<=new Date(to+'T23:59:59')));
+  },[allData,dimsOk,dateFrom,dateTo]);
   const applyInvF=useCallback(rows=>rows.filter(r=>(fDiv==='ALL'||r.division===fDiv)&&(fSec==='ALL'||r.seccion===fSec)&&
     (fMarca==='ALL'||r.marca===fMarca)&&(fNorma==='ALL'||r.norma===fNorma)),[fDiv,fSec,fMarca,fNorma]);
 
-  const tyData=useMemo(()=>applyF(allData,tyYear),[allData,tyYear,applyF]);
-  const lyData=useMemo(()=>applyF(allData,lyYear),[allData,lyYear,applyF]);
+  const tyData=useMemo(()=>applyFor(tyYear),[applyFor,tyYear]);
+  const lyData=useMemo(()=>applyFor(lyYear),[applyFor,lyYear]);
   const filtInv=useMemo(()=>applyInvF(invData),[invData,applyInvF]);
 
   const opts=useMemo(()=>{ const s=k=>[...new Set(allData.map(r=>r[k]).filter(Boolean))].sort();
@@ -362,11 +371,24 @@ export default function ModuleDaily(){
       tendencia:delta(g.ventaP,lyM[g.key]), fcst:diaActual>0?g.ventaP/diaActual*diasMes:g.ventaP })).sort((a,b)=>b.ventaP-a.ventaP);
   },[tyData,lyData,lastDateTY]);
 
+  // Versión MES CORRIENTE (para tablas marca/sección/goa → cuadra con forecast y resultado)
+  const byKeyMonth=useCallback((key)=>{
+    if(!lastDateTY) return [];
+    const month=lastDateTY.getMonth(),year=lastDateTY.getFullYear();
+    const diaActual=lastDateTY.getDate(),diasMes=new Date(year,month+1,0).getDate();
+    const tyM={},lyM={};
+    tyData.forEach(r=>{ if(!r.fecha||r.fecha.getMonth()!==month||r.fecha.getFullYear()!==year) return; const k=r[key]||'N/D';
+      if(!tyM[k])tyM[k]={key:k,ventaP:0,ventaU:0,utilidad:0,markdown:0}; tyM[k].ventaP+=r.ventaP; tyM[k].ventaU+=r.ventaU; tyM[k].utilidad+=r.utilidad; tyM[k].markdown+=r.markdown; });
+    lyData.forEach(r=>{ if(!r.fecha||r.fecha.getMonth()!==month||r.fecha.getFullYear()!==lyYear) return; const k=r[key]||'N/D'; lyM[k]=(lyM[k]||0)+r.ventaP; });
+    return Object.values(tyM).map(g=>({ ...g, mgPct:g.ventaP>0?g.utilidad/g.ventaP*100:0,
+      tendencia:delta(g.ventaP,lyM[g.key]), fcst:diaActual>0?g.ventaP/diaActual*diasMes:g.ventaP })).sort((a,b)=>b.ventaP-a.ventaP);
+  },[tyData,lyData,lastDateTY,lyYear]);
+
   const byCanal=useMemo(()=>byKeyFcst('canal'),[byKeyFcst]);
   const byDiv=useMemo(()=>byKeyFcst('division'),[byKeyFcst]);
-  const bySec=useMemo(()=>byKeyFcst('seccion'),[byKeyFcst]);
-  const byMarca=useMemo(()=>byKeyFcst('marca'),[byKeyFcst]);
-  const byGoa=useMemo(()=>byKeyFcst('goa'),[byKeyFcst]);
+  const byMarca=useMemo(()=>byKeyMonth('marca'),[byKeyMonth]);
+  const byGoa=useMemo(()=>byKeyMonth('goa'),[byKeyMonth]);
+  const bySecMes=useMemo(()=>byKeyMonth('seccion'),[byKeyMonth]);
   const byPago=useMemo(()=>byKeyFcst('pago'),[byKeyFcst]);
   const byNorma=useMemo(()=>byKeyFcst('norma'),[byKeyFcst]);
 
@@ -408,8 +430,9 @@ export default function ModuleDaily(){
     costoV=filtInv.reduce((s,r)=>s+r.costoVendido,0),utilV=filtInv.reduce((s,r)=>s+r.utilidadVendida,0),
     comprado=filtInv.reduce((s,r)=>s+r.comprado,0),nacional=filtInv.reduce((s,r)=>s+r.nacional,0),
     importacion=filtInv.reduce((s,r)=>s+r.importacion,0),ventaRef=filtInv.reduce((s,r)=>s+r.ventaRef,0)||kpiTY.ventaP;
+    const hasInv=filtInv.length>0; const vu=kpiTY.ventaU;
     return {oh,oo,total:oh+oo,costoV,utilV,comprado,nacional,importacion,ventaRef,
-      st:(oh+ventaRef)>0?ventaRef/(oh+ventaRef)*100:0, cob:kpiTY.ventaP>0&&lastDateTY?oh/(kpiTY.ventaP/lastDateTY.getDate()):0}; },[filtInv,kpiTY,lastDateTY]);
+      st:hasInv&&(oh+vu)>0?vu/(vu+oh)*100:null, cob:hasInv&&kpiTY.ventaU>0&&lastDateTY?oh/(kpiTY.ventaU/lastDateTY.getDate()):null}; },[filtInv,kpiTY,lastDateTY]);
 
   const SCATTER_KEY=['seccion','goa','marca','norma'], SCATTER_LBL=['SECCIÓN','GOA','MARCA','NORMA'];
   const scatterData=useMemo(()=>{ const key=SCATTER_KEY[scatterLevel]; const sm={},im={};
@@ -418,16 +441,28 @@ export default function ModuleDaily(){
     return Object.keys({...sm,...im}).map(k=>({name:k,x:sm[k]?.ventaP||0,y:(im[k]?.oh||0)+(im[k]?.oo||0)})).filter(p=>p.x>0||p.y>0); },[tyData,filtInv,scatterLevel]);
   const scatterReg=useMemo(()=>scatterData.length>=3?linearRegression(scatterData):null,[scatterData]);
 
-  // ── Resultado del ejercicio (ajusta por escenario) ──
+  // ── Resultado del ejercicio: dos alcances (mes corriente y acumulado periodo) ──
   const resultado=useMemo(()=>{
-    let venta,label,proj=false;
-    if(scenarioSel==='actual'||!forecastMes){ venta=kpiTY.ventaP; label='Real acumulado'; }
-    else { venta=forecastMes[scenarioSel].ventaP; label=`Proyección cierre · ${{cons:'Conservador',neut:'Neutral',risk:'Arriesgado'}[scenarioSel]}`; proj=true; }
-    const mg=kpiTY.mgPct, util=venta*mg/100;
-    const costo=(!proj&&invKPI.costoV)?invKPI.costoV:venta-util;
-    const diaActual=lastDateTY?lastDateTY.getDate():30, diasMes=lastDateTY?new Date(lastDateTY.getFullYear(),lastDateTY.getMonth()+1,0).getDate():30;
-    const markdown=proj?(diaActual>0?kpiTY.markdown/diaActual*diasMes:kpiTY.markdown):kpiTY.markdown;
-    return {venta,costo,util,markdown,mgFinal:venta>0?util/venta*100:0,label,proj}; },[scenarioSel,forecastMes,kpiTY,invKPI,lastDateTY]);
+    const mg=kpiTY.mgPct;
+    const acum={ venta:kpiTY.ventaP, util:kpiTY.utilidad, costo:invKPI.costoV||(kpiTY.ventaP-kpiTY.utilidad),
+      markdown:kpiTY.markdown, mgFinal:kpiTY.ventaP>0?kpiTY.utilidad/kpiTY.ventaP*100:0 };
+    let mes=null;
+    if(forecastMes&&lastDateTY){
+      const month=lastDateTY.getMonth(),year=lastDateTY.getFullYear();
+      const mr=tyData.filter(r=>r.fecha&&r.fecha.getMonth()===month&&r.fecha.getFullYear()===year);
+      const vMTD=mr.reduce((s,r)=>s+r.ventaP,0),uMTD=mr.reduce((s,r)=>s+r.utilidad,0),mkMTD=mr.reduce((s,r)=>s+r.markdown,0);
+      const {diaActual,diasMes}=forecastMes;
+      if(scenarioSel==='actual'){
+        mes={ venta:vMTD,util:uMTD,costo:vMTD-uMTD,markdown:mkMTD,mgFinal:vMTD>0?uMTD/vMTD*100:0,proj:false,
+          label:`Real MTD · día ${diaActual}/${diasMes}` };
+      } else {
+        const v=forecastMes[scenarioSel].ventaP,u=v*mg/100;
+        mes={ venta:v,util:u,costo:v-u,markdown:diaActual>0?mkMTD/diaActual*diasMes:mkMTD,mgFinal:mg,proj:true,
+          label:`Proyección cierre · ${{cons:'Conservador',neut:'Neutral',risk:'Arriesgado'}[scenarioSel]}` };
+      }
+    }
+    return {acum,mes};
+  },[scenarioSel,forecastMes,kpiTY,invKPI,lastDateTY,tyData]);
 
   // ── Chart config ──
   const gridC=isDark?'#27272a':'#f0f0f0',axisC=isDark?'#52525b':'#d1d5db',txtC=isDark?'#a1a1aa':'#6b7280';
@@ -438,11 +473,27 @@ export default function ModuleDaily(){
   // ── Promo calendar interactivo (mes de lastDateTY) ──
   const togglePromo=iso=>setManualPromo(p=>p.includes(iso)?p.filter(x=>x!==iso):[...p,iso]);
   const promoMonth=useMemo(()=>{ const d=lastDateTY||new Date(tyYear,0,1); return {year:d.getFullYear(),month:d.getMonth()}; },[lastDateTY,tyYear]);
+  const [promoView,setPromoView]=useState(null);
+  useEffect(()=>{ if(!promoView&&lastDateTY) setPromoView({year:lastDateTY.getFullYear(),month:lastDateTY.getMonth()}); },[lastDateTY,promoView]);
+  const pView=promoView||promoMonth;
+  const promoMatched=useMemo(()=>tyData.filter(r=>r.fecha&&isPromoDate(isoOf(r.fecha))).length,[tyData,isPromoDate]);
 
   // ── Sub-componentes UI ──
   const FilterBar=()=>(
     <div className={`flex flex-wrap gap-2 p-3 rounded-xl border items-center ${t.cardInner}`}>
       <DateRangePicker from={dateFrom} to={dateTo} onChange={({from,to})=>{setDateFrom(from);setDateTo(to);}} t={t} isDark={isDark}/>
+      {(()=>{ const ref=lastDateTY||new Date(tyYear,0,1); const iso=d=>isoOf(d);
+        const presets=[
+          {l:'7d',f:()=>{const a=new Date(ref);a.setDate(ref.getDate()-6);return[iso(a),iso(ref)];}},
+          {l:'30d',f:()=>{const a=new Date(ref);a.setDate(ref.getDate()-29);return[iso(a),iso(ref)];}},
+          {l:'Mes actual',f:()=>[iso(new Date(ref.getFullYear(),ref.getMonth(),1)),iso(ref)]},
+          {l:'Mes pasado',f:()=>[iso(new Date(ref.getFullYear(),ref.getMonth()-1,1)),iso(new Date(ref.getFullYear(),ref.getMonth(),0))]},
+          {l:'YTD',f:()=>[iso(new Date(ref.getFullYear(),0,1)),iso(ref)]},
+          {l:'Todo',f:()=>['','']},
+        ];
+        return presets.map(p=><button key={p.l} onClick={()=>{const[a,b]=p.f();setDateFrom(a);setDateTo(b);}}
+          className={`text-[10px] px-2.5 py-1.5 rounded-lg border font-black transition-all ${t.btnGhost}`}>{p.l}</button>);
+      })()}
       {[{label:'Canal',val:fCanal,set:setFCanal,ops:opts.canal},{label:'División',val:fDiv,set:setFDiv,ops:opts.div},
         {label:'Sección',val:fSec,set:setFSec,ops:opts.sec},{label:'Marca',val:fMarca,set:setFMarca,ops:opts.marca},
         {label:'Norma',val:fNorma,set:setFNorma,ops:opts.norma},{label:'Pago',val:fPago,set:setFPago,ops:opts.pago}].map(({label,val,set,ops})=>(
@@ -465,7 +516,7 @@ export default function ModuleDaily(){
         {label:'MG %',val:fmtP(kpiTY.mgPct),d:null,c:kpiTY.mgPct>=45?'text-emerald-400':kpiTY.mgPct>=35?'text-amber-400':'text-red-400'},
         {label:'Utilidad',val:fmtM(kpiTY.utilidad),d:null,c:'text-teal-400'},
         {label:'Markdowns',val:fmtM(kpiTY.markdown),d:null,c:'text-amber-400'},
-        {label:'ATV',val:fmtM(kpiTY.atv),d:null,c:t.textAccent1,sub:'ticket prom.'}].map(({label,val,d,c,sub})=>(
+        {label:'PVP Prom',val:fmtMd(kpiTY.atv),d:null,c:t.textAccent1,sub:'venta/pza'}].map(({label,val,d,c,sub})=>(
         <div key={label} className={`p-3 rounded-xl border ${t.cardInner}`}>
           <div className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} mb-0.5`}>{label}</div>
           <div className={`text-base font-black ${c}`}>{val}</div>{sub&&<div className={`text-[9px] ${t.textMuted}`}>{sub}</div>}
@@ -474,10 +525,16 @@ export default function ModuleDaily(){
     </div>
   );
 
-  // Tabla con tendencia + fcst
-  const FcstTable=({title,data,accent})=>(
+  // Tabla con tendencia + fcst (mes corriente) + fila TOTAL
+  const FcstTable=({title,data,accent})=>{
+    const tot=data.reduce((a,r)=>({v:a.v+r.ventaP,u:a.u+r.ventaU,util:a.util+r.utilidad,f:a.f+r.fcst}),{v:0,u:0,util:0,f:0});
+    const lyTot=data.reduce((a,r)=>{ const ly=r.tendencia!=null?r.ventaP/(1+r.tendencia/100):r.ventaP; return a+ly; },0);
+    return (
     <div className={`p-4 rounded-xl border ${t.cardInner}`}>
-      <h4 className={`text-sm font-bold mb-3 ${t.textMain}`}>{title}</h4>
+      <div className="flex items-center justify-between mb-3">
+        <h4 className={`text-sm font-bold ${t.textMain}`}>{title}</h4>
+        <span className={`text-[8px] px-2 py-0.5 rounded-full border font-black ${t.badge}`}>mes corriente · {data.length} ítems</span>
+      </div>
       <div className="overflow-x-auto custom-scrollbar max-h-[260px]">
         <table className="w-full text-left text-xs min-w-max">
           <thead><tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark?'bg-zinc-950 text-gray-400 border-b border-zinc-800':'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
@@ -489,15 +546,24 @@ export default function ModuleDaily(){
                 <td className={`p-2 font-bold ${t.textMain} max-w-[110px] truncate`} title={r.key}>{r.key}</td>
                 <td className={`p-2 font-mono ${accent||'text-emerald-400'}`}>{fmtM(r.ventaP)}</td>
                 <td className={`p-2 font-mono ${t.textMuted}`}>{fmt(r.ventaU)}</td>
-                <td className={`p-2 font-bold ${r.mgPct>=45?'text-emerald-400':r.mgPct>=35?'text-amber-400':'text-red-400'}`}>{fmtP(r.mgPct)}</td>
+                <td className={`p-2 font-bold ${r.mgPct>=45?'text-emerald-400':r.mgPct>=35?'text-amber-400':'text-rose-400'}`}>{fmtP(r.mgPct)}</td>
                 <td className="p-2"><DeltaBadge value={r.tendencia}/></td>
                 <td className={`p-2 font-mono font-bold ${t.textAccent2}`}>{fmtM(r.fcst)}</td>
               </tr>))}
           </tbody>
+          <tfoot><tr className={`font-black sticky bottom-0 ${isDark?'bg-zinc-900 border-t-2 border-emerald-500/50':'bg-emerald-50 border-t-2 border-emerald-300'}`}>
+            <td className={`p-2 ${t.textMain}`}>TOTAL</td>
+            <td className={`p-2 font-mono ${accent||'text-emerald-400'}`}>{fmtM(tot.v)}</td>
+            <td className={`p-2 font-mono ${t.textMain}`}>{fmt(tot.u)}</td>
+            <td className={`p-2 ${tot.v>0&&tot.util/tot.v*100>=45?'text-emerald-400':'text-amber-400'}`}>{fmtP(tot.v>0?tot.util/tot.v*100:0)}</td>
+            <td className="p-2"><DeltaBadge value={delta(tot.v,lyTot)}/></td>
+            <td className={`p-2 font-mono ${t.textAccent2}`}>{fmtM(tot.f)}</td>
+          </tr></tfoot>
         </table>
       </div>
     </div>
-  );
+    );
+  };
 
   const hasData=allData.length>0;
 
@@ -539,17 +605,20 @@ export default function ModuleDaily(){
         <div className="space-y-5">
           <FilterBar/>
           <KPIStrip/>
+          <p className={`text-[10px] -mt-2 ${t.textMuted}`}>
+            Comparando <strong className={t.textAccent1}>{dateFrom?fmtDate(new Date(dateFrom)):'inicio'} → {dateTo?fmtDate(new Date(dateTo)):'hoy'}</strong> de {tyYear} contra el mismo rango de {lyYear}. Sin filtro de fecha = todo lo cargado de cada año.
+          </p>
 
           {/* SEMÁFOROS mejorados */}
           <div className={`p-4 rounded-2xl border ${t.card}`}>
-            <h3 className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} mb-3`}>Semáforos Ejecutivos</h3>
+            <h3 className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} mb-3`}>Semáforos</h3>
             <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
               {[
                 {label:'Venta vs LY',val:delta(kpiTY.ventaP,kpiLY.ventaP),txt:delta(kpiTY.ventaP,kpiLY.ventaP)!=null?fmtP(delta(kpiTY.ventaP,kpiLY.ventaP)):'N/D',target:'≥ 0%',ok:delta(kpiTY.ventaP,kpiLY.ventaP)>=0,warn:delta(kpiTY.ventaP,kpiLY.ventaP)>=-5},
                 {label:'Margen',val:kpiTY.mgPct,txt:fmtP(kpiTY.mgPct),target:'≥ 40%',ok:kpiTY.mgPct>=40,warn:kpiTY.mgPct>=35},
                 {label:'Markdown / Venta',val:kpiTY.ventaP>0?kpiTY.markdown/kpiTY.ventaP*100:0,txt:kpiTY.ventaP>0?fmtP(kpiTY.markdown/kpiTY.ventaP*100):'N/D',target:'< 5%',ok:kpiTY.ventaP>0&&kpiTY.markdown/kpiTY.ventaP<0.05,warn:kpiTY.ventaP>0&&kpiTY.markdown/kpiTY.ventaP<0.08},
-                {label:'Sell Through',val:invKPI.st,txt:invData.length?fmtP(invKPI.st):'Sin inv',target:'≥ 60%',ok:invData.length?invKPI.st>=60:null,warn:invData.length?invKPI.st>=45:null},
-                {label:'Cobertura',val:invKPI.cob,txt:invData.length&&invKPI.cob>0?`${invKPI.cob.toFixed(0)} d`:'Sin inv',target:'< 60 d',ok:invData.length?invKPI.cob<=60:null,warn:invData.length?invKPI.cob<=90:null},
+                {label:'Sell Through',val:invKPI.st,txt:invKPI.st!=null?fmtP(invKPI.st):'Sin inv',target:'≥ 60%',ok:invKPI.st!=null?invKPI.st>=60:null,warn:invKPI.st!=null?invKPI.st>=45:null},
+                {label:'Cobertura',val:invKPI.cob,txt:invKPI.cob!=null?`${invKPI.cob.toFixed(0)} d`:'Sin inv',target:'< 60 d',ok:invKPI.cob!=null?invKPI.cob<=60:null,warn:invKPI.cob!=null?invKPI.cob<=90:null},
               ].map(({label,txt,target,ok,warn})=>{
                 const color=ok===true?'emerald':ok===false&&warn?'amber':ok==null?'gray':'red';
                 const cmap={emerald:{t:'text-emerald-400',b:'bg-emerald-500',bd:isDark?'border-emerald-500/40':'border-emerald-300'},
@@ -583,16 +652,34 @@ export default function ModuleDaily(){
             </div>
 
             {cmpMode===0&&(<>
-              <p className={`text-[10px] mb-3 ${t.textMuted}`}>Venta promedio por día de semana (mismo "martes" TY vs LY, sin importar la fecha exacta).</p>
-              <ResponsiveContainer width="100%" height={220}>
-                <BarChart data={cmpWeekday}><CartesianGrid strokeDasharray="3 3" stroke={gridC}/>
-                  <XAxis dataKey="label" tick={{fontSize:10,fill:txtC}} stroke={axisC}/>
-                  <YAxis tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
-                  <Tooltip content={<TTip/>}/><Legend wrapperStyle={{fontSize:10}}/>
-                  <Bar dataKey="ly" name={`LY ${lyYear}`} fill={isDark?'#52525b':'#cbd5e1'} radius={[4,4,0,0]}/>
-                  <Bar dataKey="ty" name={`TY ${tyYear}`} fill="#10b981" radius={[4,4,0,0]}/>
-                </BarChart>
-              </ResponsiveContainer>
+              <div className="flex items-center gap-2 mb-3">
+                <span className={`text-[10px] ${t.textMuted}`}>Vista:</span>
+                {[['avg','Promedio x día semana'],['seq','Día por día']].map(([v,l])=>(
+                  <button key={v} onClick={()=>setCmpDayMode(v)} className={`text-[10px] px-3 py-1 rounded-full border font-black transition-all ${cmpDayMode===v?t.badge:t.btnGhost}`}>{l}</button>))}
+              </div>
+              {cmpDayMode==='avg'?(<>
+                <p className={`text-[10px] mb-3 ${t.textMuted}`}>Venta promedio por día de semana (mismo "martes" TY vs LY, sin importar la fecha exacta).</p>
+                <ResponsiveContainer width="100%" height={220}>
+                  <BarChart data={cmpWeekday}><CartesianGrid strokeDasharray="3 3" stroke={gridC}/>
+                    <XAxis dataKey="label" tick={{fontSize:10,fill:txtC}} stroke={axisC}/>
+                    <YAxis tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
+                    <Tooltip content={<TTip/>}/><Legend wrapperStyle={{fontSize:10}}/>
+                    <Bar dataKey="ly" name={`LY ${lyYear}`} fill={isDark?'#71717a':'#94a3b8'} radius={[4,4,0,0]}/>
+                    <Bar dataKey="ty" name={`TY ${tyYear}`} fill="#10b981" radius={[4,4,0,0]}/>
+                  </BarChart>
+                </ResponsiveContainer>
+              </>):(<>
+                <p className={`text-[10px] mb-3 ${t.textMuted}`}>Cada día del periodo: TY contra el mismo día calendario de LY.</p>
+                <ResponsiveContainer width="100%" height={220}>
+                  <LineChart data={serieDiaria}><CartesianGrid strokeDasharray="3 3" stroke={gridC}/>
+                    <XAxis dataKey="fecha" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>v?.slice(5)}/>
+                    <YAxis tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
+                    <Tooltip content={<TTip/>}/><Legend wrapperStyle={{fontSize:10}}/>
+                    <Line type="monotone" dataKey="ly" name={`LY ${lyYear}`} stroke={isDark?'#a1a1aa':'#94a3b8'} dot={false} strokeWidth={1.5} strokeDasharray="4 2"/>
+                    <Line type="monotone" dataKey="ty" name={`TY ${tyYear}`} stroke="#10b981" dot={false} strokeWidth={2.5} activeDot={{r:4}}/>
+                  </LineChart>
+                </ResponsiveContainer>
+              </>)}
             </>)}
 
             {cmpMode===1&&(<>
@@ -645,7 +732,7 @@ export default function ModuleDaily(){
                     <XAxis dataKey="label" tick={{fontSize:9,fill:txtC}} stroke={axisC} angle={-25} textAnchor="end" height={60} interval={0}/>
                     <YAxis tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
                     <Tooltip content={<TTip/>}/><Legend wrapperStyle={{fontSize:10}}/>
-                    <Bar dataKey="ly" name={`LY ${lyYear}`} fill={isDark?'#52525b':'#cbd5e1'} radius={[4,4,0,0]}/>
+                    <Bar dataKey="ly" name={`LY ${lyYear}`} fill={isDark?'#71717a':'#94a3b8'} radius={[4,4,0,0]}/>
                     <Bar dataKey="ty" name={`TY ${tyYear}`} fill="#f59e0b" radius={[4,4,0,0]}/>
                   </BarChart>
                 </ResponsiveContainer>)}
@@ -714,7 +801,7 @@ export default function ModuleDaily(){
                       <div className={`text-[9px] font-black ${t.textMuted} flex items-center`}>{d}</div>
                       {heatmap.weeks.map(w=>{ const v=heatmap.cells[`${di}-${w.idx}`]; const it=v?v/heatmap.max:0;
                         return <div key={w.idx} title={v?fmtM(v):''} className="h-7 rounded-md flex items-center justify-center text-[8px] font-bold"
-                          style={{background:v?`rgba(16,185,129,${0.12+it*0.85})`:(isDark?'rgba(39,39,42,0.4)':'rgba(243,244,246,0.7)'),color:it>0.5?'white':(isDark?'#71717a':'#9ca3af')}}>
+                          style={{background:v?`rgba(16,185,129,${0.22+it*0.78})`:(isDark?'rgba(39,39,42,0.4)':'rgba(243,244,246,0.7)'),color:it>0.35?'white':(isDark?'#71717a':'#9ca3af')}}>
                           {v?(v/1000).toFixed(0):'·'}</div>; })}
                     </React.Fragment>))}
                 </div>
@@ -725,7 +812,12 @@ export default function ModuleDaily(){
           {/* PROMO CALENDAR */}
           <div className={`p-4 rounded-2xl border ${t.card}`}>
             <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-              <h4 className={`text-sm font-bold ${t.textMain}`}>🏷️ Promo Calendar — {['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][promoMonth.month]} {promoMonth.year}</h4>
+              <div className="flex items-center gap-2">
+                <button onClick={()=>setPromoView(v=>{const c=v||promoMonth;return c.month===0?{year:c.year-1,month:11}:{year:c.year,month:c.month-1};})} className={`p-1.5 rounded-lg border ${t.btnGhost}`}><ChevL size={14}/></button>
+                <h4 className={`text-sm font-bold ${t.textMain} w-36 text-center`}>🏷️ {['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'][pView.month]} {pView.year}</h4>
+                <button onClick={()=>setPromoView(v=>{const c=v||promoMonth;return c.month===11?{year:c.year+1,month:0}:{year:c.year,month:c.month+1};})} className={`p-1.5 rounded-lg border ${t.btnGhost}`}><ChevR size={14}/></button>
+                {promoMatched>0&&<span className={`text-[9px] px-2 py-1 rounded-full border font-black ${t.badge}`}>{promoMatched} regs con promo en periodo</span>}
+              </div>
               <div className="flex items-center gap-3 flex-wrap">
                 <div className="flex items-center gap-2">
                   <span className={`text-[9px] font-black uppercase ${t.textMuted}`}>Uplift default</span>
@@ -735,7 +827,7 @@ export default function ModuleDaily(){
                 {manualPromo.length>0&&<button onClick={()=>setManualPromo([])} className={`text-[10px] px-3 py-1 rounded-lg border font-bold ${t.btnGhost}`}>Limpiar marcados</button>}
               </div>
             </div>
-            {(()=>{ const {year,month}=promoMonth; const first=(new Date(year,month,1).getDay()+6)%7; const days=new Date(year,month+1,0).getDate();
+            {(()=>{ const {year,month}=pView; const first=(new Date(year,month,1).getDay()+6)%7; const days=new Date(year,month+1,0).getDate();
               const cells=[]; for(let i=0;i<first;i++) cells.push(<div key={`e${i}`}/>);
               for(let d=1;d<=days;d++){ const date=new Date(year,month,d); const iso=isoOf(date); const promo=isPromoDate(iso);
                 const hol=holidayName(date); const we=isWeekend(date);
@@ -785,27 +877,34 @@ export default function ModuleDaily(){
 
           {/* RESULTADO DEL EJERCICIO */}
           <div className={`p-4 rounded-2xl border ${t.card}`}>
-            <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-              <h4 className={`text-sm font-bold ${t.textMain}`}>📊 Resultado del Ejercicio</h4>
-              <span className={`text-[10px] px-3 py-1 rounded-full border font-black ${resultado.proj?t.badgeAmber:t.badge}`}>{resultado.label}</span>
-            </div>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-              {[{label:'Venta',val:fmtM(resultado.venta),c:'text-emerald-400'},
-                {label:'Costo Vendido',val:fmtM(resultado.costo),c:'text-red-400'},
-                {label:'Utilidad',val:fmtM(resultado.util),c:'text-teal-400'},
-                {label:'Markdowns',val:fmtM(resultado.markdown),c:'text-amber-400'},
-                {label:'MG % Final',val:fmtP(resultado.mgFinal),c:resultado.mgFinal>=45?'text-emerald-400':resultado.mgFinal>=35?'text-amber-400':'text-red-400'}].map(({label,val,c})=>(
-                <div key={label} className={`p-3 rounded-lg border ${isDark?'border-zinc-800':'border-gray-100'}`}>
-                  <div className={`text-[9px] uppercase font-black ${t.textMuted}`}>{label}</div><div className={`text-base font-black ${c}`}>{val}</div>
-                </div>))}
-            </div>
-            {scenarioSel!=='actual'&&<p className={`text-[9px] mt-2 ${t.textMuted}`}>Proyectado a cierre de mes con escenario {scenarioSel==='cons'?'Conservador':scenarioSel==='neut'?'Neutral':'Arriesgado'}. Click de nuevo en el escenario para volver a "Real".</p>}
+            <h4 className={`text-sm font-bold mb-4 ${t.textMain}`}>📊 Resultado del Ejercicio</h4>
+            {[{title:'Mes corriente',r:resultado.mes,badge:resultado.mes?.proj?t.badgeAmber:t.badge},
+              {title:'Acumulado periodo',r:resultado.acum,badge:t.badgeTeal}].map(({title,r,badge})=>(
+              <div key={title} className="mb-4 last:mb-0">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className={`text-[10px] font-black uppercase tracking-widest ${t.textMain}`}>{title}</span>
+                  {r?.label&&<span className={`text-[9px] px-2 py-0.5 rounded-full border font-black ${badge}`}>{r.label}</span>}
+                </div>
+                {r?(
+                  <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                    {[{label:'Venta',val:fmtM(r.venta),c:'text-emerald-400'},
+                      {label:'Costo Vendido',val:fmtM(r.costo),c:'text-rose-400'},
+                      {label:'Utilidad',val:fmtM(r.util),c:'text-teal-400'},
+                      {label:'Markdowns',val:fmtM(r.markdown),c:'text-amber-400'},
+                      {label:'MG % Final',val:fmtP(r.mgFinal),c:r.mgFinal>=45?'text-emerald-400':r.mgFinal>=35?'text-amber-400':'text-rose-400'}].map(({label,val,c})=>(
+                      <div key={label} className={`p-3 rounded-lg border ${isDark?'border-zinc-800 bg-zinc-950':'border-gray-100 bg-gray-50'}`}>
+                        <div className={`text-[9px] uppercase font-black ${t.textMuted}`}>{label}</div><div className={`text-base font-black ${c}`}>{val}</div>
+                      </div>))}
+                  </div>
+                ):<p className={`text-[10px] ${t.textMuted}`}>Sin datos del mes.</p>}
+              </div>))}
+            <p className={`text-[9px] mt-1 ${t.textMuted}`}>"Mes corriente" usa el último mes con datos; cambia según el escenario de forecast que selecciones arriba. "Acumulado periodo" es real sobre todo el filtro activo.</p>
           </div>
 
           {/* TABLAS con tendencia + fcst */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             <FcstTable title="Top Marcas" data={byMarca}/>
-            <FcstTable title="Por Sección" data={bySec} accent="text-teal-400"/>
+            <FcstTable title="Por Sección" data={bySecMes} accent="text-teal-400"/>
           </div>
           <FcstTable title="Top GOA" data={byGoa} accent="text-blue-400"/>
 
@@ -819,7 +918,7 @@ export default function ModuleDaily(){
                     {[{label:'On Hand (OH)',val:fmt(invKPI.oh),sub:'disponibles',c:'text-emerald-400'},
                       {label:'On Order (OO)',val:fmt(invKPI.oo),sub:'en tránsito',c:'text-teal-400'},
                       {label:'Total',val:fmt(invKPI.total),sub:'OH+OO',c:t.textAccent1},
-                      {label:'Sell Through',val:fmtP(invKPI.st),sub:'venta/(OH+venta)',c:invKPI.st>=60?'text-emerald-400':invKPI.st>=40?'text-amber-400':'text-red-400'}].map(({label,val,sub,c})=>(
+                      {label:'Sell Through',val:invKPI.st!=null?fmtP(invKPI.st):'N/D',sub:'pzs vend/(OH+vend)',c:invKPI.st==null?t.textMuted:invKPI.st>=60?'text-emerald-400':invKPI.st>=40?'text-amber-400':'text-rose-400'}].map(({label,val,sub,c})=>(
                       <div key={label} className={`p-4 rounded-xl border ${t.cardInner}`}><div className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} mb-1`}>{label}</div><div className={`text-xl font-black ${c}`}>{val}</div><div className={`text-[9px] ${t.textMuted}`}>{sub}</div></div>))}
                   </div>
                   {/* Por tipo ubicación */}
@@ -894,7 +993,7 @@ export default function ModuleDaily(){
                   <div className={`p-4 rounded-2xl border ${t.card}`}>
                     <h4 className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} mb-3`}>Sell Through por División</h4>
                     <div className="space-y-2">{byDiv.map((d,i)=>{ const inv=filtInv.filter(r=>r.division===d.key); const oh=inv.reduce((s,r)=>s+r.oh,0);
-                      const st=(oh+d.ventaP)>0?d.ventaP/(oh+d.ventaP)*100:null; return (
+                      const st=(oh+d.ventaU)>0?d.ventaU/(oh+d.ventaU)*100:null; return (
                       <div key={i}><div className="flex justify-between mb-0.5"><span className={`text-[10px] font-bold ${t.textMain}`}>{d.key}</span>
                         <span className={`text-[10px] font-black ${st!=null?(st>=60?'text-emerald-400':st>=40?'text-amber-400':'text-red-400'):t.textMuted}`}>{st!=null?fmtP(st):'N/D'}</span></div>
                         {st!=null&&<MiniBar value={st} max={100} color={st>=60?'bg-emerald-500':st>=40?'bg-amber-400':'bg-red-400'} isDark={isDark}/>}</div>); })}</div>
@@ -902,7 +1001,7 @@ export default function ModuleDaily(){
                   <div className={`p-4 rounded-2xl border ${t.card}`}>
                     <h4 className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} mb-3`}>Cobertura por División (semanas)</h4>
                     <div className="space-y-2">{byDiv.map((d,i)=>{ const inv=filtInv.filter(r=>r.division===d.key); const oh=inv.reduce((s,r)=>s+r.oh,0);
-                      const dias=lastDateTY?lastDateTY.getDate():30; const rr=d.ventaP/(dias||1); const cob=rr>0?oh/rr:null; const sem=cob!=null?(cob/7).toFixed(1):null;
+                      const dias=lastDateTY?lastDateTY.getDate():30; const rr=d.ventaU/(dias||1); const cob=rr>0?oh/rr:null; const sem=cob!=null?(cob/7).toFixed(1):null;
                       return <div key={i} className="flex items-center justify-between"><span className={`text-[10px] font-bold ${t.textMain} truncate max-w-[120px]`}>{d.key}</span>
                         <span className={`text-[10px] font-black ${sem!=null?(parseFloat(sem)>12?'text-red-400':parseFloat(sem)>8?'text-amber-400':'text-emerald-400'):t.textMuted}`}>{sem!=null?`${sem} sem`:'N/D'}</span></div>; })}</div>
                     <p className={`text-[9px] mt-3 ${t.textMuted}`}>&gt;12 sem = riesgo · &lt;4 sem = ok</p>
