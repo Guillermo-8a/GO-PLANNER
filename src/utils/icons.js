@@ -3,8 +3,8 @@
 export {
   Activity, AlertCircle, ArrowUpDown, ArrowLeftRight,
   BarChart2, BarChart3,  Box,
-  Calendar, Check, CheckCircle2, CheckSquare, ChevronDown,
-  ChevronUp, Copy, Calculator, Clock,
+  Calendar, Check, CheckCircle2, CheckSquare, ChevronDown, ChevronLeft,
+  ChevronUp, ChevronRight, Copy, Calculator, Clock,
   Database, Download, DollarSign,
   Edit3, Edit,
   FileSpreadsheet, FileText, Filter,
