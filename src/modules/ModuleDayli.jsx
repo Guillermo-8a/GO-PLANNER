@@ -29,6 +29,10 @@ const parseDate = s => {
     }}
   return d&&!isNaN(d)?d:null;
 };
+const isoWeek = d => { const dt=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d.getDate()));
+  const dn=(dt.getUTCDay()+6)%7; dt.setUTCDate(dt.getUTCDate()-dn+3);
+  const ft=new Date(Date.UTC(dt.getUTCFullYear(),0,4)); return 1+Math.round((dt-ft)/(7*86400000)); };
+const DOW_LBL=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
 const fmtDate = d => d?d.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'numeric'}):'';
 
 const linearRegression = pts => {
@@ -186,11 +190,16 @@ const parsePromoCSV = text => {
   const rows=text.split('\n').map(r=>parseCSVRow(r,sep)); if(rows.length<2) return [];
   const H=rows[0].map(h=>h.toUpperCase().trim().replace(/\s+/g,'_'));
   const idx=(...ns)=>ns.map(n=>H.findIndex(h=>h===n||h.includes(n))).find(i=>i>=0)??-1;
-  const iF=idx('FECHA','DATE'),iS=idx('SECCION'),iM=idx('MARCA','PROVEEDOR'),iU=idx('UPLIFT','INCREMENTO','%');
+  const iN=idx('NOMBRE','PROMO','PROMOCION'),iIni=idx('FECHA_INICIO','INICIO','DESDE','FECHA'),iFin=idx('FECHA_FIN','FIN','HASTA'),
+    iDias=idx('DIAS','DURACION'),iS=idx('SECCION'),iM=idx('MARCA','PROVEEDOR'),iU=idx('UPLIFT','INCREMENTO','%');
   const out=[];
   for(let i=1;i<rows.length;i++){ const r=rows[i]; if(!r||r.every(c=>!c)) continue;
-    const f=iF>=0?parseDate(r[iF]):null; if(!f) continue;
-    out.push({ fecha:isoOf(f), seccion:iS>=0?r[iS].trim().toUpperCase():'', marca:iM>=0?r[iM].trim().toUpperCase():'', uplift:iU>=0?num(r[iU]):0 });
+    const ini=iIni>=0?parseDate(r[iIni]):null; if(!ini) continue;
+    let fin=iFin>=0?parseDate(r[iFin]):null;
+    if(!fin&&iDias>=0&&num(r[iDias])>1){ fin=new Date(ini); fin.setDate(ini.getDate()+num(r[iDias])-1); }
+    if(!fin) fin=ini;
+    const nombre=iN>=0?r[iN].trim():'', seccion=iS>=0?r[iS].trim().toUpperCase():'', marca=iM>=0?r[iM].trim().toUpperCase():'', uplift=iU>=0?num(r[iU]):0;
+    for(let d=new Date(ini); d<=fin; d.setDate(d.getDate()+1)){ out.push({ fecha:isoOf(new Date(d)), nombre, seccion, marca, uplift }); }
   }
   return out;
 };
@@ -242,7 +251,7 @@ export default function ModuleDaily(){
   const [moneyK,setMoneyK]=useState(true); // columnas $ vienen en miles → PVP ×1000
   const [cmpMode,setCmpMode]=useState(0);
   const [tblBasis,setTblBasis]=useState('mtd'); // 'mtd' (al día) | 'close' (cierre con fcst)
-  const [cmpDayMode,setCmpDayMode]=useState('avg'); // 'avg' | 'seq'
+  const [cmpDayMode,setCmpDayMode]=useState('detalle'); // 'detalle' (lun↔lun) | 'avg'
   const [scatterLevel,setScatterLevel]=useState(0);
 
   // Persistencia
@@ -355,6 +364,15 @@ export default function ModuleDaily(){
     return Object.values(map).sort((a,b)=>a.fecha.localeCompare(b.fecha))
       .map(d=>({...d,crec:(d.ly!=null&&d.ly!==0)?((d.ty-d.ly)/Math.abs(d.ly))*100:null})); },[tyData,lyData,tyYear]);
 
+  // ── Serie ALINEADA POR DÍA DE SEMANA (lunes↔lunes): cada fecha TY vs LY misma semana ISO + mismo día ──
+  const serieWeekAligned=useMemo(()=>{
+    const lyWD={}; lyData.forEach(r=>{ if(!r.fecha) return; const k=isoWeek(r.fecha)+'-'+((r.fecha.getDay()+6)%7); lyWD[k]=(lyWD[k]||0)+r.ventaP; });
+    const tyMap={}; tyData.forEach(r=>{ if(!r.fecha) return; const k=isoOf(r.fecha); tyMap[k]=(tyMap[k]||0)+r.ventaP; });
+    return Object.keys(tyMap).sort().map(iso=>{ const d=new Date(iso+'T00:00:00'); const dow=(d.getDay()+6)%7;
+      const ly=lyWD[isoWeek(d)+'-'+dow]; const lyv=ly==null?null:ly;
+      return {fecha:iso,dow:DOW_LBL[dow],ty:tyMap[iso],ly:lyv,crec:(lyv!=null&&lyv!==0)?((tyMap[iso]-lyv)/Math.abs(lyv))*100:null}; });
+  },[tyData,lyData]);
+
   // ── Métricas de tendencia (3 meses / acum / mes actual), LY topado a MTD ──
   const trendStats=useMemo(()=>{
     if(!lastDateTY) return null;
@@ -380,7 +398,8 @@ export default function ModuleDaily(){
       const k=`${d}-${diff}`; cells[k]=(cells[k]||0)+r.ventaP; if(cells[k]>max) max=cells[k]; });
     const weekIdxs=[...new Set(Object.keys(cells).map(k=>+k.split('-')[1]))].sort((a,b)=>a-b);
     const weeks=weekIdxs.map(wi=>{ const ws=new Date(weekStart); ws.setDate(weekStart.getDate()+wi*7); return {idx:wi,label:`${ws.getDate()}/${ws.getMonth()+1}`}; });
-    return {weeks,cells,max};
+    const total=Object.values(cells).reduce((s,v)=>s+v,0)||1;
+    return {weeks,cells,max,total};
   },[tyData]);
 
   // ── byKey con tendencia + fcst ──
@@ -394,7 +413,7 @@ export default function ModuleDaily(){
       tendencia:delta(g.ventaP,lyM[g.key]), fcst:diaActual>0?g.ventaP/diaActual*diasMes:g.ventaP })).sort((a,b)=>b.ventaP-a.ventaP);
   },[tyData,lyData,lastDateTY]);
 
-  // Versión MES CORRIENTE (para tablas marca/sección/goa). LY topado a MTD para comparación justa.
+  // Versión MES CORRIENTE (para tablas marca/sección/goa). LY MTD topado a día actual; LY full sin tope.
   const byKeyMonth=useCallback((key)=>{
     if(!lastDateTY) return [];
     const month=lastDateTY.getMonth(),year=lastDateTY.getFullYear();
@@ -402,13 +421,14 @@ export default function ModuleDaily(){
     const tyM={},lyMTD={},lyFull={};
     tyData.forEach(r=>{ if(!r.fecha||r.fecha.getMonth()!==month||r.fecha.getFullYear()!==year) return; const k=r[key]||'N/D';
       if(!tyM[k])tyM[k]={key:k,ventaP:0,ventaU:0,utilidad:0,markdown:0}; tyM[k].ventaP+=r.ventaP; tyM[k].ventaU+=r.ventaU; tyM[k].utilidad+=r.utilidad; tyM[k].markdown+=r.markdown; });
-    lyData.forEach(r=>{ if(!r.fecha||r.fecha.getMonth()!==month||r.fecha.getFullYear()!==lyYear) return; const k=r[key]||'N/D';
+    // LY del mes desde allData SIN tope (para cierre vs LY completo); MTD topado a diaActual
+    allData.forEach(r=>{ if(r.year!==lyYear||!r.fecha||!dimsOk(r)||r.fecha.getMonth()!==month) return; const k=r[key]||'N/D';
       lyFull[k]=(lyFull[k]||0)+r.ventaP; if(r.fecha.getDate()<=diaActual) lyMTD[k]=(lyMTD[k]||0)+r.ventaP; });
     return Object.values(tyM).map(g=>{ const fcst=diaActual>0?g.ventaP/diaActual*diasMes:g.ventaP;
       return { ...g, fcst, mgPct:g.ventaP>0?g.utilidad/g.ventaP*100:0,
         tendMTD:delta(g.ventaP,lyMTD[g.key]), tendClose:delta(fcst,lyFull[g.key]),
         lyMTD:lyMTD[g.key]||0, lyFull:lyFull[g.key]||0 }; }).sort((a,b)=>b.ventaP-a.ventaP);
-  },[tyData,lyData,lastDateTY,lyYear]);
+  },[tyData,allData,dimsOk,lastDateTY,lyYear]);
 
   const byCanal=useMemo(()=>byKeyFcst('canal'),[byKeyFcst]);
   const byDiv=useMemo(()=>byKeyFcst('division'),[byKeyFcst]);
@@ -503,14 +523,19 @@ export default function ModuleDaily(){
   useEffect(()=>{ if(!promoView&&lastDateTY) setPromoView({year:lastDateTY.getFullYear(),month:lastDateTY.getMonth()}); },[lastDateTY,promoView]);
   const pView=promoView||promoMonth;
   const promoMatched=useMemo(()=>tyData.filter(r=>r.fecha&&isPromoDate(isoOf(r.fecha))).length,[tyData,isPromoDate]);
+  const promoNamesFor=useCallback(iso=>{ const ns=promoEntries.filter(e=>e.fecha===iso&&e.nombre).map(e=>e.nombre); return [...new Set(ns)].join(', '); },[promoEntries]);
+  const promoList=useMemo(()=>{ const g={};
+    promoEntries.forEach(e=>{ const k=e.nombre||'(sin nombre)'; if(!g[k])g[k]={nombre:k,min:e.fecha,max:e.fecha,uplift:e.uplift,seccion:e.seccion,marca:e.marca,dias:new Set()};
+      g[k].dias.add(e.fecha); if(e.fecha<g[k].min)g[k].min=e.fecha; if(e.fecha>g[k].max)g[k].max=e.fecha; g[k].uplift=Math.max(g[k].uplift,e.uplift); });
+    return Object.values(g).map(p=>({...p,nDias:p.dias.size})).sort((a,b)=>a.min.localeCompare(b.min)); },[promoEntries]);
 
   // ── Sub-componentes UI ──
   const FilterBar=()=>(
     <div className={`flex flex-wrap gap-2 p-3 rounded-xl border items-center ${t.cardInner}`}>
       <div className="flex items-center gap-1">
-        <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} className={`text-xs px-2 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}/>
+        <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} style={{colorScheme:isDark?'dark':'light'}} className={`text-xs px-2 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}/>
         <span className={`text-xs ${t.textMuted}`}>→</span>
-        <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)} className={`text-xs px-2 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}/>
+        <input type="date" value={dateTo} onChange={e=>setDateTo(e.target.value)} style={{colorScheme:isDark?'dark':'light'}} className={`text-xs px-2 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}/>
       </div>
       {(()=>{ const ref=lastTYAll||new Date(tyYear,0,1); const iso=d=>isoOf(d);
         const lastDay=(y,m)=>new Date(y,m+1,0);
@@ -519,7 +544,7 @@ export default function ModuleDaily(){
           {l:'30d',f:()=>{const a=new Date(ref);a.setDate(ref.getDate()-29);return[iso(a),iso(ref)];}},
           {l:'Mes actual',f:()=>[iso(new Date(ref.getFullYear(),ref.getMonth(),1)),iso(lastDay(ref.getFullYear(),ref.getMonth()))]},
           {l:'Mes pasado',f:()=>[iso(new Date(ref.getFullYear(),ref.getMonth()-1,1)),iso(lastDay(ref.getFullYear(),ref.getMonth()-1))]},
-          {l:'YTD',f:()=>[iso(new Date(ref.getFullYear(),0,1)),iso(ref)]},
+          {l:'Año',f:()=>[iso(new Date(ref.getFullYear(),0,1)),iso(ref)]},
           {l:'Todo',f:()=>['','']},
         ];
         return presets.map(p=><button key={p.l} onClick={()=>{const[a,b]=p.f();setDateFrom(a);setDateTo(b);}}
@@ -690,11 +715,29 @@ export default function ModuleDaily(){
             {cmpMode===0&&(<>
               <div className="flex items-center gap-2 mb-3">
                 <span className={`text-[10px] ${t.textMuted}`}>Vista:</span>
-                {[['avg','Promedio x día semana'],['seq','Día por día']].map(([v,l])=>(
+                {[['detalle','Detalle (lun↔lun)'],['avg','Promedio x día semana']].map(([v,l])=>(
                   <button key={v} onClick={()=>setCmpDayMode(v)} className={`text-[10px] px-3 py-1 rounded-full border font-black transition-all ${cmpDayMode===v?t.badge:t.btnGhost}`}>{l}</button>))}
               </div>
-              {cmpDayMode==='avg'?(<>
-                <p className={`text-[10px] mb-3 ${t.textMuted}`}>Venta promedio por día de semana (mismo "martes" TY vs LY, sin importar la fecha exacta).</p>
+              {cmpDayMode==='detalle'?(<>
+                <p className={`text-[10px] mb-3 ${t.textMuted}`}>Cada día TY contra el <strong>mismo día de semana</strong> de LY alineado por semana (lunes↔lunes), no por fecha. Así cuadran los patrones de fin de semana.</p>
+                <ResponsiveContainer width="100%" height={220}>
+                  <LineChart data={serieWeekAligned}><CartesianGrid strokeDasharray="3 3" stroke={gridC}/>
+                    <XAxis dataKey="fecha" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>v?.slice(5)}/>
+                    <YAxis tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
+                    <Tooltip content={({active,payload,label})=>{ if(!active||!payload?.length) return null; const d=payload[0]?.payload;
+                      return <div className={`p-3 rounded-xl border text-xs shadow-xl ${t.card}`}>
+                        <p className={`font-bold mb-1 ${t.textMain}`}>{label} · {d?.dow}</p>
+                        <p style={{color:'#8b5cf6'}}>TY: {fmtM(d?.ty)}</p>
+                        {d?.ly!=null&&<p className={t.textMuted}>LY ({d?.dow}): {fmtM(d?.ly)}</p>}
+                        {d?.crec!=null&&<p className={`font-black ${d.crec>=0?'text-violet-400':'text-rose-400'}`}>Crec: {d.crec>=0?'+':''}{d.crec.toFixed(1)}%</p>}
+                      </div>; }}/>
+                    <Legend wrapperStyle={{fontSize:10}}/>
+                    <Line type="monotone" dataKey="ly" name={`LY ${lyYear} (mismo día sem.)`} stroke={isDark?'#a1a1aa':'#94a3b8'} dot={false} strokeWidth={1.5} strokeDasharray="4 2"/>
+                    <Line type="monotone" dataKey="ty" name={`TY ${tyYear}`} stroke="#8b5cf6" dot={false} strokeWidth={2.5} activeDot={{r:4}}/>
+                  </LineChart>
+                </ResponsiveContainer>
+              </>):(<>
+                <p className={`text-[10px] mb-3 ${t.textMuted}`}>Venta promedio por día de semana (todos los lunes promediados vs todos los lunes LY, etc).</p>
                 <ResponsiveContainer width="100%" height={220}>
                   <BarChart data={cmpWeekday}><CartesianGrid strokeDasharray="3 3" stroke={gridC}/>
                     <XAxis dataKey="label" tick={{fontSize:10,fill:txtC}} stroke={axisC}/>
@@ -703,17 +746,6 @@ export default function ModuleDaily(){
                     <Bar dataKey="ly" name={`LY ${lyYear}`} fill={isDark?'#71717a':'#94a3b8'} radius={[4,4,0,0]}/>
                     <Bar dataKey="ty" name={`TY ${tyYear}`} fill="#8b5cf6" radius={[4,4,0,0]}/>
                   </BarChart>
-                </ResponsiveContainer>
-              </>):(<>
-                <p className={`text-[10px] mb-3 ${t.textMuted}`}>Cada día del periodo: TY contra el mismo día calendario de LY.</p>
-                <ResponsiveContainer width="100%" height={220}>
-                  <LineChart data={serieDiaria}><CartesianGrid strokeDasharray="3 3" stroke={gridC}/>
-                    <XAxis dataKey="fecha" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>v?.slice(5)}/>
-                    <YAxis tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
-                    <Tooltip content={<TTip/>}/><Legend wrapperStyle={{fontSize:10}}/>
-                    <Line type="monotone" dataKey="ly" name={`LY ${lyYear}`} stroke={isDark?'#a1a1aa':'#94a3b8'} dot={false} strokeWidth={1.5} strokeDasharray="4 2"/>
-                    <Line type="monotone" dataKey="ty" name={`TY ${tyYear}`} stroke="#8b5cf6" dot={false} strokeWidth={2.5} activeDot={{r:4}}/>
-                  </LineChart>
                 </ResponsiveContainer>
               </>)}
             </>)}
@@ -848,22 +880,26 @@ export default function ModuleDaily(){
           {/* HEATMAP todas las semanas */}
           {heatmap.weeks.length>0&&(
             <div className={`p-4 rounded-2xl border ${t.card}`}>
-              <h4 className={`text-sm font-bold mb-4 ${t.textMain}`}>🗓️ Heatmap — Venta por Día de Semana (todas las semanas)</h4>
-              <div className="overflow-x-auto custom-scrollbar">
-                <div className="grid gap-1" style={{gridTemplateColumns:`44px repeat(${heatmap.weeks.length},minmax(38px,1fr))`}}>
+              <h4 className={`text-sm font-bold mb-4 ${t.textMain}`}>🗓️ Heatmap — % Participación por Día de Semana</h4>
+              <div className="overflow-x-auto custom-scrollbar pb-2">
+                <div className="grid gap-1" style={{gridTemplateColumns:`44px repeat(${heatmap.weeks.length},minmax(40px,1fr))`}}>
                   <div/>
                   {heatmap.weeks.map(w=><div key={w.idx} className={`text-center text-[8px] font-black ${t.textMuted}`}>{w.label}</div>)}
-                  {['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'].map((d,di)=>(
+                  {DOW_LBL.map((d,di)=>(
                     <React.Fragment key={d}>
                       <div className={`text-[9px] font-black ${t.textMuted} flex items-center`}>{d}</div>
-                      {heatmap.weeks.map(w=>{ const v=heatmap.cells[`${di}-${w.idx}`]; const it=v?v/heatmap.max:0;
-                        return <div key={w.idx} title={v?fmtM(v):''} className="h-7 rounded-md flex items-center justify-center text-[8px] font-bold"
-                          style={{background:v?`rgba(139,92,246,${0.22+it*0.78})`:(isDark?'rgba(39,39,42,0.4)':'rgba(243,244,246,0.7)'),color:it>0.35?'white':(isDark?'#71717a':'#9ca3af')}}>
-                          {v?(v/1000).toFixed(0):'·'}</div>; })}
+                      {heatmap.weeks.map(w=>{ const v=heatmap.cells[`${di}-${w.idx}`]; const it=v?v/heatmap.max:0; const pct=v?v/heatmap.total*100:0;
+                        return <div key={w.idx} className="group relative h-8 rounded-md flex items-center justify-center text-[9px] font-black cursor-default transition-all duration-150 hover:ring-2 hover:ring-violet-400 hover:scale-[1.18] hover:z-20"
+                          style={{background:v?`rgba(139,92,246,${0.18+it*0.82})`:(isDark?'rgba(39,39,42,0.4)':'rgba(243,244,246,0.7)'),color:it>0.35?'white':(isDark?'#71717a':'#9ca3af')}}>
+                          {v?pct.toFixed(1):'·'}
+                          {v&&<div className={`absolute bottom-full mb-1 left-1/2 -translate-x-1/2 hidden group-hover:block z-30 px-2 py-1 rounded-lg border text-[10px] whitespace-nowrap shadow-xl ${t.card}`}>
+                            <span className={t.textMain}>{fmtM(v)}</span> · <span className="text-violet-400 font-black">{pct.toFixed(1)}%</span>
+                          </div>}
+                        </div>; })}
                     </React.Fragment>))}
                 </div>
               </div>
-              <p className={`text-[9px] mt-2 ${t.textMuted}`}>Valores en miles ($k). Hover para monto exacto.</p>
+              <p className={`text-[9px] mt-2 ${t.textMuted}`}>Cada celda = % de la venta total del periodo. Hover para monto exacto y resaltado. Más morado = mayor participación.</p>
             </div>)}
 
           {/* PROMO CALENDAR */}
@@ -887,8 +923,8 @@ export default function ModuleDaily(){
             {(()=>{ const {year,month}=pView; const first=(new Date(year,month,1).getDay()+6)%7; const days=new Date(year,month+1,0).getDate();
               const cells=[]; for(let i=0;i<first;i++) cells.push(<div key={`e${i}`}/>);
               for(let d=1;d<=days;d++){ const date=new Date(year,month,d); const iso=isoOf(date); const promo=isPromoDate(iso);
-                const hol=holidayName(date); const we=isWeekend(date);
-                cells.push(<button key={iso} onClick={()=>togglePromo(iso)} title={hol||''}
+                const hol=holidayName(date); const we=isWeekend(date); const pn=promoNamesFor(iso);
+                cells.push(<button key={iso} onClick={()=>togglePromo(iso)} title={[pn&&`Promo: ${pn}`,hol].filter(Boolean).join(' · ')}
                   className={`relative h-12 rounded-lg flex flex-col items-center justify-center text-[10px] font-bold border transition-all ${promo?'bg-violet-500 text-white border-violet-400':(isDark?`bg-zinc-900 border-zinc-700 ${we?'text-amber-400':'text-gray-300'} hover:border-violet-500`:`bg-white border-gray-200 ${we?'text-amber-600':'text-gray-700'} hover:border-violet-400`)}`}>
                   <span>{d}</span>{hol&&<span className="absolute top-0.5 right-0.5 text-[7px]">🎉</span>}
                   {promo&&<span className="text-[7px]">promo</span>}
@@ -897,7 +933,18 @@ export default function ModuleDaily(){
                 {['L','M','M','J','V','S','D'].map((d,i)=><div key={i} className={`text-[9px] font-black text-center ${t.textMuted}`}>{d}</div>)}
                 {cells}</div>;
             })()}
-            <p className={`text-[9px] mt-3 ${t.textMuted}`}>Click para marcar/desmarcar días con promo. 🎉 = festivo · días naranja = fin de semana. El forecast suma uplift en días promo TY y descuenta si LY tuvo promo que TY no tiene. CSV de promos puede acotar por sección/marca.</p>
+            {promoList.length>0&&(
+              <div className="mt-4">
+                <h5 className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} mb-2`}>Promos cargadas</h5>
+                <div className="flex flex-wrap gap-2">
+                  {promoList.map((p,i)=>(
+                    <div key={i} className={`px-3 py-1.5 rounded-lg border ${t.cardInner}`}>
+                      <span className={`text-[11px] font-black ${t.textMain}`}>{p.nombre}</span>
+                      <span className={`text-[9px] ml-2 ${t.textMuted}`}>{fmtDate(new Date(p.min+'T00:00:00'))}{p.max!==p.min?`→${fmtDate(new Date(p.max+'T00:00:00'))}`:''} · {p.nDias}d · +{p.uplift||defaultUplift}%{p.seccion?` · ${p.seccion}`:''}{p.marca?` · ${p.marca}`:''}</span>
+                    </div>))}
+                </div>
+              </div>)}
+            <p className={`text-[9px] mt-3 ${t.textMuted}`}>Click para marcar/desmarcar días con promo. 🎉 = festivo · días naranja = fin de semana. <strong>UPLIFT</strong> = % extra de venta esperado ese día vs base (ej. 20 = +20%). El forecast suma uplift en días promo TY y descuenta si LY tuvo promo que TY no tiene.<br/>CSV de promos: <code>NOMBRE, FECHA_INICIO, FECHA_FIN, SECCION, MARCA, UPLIFT</code> — usa FECHA_FIN o DIAS para rangos; sin SECCION/MARCA aplica a todo.</p>
           </div>
 
           {/* FORECAST */}
