@@ -51,7 +51,7 @@ const HOLIDAYS = [
   {md:'02-05',name:'Constitución'}, {md:'02-14',name:'San Valentín'},
   {md:'03-21',name:'Benito Juárez'}, {md:'05-01',name:'Día del Trabajo'},
   {md:'05-05',name:'Cinco de Mayo'}, {md:'05-10',name:'Día de las Madres'},
-  {md:'05-15',name:'Día del Maestro'},
+  {md:'21-06',name:'Día del Padre'},
 ];
 const holidayName = d => HOLIDAYS.find(h=>h.md===mdOf(d))?.name || null;
 const isWeekend = d => d.getDay()===0||d.getDay()===6;
