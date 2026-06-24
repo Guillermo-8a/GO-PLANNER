@@ -151,15 +151,31 @@ export default function ModuleDispersion(){
   const plotPoints=useMemo(()=>{ if(points.length<=MAX_PLOT) return points;
     const step=Math.ceil(points.length/MAX_PLOT); return points.filter((_,i)=>i%step===0); },[points]);
 
-  // R² jerárquico por nivel (respeta filtros activos)
+ // R² jerárquico por nivel (drill-down: filtra hasta ese nivel, agrega a tienda)
   const r2ByLevel=useMemo(()=>{
-    const dims=[{key:'direccion',label:'Dirección'},{key:'division',label:'División'},{key:'seccion',label:'Sección'},{key:'goa',label:'GOA'},{key:'marca',label:'Marca'},{key:'tienda',label:'Tienda'}];
-    const filtered=data.filter(passFilters);
-    return dims.map(d=>{
+    const hier=[
+      {key:'direccion',label:'Dirección'},
+      {key:'division',label:'División'},
+      {key:'seccion',label:'Sección'},
+      {key:'goa',label:'GOA'},
+      {key:'marca',label:'Marca'},
+    ];
+    // Solo muestra niveles con filtro activo (drill-down progresivo)
+    const activeLevels=hier.filter(h=>filters[h.key]);
+    if(activeLevels.length===0){
+      // Sin filtros: muestra R² global (todos los datos agregados a tienda)
       const m=new Map();
-      for(const r of filtered){ const k=r[d.key]||'N/D'; const a=m.get(k)||{x:0,y:0,name:k}; a.x+=r[xKey]||0; a.y+=r[yKey]||0; m.set(k,a); }
+      for(const r of data){ const k=r.tienda||'N/D'; const a=m.get(k)||{x:0,y:0}; a.x+=r[xKey]||0; a.y+=r[yKey]||0; m.set(k,a); }
       let pts=[...m.values()]; if(excludeZeros) pts=pts.filter(p=>p.x!==0&&p.y!==0);
-      return {...d, ...linearRegression(pts), nGroups:pts.length, value:filters[d.key]||null};
+      return [{key:'global',label:'General',value:'Todos los datos', ...linearRegression(pts), nGroups:pts.length}];
+    }
+    return activeLevels.map(h=>{
+      // Filtra data hasta este nivel y todos los anteriores
+      const subset=data.filter(r=>activeLevels.slice(0,activeLevels.indexOf(h)+1).every(lv=>r[lv.key]===filters[lv.key]));
+      const m=new Map();
+      for(const r of subset){ const k=r.tienda||'N/D'; const a=m.get(k)||{x:0,y:0}; a.x+=r[xKey]||0; a.y+=r[yKey]||0; m.set(k,a); }
+      let pts=[...m.values()]; if(excludeZeros) pts=pts.filter(p=>p.x!==0&&p.y!==0);
+      return {...h, value:filters[h.key], ...linearRegression(pts), nGroups:pts.length};
     });
   },[data,filters,xKey,yKey,excludeZeros]);
 
