@@ -404,6 +404,7 @@ export default function ModuleDispersion(){
               <p className={`text-[9px] mt-3 ${t.textMuted}`}>R² calculada agregando los datos del scope a cada nivel. Niveles con &lt;2 grupos (filtro fijo o nivel único) no son calculables.</p>
             </div>
           </div>
+          )}
       {/* MODAL GUARDAR MES */}
       {saveModal&&(
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{background:isDark?'rgba(9,9,11,0.6)':'rgba(255,255,255,0.5)',backdropFilter:'blur(6px)'}} onClick={()=>setSaveModal(null)}>
@@ -433,7 +434,7 @@ export default function ModuleDispersion(){
       )}
 
       <style dangerouslySetInnerHTML={{__html:`@keyframes fadeInUp{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}.animate-fade-in-up{animation:fadeInUp 0.4s ease-out forwards;}`}}/>
-    </div>
+       </div>
   );
 }
 const Ctrl=({label,t,children})=>(<div><div className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} mb-1`}>{label}</div>{children}</div>);
