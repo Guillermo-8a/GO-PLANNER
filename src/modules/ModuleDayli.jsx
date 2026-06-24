@@ -34,6 +34,9 @@ const isoWeek = d => { const dt=new Date(Date.UTC(d.getFullYear(),d.getMonth(),d
   const ft=new Date(Date.UTC(dt.getUTCFullYear(),0,4)); return 1+Math.round((dt-ft)/(7*86400000)); };
 const DOW_LBL=['Lun','Mar','Mié','Jue','Vie','Sáb','Dom'];
 const fmtDate = d => d?d.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digit',year:'numeric'}):'';
+// Max/min sin spread (seguros para arreglos enormes)
+const maxOf = arr => arr.length?arr.reduce((m,v)=>v>m?v:m,arr[0]):null;
+const minOf = arr => arr.length?arr.reduce((m,v)=>v<m?v:m,arr[0]):null;
 
 const linearRegression = pts => {
   const n=pts.length; if(n<2) return {slope:0,intercept:0,r2:0};
@@ -320,7 +323,11 @@ export default function ModuleDaily(){
     if(Array.isArray(d.fMarca)) setFMarca(d.fMarca); if(Array.isArray(d.fNorma)) setFNorma(d.fNorma); if(Array.isArray(d.fPago)) setFPago(d.fPago);
     if(Array.isArray(d.fGoa)) setFGoa(d.fGoa); if(d.usarPromosFijas!=null) setUsarPromosFijas(d.usarPromosFijas);
   }}catch{} },[]);
-  useEffect(()=>{ try{ localStorage.setItem('gop_daily_v3',JSON.stringify({allData,invData,promoEntries,manualPromo,defaultUplift,moneyK,usarPromosFijas,dateFrom,dateTo,fCanal,fDiv,fSec,fMarca,fNorma,fPago,fGoa})); }catch{} },
+  useEffect(()=>{ try{
+    const cfg={promoEntries,manualPromo,defaultUplift,moneyK,usarPromosFijas,dateFrom,dateTo,fCanal,fDiv,fSec,fMarca,fNorma,fPago,fGoa};
+    const small=allData.length<=20000&&invData.length<=20000;
+    localStorage.setItem('gop_daily_v3',JSON.stringify(small?{...cfg,allData,invData}:cfg));
+  }catch{} },
     [allData,invData,promoEntries,manualPromo,defaultUplift,moneyK,usarPromosFijas,dateFrom,dateTo,fCanal,fDiv,fSec,fMarca,fNorma,fPago,fGoa]);
 
   const decodeBuf=buf=>{ let txt=new TextDecoder('utf-8',{fatal:false}).decode(buf);
@@ -334,7 +341,7 @@ export default function ModuleDaily(){
     inF(fMarca,r.marca)&&inF(fNorma,r.norma)&&inF(fPago,r.pago)&&inF(fGoa,r.goa),
     [fCanal,fDiv,fSec,fMarca,fNorma,fPago,fGoa]);
   // Último día con data TY (global, ignora filtro de fecha) → tope para comparación justa
-  const lastTYAll=useMemo(()=>{ const d=allData.filter(r=>r.year===tyYear&&r.fecha).map(r=>r.fecha); return d.length?new Date(Math.max(...d)):null; },[allData,tyYear]);
+  const lastTYAll=useMemo(()=>{ const d=allData.filter(r=>r.year===tyYear&&r.fecha).map(r=>r.fecha); return d.length?new Date(maxOf(d)):null; },[allData,tyYear]);
   const applyFor=useCallback((year)=>{ const shift=iso=>iso?`${year}-${iso.slice(5)}`:'';
     const from=shift(dateFrom),to=shift(dateTo);
     const cut=lastTYAll?new Date(year,lastTYAll.getMonth(),lastTYAll.getDate(),23,59,59):null;
@@ -358,7 +365,7 @@ export default function ModuleDaily(){
   const kpiTY=useMemo(()=>agg(tyData),[tyData,agg]);
   const kpiLY=useMemo(()=>agg(lyData),[lyData,agg]);
 
-  const lastDateTY=useMemo(()=>{ const d=tyData.map(r=>r.fecha).filter(Boolean); return d.length?new Date(Math.max(...d)):null; },[tyData]);
+  const lastDateTY=useMemo(()=>{ const d=tyData.map(r=>r.fecha).filter(Boolean); return d.length?new Date(maxOf(d)):null; },[tyData]);
 
   // Promos fijas recurrentes (Hot Sale, Buen Fin, etc.) resueltas por año
   const fixedPromoEntries=useMemo(()=>{ if(!usarPromosFijas) return []; const out=[];
@@ -453,7 +460,7 @@ export default function ModuleDaily(){
   // ── Heatmap: TODAS las semanas del rango ──
   const heatmap=useMemo(()=>{
     const dated=tyData.filter(r=>r.fecha); if(!dated.length) return {weeks:[],cells:{},max:1};
-    const minD=new Date(Math.min(...dated.map(r=>r.fecha))); const dow0=(minD.getDay()+6)%7;
+    const minD=new Date(minOf(dated.map(r=>r.fecha))); const dow0=(minD.getDay()+6)%7;
     const weekStart=new Date(minD); weekStart.setDate(minD.getDate()-dow0);
     const cells={}; let max=1;
     dated.forEach(r=>{ const diff=Math.floor((r.fecha-weekStart)/(7*86400000)); const d=(r.fecha.getDay()+6)%7;
@@ -1161,7 +1168,7 @@ export default function ModuleDaily(){
                         <Tooltip content={({active,payload})=>{ if(!active||!payload?.length) return null; const d=payload[0]?.payload;
                           return <div className={`p-3 rounded-xl border text-xs shadow-xl ${t.card}`}><p className={`font-bold mb-1 ${t.textMain}`}>{d?.name}</p><p className="text-violet-400">Venta: {fmtM(d?.x)}</p><p className="text-purple-400">OH+OO: {fmt(d?.y)}</p></div>; }}/>
                         <Scatter data={scatterData} fill="#8b5cf6" fillOpacity={0.75}/>
-                        {scatterReg&&(()=>{ const xs=scatterData.map(d=>d.x); const xn=Math.min(...xs),xx=Math.max(...xs);
+                        {scatterReg&&(()=>{ const xs=scatterData.map(d=>d.x); const xn=minOf(xs),xx=maxOf(xs);
                           return <Scatter data={[{x:xn,y:scatterReg.slope*xn+scatterReg.intercept},{x:xx,y:scatterReg.slope*xx+scatterReg.intercept}]} fill="none" line={{stroke:'#f59e0b',strokeWidth:2,strokeDasharray:'6 3'}} shape={()=>null} legendType="none"/>; })()}
                       </ScatterChart>
                     </ResponsiveContainer>
