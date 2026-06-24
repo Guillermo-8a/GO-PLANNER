@@ -151,6 +151,18 @@ export default function ModuleDispersion(){
   const plotPoints=useMemo(()=>{ if(points.length<=MAX_PLOT) return points;
     const step=Math.ceil(points.length/MAX_PLOT); return points.filter((_,i)=>i%step===0); },[points]);
 
+  // R² jerárquico por nivel (respeta filtros activos)
+  const r2ByLevel=useMemo(()=>{
+    const dims=[{key:'direccion',label:'Dirección'},{key:'division',label:'División'},{key:'seccion',label:'Sección'},{key:'goa',label:'GOA'},{key:'marca',label:'Marca'},{key:'tienda',label:'Tienda'}];
+    const filtered=data.filter(passFilters);
+    return dims.map(d=>{
+      const m=new Map();
+      for(const r of filtered){ const k=r[d.key]||'N/D'; const a=m.get(k)||{x:0,y:0,name:k}; a.x+=r[xKey]||0; a.y+=r[yKey]||0; m.set(k,a); }
+      let pts=[...m.values()]; if(excludeZeros) pts=pts.filter(p=>p.x!==0&&p.y!==0);
+      return {...d, ...linearRegression(pts), nGroups:pts.length, value:filters[d.key]||null};
+    });
+  },[data,filters,xKey,yKey,excludeZeros]);
+
   const tableLevel=level==='__row__'?'tienda':level;
   const tableRows=useMemo(()=>{ const m=new Map();
     for(const r of data){ if(!passFilters(r)) continue; const k=r[tableLevel]||'N/D';
@@ -327,41 +339,71 @@ export default function ModuleDispersion(){
             </div>
             {tableRows.length>TABLE_RENDER&&<p className={`text-[9px] mt-2 ${t.textMuted}`}>Mostrando {TABLE_RENDER} de {tableRows.length.toLocaleString()} (usa buscar/ordenar para acotar).</p>}
           </div>
-          {/* HISTÓRICO */}
-          {history.length>0&&(
+{/* HISTÓRICO + R² JERÁRQUICO */}
+          <div className={`grid grid-cols-1 ${history.length>0?'lg:grid-cols-2':''} gap-4`}>
+            {history.length>0&&(
+              <div className={`p-4 rounded-xl border ${t.cardInner}`}>
+                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                  <h4 className={`text-sm font-bold ${t.textMain}`}>📈 Histórico mensual <span className={`text-[10px] font-normal ${t.textMuted}`}>· {history.length} meses</span></h4>
+                  <button onClick={clearHistory} className={`text-[10px] px-2.5 py-1 rounded-full border font-black ${t.btnGhost}`}>Limpiar histórico</button>
+                </div>
+                <ResponsiveContainer width="100%" height={220}>
+                  <LineChart data={history} margin={{top:5,right:10,left:0,bottom:5}}>
+                    <CartesianGrid strokeDasharray="3 3" stroke={gridC}/>
+                    <XAxis dataKey="label" tick={{fontSize:9,fill:txtC}} stroke={axisC}/>
+                    <YAxis tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>Math.abs(v)>=1000?(v/1000).toFixed(0)+'k':fmt(v)}/>
+                    <Tooltip content={({active,payload,label})=>{ if(!active||!payload?.length) return null; const d=payload[0]?.payload;
+                      return <div className={`p-3 rounded-xl border text-xs shadow-xl ${t.card}`}><p className={`font-bold mb-1 ${t.textMain}`}>{label}</p><p className={t.accent}>Prom Inv: {fmt(d.prom)}</p><p className={t.amber}>Diferencia: {fmt(d.dif)}</p><p className={t.textMuted}>R²: {fmt(d.r2,3)} · {d.scope}</p></div>; }}/>
+                    <Legend wrapperStyle={{fontSize:10}}/>
+                    <Line type="monotone" dataKey="prom" name="Prom Inventario" stroke="#8b5cf6" strokeWidth={2.5} dot={{r:3,fill:'#8b5cf6'}}/>
+                    <Line type="monotone" dataKey="dif" name="Diferencia" stroke="#f59e0b" strokeWidth={2.5} dot={{r:3,fill:'#f59e0b'}}/>
+                  </LineChart>
+                </ResponsiveContainer>
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {history.map((h,i)=>{ const prev=history[i-1]; const dPct=prev&&prev.prom?((h.prom-prev.prom)/Math.abs(prev.prom))*100:null;
+                    return (
+                    <span key={h.id} className={`flex items-center gap-2 text-[10px] px-2.5 py-1 rounded-full border ${t.badgeGray}`}>
+                      <b className={t.textMain}>{h.label}</b>
+                      <span className={t.textMuted}>R² {fmt(h.r2,2)}</span>
+                      {dPct!=null&&<span className={`font-black ${dPct<=0?'text-emerald-400':'text-red-400'}`}>{dPct<=0?'▼':'▲'}{Math.abs(dPct).toFixed(1)}%</span>}
+                      <button onClick={()=>delSnapshot(h.id)} className="opacity-50 hover:opacity-100">✕</button>
+                    </span>
+                  ); })}
+                </div>
+                <p className={`text-[9px] mt-2 ${t.textMuted}`}>Cada punto = una "foto" guardada con "Guardar mes". El % chip es Δ Prom Inv vs mes anterior: ▼ verde = baja inventario, ▲ rojo = sube.</p>
+              </div>
+            )}
+            {/* R² JERÁRQUICO */}
             <div className={`p-4 rounded-xl border ${t.cardInner}`}>
               <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-                <h4 className={`text-sm font-bold ${t.textMain}`}>📈 Histórico mensual <span className={`text-[10px] font-normal ${t.textMuted}`}>· {history.length} meses</span></h4>
-                <button onClick={clearHistory} className={`text-[10px] px-2.5 py-1 rounded-full border font-black ${t.btnGhost}`}>Limpiar histórico</button>
+                <h4 className={`text-sm font-bold ${t.textMain}`}>🎯 R² por nivel jerárquico <span className={`text-[10px] font-normal ${t.textMuted}`}>· {xLabel} vs {yLabel}</span></h4>
               </div>
-              <ResponsiveContainer width="100%" height={220}>
-                <LineChart data={history} margin={{top:5,right:10,left:0,bottom:5}}>
-                  <CartesianGrid strokeDasharray="3 3" stroke={gridC}/>
-                  <XAxis dataKey="label" tick={{fontSize:9,fill:txtC}} stroke={axisC}/>
-                  <YAxis tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>Math.abs(v)>=1000?(v/1000).toFixed(0)+'k':fmt(v)}/>
-                  <Tooltip content={({active,payload,label})=>{ if(!active||!payload?.length) return null; const d=payload[0]?.payload;
-                    return <div className={`p-3 rounded-xl border text-xs shadow-xl ${t.card}`}><p className={`font-bold mb-1 ${t.textMain}`}>{label}</p><p className={t.accent}>Prom Inv: {fmt(d.prom)}</p><p className={t.amber}>Diferencia: {fmt(d.dif)}</p><p className={t.textMuted}>R²: {fmt(d.r2,3)} · {d.scope}</p></div>; }}/>
-                  <Legend wrapperStyle={{fontSize:10}}/>
-                  <Line type="monotone" dataKey="prom" name="Prom Inventario" stroke="#8b5cf6" strokeWidth={2.5} dot={{r:3,fill:'#8b5cf6'}}/>
-                  <Line type="monotone" dataKey="dif" name="Diferencia" stroke="#f59e0b" strokeWidth={2.5} dot={{r:3,fill:'#f59e0b'}}/>
-                </LineChart>
-              </ResponsiveContainer>
-              <div className="flex flex-wrap gap-2 mt-3">
-                {history.map((h,i)=>{ const prev=history[i-1]; const dPct=prev&&prev.prom?((h.prom-prev.prom)/Math.abs(prev.prom))*100:null;
+              <div className="space-y-2">
+                {r2ByLevel.map(lv=>{
+                  const valid=lv.n>=2;
+                  const badge=!valid?t.badgeGray:lv.r2>0.7?t.badge:lv.r2>0.4?t.badgeAmber:t.badgeGray;
+                  const barW=Math.min(100,Math.round(lv.r2*100));
+                  const barColor=lv.r2>0.7?'#10b981':lv.r2>0.4?'#f59e0b':'#71717a';
                   return (
-                  <span key={h.id} className={`flex items-center gap-2 text-[10px] px-2.5 py-1 rounded-full border ${t.badgeGray}`}>
-                    <b className={t.textMain}>{h.label}</b>
-                    <span className={t.textMuted}>R² {fmt(h.r2,2)}</span>
-                    {dPct!=null&&<span className={`font-black ${dPct<=0?'text-emerald-400':'text-red-400'}`}>{dPct<=0?'▼':'▲'}{Math.abs(dPct).toFixed(1)}%</span>}
-                    <button onClick={()=>delSnapshot(h.id)} className="opacity-50 hover:opacity-100">✕</button>
-                  </span>
-                ); })}
+                    <div key={lv.key} className={`p-2.5 rounded-lg border ${t.border} ${lv.value?(isDark?'bg-violet-500/5':'bg-violet-50/50'):''}`}>
+                      <div className="flex items-center justify-between mb-1.5 gap-2">
+                        <div className="flex items-center gap-2 min-w-0 flex-wrap">
+                          <span className={`text-[10px] font-black uppercase tracking-wider ${t.textMain}`}>{lv.label}</span>
+                          {lv.value&&<span className={`text-[9px] px-1.5 py-0.5 rounded-full border ${t.badge} truncate max-w-[140px]`}>{lv.value}</span>}
+                          <span className={`text-[9px] ${t.textMuted}`}>{lv.nGroups} {lv.nGroups===1?'grupo':'grupos'}</span>
+                        </div>
+                        <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border whitespace-nowrap ${badge}`}>R² {valid?lv.r2.toFixed(3):'—'}</span>
+                      </div>
+                      <div className={`h-1.5 rounded-full overflow-hidden ${isDark?'bg-zinc-800':'bg-gray-200'}`}>
+                        <div className="h-full rounded-full transition-all" style={{width:`${valid?barW:0}%`,background:barColor}}/>
+                      </div>
+                    </div>
+                  );
+                })}
               </div>
-              <p className={`text-[9px] mt-2 ${t.textMuted}`}>Cada punto = una "foto" guardada con “Guardar mes” (usa el scope de filtros activo). El % en cada chip es el cambio de Prom Inventario vs el mes anterior: verde ▼ = baja inventario (mejora), rojo ▲ = sube.</p>
+              <p className={`text-[9px] mt-3 ${t.textMuted}`}>R² calculada agregando los datos del scope a cada nivel. Niveles con &lt;2 grupos (filtro fijo o nivel único) no son calculables.</p>
             </div>
-          )}
-        </div>
-      )}
+          </div>
       {/* MODAL GUARDAR MES */}
       {saveModal&&(
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{background:isDark?'rgba(9,9,11,0.6)':'rgba(255,255,255,0.5)',backdropFilter:'blur(6px)'}} onClick={()=>setSaveModal(null)}>
