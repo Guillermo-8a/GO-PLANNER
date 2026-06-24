@@ -404,6 +404,7 @@ export default function ModuleDispersion(){
               <p className={`text-[9px] mt-3 ${t.textMuted}`}>R² calculada agregando los datos del scope a cada nivel. Niveles con &lt;2 grupos (filtro fijo o nivel único) no son calculables.</p>
             </div>
           </div>
+        </div>
           )}
       {/* MODAL GUARDAR MES */}
       {saveModal&&(
