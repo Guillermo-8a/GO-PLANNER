@@ -185,6 +185,7 @@ export default function Distribucion() {
   const [packAllowSwap, setPackAllowSwap] = useState({}); // { [GOA]: bool } — permite intercambio entre tallas manteniendo total
   const [packMinClusters, setPackMinClusters] = useState({}); // { [GOA]: ['AA','A',...] } — clusters que SÍ reciben aunque no alcance 1 pack natural
   const [packCoverThreshold, setPackCoverThreshold] = useState({}); // { [GOA]: meses } — umbral cobertura para swap (default 5)
+  const [pendingResiduals, setPendingResiduals] = useState(null); // {residuals: [...], baseResults: [...]} — decisión post-corrida
 
   // MOS objetivo "sano" por GOA (usado por OH y SKU). Default 3 meses.
   const [mosTarget, setMosTarget] = useState({}); // { [GOA]: { min, max } }
@@ -302,6 +303,7 @@ useEffect(() => {
           id: row.centro, centerCode: row.centro, name: row.name, zona: row.zona,
           sales: 0, margin: 0, rotation: row.rotation, totalOH: 0,
           score: 0, goaScores: {}, goaSales: {}, goaMargin: {}, goaOH: {}, goaOO: {}, goaTrend3M: {}, clusters: {},
+          brandScores: {}, brandSales: {}, brandOH: {},
           skuSales: {}, skuOH: {}, goaSizeSales: {}, goaSizeOH: {}, goaSizeOO: {}, goaSizeTrend3M: {}
         });
       }
@@ -335,6 +337,13 @@ useEffect(() => {
       storeGoaAgg[key].oh += row.oh;
       storeGoaAgg[key].oo += (row.oo || 0);
       storeGoaAgg[key].trend3M += (row.trend3M || 0);
+
+      // Agregación por GOA+MARCA (solo si el CSV trae marca)
+      if (row.marca && row.marca !== 'N/A') {
+        const bKey = `${row.goa.toUpperCase()}|${row.marca.toUpperCase()}`;
+        existing.brandSales[bKey] = (existing.brandSales[bKey] || 0) + row.sales;
+        existing.brandOH[bKey] = (existing.brandOH[bKey] || 0) + row.oh;
+      }
     });
 
     const maxVals = {}; 
@@ -404,6 +413,20 @@ useEffect(() => {
       store.globalCluster = currentClusters[clusterIndex];
     });
 
+    // brandScores normalizados (0-100) por GOA|MARCA — solo si el CSV trajo marca
+    const maxBrandSales = {}; // { [goa|marca]: maxSales }
+    Array.from(storeMap.values()).forEach(store => {
+      Object.entries(store.brandSales || {}).forEach(([k, v]) => {
+        if (!maxBrandSales[k] || v > maxBrandSales[k]) maxBrandSales[k] = v;
+      });
+    });
+    Array.from(storeMap.values()).forEach(store => {
+      Object.entries(store.brandSales || {}).forEach(([k, v]) => {
+        const max = maxBrandSales[k] || 0;
+        store.brandScores[k] = max > 0 ? (v / max) * 100 : 0;
+      });
+    });
+
     setStores(Array.from(storeMap.values()));
   };
 
@@ -436,6 +459,7 @@ useEffect(() => {
       const idxTalla = headers.findIndex(h => h === 'TALLA' || h === 'SIZE' || h === 'NUMERO');
       const idxOO = headers.findIndex(h => h === 'OO' || h === 'ON ORDER' || h === 'ONORDER' || h === 'EN PEDIDO' || h === 'PEDIDO');
       const idxTrend3M = headers.findIndex(h => h === 'VTA3M' || h === 'VENTAS3M' || h === 'VENTAS_3M' || h === 'TREND3M' || h === 'TREND_3M' || h === 'V3M' || h === 'VTAS3M');
+      const idxMarca = headers.findIndex(h => h === 'MARCA' || h === 'NOM_MARCA' || h === 'BRAND');
 
       if (idxCentro === -1 || idxGoa === -1 || idxVentas === -1) {
         alert("El CSV debe tener mínimamente las columnas: Centro, GOA, Ventas"); 
@@ -454,6 +478,7 @@ useEffect(() => {
         const rawSku = idxSku !== -1 && rows[i][idxSku] ? String(rows[i][idxSku]).trim() : 'N/A';
         const rawTalla = idxTalla !== -1 && rows[i][idxTalla] ? String(rows[i][idxTalla]).trim() : 'N/A';
         const rawModelo = headers.includes('MODELO') ? String(rows[i][headers.indexOf('MODELO')]).trim() : 'N/A';
+        const rawMarca = idxMarca !== -1 && rows[i][idxMarca] ? String(rows[i][idxMarca]).trim().toUpperCase() : 'N/A';
         
         let ventas = parseFloat(rawVentas) || 0; let margen = parseFloat(rawMargen) || 0; let rotacion = parseFloat(rawRotacion) || 0;
         let oh = parseFloat(rawOH) || 0;
@@ -466,7 +491,7 @@ useEffect(() => {
           zona: idxZona !== -1 && rows[i][idxZona] ? rows[i][idxZona] : 'General',
           goa: rows[i][idxGoa].toUpperCase(), sales: ventas, margin: margen, rotation: rotacion, oh: oh,
           oo: oo, trend3M: trend3M,
-          sku: rawSku, modelo: rawModelo, talla: rawTalla
+          sku: rawSku, modelo: rawModelo, talla: rawTalla, marca: rawMarca
         });
       }
       
@@ -669,11 +694,13 @@ useEffect(() => {
     triggerDownload(`Matriz_Clusters_${selectedGoaFilter}_${new Date().toISOString().split('T')[0]}.csv`, csvContent);
   };
 
-  const createSizeRuns = (baseItem, tallaStr, qtyStr) => {
+  const createSizeRuns = (baseItem, tallaStr, qtyStr, packSizeStr) => {
       const qtys = qtyStr.toString().split(/[,|/;\t-]+/).map(q => parseInt(q.trim())).filter(q => !isNaN(q) && q > 0);
       if (qtys.length === 0) return [];
       
       const tallas = (tallaStr || '').toString().split(/[,|/;\t]+/).map(t => t.trim()).filter(t => t);
+      // packSize por talla (si vienen varios separados); si viene uno solo, aplica a todas
+      const packSizes = (packSizeStr || '').toString().split(/[,|/;\t]+/).map(p => parseInt(String(p).trim())).filter(p => !isNaN(p) && p > 0);
       
       return qtys.map((q, i) => {
           let t = tallas[i];
@@ -694,8 +721,9 @@ useEffect(() => {
              finalSku = `${finalModelo}${extColor}${extTalla}`.replace(/\s+/g, '');
           }
 
+          const ps = packSizes[i] || packSizes[0] || 0; // 0 = sin pack definido → modo libre
           const uniqueId = typeof crypto !== 'undefined' && crypto.randomUUID ? crypto.randomUUID() : `item-${Date.now()}-${Math.random().toString(36).substring(2, 9)}-${i}`;
-          return { ...baseItem, id: uniqueId, talla: t, qty: q, sku: finalSku, modelo: finalModelo };
+          return { ...baseItem, id: uniqueId, talla: t, qty: q, sku: finalSku, modelo: finalModelo, packSize: ps };
       });
   };
 
@@ -793,10 +821,14 @@ useEffect(() => {
         while (parts.length > 0 && parts[parts.length - 1].trim() === "") { parts.pop(); }
 
         if (parts.length >= 3) {
-           let seccion = 'N/A', goa = 'N/A', marca = 'N/A', modelo = 'N/A', sku = '', color = 'N/A', talla = 'N/A', qty = '';
+           let seccion = 'N/A', goa = 'N/A', marca = 'N/A', modelo = 'N/A', sku = '', color = 'N/A', talla = 'N/A', qty = '', packSize = '';
            const n = parts.length;
            
-           if (n >= 8) {
+           if (n >= 9) {
+             seccion = parts[0] || 'N/A'; goa = parts[1] || 'N/A'; marca = parts[2] || 'N/A'; 
+             modelo = parts[3] || 'N/A'; sku = parts[4] || ''; color = parts[5] || 'N/A'; 
+             talla = parts[6] || 'N/A'; qty = parts[7]; packSize = parts[8] || '';
+           } else if (n === 8) {
              seccion = parts[0] || 'N/A'; goa = parts[1] || 'N/A'; marca = parts[2] || 'N/A'; 
              modelo = parts[3] || 'N/A'; sku = parts[4] || ''; color = parts[5] || 'N/A'; 
              talla = parts[6] || 'N/A'; qty = parts[7]; 
@@ -814,7 +846,7 @@ useEffect(() => {
 
            if (qty && goa && goa !== 'N/A' && (sku || modelo)) {
               const baseItem = { seccion: seccion.toUpperCase(), goa: goa.toUpperCase(), marca: marca.toUpperCase(), modelo: modelo.toUpperCase(), sku, color: color.toUpperCase() };
-              newItems.push(...createSizeRuns(baseItem, talla, qty));
+              newItems.push(...createSizeRuns(baseItem, talla, qty, packSize));
            } else {
               errores++;
            }
@@ -855,10 +887,85 @@ useEffect(() => {
       color: editingItem.color?.toUpperCase() || 'N/A',
       talla: editingItem.talla?.toUpperCase() || 'UNICA',
       sku: editingItem.sku, 
-      qty: parseInt(editingItem.qty)
+      qty: parseInt(editingItem.qty),
+      packSize: parseInt(editingItem.packSize) || 0
     } : i));
     setEditingItem(null);
     setDistributionResult([]);
+  };
+
+  // Commit final de la corrida PACK con decisión de residuos
+  const commitDistribution = (finalResults) => {
+    finalResults.sort((a, b) => a.centro.localeCompare(b.centro) || a.sku.localeCompare(b.sku));
+    setDistributionResult(finalResults);
+    try {
+      const finalAllocations = {};
+      finalResults.forEach(r => { finalAllocations[r.centro] = (finalAllocations[r.centro] || 0) + r.qty; });
+      const totalFcst = chequera.reduce((s, it) => s + Number(it.qty), 0);
+      const totalAlloc = Object.values(finalAllocations).reduce((a, b) => a + b, 0);
+      const fillRate = totalFcst > 0 ? Math.min((totalAlloc / totalFcst) * 100, 100) : 0;
+      if (typeof globalActions !== 'undefined' && gDispatch) {
+        globalActions.publishDistribution(gDispatch, { allocations: finalAllocations, fillRate, result: finalAllocations });
+      }
+    } catch (error) {}
+  };
+
+  // Residuo → tiendas top: asigna piezas residuales (rompiendo norma de pack) a la mejor tienda del GOA del SKU
+  const residualsToTop = () => {
+    if (!pendingResiduals) return;
+    const { residuals, baseResults } = pendingResiduals;
+    const finalResults = [...baseResults];
+    residuals.forEach(r => {
+      // Mejor tienda del GOA: usa brandScore si hay venta de marca, sino goaScore
+      const brandKey = `${r.goa}|${(r.marca || '').toUpperCase()}`;
+      const ranked = stores
+        .filter(s => s.goaScores && (s.goaScores[r.goa] || 0) > 0)
+        .map(s => ({
+          s,
+          score: (s.brandScores?.[brandKey] || 0) > 0
+            ? (s.brandScores[brandKey] * 0.6 + s.goaScores[r.goa] * 0.4)
+            : s.goaScores[r.goa]
+        }))
+        .sort((a, b) => b.score - a.score);
+      if (ranked.length === 0) return;
+      const top = ranked[0].s;
+      finalResults.push({
+        centro: top.centerCode,
+        nombre: top.name,
+        zona: top.zona || 'General',
+        ventas: top.goaSales?.[r.goa] || 0,
+        score: top.goaScores[r.goa] || 0,
+        globalCluster: top.globalCluster || '',
+        initialOH: top.goaOH?.[r.goa] || 0,
+        sku: r.sku, modelo: r.modelo, goa: r.goa, marca: r.marca, color: r.color,
+        talla: r.talla, qty: r.qty,
+        packs: 0, packSize: r.packSize,
+        isResidual: true
+      });
+    });
+    commitDistribution(finalResults);
+    setPendingResiduals(null);
+  };
+
+  // Residuo → sobrante: no se distribuye, queda reportado en distributionResult con flag
+  const residualsAsLeftover = () => {
+    if (!pendingResiduals) return;
+    const { residuals, baseResults } = pendingResiduals;
+    const finalResults = [...baseResults];
+    residuals.forEach(r => {
+      finalResults.push({
+        centro: '— SOBRANTE —',
+        nombre: 'No distribuido (queda en almacén)',
+        zona: '',
+        ventas: 0, score: 0, globalCluster: '', initialOH: 0,
+        sku: r.sku, modelo: r.modelo, goa: r.goa, marca: r.marca, color: r.color,
+        talla: r.talla, qty: r.qty,
+        packs: 0, packSize: r.packSize,
+        isLeftover: true
+      });
+    });
+    commitDistribution(finalResults);
+    setPendingResiduals(null);
   };
 
   // ============================================================================
@@ -1042,6 +1149,7 @@ useEffect(() => {
     // ========================================================================
     if (distMode === 'PACK') {
       const allSwapLogs = []; // global a todos los GOA
+      const residuals = []; // residuos de PACK por SKU para decisión post-corrida
       // 1) Agrupar items de la chequera por GOA (clave) — luego por SKU/talla
       const itemsByGoa = {};
       chequera.forEach(it => {
@@ -1053,17 +1161,171 @@ useEffect(() => {
       const goasWithoutCurve = [];
       Object.keys(itemsByGoa).forEach(goaName => {
         const curve = packCurves[goaName];
-        if (!curve || curve.length === 0 || curve.every(r => !r.qty || r.qty <= 0)) {
+        const hasCurve = curve && curve.length > 0 && curve.some(r => r.qty && r.qty > 0);
+        // Si TODOS los items del GOA traen packSize del CSV, no necesita curva (modo "PACK por SKU")
+        const allItemsHavePack = itemsByGoa[goaName].every(it => Number(it.packSize) > 0);
+        if (!hasCurve && !allItemsHavePack) {
           goasWithoutCurve.push(goaName);
         }
       });
       if (goasWithoutCurve.length > 0) {
-        alert(`Falta definir la curva de empaquetado para: ${goasWithoutCurve.join(', ')}.\n\nAbre "Configurar Packs" y captura la curva por GOA.`);
+        alert(`Falta definir la curva de empaquetado para: ${goasWithoutCurve.join(', ')}.\n\nOpciones:\n  • Abre "Configurar Packs" y captura la curva por GOA, o\n  • Asegúrate que el CSV incluya la columna PZS_POR_PACK para cada SKU.`);
         return;
       }
 
       Object.keys(itemsByGoa).forEach(goaName => {
         const items = itemsByGoa[goaName];
+
+        // ============================================================
+        // RAMA: "PACK por SKU" (cada SKU tiene su propia norma de pack)
+        // Se activa cuando TODOS los items del GOA traen packSize > 0.
+        // No requiere curva de tallas; cada SKU se distribuye en múltiplos
+        // de SU propio packSize de manera independiente.
+        // ============================================================
+        const allItemsHavePack = items.every(it => Number(it.packSize) > 0);
+        const curveDefined = packCurves[goaName] && packCurves[goaName].some(r => r.qty && r.qty > 0);
+
+        if (allItemsHavePack && !curveDefined) {
+          // Tiendas elegibles (mismo criterio que rama clásica: nivel GOA, no marca)
+          let eligibleStores = stores.filter(s => s.goaScores && s.goaScores[goaName] > 0);
+          if (eligibleStores.length === 0) {
+            warnings.push(`[${goaName}]: Sin tiendas con ventas en este GOA.`);
+            return;
+          }
+          // Filtro por matriz de marca (igual que rama clásica)
+          if (Object.keys(brandMatrix).length > 0) {
+            eligibleStores = eligibleStores.filter(s => {
+              const normStoreId = parseInt(s.centerCode).toString();
+              const authBrands = brandMatrix[normStoreId] || [];
+              return items.some(it => {
+                const reqSeccion = it.seccion?.toUpperCase() || 'N/A';
+                const reqMarca = it.marca?.toUpperCase() || 'N/A';
+                if (reqSeccion === 'N/A' && reqMarca === 'N/A') return true;
+                if (authBrands.includes(`${reqSeccion}|${reqMarca}`)) return true;
+                if (reqSeccion === 'N/A' && authBrands.some(a => a.endsWith(`|${reqMarca}`))) return true;
+                if (reqMarca === 'N/A' && authBrands.some(a => a.startsWith(`${reqSeccion}|`))) return true;
+                if (authBrands.includes(`N/A|${reqMarca}`)) return true;
+                return false;
+              });
+            });
+            if (eligibleStores.length === 0) {
+              warnings.push(`[${goaName}]: Ninguna tienda autorizada en la Matriz para los SKUs del lote.`);
+              return;
+            }
+          }
+
+          const allowedClusters = packMinClusters[goaName] || [];
+
+          // Distribución INDEPENDIENTE por SKU
+          items.forEach(it => {
+            const ps = Number(it.packSize);
+            const qtyTotal = Number(it.qty);
+            const totalPacks = Math.floor(qtyTotal / ps);
+            const residuoSku = qtyTotal - (totalPacks * ps);
+            if (totalPacks <= 0) {
+              warnings.push(`[${goaName}] SKU ${it.sku}: ${qtyTotal} pzs no alcanzan ni para 1 pack (${ps} pzs).`);
+              if (residuoSku > 0) {
+                residuals.push({ sku: it.sku, modelo: it.modelo, goa: goaName, marca: it.marca, color: it.color, talla: it.talla, qty: residuoSku, packSize: ps });
+              }
+              return;
+            }
+
+            // Score por tienda: prioriza venta de la marca si existe; fallback a venta del GOA
+            const brandKey = `${goaName}|${(it.marca || '').toUpperCase()}`;
+            const hasBrandData = eligibleStores.some(s => (s.brandScores?.[brandKey] || 0) > 0);
+            const enriched = eligibleStores.map(s => {
+              const oh = dynamicOH[s.centerCode]?.[goaName] || 0;
+              const cluster = s.clusters?.[goaName] || s.globalCluster || '';
+              const brandScore = s.brandScores?.[brandKey] || 0;
+              const goaScore = s.goaScores[goaName] || 0;
+              // Si hay venta de la marca en al menos una tienda, usa brandScore (60%) + goaScore (40%)
+              // Si no, usa solo goaScore (la marca es nueva → hereda ranking del GOA)
+              const score = hasBrandData ? (brandScore * 0.6 + goaScore * 0.4) : goaScore;
+              const ohFactor = 1 / (1 + oh / Math.max(1, ps));
+              const weight = score * (0.5 + 0.5 * ohFactor);
+              return { store: s, cluster, oh, score, weight, isAllowed: allowedClusters.includes(cluster) };
+            });
+
+            const totalWeight = enriched.reduce((s, e) => s + e.weight, 0);
+            if (totalWeight <= 0) {
+              if (residuoSku > 0) residuals.push({ sku: it.sku, modelo: it.modelo, goa: goaName, marca: it.marca, color: it.color, talla: it.talla, qty: residuoSku, packSize: ps });
+              return;
+            }
+
+            // Asignación de packs enteros — Hamilton (largest remainder)
+            const packsByStore = new Map();
+            const remainders = [];
+            let assignedPacks = 0;
+            enriched.forEach(e => {
+              const ideal = (e.weight / totalWeight) * totalPacks;
+              const floorPacks = Math.floor(ideal);
+              if (floorPacks > 0) {
+                packsByStore.set(e.store.centerCode, floorPacks);
+                assignedPacks += floorPacks;
+              }
+              remainders.push({ store: e.store, fraction: ideal - floorPacks, isAllowed: e.isAllowed, weight: e.weight });
+            });
+
+            // Garantizar pack a clusters permitidos sin pack
+            const allowedSinPack = remainders
+              .filter(r => r.isAllowed && !packsByStore.has(r.store.centerCode))
+              .sort((a, b) => b.weight - a.weight);
+            const packsRestantes = totalPacks - assignedPacks;
+            let used = 0;
+            allowedSinPack.forEach(r => {
+              if (used < packsRestantes) {
+                packsByStore.set(r.store.centerCode, 1);
+                used++; assignedPacks++;
+              }
+            });
+
+            // Distribuir packs sobrantes por largest remainder
+            let pendientes = totalPacks - assignedPacks;
+            remainders.sort((a, b) => b.fraction - a.fraction);
+            let idx = 0;
+            while (pendientes > 0 && remainders.length > 0) {
+              const target = remainders[idx % remainders.length].store.centerCode;
+              packsByStore.set(target, (packsByStore.get(target) || 0) + 1);
+              pendientes--;
+              idx++;
+            }
+
+            // Materializar: cada tienda recibe (numPacks * ps) piezas del SKU
+            packsByStore.forEach((numPacks, centerCode) => {
+              if (numPacks <= 0) return;
+              const storeObj = stores.find(s => s.centerCode === centerCode);
+              const asignar = numPacks * ps;
+
+              dynamicOH[centerCode][goaName] = (dynamicOH[centerCode][goaName] || 0) + asignar;
+              if (!dynamicSkuOH[centerCode]) dynamicSkuOH[centerCode] = {};
+              dynamicSkuOH[centerCode][it.sku] = (dynamicSkuOH[centerCode][it.sku] || 0) + asignar;
+
+              results.push({
+                centro: centerCode,
+                nombre: storeObj ? storeObj.name : centerCode,
+                zona: storeObj ? storeObj.zona : 'General',
+                ventas: storeObj ? storeObj.goaSales[goaName] : 0,
+                score: storeObj ? storeObj.goaScores[goaName] : 0,
+                globalCluster: storeObj ? storeObj.globalCluster : '',
+                initialOH: storeObj ? (storeObj.goaOH[goaName] || 0) : 0,
+                sku: it.sku, modelo: it.modelo, goa: goaName, marca: it.marca, color: it.color,
+                talla: it.talla, qty: asignar,
+                packs: numPacks,
+                packSize: ps
+              });
+            });
+
+            // Registrar residuo de este SKU para decisión post-corrida
+            if (residuoSku > 0) {
+              residuals.push({ sku: it.sku, modelo: it.modelo, goa: goaName, marca: it.marca, color: it.color, talla: it.talla, qty: residuoSku, packSize: ps });
+            }
+          });
+          return; // fin rama PACK por SKU para este GOA
+        }
+
+        // ============================================================
+        // RAMA CLÁSICA: curva de tallas mezcladas por GOA
+        // ============================================================
         const curve = packCurves[goaName].filter(r => r.talla && r.qty > 0);
         const packSize = curve.reduce((s, r) => s + Number(r.qty), 0);
         if (packSize <= 0) {
@@ -1279,6 +1541,13 @@ useEffect(() => {
       if (warnings.length > 0) alert("ATENCIÓN: Alertas del sistema durante la corrida (PACK):\n\n" + warnings.join("\n\n"));
       if (allSwapLogs.length > 0) alert(`SWAPS aplicados por cobertura excedida (${allSwapLogs.length}):\n\n${allSwapLogs.slice(0, 20).join('\n')}${allSwapLogs.length > 20 ? `\n\n... y ${allSwapLogs.length - 20} más` : ''}`);
       results.sort((a, b) => a.centro.localeCompare(b.centro) || a.sku.localeCompare(b.sku));
+
+      // Si hay residuos pendientes de decisión, abrir modal y NO commitear todavía
+      if (residuals.length > 0) {
+        setPendingResiduals({ residuals, baseResults: results });
+        return;
+      }
+
       setDistributionResult(results);
       try {
         const finalAllocations = {};
@@ -2599,6 +2868,80 @@ useEffect(() => {
 
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 transition-colors duration-300 relative">
         
+        {/* MODAL: RESIDUOS DE PACK POR SKU — decisión de qué hacer con piezas que no completan pack */}
+        {pendingResiduals && (() => {
+          const { residuals } = pendingResiduals;
+          const total = residuals.reduce((s, r) => s + r.qty, 0);
+          return (
+            <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
+              <div className={`w-full max-w-2xl max-h-[90vh] overflow-auto rounded-2xl border shadow-2xl p-6 ${theme==='dark'?'bg-zinc-900 border-zinc-800':'bg-white border-gray-200'}`}>
+                <div className="flex justify-between items-center mb-4">
+                  <div>
+                    <h3 className={`text-lg font-black flex items-center ${t.textMain}`}>
+                      <Icons.AlertCircle size={20} className="mr-2 text-amber-500"/> Residuos de Pack
+                    </h3>
+                    <p className={`text-xs mt-1 ${t.textMuted}`}>
+                      Quedaron <span className="font-black text-amber-500">{total} pzs</span> en {residuals.length} SKU{residuals.length !== 1 ? 's' : ''} que no completan un pack entero. ¿Qué hacemos con ellas?
+                    </p>
+                  </div>
+                </div>
+
+                <div className={`p-3 rounded-xl border mb-4 max-h-60 overflow-auto ${t.cardInner}`}>
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className={`text-[10px] uppercase tracking-wider ${t.textMuted} border-b ${theme==='dark'?'border-zinc-800':'border-gray-200'}`}>
+                        <th className="p-1.5 text-left">SKU</th>
+                        <th className="p-1.5 text-left">GOA / Marca</th>
+                        <th className="p-1.5 text-right">Pack</th>
+                        <th className="p-1.5 text-right">Residuo</th>
+                      </tr>
+                    </thead>
+                    <tbody className={`divide-y ${theme==='dark'?'divide-zinc-800':'divide-gray-200'}`}>
+                      {residuals.map((r, i) => (
+                        <tr key={i}>
+                          <td className={`p-1.5 font-mono ${t.textMain}`}>{r.sku}</td>
+                          <td className={`p-1.5 ${t.textMuted}`}>{r.goa} <span className="opacity-60">· {r.marca || '-'}</span></td>
+                          <td className={`p-1.5 text-right font-mono ${t.textMuted}`}>{r.packSize}</td>
+                          <td className={`p-1.5 text-right font-mono font-bold text-amber-500`}>{r.qty}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <button
+                    onClick={residualsToTop}
+                    className={`p-4 rounded-xl text-left transition-all border-2 ${theme==='dark'?'bg-emerald-900/20 border-emerald-500/40 hover:border-emerald-400 hover:bg-emerald-900/40':'bg-emerald-50 border-emerald-200 hover:border-emerald-400 hover:bg-emerald-100'}`}
+                  >
+                    <div className={`text-sm font-black mb-1 ${theme==='dark'?'text-emerald-400':'text-emerald-700'}`}>
+                      Asignar a tiendas top
+                    </div>
+                    <div className={`text-[11px] ${t.textMuted}`}>
+                      Manda el residuo de cada SKU a la mejor tienda del GOA (por venta de marca, fallback a GOA). Rompe la norma de pack en esa tienda.
+                    </div>
+                  </button>
+                  <button
+                    onClick={residualsAsLeftover}
+                    className={`p-4 rounded-xl text-left transition-all border-2 ${theme==='dark'?'bg-zinc-800/40 border-zinc-700 hover:border-zinc-500':'bg-gray-50 border-gray-200 hover:border-gray-400'}`}
+                  >
+                    <div className={`text-sm font-black mb-1 ${t.textMain}`}>
+                      Dejar como sobrante
+                    </div>
+                    <div className={`text-[11px] ${t.textMuted}`}>
+                      No se distribuye. Aparece en la tabla con etiqueta "— SOBRANTE —" para reporte/export. Respeta la norma de pack.
+                    </div>
+                  </button>
+                </div>
+
+                <div className="flex justify-end mt-4">
+                  <button onClick={() => setPendingResiduals(null)} className={`px-4 py-2 rounded-lg text-xs font-bold ${t.btnGhost}`}>Cancelar corrida</button>
+                </div>
+              </div>
+            </div>
+          );
+        })()}
+
         {/* MODAL DE PARAMETRIZACIÓN FLOTANTE */}
         {/* MODAL: CONFIGURACIÓN DE PACKS (Size Scaling) */}
         {showPackModal && (() => {
@@ -2623,7 +2966,14 @@ useEffect(() => {
             setPackCurves(prev => ({ ...prev, [goa]: (prev[goa] || []).filter((_, i) => i !== idx) }));
           };
           const autoFillFromChequera = (goa) => {
-            const filas = tallasPorGoa[goa].map(tl => ({ talla: tl, qty: 1 }));
+            // Por cada talla del GOA, toma el packSize del item (si todos los items de esa talla
+            // tienen el mismo packSize lo usa; si difieren, usa el máximo encontrado; si nadie tiene, deja 1)
+            const filas = tallasPorGoa[goa].map(tl => {
+              const itemsTalla = chequera.filter(it => it.goa.toUpperCase() === goa && String(it.talla).toUpperCase() === tl);
+              const packSizes = itemsTalla.map(it => Number(it.packSize) || 0).filter(p => p > 0);
+              const qty = packSizes.length > 0 ? Math.max(...packSizes) : 1;
+              return { talla: tl, qty };
+            });
             setPackCurves(prev => ({ ...prev, [goa]: filas }));
           };
           const toggleCluster = (goa, cluster) => {
@@ -3507,6 +3857,7 @@ useEffect(() => {
                         <th className="p-3">COLOR</th>
                         <th className="p-3">TALLA</th>
                         <th className="p-3 text-right">CANTIDAD</th>
+                        <th className="p-3 text-right">PACK</th>
                         <th className="p-3 w-20 text-center">ACCIONES</th>
                       </tr>
                     </thead>
@@ -3526,6 +3877,7 @@ useEffect(() => {
                                 <td className="p-2"><input type="text" value={editingItem.color} onChange={e=>setEditingItem({...editingItem, color: e.target.value})} className={`w-full p-1.5 rounded text-xs outline-none border ${t.input}`} /></td>
                                 <td className="p-2"><input type="text" value={editingItem.talla} onChange={e=>setEditingItem({...editingItem, talla: e.target.value})} className={`w-full p-1.5 rounded text-xs outline-none border ${t.input}`} /></td>
                                 <td className="p-2"><input type="number" min="1" value={editingItem.qty} onChange={e=>setEditingItem({...editingItem, qty: e.target.value})} className={`w-full p-1.5 rounded text-xs text-right font-bold outline-none border ${!editingItem.qty ? 'border-red-500' : ''} ${t.input}`} /></td>
+                                <td className="p-2"><input type="number" min="0" value={editingItem.packSize || 0} onChange={e=>setEditingItem({...editingItem, packSize: e.target.value})} className={`w-full p-1.5 rounded text-xs text-right font-bold outline-none border ${t.input}`} /></td>
                                 <td className="p-2 text-center flex justify-center gap-2">
                                   <button onClick={saveEditItem} className="text-emerald-500 hover:text-emerald-400 p-1"><Icons.Check size={16}/></button>
                                   <button onClick={()=>setEditingItem(null)} className="text-gray-500 hover:text-red-400 p-1"><Icons.X size={16}/></button>
@@ -3541,6 +3893,7 @@ useEffect(() => {
                                 <td className={`p-3 text-xs font-bold ${t.textMuted}`}>{item.color !== 'N/A' ? item.color : '-'}</td>
                                 <td className={`p-3 text-xs font-bold ${t.textMuted}`}>{item.talla !== 'N/A' ? item.talla : '-'}</td>
                                 <td className={`p-3 text-right font-mono text-sm ${t.textMain}`}>{item.qty.toLocaleString()}</td>
+                                <td className={`p-3 text-right font-mono text-xs font-bold ${item.packSize > 0 ? (theme==='dark'?'text-amber-400':'text-amber-600') : t.textMuted}`}>{item.packSize > 0 ? item.packSize : '-'}</td>
                                 <td className="p-3 text-center flex justify-center gap-2">
                                   <button onClick={() => startEditItem(item)} className="text-gray-500 hover:text-blue-500 transition-colors p-1"><Icons.Edit3 size={16} /></button>
                                   <button onClick={() => removeChequeraItem(item.id)} className="text-gray-500 hover:text-red-500 transition-colors p-1"><Icons.Trash2 size={16} /></button>
@@ -3990,6 +4343,28 @@ useEffect(() => {
                       </div>
                     )}
 
+                    {(() => {
+                      const residRows = summaryData.rows.filter(r => r.isResidual);
+                      const lftRows = summaryData.rows.filter(r => r.isLeftover);
+                      const residTotal = residRows.reduce((s, r) => s + r.qty, 0);
+                      const lftTotal = lftRows.reduce((s, r) => s + r.qty, 0);
+                      if (residRows.length === 0 && lftRows.length === 0) return null;
+                      return (
+                        <div className="mb-3 flex flex-wrap gap-2">
+                          {residRows.length > 0 && (
+                            <div className={`p-2 rounded-lg border-l-4 border-amber-500 text-[11px] flex-1 min-w-[200px] ${theme==='dark'?'bg-amber-900/20 text-amber-300':'bg-amber-50 text-amber-800'}`}>
+                              ⚠️ <strong>{residTotal} pzs residuo</strong> en {residRows.length} {residRows.length === 1 ? 'fila' : 'filas'} (asignadas a tiendas top, rompen norma de pack).
+                            </div>
+                          )}
+                          {lftRows.length > 0 && (
+                            <div className={`p-2 rounded-lg border-l-4 border-gray-500 text-[11px] flex-1 min-w-[200px] ${theme==='dark'?'bg-zinc-800/60 text-gray-300':'bg-gray-100 text-gray-700'}`}>
+                              📦 <strong>{lftTotal} pzs sobrante</strong> en {lftRows.length} {lftRows.length === 1 ? 'SKU' : 'SKUs'} (no distribuidos, quedan en almacén).
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })()}
+
                     <div className="overflow-auto max-h-[60vh] custom-scrollbar">
                       <table className="w-full text-left border-collapse text-xs">
                         <thead className="sticky top-0 z-10">
@@ -4014,9 +4389,21 @@ useEffect(() => {
                             const isMosHigh = mosValid && r.mos > summaryData.avgMos * 1.3;
                             const isMosLow = mosValid && r.mos < summaryData.avgMos * 0.7 && r.mos > 0;
                             const totalFinal = r.ohOriginal + r.oo + r.qty;
+                            // Estilo especial para residuos asignados a top y sobrantes (de PACK por SKU)
+                            const rowClass = r.isLeftover
+                              ? (theme==='dark' ? 'bg-zinc-800/60 hover:bg-zinc-800/80 border-l-4 border-zinc-500' : 'bg-gray-100 hover:bg-gray-200 border-l-4 border-gray-400')
+                              : r.isResidual
+                              ? (theme==='dark' ? 'bg-amber-900/20 hover:bg-amber-900/30 border-l-4 border-amber-500' : 'bg-amber-50 hover:bg-amber-100 border-l-4 border-amber-500')
+                              : (theme==='dark' ? 'hover:bg-zinc-800/30' : 'hover:bg-gray-50');
                             return (
-                              <tr key={i} className={`${theme==='dark'?'hover:bg-zinc-800/30':'hover:bg-gray-50'}`}>
+                              <tr key={i} className={rowClass}>
                                 <td className={`p-2 ${t.textMain}`}>
+                                  {r.isLeftover && (
+                                    <span className={`inline-block text-[8px] font-black px-1.5 py-0.5 rounded mr-1.5 ${theme==='dark'?'bg-zinc-700 text-gray-300':'bg-gray-300 text-gray-800'}`}>SOBRANTE</span>
+                                  )}
+                                  {r.isResidual && (
+                                    <span className={`inline-block text-[8px] font-black px-1.5 py-0.5 rounded mr-1.5 ${theme==='dark'?'bg-amber-900/60 text-amber-300':'bg-amber-200 text-amber-900'}`} title="Residuo asignado a tienda top (rompe norma de pack)">RESIDUO</span>
+                                  )}
                                   <span className={`text-[9px] font-mono mr-1 ${t.textMuted}`}>{r.centro}</span>
                                   {r.nombre}
                                 </td>
@@ -4028,17 +4415,17 @@ useEffect(() => {
                                   <div className={`text-[10px] ${t.textMuted}`}>{r.modelo} · {r.marca} · <span className="font-mono">{r.sku}</span></div>
                                 </td>
                                 <td className={`p-2 font-mono font-bold text-amber-500`}>{r.talla}</td>
-                                <td className={`p-2 text-right font-mono font-bold ${isMaxQty ? 'text-amber-400 bg-amber-500/10' : isAboveAvgQty ? 'text-emerald-400' : t.textMain}`}>
-                                  {isMaxQty ? '🔥 ' : isAboveAvgQty ? '🌟 ' : ''}{r.qty}
+                                <td className={`p-2 text-right font-mono font-bold ${r.isLeftover || r.isResidual ? 'text-amber-500' : isMaxQty ? 'text-amber-400 bg-amber-500/10' : isAboveAvgQty ? 'text-emerald-400' : t.textMain}`}>
+                                  {r.isLeftover ? '📦 ' : r.isResidual ? '⚠️ ' : isMaxQty ? '🔥 ' : isAboveAvgQty ? '🌟 ' : ''}{r.qty}
                                 </td>
-                                <td className={`p-2 text-right font-mono ${t.textMuted}`}>{Math.round(r.ventaAnual).toLocaleString()}</td>
+                                <td className={`p-2 text-right font-mono ${t.textMuted}`}>{r.isLeftover ? '—' : Math.round(r.ventaAnual).toLocaleString()}</td>
                                 <td className={`p-2 text-right font-mono ${r.ohNegativeFlag ? 'text-amber-500' : t.textMuted}`}>
-                                  {r.ohNegativeFlag ? `${r.ohRaw} ⚠` : r.ohOriginal}
+                                  {r.isLeftover ? '—' : (r.ohNegativeFlag ? `${r.ohRaw} ⚠` : r.ohOriginal)}
                                 </td>
-                                <td className={`p-2 text-right font-mono ${t.textMuted}`}>{r.oo}</td>
-                                <td className={`p-2 text-right font-mono font-bold ${t.textMain}`}>{totalFinal}</td>
+                                <td className={`p-2 text-right font-mono ${t.textMuted}`}>{r.isLeftover ? '—' : r.oo}</td>
+                                <td className={`p-2 text-right font-mono font-bold ${t.textMain}`}>{r.isLeftover ? '—' : totalFinal}</td>
                                 <td className={`p-2 text-right font-mono font-bold ${!mosValid ? 'text-gray-500' : isMosHigh ? 'text-red-500 bg-red-500/10' : isMosLow ? 'text-emerald-500 bg-emerald-500/10' : t.textMain}`}>
-                                  {!mosValid ? '∞' : `${r.mos.toFixed(1)}m`}
+                                  {r.isLeftover ? '—' : (!mosValid ? '∞' : `${r.mos.toFixed(1)}m`)}
                                 </td>
                               </tr>
                             );
