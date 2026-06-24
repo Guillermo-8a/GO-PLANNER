@@ -45,15 +45,35 @@ const linearRegression = pts => {
   return {slope,intercept,r2:Math.max(0,sst>0?1-ssr/sst:0)};
 };
 
-// ── Festivos MX (clave retail, ene–may) matcheados por mes-día ──
-const HOLIDAYS = [
-  {md:'01-01',name:'Año Nuevo'}, {md:'01-06',name:'Día de Reyes'},
-  {md:'02-05',name:'Constitución'}, {md:'02-14',name:'San Valentín'},
-  {md:'03-21',name:'Benito Juárez'}, {md:'05-01',name:'Día del Trabajo'},
-  {md:'05-05',name:'Cinco de Mayo'}, {md:'05-10',name:'Día de las Madres'},
-  {md:'21-06',name:'Día del Padre'},
+// ── Helpers de fechas flotantes ──
+const nthWeekday=(y,month,weekday,n)=>{ let c=0; for(let d=1;d<=31;d++){ const dt=new Date(y,month,d); if(dt.getMonth()!==month) break; if(dt.getDay()===weekday){ c++; if(c===n) return dt; } } return null; };
+const addDays=(d,n)=>{ const x=new Date(d); x.setDate(x.getDate()+n); return x; };
+
+// ── Festivos MX (fijos + flotantes), clave retail ──
+const FIXED_HOLIDAYS=[
+  {md:'01-01',name:'Año Nuevo'},{md:'01-06',name:'Día de Reyes'},{md:'02-14',name:'San Valentín'},
+  {md:'02-24',name:'Día de la Bandera'},{md:'04-30',name:'Día del Niño'},{md:'05-01',name:'Día del Trabajo'},
+  {md:'05-05',name:'Cinco de Mayo'},{md:'05-10',name:'Día de las Madres'},{md:'05-15',name:'Día del Maestro'},
+  {md:'09-15',name:'Noche Mexicana'},{md:'09-16',name:'Independencia'},{md:'11-01',name:'Día de Muertos'},
+  {md:'11-02',name:'Día de Muertos'},{md:'12-12',name:'Virgen de Guadalupe'},{md:'12-24',name:'Nochebuena'},
+  {md:'12-25',name:'Navidad'},{md:'12-31',name:'Fin de Año'},
 ];
-const holidayName = d => HOLIDAYS.find(h=>h.md===mdOf(d))?.name || null;
+const FLOATING_HOLIDAYS=[
+  {name:'Constitución',calc:y=>nthWeekday(y,1,1,1)},       // 1er lunes feb
+  {name:'Benito Juárez',calc:y=>nthWeekday(y,2,1,3)},      // 3er lunes mar
+  {name:'Día del Padre',calc:y=>nthWeekday(y,5,0,3)},      // 3er domingo jun
+  {name:'Revolución',calc:y=>nthWeekday(y,10,1,3)},        // 3er lunes nov
+];
+const holidaysForYear=y=>{ const out=FIXED_HOLIDAYS.map(h=>({name:h.name,date:new Date(y,+h.md.slice(0,2)-1,+h.md.slice(3))}));
+  FLOATING_HOLIDAYS.forEach(h=>{ const d=h.calc(y); if(d) out.push({name:h.name,date:d}); }); return out; };
+const holidayName = d => { const f=holidaysForYear(d.getFullYear()).find(h=>h.date.getMonth()===d.getMonth()&&h.date.getDate()===d.getDate()); return f?f.name:null; };
+
+// ── Promociones fijas recurrentes (fechas aprox., editables) ──
+const FIXED_PROMOS=[
+  {name:'Hot Sale',uplift:30,calc:y=>{ const s=nthWeekday(y,4,1,3); return [s,addDays(s,8)]; }},     // ~3er lunes may, 9 días
+  {name:'El Buen Fin',uplift:35,calc:y=>{ const mon=nthWeekday(y,10,1,3); return [addDays(mon,-3),mon]; }}, // vie-lun del 3er lunes nov
+  {name:'Venta Nocturna',uplift:20,calc:y=>{ const s=nthWeekday(y,7,5,2); return [s,addDays(s,2)]; }}, // ~2do vie ago, fin de semana
+];
 const isWeekend = d => d.getDay()===0||d.getDay()===6;
 const dayType = d => holidayName(d)?'festivo':isWeekend(d)?'finde':'normal';
 
@@ -132,6 +152,38 @@ const DateRangePicker = ({from,to,onChange,t,isDark}) => {
           </div>
         </div>
       )}
+    </div>
+  );
+};
+
+// ─── MULTI-SELECT ────────────────────────────────────────────────────────────
+const MultiSelect = ({label,options,selected,onChange,t,isDark}) => {
+  const [open,setOpen]=useState(false); const [q,setQ]=useState(''); const ref=useRef(null);
+  useEffect(()=>{ const h=e=>{ if(ref.current&&!ref.current.contains(e.target)) setOpen(false); };
+    document.addEventListener('mousedown',h); return ()=>document.removeEventListener('mousedown',h); },[]);
+  const toggle=v=>onChange(selected.includes(v)?selected.filter(x=>x!==v):[...selected,v]);
+  const disp=selected.length===0?`${label}: Todos`:selected.length===1?selected[0]:`${label}: ${selected.length}`;
+  const filt=q?options.filter(o=>o.toLowerCase().includes(q.toLowerCase())):options;
+  return (
+    <div className="relative" ref={ref}>
+      <button onClick={()=>setOpen(o=>!o)} className={`text-xs px-3 py-1.5 rounded-lg border font-bold flex items-center gap-1 max-w-[180px] truncate ${selected.length>0?t.badge:t.input}`}>
+        <span className="truncate">{disp}</span><span className="text-[8px]">▾</span>
+      </button>
+      {open&&(
+        <div className={`absolute top-full left-0 mt-1 z-50 rounded-xl border shadow-2xl p-2 w-56 ${isDark?'bg-zinc-900 border-zinc-700':'bg-white border-gray-200'}`}>
+          <div className="flex items-center justify-between mb-2 gap-2">
+            <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar..." className={`text-[11px] px-2 py-1 rounded-lg border flex-1 ${t.input} focus:outline-none`}/>
+            {selected.length>0&&<button onClick={()=>onChange([])} className={`text-[9px] px-2 py-1 rounded-lg border font-black ${t.btnGhost}`}>Todos</button>}
+          </div>
+          <div className="max-h-52 overflow-y-auto custom-scrollbar space-y-0.5">
+            {filt.map(o=>(
+              <label key={o} className={`flex items-center gap-2 px-2 py-1 rounded-lg cursor-pointer text-[11px] ${isDark?'hover:bg-zinc-800':'hover:bg-gray-100'} ${t.textMain}`}>
+                <input type="checkbox" checked={selected.includes(o)} onChange={()=>toggle(o)} className="accent-violet-500"/>
+                <span className="truncate">{o}</span>
+              </label>))}
+            {filt.length===0&&<p className={`text-[10px] px-2 py-1 ${t.textMuted}`}>Sin resultados</p>}
+          </div>
+        </div>)}
     </div>
   );
 };
@@ -243,14 +295,15 @@ export default function ModuleDaily(){
 
   // Filtros
   const [dateFrom,setDateFrom]=useState(''); const [dateTo,setDateTo]=useState('');
-  const [fCanal,setFCanal]=useState('ALL'),[fDiv,setFDiv]=useState('ALL'),[fSec,setFSec]=useState('ALL');
-  const [fMarca,setFMarca]=useState('ALL'),[fNorma,setFNorma]=useState('ALL'),[fPago,setFPago]=useState('ALL');
+  const [fCanal,setFCanal]=useState([]),[fDiv,setFDiv]=useState([]),[fSec,setFSec]=useState([]);
+  const [fMarca,setFMarca]=useState([]),[fNorma,setFNorma]=useState([]),[fPago,setFPago]=useState([]),[fGoa,setFGoa]=useState([]);
+  const [usarPromosFijas,setUsarPromosFijas]=useState(true);
   const [showInv,setShowInv]=useState(true);
   const [fcstOverridePct,setFcstOverridePct]=useState(0);
   const [scenarioSel,setScenarioSel]=useState('actual');
   const [moneyK,setMoneyK]=useState(true); // columnas $ vienen en miles → PVP ×1000
   const [cmpMode,setCmpMode]=useState(0);
-  const [tblBasis,setTblBasis]=useState('mtd'); // 'mtd' (al día) | 'close' (cierre con fcst)
+  const [tblBasis,setTblBasis]=useState('periodo'); // 'periodo' (vs LY mismo filtro) | 'cierre' (fcst vs LY mes completo)
   const [cmpDayMode,setCmpDayMode]=useState('detalle'); // 'detalle' (lun↔lun) | 'avg'
   const [scatterLevel,setScatterLevel]=useState(0);
 
@@ -263,21 +316,23 @@ export default function ModuleDaily(){
     if(d.defaultUplift!=null) setDefaultUplift(d.defaultUplift);
     if(d.moneyK!=null) setMoneyK(d.moneyK);
     if(d.dateFrom) setDateFrom(d.dateFrom); if(d.dateTo) setDateTo(d.dateTo);
-    if(d.fCanal) setFCanal(d.fCanal); if(d.fDiv) setFDiv(d.fDiv); if(d.fSec) setFSec(d.fSec);
-    if(d.fMarca) setFMarca(d.fMarca); if(d.fNorma) setFNorma(d.fNorma); if(d.fPago) setFPago(d.fPago);
+    if(Array.isArray(d.fCanal)) setFCanal(d.fCanal); if(Array.isArray(d.fDiv)) setFDiv(d.fDiv); if(Array.isArray(d.fSec)) setFSec(d.fSec);
+    if(Array.isArray(d.fMarca)) setFMarca(d.fMarca); if(Array.isArray(d.fNorma)) setFNorma(d.fNorma); if(Array.isArray(d.fPago)) setFPago(d.fPago);
+    if(Array.isArray(d.fGoa)) setFGoa(d.fGoa); if(d.usarPromosFijas!=null) setUsarPromosFijas(d.usarPromosFijas);
   }}catch{} },[]);
-  useEffect(()=>{ try{ localStorage.setItem('gop_daily_v3',JSON.stringify({allData,invData,promoEntries,manualPromo,defaultUplift,moneyK,dateFrom,dateTo,fCanal,fDiv,fSec,fMarca,fNorma,fPago})); }catch{} },
-    [allData,invData,promoEntries,manualPromo,defaultUplift,moneyK,dateFrom,dateTo,fCanal,fDiv,fSec,fMarca,fNorma,fPago]);
+  useEffect(()=>{ try{ localStorage.setItem('gop_daily_v3',JSON.stringify({allData,invData,promoEntries,manualPromo,defaultUplift,moneyK,usarPromosFijas,dateFrom,dateTo,fCanal,fDiv,fSec,fMarca,fNorma,fPago,fGoa})); }catch{} },
+    [allData,invData,promoEntries,manualPromo,defaultUplift,moneyK,usarPromosFijas,dateFrom,dateTo,fCanal,fDiv,fSec,fMarca,fNorma,fPago,fGoa]);
 
   const decodeBuf=buf=>{ let txt=new TextDecoder('utf-8',{fatal:false}).decode(buf);
     if(txt.includes('\uFFFD')) txt=new TextDecoder('windows-1252').decode(buf); return txt; };
   const upload=(ref,setter,parser)=>e=>{ const f=e.target.files[0]; if(!f) return; const rd=new FileReader();
     rd.onload=ev=>{ setter(parser(decodeBuf(ev.target.result))); e.target.value=''; }; rd.readAsArrayBuffer(f); };
 
-  // Filtros — el rango de fecha se desplaza al año objetivo (TY absoluto, LY mismo span en su año)
-  const dimsOk=useCallback(r=>(fCanal==='ALL'||r.canal===fCanal)&&(fDiv==='ALL'||r.division===fDiv)&&(fSec==='ALL'||r.seccion===fSec)&&
-    (fMarca==='ALL'||r.marca===fMarca)&&(fNorma==='ALL'||r.norma===fNorma)&&(fPago==='ALL'||r.pago===fPago),
-    [fCanal,fDiv,fSec,fMarca,fNorma,fPago]);
+  // Filtros — arreglos vacíos = todos
+  const inF=(arr,v)=>arr.length===0||arr.includes(v);
+  const dimsOk=useCallback(r=>inF(fCanal,r.canal)&&inF(fDiv,r.division)&&inF(fSec,r.seccion)&&
+    inF(fMarca,r.marca)&&inF(fNorma,r.norma)&&inF(fPago,r.pago)&&inF(fGoa,r.goa),
+    [fCanal,fDiv,fSec,fMarca,fNorma,fPago,fGoa]);
   // Último día con data TY (global, ignora filtro de fecha) → tope para comparación justa
   const lastTYAll=useMemo(()=>{ const d=allData.filter(r=>r.year===tyYear&&r.fecha).map(r=>r.fecha); return d.length?new Date(Math.max(...d)):null; },[allData,tyYear]);
   const applyFor=useCallback((year)=>{ const shift=iso=>iso?`${year}-${iso.slice(5)}`:'';
@@ -287,15 +342,15 @@ export default function ModuleDaily(){
       (!from||!r.fecha||r.fecha>=new Date(from+'T00:00:00'))&&(!to||!r.fecha||r.fecha<=new Date(to+'T23:59:59'))&&
       (!cut||!r.fecha||r.fecha<=cut));
   },[allData,dimsOk,dateFrom,dateTo,lastTYAll]);
-  const applyInvF=useCallback(rows=>rows.filter(r=>(fDiv==='ALL'||r.division===fDiv)&&(fSec==='ALL'||r.seccion===fSec)&&
-    (fMarca==='ALL'||r.marca===fMarca)&&(fNorma==='ALL'||r.norma===fNorma)),[fDiv,fSec,fMarca,fNorma]);
+  const applyInvF=useCallback(rows=>rows.filter(r=>inF(fDiv,r.division)&&inF(fSec,r.seccion)&&
+    inF(fMarca,r.marca)&&inF(fNorma,r.norma)&&inF(fGoa,r.goa)),[fDiv,fSec,fMarca,fNorma,fGoa]);
 
   const tyData=useMemo(()=>applyFor(tyYear),[applyFor,tyYear]);
   const lyData=useMemo(()=>applyFor(lyYear),[applyFor,lyYear]);
   const filtInv=useMemo(()=>applyInvF(invData),[invData,applyInvF]);
 
   const opts=useMemo(()=>{ const s=k=>[...new Set(allData.map(r=>r[k]).filter(Boolean))].sort();
-    return {canal:s('canal'),div:s('division'),sec:s('seccion'),marca:s('marca'),norma:s('norma'),pago:s('pago')}; },[allData]);
+    return {canal:s('canal'),div:s('division'),sec:s('seccion'),marca:s('marca'),norma:s('norma'),pago:s('pago'),goa:s('goa')}; },[allData]);
 
   const agg=useCallback(rows=>{ const ventaP=rows.reduce((s,r)=>s+r.ventaP,0),ventaU=rows.reduce((s,r)=>s+r.ventaU,0),
     utilidad=rows.reduce((s,r)=>s+r.utilidad,0),markdown=rows.reduce((s,r)=>s+r.markdown,0);
@@ -305,19 +360,26 @@ export default function ModuleDaily(){
 
   const lastDateTY=useMemo(()=>{ const d=tyData.map(r=>r.fecha).filter(Boolean); return d.length?new Date(Math.max(...d)):null; },[tyData]);
 
+  // Promos fijas recurrentes (Hot Sale, Buen Fin, etc.) resueltas por año
+  const fixedPromoEntries=useMemo(()=>{ if(!usarPromosFijas) return []; const out=[];
+    [tyYear,lyYear].forEach(y=>FIXED_PROMOS.forEach(p=>{ const [s,e]=p.calc(y); if(!s||!e) return;
+      for(let d=new Date(s); d<=e; d.setDate(d.getDate()+1)) out.push({fecha:isoOf(new Date(d)),nombre:p.name,seccion:'',marca:'',uplift:p.uplift,fija:true}); })); return out;
+  },[usarPromosFijas,tyYear,lyYear]);
+  const allPromoEntries=useMemo(()=>[...promoEntries,...fixedPromoEntries],[promoEntries,fixedPromoEntries]);
+
   // Promo helpers
   const isPromoDate=useCallback(iso=>{
     if(manualPromo.includes(iso)) return true;
-    return promoEntries.some(e=>{ if(e.fecha!==iso) return false;
-      const secOk=!e.seccion||fSec==='ALL'||e.seccion===fSec; const marOk=!e.marca||fMarca==='ALL'||e.marca===fMarca;
+    return allPromoEntries.some(e=>{ if(e.fecha!==iso) return false;
+      const secOk=!e.seccion||fSec.length===0||fSec.includes(e.seccion); const marOk=!e.marca||fMarca.length===0||fMarca.includes(e.marca);
       return secOk&&marOk; });
-  },[manualPromo,promoEntries,fSec,fMarca]);
+  },[manualPromo,allPromoEntries,fSec,fMarca]);
   const upliftFor=useCallback(iso=>{
     let u=manualPromo.includes(iso)?defaultUplift:0;
-    promoEntries.forEach(e=>{ if(e.fecha===iso){ const secOk=!e.seccion||fSec==='ALL'||e.seccion===fSec; const marOk=!e.marca||fMarca==='ALL'||e.marca===fMarca;
+    allPromoEntries.forEach(e=>{ if(e.fecha===iso){ const secOk=!e.seccion||fSec.length===0||fSec.includes(e.seccion); const marOk=!e.marca||fMarca.length===0||fMarca.includes(e.marca);
       if(secOk&&marOk) u=Math.max(u,e.uplift||defaultUplift); }});
     return u||defaultUplift;
-  },[manualPromo,promoEntries,fSec,fMarca,defaultUplift]);
+  },[manualPromo,allPromoEntries,fSec,fMarca,defaultUplift]);
 
   // Promedio por día de semana (proyección consciente de findes)
   const avgByDow=useMemo(()=>{ const m={};
@@ -364,14 +426,14 @@ export default function ModuleDaily(){
     return Object.values(map).sort((a,b)=>a.fecha.localeCompare(b.fecha))
       .map(d=>({...d,crec:(d.ly!=null&&d.ly!==0)?((d.ty-d.ly)/Math.abs(d.ly))*100:null})); },[tyData,lyData,tyYear]);
 
-  // ── Serie ALINEADA POR DÍA DE SEMANA (lunes↔lunes): cada fecha TY vs LY misma semana ISO + mismo día ──
+  // ── Serie ALINEADA POR DÍA DE SEMANA (lunes↔lunes): LY completo (sin tope) para que exista el match ──
   const serieWeekAligned=useMemo(()=>{
-    const lyWD={}; lyData.forEach(r=>{ if(!r.fecha) return; const k=isoWeek(r.fecha)+'-'+((r.fecha.getDay()+6)%7); lyWD[k]=(lyWD[k]||0)+r.ventaP; });
+    const lyWD={}; allData.forEach(r=>{ if(r.year!==lyYear||!r.fecha||!dimsOk(r)) return; const k=isoWeek(r.fecha)+'-'+((r.fecha.getDay()+6)%7); lyWD[k]=(lyWD[k]||0)+r.ventaP; });
     const tyMap={}; tyData.forEach(r=>{ if(!r.fecha) return; const k=isoOf(r.fecha); tyMap[k]=(tyMap[k]||0)+r.ventaP; });
     return Object.keys(tyMap).sort().map(iso=>{ const d=new Date(iso+'T00:00:00'); const dow=(d.getDay()+6)%7;
       const ly=lyWD[isoWeek(d)+'-'+dow]; const lyv=ly==null?null:ly;
       return {fecha:iso,dow:DOW_LBL[dow],ty:tyMap[iso],ly:lyv,crec:(lyv!=null&&lyv!==0)?((tyMap[iso]-lyv)/Math.abs(lyv))*100:null}; });
-  },[tyData,lyData]);
+  },[tyData,allData,dimsOk,lyYear]);
 
   // ── Métricas de tendencia (3 meses / acum / mes actual), LY topado a MTD ──
   const trendStats=useMemo(()=>{
@@ -413,28 +475,26 @@ export default function ModuleDaily(){
       tendencia:delta(g.ventaP,lyM[g.key]), fcst:diaActual>0?g.ventaP/diaActual*diasMes:g.ventaP })).sort((a,b)=>b.ventaP-a.ventaP);
   },[tyData,lyData,lastDateTY]);
 
-  // Versión MES CORRIENTE (para tablas marca/sección/goa). LY MTD topado a día actual; LY full sin tope.
-  const byKeyMonth=useCallback((key)=>{
-    if(!lastDateTY) return [];
-    const month=lastDateTY.getMonth(),year=lastDateTY.getFullYear();
-    const diaActual=lastDateTY.getDate(),diasMes=new Date(year,month+1,0).getDate();
-    const tyM={},lyMTD={},lyFull={};
-    tyData.forEach(r=>{ if(!r.fecha||r.fecha.getMonth()!==month||r.fecha.getFullYear()!==year) return; const k=r[key]||'N/D';
-      if(!tyM[k])tyM[k]={key:k,ventaP:0,ventaU:0,utilidad:0,markdown:0}; tyM[k].ventaP+=r.ventaP; tyM[k].ventaU+=r.ventaU; tyM[k].utilidad+=r.utilidad; tyM[k].markdown+=r.markdown; });
-    // LY del mes desde allData SIN tope (para cierre vs LY completo); MTD topado a diaActual
-    allData.forEach(r=>{ if(r.year!==lyYear||!r.fecha||!dimsOk(r)||r.fecha.getMonth()!==month) return; const k=r[key]||'N/D';
-      lyFull[k]=(lyFull[k]||0)+r.ventaP; if(r.fecha.getDate()<=diaActual) lyMTD[k]=(lyMTD[k]||0)+r.ventaP; });
-    return Object.values(tyM).map(g=>{ const fcst=diaActual>0?g.ventaP/diaActual*diasMes:g.ventaP;
+  // Agrupador para tablas dashboard: RESPETA el filtro (período = header). Tend período vs LY mismo período; Cierre vs LY mes completo.
+  const byKeyDash=useCallback((key)=>{
+    const tyM={},lyP={},lyFull={};
+    tyData.forEach(r=>{ const k=r[key]||'N/D'; if(!tyM[k])tyM[k]={key:k,ventaP:0,ventaU:0,utilidad:0,markdown:0};
+      tyM[k].ventaP+=r.ventaP; tyM[k].ventaU+=r.ventaU; tyM[k].utilidad+=r.utilidad; tyM[k].markdown+=r.markdown; });
+    lyData.forEach(r=>{ const k=r[key]||'N/D'; lyP[k]=(lyP[k]||0)+r.ventaP; });
+    if(lastDateTY){ const month=lastDateTY.getMonth(); allData.forEach(r=>{ if(r.year!==lyYear||!r.fecha||!dimsOk(r)||r.fecha.getMonth()!==month) return; const k=r[key]||'N/D'; lyFull[k]=(lyFull[k]||0)+r.ventaP; }); }
+    const pDays=new Set(tyData.filter(r=>r.fecha).map(r=>r.fecha.toDateString())).size||1;
+    const diasMes=lastDateTY?new Date(lastDateTY.getFullYear(),lastDateTY.getMonth()+1,0).getDate():30;
+    return Object.values(tyM).map(g=>{ const fcst=g.ventaP/pDays*diasMes;
       return { ...g, fcst, mgPct:g.ventaP>0?g.utilidad/g.ventaP*100:0,
-        tendMTD:delta(g.ventaP,lyMTD[g.key]), tendClose:delta(fcst,lyFull[g.key]),
-        lyMTD:lyMTD[g.key]||0, lyFull:lyFull[g.key]||0 }; }).sort((a,b)=>b.ventaP-a.ventaP);
-  },[tyData,allData,dimsOk,lastDateTY,lyYear]);
+        tendPeriodo:delta(g.ventaP,lyP[g.key]), tendCierre:delta(fcst,lyFull[g.key]),
+        lyP:lyP[g.key]||0, lyFull:lyFull[g.key]||0 }; }).sort((a,b)=>b.ventaP-a.ventaP);
+  },[tyData,lyData,allData,dimsOk,lastDateTY,lyYear]);
 
   const byCanal=useMemo(()=>byKeyFcst('canal'),[byKeyFcst]);
   const byDiv=useMemo(()=>byKeyFcst('division'),[byKeyFcst]);
-  const byMarca=useMemo(()=>byKeyMonth('marca'),[byKeyMonth]);
-  const byGoa=useMemo(()=>byKeyMonth('goa'),[byKeyMonth]);
-  const bySecMes=useMemo(()=>byKeyMonth('seccion'),[byKeyMonth]);
+  const byMarca=useMemo(()=>byKeyDash('marca'),[byKeyDash]);
+  const byGoa=useMemo(()=>byKeyDash('goa'),[byKeyDash]);
+  const bySecMes=useMemo(()=>byKeyDash('seccion'),[byKeyDash]);
   const byPago=useMemo(()=>byKeyFcst('pago'),[byKeyFcst]);
   const byNorma=useMemo(()=>byKeyFcst('norma'),[byKeyFcst]);
 
@@ -465,11 +525,14 @@ export default function ModuleDaily(){
     return { tySum:ty.sum,tyN:ty.n,lySum:ly.sum,lyN:ly.n,delta:delta(ty.sum,ly.sum),
       avgTY:ty.n>0?ty.sum/ty.n:0,avgLY:ly.n>0?ly.sum/ly.n:0,perDay:Object.values(perDay).sort((a,b)=>b.ty-a.ty) }; },[tyData,lyData,isPromoDate]);
 
-  const cmpHoliday=useMemo(()=>HOLIDAYS.map(h=>{
-      const tv=tyData.filter(r=>r.fecha&&mdOf(r.fecha)===h.md&&r.fecha.getFullYear()===tyYear).reduce((s,r)=>s+r.ventaP,0);
-      const lv=lyData.filter(r=>r.fecha&&mdOf(r.fecha)===h.md&&r.fecha.getFullYear()===lyYear).reduce((s,r)=>s+r.ventaP,0);
+  const cmpHoliday=useMemo(()=>{ const tyH=holidaysForYear(tyYear),lyH=holidaysForYear(lyYear);
+    return tyH.map(h=>{
+      const tv=tyData.filter(r=>r.fecha&&r.fecha.getMonth()===h.date.getMonth()&&r.fecha.getDate()===h.date.getDate()&&r.fecha.getFullYear()===tyYear).reduce((s,r)=>s+r.ventaP,0);
+      const lh=lyH.find(x=>x.name===h.name);
+      const lv=lh?lyData.filter(r=>r.fecha&&r.fecha.getMonth()===lh.date.getMonth()&&r.fecha.getDate()===lh.date.getDate()&&r.fecha.getFullYear()===lyYear).reduce((s,r)=>s+r.ventaP,0):0;
       return {name:h.name,label:h.name,ty:tv,ly:lv,delta:delta(tv,lv)};
-    }).filter(x=>x.ty>0||x.ly>0),[tyData,lyData,tyYear,lyYear]);
+    }).filter(x=>x.ty>0||x.ly>0);
+  },[tyData,lyData,tyYear,lyYear]);
 
   // ── Inventario ──
   const invKPI=useMemo(()=>{ const oh=filtInv.reduce((s,r)=>s+r.oh,0),oo=filtInv.reduce((s,r)=>s+r.oo,0),
@@ -523,11 +586,11 @@ export default function ModuleDaily(){
   useEffect(()=>{ if(!promoView&&lastDateTY) setPromoView({year:lastDateTY.getFullYear(),month:lastDateTY.getMonth()}); },[lastDateTY,promoView]);
   const pView=promoView||promoMonth;
   const promoMatched=useMemo(()=>tyData.filter(r=>r.fecha&&isPromoDate(isoOf(r.fecha))).length,[tyData,isPromoDate]);
-  const promoNamesFor=useCallback(iso=>{ const ns=promoEntries.filter(e=>e.fecha===iso&&e.nombre).map(e=>e.nombre); return [...new Set(ns)].join(', '); },[promoEntries]);
+  const promoNamesFor=useCallback(iso=>{ const ns=allPromoEntries.filter(e=>e.fecha===iso&&e.nombre).map(e=>e.nombre); return [...new Set(ns)].join(', '); },[allPromoEntries]);
   const promoList=useMemo(()=>{ const g={};
-    promoEntries.forEach(e=>{ const k=e.nombre||'(sin nombre)'; if(!g[k])g[k]={nombre:k,min:e.fecha,max:e.fecha,uplift:e.uplift,seccion:e.seccion,marca:e.marca,dias:new Set()};
+    allPromoEntries.forEach(e=>{ const k=e.nombre||'(sin nombre)'; if(!g[k])g[k]={nombre:k,min:e.fecha,max:e.fecha,uplift:e.uplift,seccion:e.seccion,marca:e.marca,fija:e.fija,dias:new Set()};
       g[k].dias.add(e.fecha); if(e.fecha<g[k].min)g[k].min=e.fecha; if(e.fecha>g[k].max)g[k].max=e.fecha; g[k].uplift=Math.max(g[k].uplift,e.uplift); });
-    return Object.values(g).map(p=>({...p,nDias:p.dias.size})).sort((a,b)=>a.min.localeCompare(b.min)); },[promoEntries]);
+    return Object.values(g).map(p=>({...p,nDias:p.dias.size})).sort((a,b)=>a.min.localeCompare(b.min)); },[allPromoEntries]);
 
   // ── Sub-componentes UI ──
   const FilterBar=()=>(
@@ -551,20 +614,22 @@ export default function ModuleDaily(){
           className={`text-[10px] px-2.5 py-1.5 rounded-lg border font-black transition-all ${t.btnGhost}`}>{p.l}</button>);
       })()}
       {[{label:'Canal',val:fCanal,set:setFCanal,ops:opts.canal},{label:'División',val:fDiv,set:setFDiv,ops:opts.div},
-        {label:'Sección',val:fSec,set:setFSec,ops:opts.sec},{label:'Marca',val:fMarca,set:setFMarca,ops:opts.marca},
-        {label:'Norma',val:fNorma,set:setFNorma,ops:opts.norma},{label:'Pago',val:fPago,set:setFPago,ops:opts.pago}].map(({label,val,set,ops})=>(
-        <select key={label} value={val} onChange={e=>set(e.target.value)} className={`text-xs px-3 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}>
-          {['ALL',...ops].map(o=><option key={o} value={o}>{o==='ALL'?`${label}: Todos`:o}</option>)}
-        </select>))}
+        {label:'Sección',val:fSec,set:setFSec,ops:opts.sec},{label:'GOA',val:fGoa,set:setFGoa,ops:opts.goa},
+        {label:'Marca',val:fMarca,set:setFMarca,ops:opts.marca},{label:'Norma',val:fNorma,set:setFNorma,ops:opts.norma},
+        {label:'Pago',val:fPago,set:setFPago,ops:opts.pago}].map(({label,val,set,ops})=>(
+        <MultiSelect key={label} label={label} options={ops} selected={val} onChange={set} t={t} isDark={isDark}/>))}
       <label className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border font-bold cursor-pointer ${t.btnGhost}`}>
         <input type="checkbox" checked={showInv} onChange={e=>setShowInv(e.target.checked)} className="accent-violet-500"/> Inventario
       </label>
       <label className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border font-bold cursor-pointer ${t.btnGhost}`}>
         <input type="checkbox" checked={moneyK} onChange={e=>setMoneyK(e.target.checked)} className="accent-violet-500"/> $ en miles
       </label>
-      {(fCanal!=='ALL'||fDiv!=='ALL'||fSec!=='ALL'||fMarca!=='ALL'||fNorma!=='ALL'||fPago!=='ALL'||dateFrom||dateTo)&&(
-        <button onClick={()=>{setFCanal('ALL');setFDiv('ALL');setFSec('ALL');setFMarca('ALL');setFNorma('ALL');setFPago('ALL');setDateFrom('');setDateTo('');}}
-          className={`text-xs px-3 py-1.5 rounded-lg border font-bold ${t.btnGhost}`}>✕ Limpiar</button>)}
+      <label className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border font-bold cursor-pointer ${t.btnGhost}`}>
+        <input type="checkbox" checked={usarPromosFijas} onChange={e=>setUsarPromosFijas(e.target.checked)} className="accent-violet-500"/> Promos fijas
+      </label>
+      {(fCanal.length||fDiv.length||fSec.length||fGoa.length||fMarca.length||fNorma.length||fPago.length||dateFrom||dateTo)?(
+        <button onClick={()=>{setFCanal([]);setFDiv([]);setFSec([]);setFGoa([]);setFMarca([]);setFNorma([]);setFPago([]);setDateFrom('');setDateTo('');}}
+          className={`text-xs px-3 py-1.5 rounded-lg border font-bold ${t.btnGhost}`}>✕ Limpiar</button>):null}
     </div>
   );
 
@@ -584,33 +649,35 @@ export default function ModuleDaily(){
     </div>
   );
 
-  // Tabla con tendencia + fcst (mes corriente) + fila TOTAL
-  const FcstTable=({title,data,accent})=>{
-    const tot=data.reduce((a,r)=>({v:a.v+r.ventaP,u:a.u+r.ventaU,util:a.util+r.utilidad,f:a.f+r.fcst,lyM:a.lyM+(r.lyMTD||0),lyF:a.lyF+(r.lyFull||0)}),{v:0,u:0,util:0,f:0,lyM:0,lyF:0});
-    const mtd=tblBasis==='mtd';
-    const tendOf=r=>mtd?r.tendMTD:r.tendClose;
-    const totTend=mtd?delta(tot.v,tot.lyM):delta(tot.f,tot.lyF);
+  // Tabla dashboard: tendencia + fcst + fila TOTAL. Click en fila = filtra todo.
+  const FcstTable=({title,data,accent,onPick,selected})=>{
+    const tot=data.reduce((a,r)=>({v:a.v+r.ventaP,u:a.u+r.ventaU,util:a.util+r.utilidad,f:a.f+r.fcst,lyP:a.lyP+(r.lyP||0),lyF:a.lyF+(r.lyFull||0)}),{v:0,u:0,util:0,f:0,lyP:0,lyF:0});
+    const per=tblBasis==='periodo';
+    const tendOf=r=>per?r.tendPeriodo:r.tendCierre;
+    const totTend=per?delta(tot.v,tot.lyP):delta(tot.f,tot.lyF);
     return (
     <div className={`p-4 rounded-xl border ${t.cardInner}`}>
       <div className="flex items-center justify-between mb-3">
         <h4 className={`text-sm font-bold ${t.textMain}`}>{title}</h4>
-        <span className={`text-[8px] px-2 py-0.5 rounded-full border font-black ${t.badge}`}>{data.length} ítems</span>
+        <span className={`text-[8px] px-2 py-0.5 rounded-full border font-black ${t.badge}`}>{data.length} ítems{onPick?' · click filtra':''}</span>
       </div>
       <div className="overflow-x-auto custom-scrollbar max-h-[260px]">
         <table className="w-full text-left text-xs min-w-max">
           <thead><tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark?'bg-zinc-950 text-gray-400 border-b border-zinc-800':'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
-            {['Nombre','Venta MTD','PZS','MG%',mtd?'Tend MTD':'Tend cierre','Fcst Mes'].map(h=><th key={h} className="p-2 whitespace-nowrap">{h}</th>)}
+            {['Nombre','Venta','PZS','MG%',per?'Tend período':'Tend cierre','Fcst Mes'].map(h=><th key={h} className="p-2 whitespace-nowrap">{h}</th>)}
           </tr></thead>
           <tbody className={`divide-y ${isDark?'divide-zinc-800/50':'divide-gray-100'}`}>
-            {data.slice(0,12).map((r,i)=>(
-              <tr key={i} className={`transition-colors ${isDark?'hover:bg-zinc-800/30':'hover:bg-violet-50/30'}`}>
-                <td className={`p-2 font-bold ${t.textMain} max-w-[110px] truncate`} title={r.key}>{r.key}</td>
+            {data.slice(0,15).map((r,i)=>{ const sel=selected?.includes(r.key);
+              return (
+              <tr key={i} onClick={onPick?()=>onPick(r.key):undefined}
+                className={`transition-colors ${onPick?'cursor-pointer':''} ${sel?(isDark?'bg-violet-500/20':'bg-violet-100'):(isDark?'hover:bg-zinc-800/30':'hover:bg-violet-50/30')}`}>
+                <td className={`p-2 font-bold max-w-[120px] truncate ${sel?'text-violet-400':t.textMain}`} title={r.key}>{sel?'✓ ':''}{r.key}</td>
                 <td className={`p-2 font-mono ${accent||'text-violet-400'}`}>{fmtM(r.ventaP)}</td>
                 <td className={`p-2 font-mono ${t.textMuted}`}>{fmt(r.ventaU)}</td>
                 <td className={`p-2 font-bold ${r.mgPct>=45?'text-violet-400':r.mgPct>=35?'text-amber-400':'text-rose-400'}`}>{fmtP(r.mgPct)}</td>
                 <td className="p-2"><DeltaBadge value={tendOf(r)}/></td>
                 <td className={`p-2 font-mono font-bold ${t.textAccent2}`}>{fmtM(r.fcst)}</td>
-              </tr>))}
+              </tr>); })}
           </tbody>
           <tfoot><tr className={`font-black sticky bottom-0 ${isDark?'bg-zinc-900 border-t-2 border-violet-500/50':'bg-violet-50 border-t-2 border-violet-300'}`}>
             <td className={`p-2 ${t.textMain}`}>TOTAL</td>
@@ -940,6 +1007,7 @@ export default function ModuleDaily(){
                   {promoList.map((p,i)=>(
                     <div key={i} className={`px-3 py-1.5 rounded-lg border ${t.cardInner}`}>
                       <span className={`text-[11px] font-black ${t.textMain}`}>{p.nombre}</span>
+                      {p.fija&&<span className={`text-[8px] ml-1 px-1.5 py-0.5 rounded-full border font-black ${t.badgeAmber}`}>fija</span>}
                       <span className={`text-[9px] ml-2 ${t.textMuted}`}>{fmtDate(new Date(p.min+'T00:00:00'))}{p.max!==p.min?`→${fmtDate(new Date(p.max+'T00:00:00'))}`:''} · {p.nDias}d · +{p.uplift||defaultUplift}%{p.seccion?` · ${p.seccion}`:''}{p.marca?` · ${p.marca}`:''}</span>
                     </div>))}
                 </div>
@@ -1005,20 +1073,20 @@ export default function ModuleDaily(){
             <p className={`text-[9px] mt-1 ${t.textMuted}`}>"Mes corriente" usa el último mes con datos; cambia según el escenario de forecast que selecciones arriba. "Acumulado periodo" es real sobre todo el filtro activo.</p>
           </div>
 
-          {/* TABLAS con tendencia + fcst */}
+          {/* TABLAS dashboard (respetan filtros · click filtra) */}
           <div className="flex items-center justify-between flex-wrap gap-2">
-            <h3 className={`text-sm font-bold ${t.textMain}`}>Detalle por segmento — mes corriente</h3>
+            <h3 className={`text-sm font-bold ${t.textMain}`}>Detalle por segmento <span className={`text-[10px] font-normal ${t.textMuted}`}>· respeta filtros · click en una fila filtra todo</span></h3>
             <div className="flex items-center gap-1">
               <span className={`text-[10px] ${t.textMuted}`}>Tendencia:</span>
-              {[['mtd','Al día (MTD)'],['close','Cierre c/ fcst']].map(([v,l])=>(
+              {[['periodo','Período vs LY'],['cierre','Cierre c/ fcst']].map(([v,l])=>(
                 <button key={v} onClick={()=>setTblBasis(v)} className={`text-[10px] px-3 py-1 rounded-full border font-black transition-all ${tblBasis===v?t.badge:t.btnGhost}`}>{l}</button>))}
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <FcstTable title="Top Marcas" data={byMarca}/>
-            <FcstTable title="Por Sección" data={bySecMes} accent="text-purple-400"/>
+            <FcstTable title="Top Marcas" data={byMarca} onPick={k=>setFMarca(p=>p.includes(k)?p.filter(x=>x!==k):[...p,k])} selected={fMarca}/>
+            <FcstTable title="Por Sección" data={bySecMes} accent="text-purple-400" onPick={k=>setFSec(p=>p.includes(k)?p.filter(x=>x!==k):[...p,k])} selected={fSec}/>
           </div>
-          <FcstTable title="Top GOA" data={byGoa} accent="text-blue-400"/>
+          <FcstTable title="Top GOA" data={byGoa} accent="text-blue-400" onPick={k=>setFGoa(p=>p.includes(k)?p.filter(x=>x!==k):[...p,k])} selected={fGoa}/>
 
           {/* ── INVENTARIO (toggle) ── */}
           {showInv&&(
