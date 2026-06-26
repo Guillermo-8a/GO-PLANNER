@@ -185,6 +185,17 @@ function AssistPanel({ isDark, onClose }) {
           Usa el sidebar para pasar datos entre módulos. Los botones se activan automáticamente cuando hay datos disponibles en el módulo anterior.
         </p>
       </div>
+    <a href="/about"
+      style={{
+        display:'flex', alignItems: 'center', justiContent: 'center', gap: '6xp',
+        margin: '0 12px', border: '1px solid rgba (139,92,246,0,25)',
+        background: 'rgba (139,92,246,0.08)',
+        color: '#8b5cf6', frontSize: '11px', fontWeight: 700,
+        textDecoration: 'none', letterSpacing: '0.5px',
+      }}
+      >
+    Acerca de GO PLANNER 
+    </a>
     </div>
   );
 }
