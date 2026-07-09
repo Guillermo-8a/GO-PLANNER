@@ -194,6 +194,7 @@ export default function Traslados() {
   // El usuario define qué GOAs son de temporada y qué clima requieren
   const [goasTemporada, setGoasTemporada] = useState({});
   const [showPanelGoas, setShowPanelGoas] = useState(false);
+  const [showPanelNiv,  setShowPanelNiv]  = useState(true);
 
   const [filterSku,          setFilterSku]          = useState('ALL');
   const [filterTipoCentro,   setFilterTipoCentro]   = useState('ALL');
@@ -1241,6 +1242,8 @@ export default function Traslados() {
   const [mosObjetivoMax, setMosObjetivoMax] = useState(4);
   const [nivResult,      setNivResult]      = useState([]);
   const [nivProblematicas, setNivProblematicas] = useState([]);
+  const [nivLiquidacion,   setNivLiquidacion]   = useState([]);
+  const [nivCobertura,     setNivCobertura]     = useState(null);
   const [nivLoading,     setNivLoading]     = useState(false);
   const [nivExecuted,    setNivExecuted]    = useState(false);
   // Pesos ajustables del score de potencial
@@ -1263,6 +1266,8 @@ export default function Traslados() {
         if (d.pesoHistorico != null)  setPesoHistorico(d.pesoHistorico);
         if (d.nivResult?.length) { setNivResult(d.nivResult); setNivExecuted(true); }
         if (d.nivProblematicas?.length) setNivProblematicas(d.nivProblematicas);
+        if (d.nivLiquidacion?.length) setNivLiquidacion(d.nivLiquidacion);
+        if (d.nivCobertura) setNivCobertura(d.nivCobertura);
       }
     } catch {}
   }, []);
@@ -1270,10 +1275,10 @@ export default function Traslados() {
   useEffect(() => {
     try {
       localStorage.setItem('gop_traslados_niv', JSON.stringify({
-        nivNivel, nivZonaMode, mosObjetivoMin, mosObjetivoMax, pesoVelocidad, pesoRiesgo, pesoHistorico, nivResult, nivProblematicas
+        nivNivel, nivZonaMode, mosObjetivoMin, mosObjetivoMax, pesoVelocidad, pesoRiesgo, pesoHistorico, nivResult, nivProblematicas, nivLiquidacion, nivCobertura
       }));
     } catch {}
-  }, [nivNivel, nivZonaMode, mosObjetivoMin, mosObjetivoMax, pesoVelocidad, pesoRiesgo, pesoHistorico, nivResult, nivProblematicas]);
+  }, [nivNivel, nivZonaMode, mosObjetivoMin, mosObjetivoMax, pesoVelocidad, pesoRiesgo, pesoHistorico, nivResult, nivProblematicas, nivLiquidacion, nivCobertura]);
 
   const calcularNivelacion = useCallback(() => {
     if (!rawData.length) return;
@@ -1301,10 +1306,24 @@ export default function Traslados() {
 
       const porZonaClave = {};
 
+      // Separar: filas excluidas por letra de rebaja van a liquidación directa
+      const liquidacionPorLetra = {}; // clave|zona → { rebajado }
       rawData.forEach(r => {
         const zona = zonaEfectiva(r.zona);
         const clave = keyOf(r);
         if (!clave) return;
+        // Si la letra está excluida, no entra a nivelación (va a liquidación con su nivel)
+        if (letrasExcluidas.size > 0 && r.letraDesc && letrasExcluidas.has(r.letraDesc)) {
+          const lk = `${zona}||${clave}`;
+          if (!liquidacionPorLetra[lk]) liquidacionPorLetra[lk] = {
+            zona, clave, goa: r.goa, marca: r.marca, sku: r.sku, nsku: r.nsku, modelo: r.modelo,
+            oh: 0, importe: 0, letraDesc: r.letraDesc, tiendas: new Set(),
+          };
+          liquidacionPorLetra[lk].oh += r.oh;
+          liquidacionPorLetra[lk].importe += r.oh * (r.precio || 0);
+          liquidacionPorLetra[lk].tiendas.add(r.centro);
+          return;
+        }
         if (!porZonaClave[zona]) porZonaClave[zona] = {};
         if (!porZonaClave[zona][clave]) porZonaClave[zona][clave] = { centros: {}, meta: r };
         const nodo = porZonaClave[zona][clave].centros;
@@ -1326,16 +1345,31 @@ export default function Traslados() {
 
       const resultado = [];
       const problematicas = [];
+      const liquidacion = []; // claves sin venta en toda la zona → sugerir descuento
 
       Object.entries(porZonaClave).forEach(([zona, claves]) => {
         Object.entries(claves).forEach(([clave, { centros, meta }]) => {
           const nodos = Object.values(centros).map(n => {
-            const vtaProyMes = n.vta3m / 3; // forecast plano
+            const vtaProyMes = n.vta3m / 3; // forecast plano (ya trae fallback a vta acum)
             const mos = vtaProyMes > 0 ? n.oh / vtaProyMes : (n.oh > 0 ? 99 : 0);
             return { ...n, vtaProyMes, mos };
           }).filter(n => n.oh > 0 || n.vtaProyMes > 0);
 
-          if (nodos.length < 2) return; // necesitas al menos 2 tiendas para nivelar
+          if (nodos.length < 2) return;
+
+          // ¿Nadie vende esta clave en la zona? → liquidación, no traslado
+          const vtaZonaTotal = nodos.reduce((s,n) => s + n.vtaProyMes, 0);
+          const ohZonaTotal  = nodos.reduce((s,n) => s + n.oh, 0);
+          if (vtaZonaTotal <= 0.01 && ohZonaTotal > 0) {
+            liquidacion.push({
+              zona, clave, nivel: nivNivel,
+              goa: meta.goa, marca: meta.marca, sku: meta.sku, nsku: meta.nsku, modelo: meta.modelo,
+              tiendas: nodos.length,
+              oh: ohZonaTotal,
+              importe: nodos.reduce((s,n) => s + n.oh * (n.precio||0), 0),
+            });
+            return; // no intentar nivelar
+          }
 
           // Normalizadores para el score de potencial
           const maxVel  = Math.max(...nodos.map(n => n.vtaProyMes), 0.01);
@@ -1396,7 +1430,9 @@ export default function Traslados() {
                 sku: don.sku, nsku: don.nsku,
                 centroSalida: don.centro, nombreSalida: don.nCentro,
                 centroReceptor: rec.centro, nombreReceptor: rec.nCentro,
+                zonaOrigen: don.zona, zonaDestino: rec.zona,
                 pzs: mover,
+                ohSalidaAntes: don.oh,
                 importe: mover * (don.precio || 0),
                 precio: don.precio,
                 mosSalidaAntes: +don.mos.toFixed(1),
@@ -1415,7 +1451,7 @@ export default function Traslados() {
               problematicas.push({
                 zona, clave, nivel: nivNivel,
                 centro: n.centro, nombre: n.nCentro,
-                goa: n.goa, marca: n.marca, sku: n.sku,
+                goa: n.goa, marca: n.marca, sku: n.sku, nsku: n.nsku, modelo: n.modelo,
                 ohInicial: n.oh,
                 mosInicial: +n.mos.toFixed(1),
                 oh: ohMut[n.centro],
@@ -1428,13 +1464,38 @@ export default function Traslados() {
         });
       });
 
+      // Agregar las excluidas por letra al array de liquidación, marcadas como "ya rebajado"
+      Object.values(liquidacionPorLetra).forEach(l => {
+        liquidacion.push({
+          zona: l.zona, clave: l.clave, nivel: nivNivel,
+          goa: l.goa, marca: l.marca, sku: l.sku, nsku: l.nsku, modelo: l.modelo,
+          tiendas: l.tiendas.size,
+          oh: l.oh, importe: l.importe,
+          motivo: 'rebajado', letraDesc: l.letraDesc,
+        });
+      });
+      // Marcar las de liquidación por-sin-venta como "sin rebaja aún"
+      liquidacion.forEach(l => { if (!l.motivo) l.motivo = 'sin_venta'; });
+
       problematicas.sort((a,b) => b.mosFinal - a.mosFinal);
+      liquidacion.sort((a,b) => b.importe - a.importe);
       setNivResult(resultado);
       setNivProblematicas(problematicas.slice(0, 10));
+      setNivLiquidacion(liquidacion);
+      // Cobertura de VTA_3M
+      const totalRows = rawData.length;
+      const con3m = rawData.filter(r => r.vta3m != null && r.vta3m > 0).length;
+      const conVta = rawData.filter(r => (r.vta || 0) > 0).length;
+      setNivCobertura({
+        total: totalRows,
+        con3m, pct3m: totalRows ? (con3m/totalRows*100) : 0,
+        conVta, pctVta: totalRows ? (conVta/totalRows*100) : 0,
+        sinVenta: rawData.filter(r => (r.vta||0)===0 && (r.vta3m||0)===0).length,
+      });
       setNivExecuted(true);
       setNivLoading(false);
     }, 400);
-  }, [rawData, nivNivel, nivZonaMode, mosObjetivoMin, mosObjetivoMax, pesoVelocidad, pesoRiesgo, pesoHistorico, mesActual]);
+  }, [rawData, nivNivel, nivZonaMode, mosObjetivoMin, mosObjetivoMax, pesoVelocidad, pesoRiesgo, pesoHistorico, mesActual, letrasExcluidas]);
 
   const nivChartData = useMemo(() => {
     if (!nivResult.length || !rawData.length)
@@ -1480,7 +1541,9 @@ export default function Traslados() {
       const mosDespues = vtaFcst > 0 ? ohDespues / vtaFcst : (ohDespues > 0 ? 99 : 0);
       const modificado = (salidas[c.centro]||0) + (entradas[c.centro]||0) > 0;
       return { ...c, vtaProyMes, vtaFcst, ohDespues, mosAntes, mosDespues, modificado,
-               movido: (salidas[c.centro]||0) + (entradas[c.centro]||0) };
+               movido: (salidas[c.centro]||0) + (entradas[c.centro]||0),
+               neto: (entradas[c.centro]||0) - (salidas[c.centro]||0),
+               recibio: entradas[c.centro]||0, envio: salidas[c.centro]||0 };
     });
 
     // Inv + MOS por zona (antes vs después)
@@ -1525,10 +1588,12 @@ export default function Traslados() {
     const skuMap = {}, modMap = {};
     nivProblematicas.forEach(p => {
       const sk = p.sku || p.clave;
-      if (!skuMap[sk]) skuMap[sk] = { key: sk, goa: p.goa, oh: 0, importe: 0 };
+      // SKU: mostrar descripción (nsku) + número
+      if (!skuMap[sk]) skuMap[sk] = { key: p.nsku || sk, sub: `SKU ${sk} · ${p.goa}`, oh: 0, importe: 0 };
       skuMap[sk].oh += p.oh; skuMap[sk].importe += p.importe;
-      const mk = p.clave;
-      if (!modMap[mk]) modMap[mk] = { key: mk, goa: p.goa, oh: 0, importe: 0 };
+      // Modelo: el modelo real
+      const mk = p.modelo || p.clave;
+      if (!modMap[mk]) modMap[mk] = { key: mk, sub: `${p.marca} · ${p.goa}`, oh: 0, importe: 0 };
       modMap[mk].oh += p.oh; modMap[mk].importe += p.importe;
     });
     return {
@@ -1539,13 +1604,17 @@ export default function Traslados() {
   }, [nivProblematicas]);
 
   const exportNivelacion = () => {
-    const header = ['División','Sección','Nombre Sección','Marca','GOA','Modelo','SKU','N SKU','Zona','# Centro Origen','Tienda Origen','# Centro Destino','Tienda Destino','Pzs','Monto a Traspasar','MOS Origen Antes','MOS Origen Después','MOS Destino Antes','MOS Destino Después'];
+    // Layout: Division | Seccion | Seccion(nom) | Marca | Grupo(GOA) | Modelo | Material(SKU) | Texto breve(NSKU) | PVP | #Centro Origen | Tienda Origen | Stock | Pzs a trasladar | #Centro Destino | Tienda Destino | Monto a Traspaso | Zona Origen | Zona Destino
+    const header = ['División','Sección','Sección','Marca','Grupo de artículos','Modelo','Material','Texto breve Material','PVP','# centro tienda origen','Tienda Origen','Stock','Piezas a trasladar','# centro tienda destino','Tienda Destino','MONTO A TRASPASO','ZONA ORIGEN','ZONA DESTINO'];
     const rows = nivResult.map(r => [
-      '', r.numSeccion, r.seccion, r.marca, r.goa, r.modelo || r.goa,
-      r.sku, r.nsku, r.zona,
-      r.centroSalida, r.nombreSalida, r.centroReceptor, r.nombreReceptor,
-      r.pzs, r.importe,
-      r.mosSalidaAntes, r.mosSalidaDespues, r.mosReceptorAntes, r.mosReceptorDespues
+      '', r.numSeccion, r.seccion, r.marca, r.goa, r.modelo || '',
+      r.sku, r.nsku, r.precio,
+      r.centroSalida, r.nombreSalida,
+      r.ohSalidaAntes != null ? r.ohSalidaAntes : '',
+      r.pzs,
+      r.centroReceptor, r.nombreReceptor,
+      r.importe,
+      r.zonaOrigen || r.zona, r.zonaDestino || r.zona
     ]);
     downloadExcel([header, ...rows], 'Nivelacion_Inventarios.csv');
   };
@@ -2336,8 +2405,23 @@ export default function Traslados() {
         {activeTab === 3 && (
           <div className="p-5 space-y-5">
 
-            {/* Config */}
-            <div className={`p-4 rounded-xl border ${t.cardInner} space-y-4`}>
+            {/* Config colapsable */}
+            <div className={`rounded-xl border ${t.cardInner} overflow-hidden`}>
+              <button onClick={() => setShowPanelNiv(v => !v)}
+                className={`w-full flex items-center justify-between px-5 py-3 transition-colors ${isDark ? 'hover:bg-zinc-800/50' : 'hover:bg-gray-50'}`}>
+                <div className="flex items-center gap-3 flex-wrap">
+                  <Icons.Sliders size={14} className={t.textAccent2} />
+                  <span className={`text-xs font-black uppercase tracking-widest ${t.textMain}`}>Configuración</span>
+                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${t.badge}`}>{nivNivel.toUpperCase()}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${t.badgeTeal}`}>MOS {mosObjetivoMin}-{mosObjetivoMax}</span>
+                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${t.badge}`}>
+                    {nivZonaMode === 'misma' ? 'Misma zona' : nivZonaMode === 'metro' ? 'Metro entre sí' : 'Entre todas'}
+                  </span>
+                </div>
+                <Icons.ChevronDown size={14} className={`${t.textMuted} transition-transform ${showPanelNiv ? 'rotate-180' : ''}`} />
+              </button>
+              {showPanelNiv && (
+              <div className={`p-4 space-y-4 border-t ${t.border}`}>
               {/* Switch nivel */}
               <div>
                 <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} block mb-2`}>Nivel de agrupación</label>
@@ -2381,6 +2465,33 @@ export default function Traslados() {
                    'Cualquier tienda puede recibir de cualquier otra, sin importar zona.'}
                 </p>
               </div>
+
+              {/* Filtro de niveles de rebaja (mismo que excedente) */}
+              {opcionesLetras.length > 0 && (
+                <div>
+                  <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} block mb-2`}>
+                    Niveles de rebaja — excluir del traslado (van directo a liquidación)
+                  </label>
+                  <div className="flex flex-wrap gap-2">
+                    {opcionesLetras.map(letra => {
+                      const sel = letrasExcluidas.has(letra);
+                      return (
+                        <button key={letra} onClick={() => setLetrasExcluidas(prev => {
+                          const next = new Set(prev);
+                          sel ? next.delete(letra) : next.add(letra);
+                          return next;
+                        })}
+                          className={`px-3 py-1 rounded-full text-[10px] font-black border transition-all ${sel ? 'bg-orange-500/20 border-orange-500 text-orange-400' : isDark ? 'bg-zinc-800 border-zinc-600 text-gray-400' : 'bg-gray-100 border-gray-300 text-gray-500'}`}>
+                          {sel ? '✕ ' : ''}{letra}
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className={`text-[9px] mt-1 ${t.textMuted}`}>
+                    Lo que marques ya está rebajado y no se puede rebajar más — mejor no trasladarlo. Se lista aparte como liquidación final.
+                  </p>
+                </div>
+              )}
 
               {/* MOS objetivo */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -2427,22 +2538,43 @@ export default function Traslados() {
                   ))}
                 </div>
               </div>
-
-              <div className="flex gap-3 flex-wrap">
-                <button onClick={calcularNivelacion} disabled={!rawData.length || nivLoading}
-                  className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black transition-all disabled:opacity-40 ${t.btnPrimary}`}>
-                  {nivLoading
-                    ? <><Icons.Loader size={15} className="animate-spin" /> Nivelando…</>
-                    : <><Icons.Zap size={15} /> Ejecutar nivelación</>}
-                </button>
-                {nivResult.length > 0 && (
-                  <button onClick={exportNivelacion}
-                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black transition-all ${t.btnSecondary}`}>
-                    <Icons.Download size={15} /> Exportar Excel
-                  </button>
-                )}
               </div>
+              )}
             </div>
+
+            {/* Botones (siempre visibles) */}
+            <div className="flex gap-3 flex-wrap">
+              <button onClick={() => { calcularNivelacion(); setShowPanelNiv(false); }} disabled={!rawData.length || nivLoading}
+                className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black transition-all disabled:opacity-40 ${t.btnPrimary}`}>
+                {nivLoading
+                  ? <><Icons.Loader size={15} className="animate-spin" /> Nivelando…</>
+                  : <><Icons.Zap size={15} /> Ejecutar nivelación</>}
+              </button>
+              {nivResult.length > 0 && (
+                <button onClick={exportNivelacion}
+                  className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black transition-all ${t.btnSecondary}`}>
+                  <Icons.Download size={15} /> Exportar Excel
+                </button>
+              )}
+            </div>
+
+            {/* Cobertura de VTA_3M */}
+            {nivCobertura && (
+              <div className={`p-4 rounded-xl border ${t.cardInner}`}>
+                <div className="flex items-start gap-3">
+                  <Icons.AlertCircle size={16} className={nivCobertura.pct3m < 30 ? 'text-amber-400 mt-0.5' : 'text-emerald-400 mt-0.5'} />
+                  <div className="flex-1">
+                    <p className={`text-xs font-bold ${t.textMain}`}>
+                      Cobertura de venta reciente (VTA 3M): <span className={nivCobertura.pct3m < 30 ? 'text-amber-400' : 'text-emerald-400'}>{nivCobertura.pct3m.toFixed(1)}%</span> de las filas
+                    </p>
+                    <p className={`text-[11px] mt-1 ${t.textMuted}`}>
+                      {fmt(nivCobertura.con3m)} de {fmt(nivCobertura.total)} filas tienen VTA_3M &gt; 0 · {nivCobertura.pctVta.toFixed(1)}% tienen VTA acumulada · {fmt(nivCobertura.sinVenta)} filas sin ninguna venta.
+                      {nivCobertura.pct3m < 30 && ' Cobertura baja: la mayoría del inventario casi no rota, por eso el R² mejora poco y muchos SKUs van a liquidación en vez de traslado.'}
+                    </p>
+                  </div>
+                </div>
+              </div>
+            )}
 
             {/* Resultados */}
             {nivResult.length > 0 ? (
@@ -2482,6 +2614,38 @@ export default function Traslados() {
                         </div>
                       );
                     })}
+                  </div>
+
+                  {/* Venta proyectada por zona */}
+                  <div className={`mt-4 pt-4 border-t ${t.border}`}>
+                    <h5 className={`text-[10px] font-black uppercase tracking-widest mb-2 ${t.textMuted}`}>Venta proyectada / mes por zona</h5>
+                    <div className="space-y-1.5">
+                      {nivChartData.zonaInvMos.map((z, i) => {
+                        const maxV = Math.max(...nivChartData.zonaInvMos.map(x => Math.max(x.vtaProy, x.vtaFcst)), 1);
+                        return (
+                          <div key={i} className="flex items-center gap-2">
+                            <span className={`w-28 truncate text-[9px] font-bold text-right ${t.textMain}`}>{z.zona}</span>
+                            <div className="flex-1 flex flex-col gap-0.5">
+                              <div className="h-2 rounded bg-zinc-700/20 overflow-hidden">
+                                <div className="h-full rounded bg-yellow-400/80" style={{width: `${(z.vtaProy/maxV)*100}%`}} />
+                              </div>
+                              <div className="h-2 rounded bg-zinc-700/20 overflow-hidden">
+                                <div className="h-full rounded bg-violet-500" style={{width: `${(z.vtaFcst/maxV)*100}%`}} />
+                              </div>
+                            </div>
+                            <span className="w-20 text-right text-[9px] font-mono">
+                              <span className="text-yellow-400">{fmt(z.vtaProy)}</span>
+                              <span className={t.textMuted}>→</span>
+                              <span className="text-violet-400">{fmt(z.vtaFcst)}</span>
+                            </span>
+                          </div>
+                        );
+                      })}
+                    </div>
+                    <div className="flex gap-3 mt-1.5 text-[8px]">
+                      <span className="flex items-center gap-1"><span className="w-2 h-1.5 rounded bg-yellow-400/80 inline-block"/> Venta actual</span>
+                      <span className="flex items-center gap-1"><span className="w-2 h-1.5 rounded bg-violet-500 inline-block"/> Con fcst uplift</span>
+                    </div>
                   </div>
                 </div>
 
@@ -2540,10 +2704,13 @@ export default function Traslados() {
                           <div className="flex-1 relative h-5 rounded-lg overflow-hidden bg-zinc-700/20">
                             <div className="absolute left-0 h-full rounded-lg bg-gradient-to-r from-yellow-400 to-violet-500 flex items-center pl-2"
                               style={{width: `${Math.max(6,(c.movido/maxMov)*100)}%`}}>
-                              <span className="text-[9px] font-black text-black">{fmt(c.movido)} pzs</span>
+                              <span className="text-[9px] font-black text-black flex items-center gap-1">
+                                {c.neto > 0 ? '↑' : c.neto < 0 ? '↓' : '↔'} {fmt(Math.abs(c.neto))} pzs {c.neto > 0 ? 'recibió' : c.neto < 0 ? 'envió' : ''}
+                              </span>
                             </div>
                           </div>
-                          <span className={`w-20 text-right text-[9px] font-mono`}>
+                          <span className={`w-24 text-right text-[9px] font-mono`} title="MOS antes → después">
+                            <span className={t.textMuted}>MOS </span>
                             <span className="text-yellow-400">{c.mosAntes.toFixed(1)}</span>
                             <span className={t.textMuted}>→</span>
                             <span className="text-violet-400">{c.mosDespues.toFixed(1)}</span>
@@ -2559,7 +2726,7 @@ export default function Traslados() {
                   {[
                     { title: '🔴 Top SKUs problemáticos', items: nivTops.skus, keyLabel: 'sku' },
                     { title: '🟠 Top Modelos/Claves', items: nivTops.modelos, keyLabel: 'modelo' },
-                    { title: '🏬 Top Tiendas', items: nivTops.tiendas, keyLabel: 'tienda' },
+                    { title: '🏬 Top Tiendas (mayor MOS)', items: nivTops.tiendas, keyLabel: 'tienda' },
                   ].map(({ title, items, keyLabel }) => (
                     <div key={title} className={`p-4 rounded-xl border ${t.cardInner}`}>
                       <h4 className={`text-xs font-black mb-2 ${t.textMain}`}>{title}</h4>
@@ -2572,7 +2739,7 @@ export default function Traslados() {
                                   {keyLabel === 'tienda' ? it.nombre : it.key}
                                 </div>
                                 <div className={`text-[9px] ${t.textMuted}`}>
-                                  {keyLabel === 'tienda' ? `${it.zona} · MOS ${it.mosFinal}` : it.goa}
+                                  {keyLabel === 'tienda' ? `${it.zona} · MOS ${it.mosFinal} (mayor sobreinv.)` : it.sub}
                                 </div>
                               </div>
                               <div className="text-right shrink-0 ml-2">
@@ -2695,6 +2862,54 @@ export default function Traslados() {
                   </div>
                 )}
 
+                {/* Sugeridos para liquidación */}
+                {nivLiquidacion.length > 0 && (
+                  <div className={`p-4 rounded-xl border border-orange-500/30 ${isDark ? 'bg-orange-950/20' : 'bg-orange-50'}`}>
+                    <h4 className="text-sm font-black text-orange-500 mb-1 flex items-center gap-2">
+                      <Icons.Tag size={15} /> Sugeridos para Descuento / Liquidación ({nivLiquidacion.length})
+                    </h4>
+                    <p className={`text-[10px] mb-3 ${t.textMuted}`}>
+                      Naranja = ya rebajado (no se puede rebajar más, requiere outlet/remate/devolución). Ámbar = sin venta reciente pero aún sin rebaja (candidato a descuento).
+                    </p>
+                    <div className="overflow-x-auto custom-scrollbar max-h-72">
+                      <table className="w-full text-left text-xs min-w-max">
+                        <thead>
+                          <tr className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} border-b ${t.border} sticky top-0 ${isDark?'bg-zinc-900':'bg-white'}`}>
+                            {['Zona','Marca','GOA',nivNivel==='sku'?'SKU / Descripción':'Clave','Motivo','Tiendas','OH Total','Importe'].map(h => <th key={h} className="p-2 whitespace-nowrap">{h}</th>)}
+                          </tr>
+                        </thead>
+                        <tbody className={`divide-y ${isDark ? 'divide-zinc-800/50' : 'divide-gray-100'}`}>
+                          {nivLiquidacion.slice(0,50).map((l, i) => (
+                            <tr key={i} className="text-xs">
+                              <td className={`p-2 ${t.textMuted}`}>{l.zona}</td>
+                              <td className={`p-2 ${t.textMuted}`}>{l.marca}</td>
+                              <td className="p-2"><span className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${t.badge}`}>{l.goa}</span></td>
+                              <td className={`p-2 font-mono text-[10px] ${t.textMain}`}>{nivNivel==='sku' ? (l.nsku || l.sku) : l.clave}</td>
+                              <td className="p-2">
+                                {l.motivo === 'rebajado' ? (
+                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-orange-500/20 text-orange-400 border border-orange-500/40" title="Ya está rebajado, no se puede rebajar más">
+                                    {l.letraDesc || 'Rebajado'}
+                                  </span>
+                                ) : (
+                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-amber-500/10 text-amber-400 border border-amber-500/30" title="Sin venta reciente — candidato a descuento">
+                                    Sin venta · descontar
+                                  </span>
+                                )}
+                              </td>
+                              <td className={`p-2 text-center ${t.textMuted}`}>{l.tiendas}</td>
+                              <td className={`p-2 font-black text-orange-400`}>{fmt(l.oh)}</td>
+                              <td className={`p-2 font-mono text-emerald-400`}>{fmtMXN(l.importe)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                    <p className={`text-[10px] mt-2 font-bold ${t.textMuted}`}>
+                      Total en liquidación: {fmt(nivLiquidacion.reduce((s,l)=>s+l.oh,0))} pzs · {fmtMXN(nivLiquidacion.reduce((s,l)=>s+l.importe,0))}
+                    </p>
+                  </div>
+                )}
+
                 {/* Tabla traslados */}
                 <div className={`rounded-xl border overflow-hidden ${t.cardInner}`}>
                   <div className={`flex items-center justify-between px-4 py-2 border-b ${t.border}`}>
@@ -2707,7 +2922,7 @@ export default function Traslados() {
                     <table className="w-full text-left min-w-max">
                       <thead>
                         <tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark ? 'bg-zinc-900 text-gray-400 border-b border-zinc-800' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
-                          {['Zona','Marca','GOA',nivNivel==='sku'?'SKU':'Clave','Centro Salida','Centro Receptor','Pzs','Importe','MOS Orig','MOS Dest','Potencial'].map(h => <th key={h} className="p-2 whitespace-nowrap">{h}</th>)}
+                          {['Zona','Marca','GOA',nivNivel==='sku'?'SKU':'Clave','Centro Salida','Centro Receptor','Pzs','Importe','MOS Orig','MOS Dest','Índice pot.'].map(h => <th key={h} className="p-2 whitespace-nowrap">{h}</th>)}
                         </tr>
                       </thead>
                       <tbody className={`divide-y ${isDark ? 'divide-zinc-800/50' : 'divide-gray-100'}`}>
