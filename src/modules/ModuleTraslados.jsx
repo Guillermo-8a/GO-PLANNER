@@ -318,7 +318,9 @@ export default function Traslados() {
       const iPrecio     = idx(['PRECIO', 'PVP', 'PRICE', 'COSTO']);
       const iTipoCentro = idx(['TIPO_CENTRO', 'TIPO CENTRO', 'TIPO', 'TIPO_TIENDA']);
       const iZona       = idx(['ZONA', 'REGION', 'DISTRITO', 'ZONA_CENTRO']);
-      const iVta        = idx(['VTA', 'VENTAS', 'VTAS', 'SALES']);
+      const iVta        = idx(['VTA', 'VTA_ACUM', 'VENTAS', 'VTAS', 'SALES']);
+      const iVta3m      = idx(['VTA_3M', 'VTA3M', 'VTA 3M', 'VTA_3MESES', 'VENTA_3M']);
+      const iVtaMesAnt  = idx(['VTA_MES_ANT', 'VTA_MES_ANTERIOR', 'VTA_ANT', 'VENTA_MES_ANT']);
       const iLetraDesc  = idx(['LETRA _DESC', 'LETRA_DESC', 'LETRA DESC', 'DESC', 'DESCUENTO']);
 
       if (iGoa === -1 || iSku === -1 || iCentro === -1) {
@@ -344,6 +346,8 @@ export default function Traslados() {
           tipoCentro: iTipoCentro >= 0 ? r[iTipoCentro].trim().toUpperCase() : '',
           zona:       iZona      >= 0 ? r[iZona].trim().toUpperCase()   : '',
           vta:        num(iVta   >= 0 ? r[iVta]    : 0),
+          vta3m:      iVta3m     >= 0 ? num(r[iVta3m])     : null,
+          vtaMesAnt:  iVtaMesAnt >= 0 ? num(r[iVtaMesAnt]) : null,
           letraDesc:  iLetraDesc >= 0 ? r[iLetraDesc].trim()  : '',
         });
       }
@@ -1186,6 +1190,226 @@ export default function Traslados() {
   };
 
   // ══════════════════════════════════════════════════════════════════════
+  // TAB 3 — NIVELACIÓN DE INVENTARIOS
+  // ══════════════════════════════════════════════════════════════════════
+
+  const [nivNivel,       setNivNivel]       = useState('sku'); // goa | marca | modelo | sku
+  const [mosObjetivoMin, setMosObjetivoMin] = useState(2);
+  const [mosObjetivoMax, setMosObjetivoMax] = useState(4);
+  const [nivResult,      setNivResult]      = useState([]);
+  const [nivProblematicas, setNivProblematicas] = useState([]);
+  const [nivLoading,     setNivLoading]     = useState(false);
+  const [nivExecuted,    setNivExecuted]    = useState(false);
+  // Pesos ajustables del score de potencial
+  const [pesoVelocidad,  setPesoVelocidad]  = useState(40);
+  const [pesoRiesgo,     setPesoRiesgo]     = useState(40);
+  const [pesoHistorico,  setPesoHistorico]  = useState(20);
+
+  // Persistencia
+  useEffect(() => {
+    try {
+      const s = localStorage.getItem('gop_traslados_niv');
+      if (s) {
+        const d = JSON.parse(s);
+        if (d.nivNivel)       setNivNivel(d.nivNivel);
+        if (d.mosObjetivoMin != null) setMosObjetivoMin(d.mosObjetivoMin);
+        if (d.mosObjetivoMax != null) setMosObjetivoMax(d.mosObjetivoMax);
+        if (d.pesoVelocidad != null)  setPesoVelocidad(d.pesoVelocidad);
+        if (d.pesoRiesgo != null)     setPesoRiesgo(d.pesoRiesgo);
+        if (d.pesoHistorico != null)  setPesoHistorico(d.pesoHistorico);
+        if (d.nivResult?.length) { setNivResult(d.nivResult); setNivExecuted(true); }
+        if (d.nivProblematicas?.length) setNivProblematicas(d.nivProblematicas);
+      }
+    } catch {}
+  }, []);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem('gop_traslados_niv', JSON.stringify({
+        nivNivel, mosObjetivoMin, mosObjetivoMax, pesoVelocidad, pesoRiesgo, pesoHistorico, nivResult, nivProblematicas
+      }));
+    } catch {}
+  }, [nivNivel, mosObjetivoMin, mosObjetivoMax, pesoVelocidad, pesoRiesgo, pesoHistorico, nivResult, nivProblematicas]);
+
+  const calcularNivelacion = useCallback(() => {
+    if (!rawData.length) return;
+    setNivLoading(true);
+
+    setTimeout(() => {
+      // Clave de agrupación según nivel elegido
+      const keyOf = (r) => {
+        if (nivNivel === 'goa')    return r.goa;
+        if (nivNivel === 'marca')  return r.marca;
+        if (nivNivel === 'modelo') return r.modelo || r.goa;
+        return r.sku; // sku
+      };
+
+      // VTA 3 meses: usar campo vta3m si existe, sino estimar de vta acum
+      const getVta3m = (r) => r.vta3m != null && r.vta3m > 0 ? r.vta3m : (r.vta || 0) * (3 / Math.max(1, mesActual));
+
+      // Agrupar por Zona → clave → centro
+      // Cada nodo: { centro, zona, oh, vtaAcum, vta3m, vtaProyMes, mos }
+      const porZonaClave = {}; // { zona: { clave: { centros: {centro: nodo}, meta } } }
+
+      rawData.forEach(r => {
+        const zona = r.zona || 'SIN ZONA';
+        const clave = keyOf(r);
+        if (!clave) return;
+        if (!porZonaClave[zona]) porZonaClave[zona] = {};
+        if (!porZonaClave[zona][clave]) porZonaClave[zona][clave] = { centros: {}, meta: r };
+        const nodo = porZonaClave[zona][clave].centros;
+        if (!nodo[r.centro]) {
+          nodo[r.centro] = {
+            centro: r.centro, nCentro: r.nCentro || r.centro, zona,
+            oh: 0, vtaAcum: 0, vta3m: 0,
+            seccion: r.seccion, numSeccion: r.numSeccion,
+            marca: r.marca, goa: r.goa, modelo: r.modelo,
+            sku: r.sku, nsku: r.nsku, precio: r.precio,
+            rows: [],
+          };
+        }
+        nodo[r.centro].oh      += r.oh;
+        nodo[r.centro].vtaAcum += r.vta || 0;
+        nodo[r.centro].vta3m   += getVta3m(r);
+        nodo[r.centro].rows.push(r);
+      });
+
+      const resultado = [];
+      const problematicas = [];
+
+      Object.entries(porZonaClave).forEach(([zona, claves]) => {
+        Object.entries(claves).forEach(([clave, { centros, meta }]) => {
+          const nodos = Object.values(centros).map(n => {
+            const vtaProyMes = n.vta3m / 3; // forecast plano
+            const mos = vtaProyMes > 0 ? n.oh / vtaProyMes : (n.oh > 0 ? 99 : 0);
+            return { ...n, vtaProyMes, mos };
+          }).filter(n => n.oh > 0 || n.vtaProyMes > 0);
+
+          if (nodos.length < 2) return; // necesitas al menos 2 tiendas para nivelar
+
+          // Normalizadores para el score de potencial
+          const maxVel  = Math.max(...nodos.map(n => n.vtaProyMes), 0.01);
+          const maxHist = Math.max(...nodos.map(n => n.vtaAcum), 0.01);
+          const wTot = (pesoVelocidad + pesoRiesgo + pesoHistorico) || 1;
+
+          nodos.forEach(n => {
+            // velocidad: qué tan rápido vende (normalizado)
+            const sVel = n.vtaProyMes / maxVel;
+            // riesgo de quiebre: MOS bajo = alto potencial de recibir
+            const sRiesgo = n.mos < mosObjetivoMin ? 1 : Math.max(0, 1 - (n.mos - mosObjetivoMin) / (mosObjetivoMax - mosObjetivoMin + 0.01));
+            // histórico
+            const sHist = n.vtaAcum / maxHist;
+            n.potencial = ((pesoVelocidad*sVel + pesoRiesgo*sRiesgo + pesoHistorico*sHist) / wTot);
+          });
+
+          // Donadores: MOS alto (sobreinventario) ordenado desc
+          // Receptores: mayor potencial + MOS bajo
+          let donadores  = [...nodos].filter(n => n.mos > mosObjetivoMax).sort((a,b) => b.mos - a.mos);
+          let receptores = [...nodos].filter(n => n.mos < mosObjetivoMin || n.potencial > 0.5)
+                                     .sort((a,b) => b.potencial - a.potencial || a.mos - b.mos);
+
+          // Trabajar sobre copia mutable de OH
+          const ohMut = {};
+          nodos.forEach(n => { ohMut[n.centro] = n.oh; });
+
+          const tieneTallas = nodos.some(n => n.rows.some(rr => {
+            const m = (rr.nsku||'').match(/,\s*([0-9]+)\s*(?:,|$)/);
+            return !!m;
+          }));
+
+          receptores.forEach(rec => {
+            // objetivo: llevar receptor a mosObjetivoMin (piso) idealmente al promedio del rango
+            const mosTarget = (mosObjetivoMin + mosObjetivoMax) / 2;
+            const ohObjetivo = Math.round(rec.vtaProyMes * mosTarget);
+            let faltante = Math.max(0, ohObjetivo - ohMut[rec.centro]);
+            if (faltante <= 0) return;
+
+            for (const don of donadores) {
+              if (faltante <= 0) break;
+              if (don.centro === rec.centro) continue;
+              // donador debe quedar >= mosObjetivoMin
+              const ohMinDon = Math.ceil(don.vtaProyMes * mosObjetivoMin);
+              const puedeDonar = Math.max(0, ohMut[don.centro] - ohMinDon);
+              if (puedeDonar <= 0) continue;
+
+              const mover = Math.min(faltante, puedeDonar);
+              if (mover <= 0) continue;
+
+              ohMut[don.centro] -= mover;
+              ohMut[rec.centro] += mover;
+              faltante -= mover;
+
+              resultado.push({
+                zona, nivel: nivNivel, clave,
+                seccion: don.seccion, numSeccion: don.numSeccion,
+                marca: don.marca, goa: don.goa, modelo: don.modelo,
+                sku: don.sku, nsku: don.nsku,
+                centroSalida: don.centro, nombreSalida: don.nCentro,
+                centroReceptor: rec.centro, nombreReceptor: rec.nCentro,
+                pzs: mover,
+                importe: mover * (don.precio || 0),
+                precio: don.precio,
+                mosSalidaAntes: +don.mos.toFixed(1),
+                mosReceptorAntes: +rec.mos.toFixed(1),
+                mosSalidaDespues: +(don.vtaProyMes > 0 ? ohMut[don.centro]/don.vtaProyMes : 0).toFixed(1),
+                mosReceptorDespues: +(rec.vtaProyMes > 0 ? ohMut[rec.centro]/rec.vtaProyMes : 0).toFixed(1),
+                potencialReceptor: +rec.potencial.toFixed(2),
+              });
+            }
+          });
+
+          // Detectar problemáticas: tiendas que siguen fuera de rango tras nivelar
+          nodos.forEach(n => {
+            const mosFinal = n.vtaProyMes > 0 ? ohMut[n.centro] / n.vtaProyMes : 99;
+            if (mosFinal > mosObjetivoMax * 1.5 && ohMut[n.centro] > 0) {
+              problematicas.push({
+                zona, clave, nivel: nivNivel,
+                centro: n.centro, nombre: n.nCentro,
+                goa: n.goa, marca: n.marca, sku: n.sku,
+                oh: ohMut[n.centro],
+                mosFinal: +mosFinal.toFixed(1),
+                vtaProyMes: +n.vtaProyMes.toFixed(1),
+                importe: ohMut[n.centro] * (n.precio || 0),
+              });
+            }
+          });
+        });
+      });
+
+      problematicas.sort((a,b) => b.mosFinal - a.mosFinal);
+      setNivResult(resultado);
+      setNivProblematicas(problematicas.slice(0, 10));
+      setNivExecuted(true);
+      setNivLoading(false);
+    }, 400);
+  }, [rawData, nivNivel, mosObjetivoMin, mosObjetivoMax, pesoVelocidad, pesoRiesgo, pesoHistorico, mesActual]);
+
+  const nivChartData = useMemo(() => {
+    if (!nivResult.length) return { porZona: [], mosAntesDespues: [] };
+    const porZona = {};
+    nivResult.forEach(r => {
+      if (!porZona[r.zona]) porZona[r.zona] = { zona: r.zona, pzs: 0, importe: 0, traslados: 0 };
+      porZona[r.zona].pzs += r.pzs;
+      porZona[r.zona].importe += r.importe;
+      porZona[r.zona].traslados += 1;
+    });
+    return { porZona: Object.values(porZona).sort((a,b) => b.pzs - a.pzs) };
+  }, [nivResult]);
+
+  const exportNivelacion = () => {
+    const header = ['División','Sección','Nombre Sección','Marca','GOA','Modelo','SKU','N SKU','Zona','# Centro Origen','Tienda Origen','# Centro Destino','Tienda Destino','Pzs','Monto a Traspasar','MOS Origen Antes','MOS Origen Después','MOS Destino Antes','MOS Destino Después'];
+    const rows = nivResult.map(r => [
+      '', r.numSeccion, r.seccion, r.marca, r.goa, r.modelo || r.goa,
+      r.sku, r.nsku, r.zona,
+      r.centroSalida, r.nombreSalida, r.centroReceptor, r.nombreReceptor,
+      r.pzs, r.importe,
+      r.mosSalidaAntes, r.mosSalidaDespues, r.mosReceptorAntes, r.mosReceptorDespues
+    ]);
+    downloadExcel([header, ...rows], 'Nivelacion_Inventarios.csv');
+  };
+
+
+  // ══════════════════════════════════════════════════════════════════════
   // RENDER
   // ══════════════════════════════════════════════════════════════════════
 
@@ -1257,6 +1481,9 @@ export default function Traslados() {
           </button>
           <button className={tabStyle(2)} onClick={() => setActiveTab(2)}>
             📋 Solicitud / Aperturas
+          </button>
+          <button className={tabStyle(3)} onClick={() => setActiveTab(3)}>
+            ⚖️ Nivelación
           </button>
         </div>
 
@@ -2004,6 +2231,219 @@ export default function Traslados() {
                 <Icons.Upload size={32} className={`${isDark ? 'text-zinc-600' : 'text-gray-300'} mb-3`} />
                 <p className={`text-sm font-bold ${t.textMain}`}>Sin inventario base</p>
                 <p className={`text-xs mt-1 ${t.textMuted}`}>Carga el CSV de artículos desde el botón del encabezado para que la herramienta pueda calcular disponibilidad.</p>
+              </div>
+            )}
+          </div>
+        )}
+
+        {/* ══════════ TAB 3: NIVELACIÓN ══════════ */}
+        {activeTab === 3 && (
+          <div className="p-5 space-y-5">
+
+            {/* Config */}
+            <div className={`p-4 rounded-xl border ${t.cardInner} space-y-4`}>
+              {/* Switch nivel */}
+              <div>
+                <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} block mb-2`}>Nivel de agrupación</label>
+                <div className="flex gap-1.5 flex-wrap">
+                  {[
+                    { id: 'goa', label: 'GOA' },
+                    { id: 'marca', label: 'Marca' },
+                    { id: 'modelo', label: 'Modelo' },
+                    { id: 'sku', label: 'SKU' },
+                  ].map(opt => (
+                    <button key={opt.id} onClick={() => setNivNivel(opt.id)}
+                      className={`px-4 py-2 rounded-lg text-xs font-black border transition-all ${nivNivel === opt.id ? t.btnPrimary : t.btnGhost}`}>
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <p className={`text-[9px] mt-1 ${t.textMuted}`}>
+                  {nivNivel === 'sku' ? 'Máxima precisión — respeta tallas si el SKU las tiene.' : `Agrupa por ${nivNivel} — mueve el bloque completo.`}
+                </p>
+              </div>
+
+              {/* MOS objetivo */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                <div>
+                  <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} block mb-1`}>MOS objetivo mín</label>
+                  <input type="number" min={0} step={0.5} value={mosObjetivoMin}
+                    onChange={e => setMosObjetivoMin(Number(e.target.value))}
+                    className={`w-full text-xs px-3 py-2 rounded-lg border ${t.input} focus:outline-none focus:ring-1`} />
+                </div>
+                <div>
+                  <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} block mb-1`}>MOS objetivo máx</label>
+                  <input type="number" min={0} step={0.5} value={mosObjetivoMax}
+                    onChange={e => setMosObjetivoMax(Number(e.target.value))}
+                    className={`w-full text-xs px-3 py-2 rounded-lg border ${t.input} focus:outline-none focus:ring-1`} />
+                </div>
+                <div className="col-span-2">
+                  <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} block mb-1`}>Mes actual (para MOS/fcst)</label>
+                  <input type="number" min={1} max={12} value={mesActual}
+                    onChange={e => setMesActual(Number(e.target.value))}
+                    className={`w-full text-xs px-3 py-2 rounded-lg border ${t.input} focus:outline-none focus:ring-1`} />
+                </div>
+              </div>
+
+              {/* Pesos del score */}
+              <div>
+                <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} block mb-2`}>
+                  Pesos del potencial de venta (velocidad {pesoVelocidad}% · riesgo quiebre {pesoRiesgo}% · histórico {pesoHistorico}%)
+                </label>
+                <div className="grid grid-cols-3 gap-3">
+                  {[
+                    { label: 'Velocidad', val: pesoVelocidad, set: setPesoVelocidad, color: 'accent-yellow-400' },
+                    { label: 'Riesgo quiebre', val: pesoRiesgo, set: setPesoRiesgo, color: 'accent-violet-500' },
+                    { label: 'Histórico', val: pesoHistorico, set: setPesoHistorico, color: 'accent-emerald-400' },
+                  ].map(({ label, val, set, color }) => (
+                    <div key={label}>
+                      <div className="flex justify-between text-[9px] mb-1">
+                        <span className={t.textMuted}>{label}</span>
+                        <span className={`font-black ${t.textMain}`}>{val}%</span>
+                      </div>
+                      <input type="range" min={0} max={100} value={val}
+                        onChange={e => set(Number(e.target.value))}
+                        className={`w-full ${color}`} />
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex gap-3 flex-wrap">
+                <button onClick={calcularNivelacion} disabled={!rawData.length || nivLoading}
+                  className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black transition-all disabled:opacity-40 ${t.btnPrimary}`}>
+                  {nivLoading
+                    ? <><Icons.Loader size={15} className="animate-spin" /> Nivelando…</>
+                    : <><Icons.Zap size={15} /> Ejecutar nivelación</>}
+                </button>
+                {nivResult.length > 0 && (
+                  <button onClick={exportNivelacion}
+                    className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black transition-all ${t.btnSecondary}`}>
+                    <Icons.Download size={15} /> Exportar Excel
+                  </button>
+                )}
+              </div>
+            </div>
+
+            {/* Resultados */}
+            {nivResult.length > 0 ? (
+              <>
+                {/* KPIs */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  {[
+                    { label: 'Traslados', val: nivResult.length, color: t.textAccent1 },
+                    { label: 'Piezas niveladas', val: fmt(nivResult.reduce((s,r)=>s+r.pzs,0)), color: t.textAccent2 },
+                    { label: 'Importe movido', val: fmtMXN(nivResult.reduce((s,r)=>s+r.importe,0)), color: 'text-emerald-400' },
+                    { label: 'Zonas activas', val: new Set(nivResult.map(r=>r.zona)).size, color: 'text-violet-400' },
+                  ].map(({label,val,color}) => (
+                    <div key={label} className={`p-4 rounded-xl border ${t.cardInner}`}>
+                      <div className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} mb-1`}>{label}</div>
+                      <div className={`text-lg font-black ${color}`}>{val}</div>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Gráfica por zona */}
+                <div className={`p-4 rounded-xl border ${t.cardInner}`}>
+                  <h4 className={`text-sm font-bold mb-3 ${t.textMain}`}>⚖️ Nivelación por Zona de Venta</h4>
+                  <div className="space-y-2">
+                    {nivChartData.porZona.map((z, i) => {
+                      const maxPzs = nivChartData.porZona[0]?.pzs || 1;
+                      return (
+                        <div key={i} className="flex items-center gap-3">
+                          <span className={`w-32 truncate text-[10px] font-bold text-right ${t.textMain}`}>{z.zona}</span>
+                          <div className="flex-1 relative h-6 rounded-lg overflow-hidden bg-zinc-700/20">
+                            <div className="absolute left-0 top-0 h-full rounded-lg bg-gradient-to-r from-yellow-400 to-violet-500 flex items-center pl-2"
+                              style={{width: `${Math.max(6,(z.pzs/maxPzs)*100)}%`}}>
+                              <span className="text-[9px] font-black text-black">{fmt(z.pzs)} pzs · {z.traslados} mov</span>
+                            </div>
+                          </div>
+                          <span className={`w-24 text-right text-[10px] font-black text-emerald-400`}>{fmtMXN(z.importe)}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Top 10 problemáticas */}
+                {nivProblematicas.length > 0 && (
+                  <div className={`p-4 rounded-xl border border-red-500/30 ${isDark ? 'bg-red-950/20' : 'bg-red-50'}`}>
+                    <h4 className="text-sm font-black text-red-400 mb-1 flex items-center gap-2">
+                      <Icons.AlertCircle size={15} /> Top {nivProblematicas.length} Tiendas Problemáticas
+                    </h4>
+                    <p className={`text-[10px] mb-3 ${t.textMuted}`}>Siguen con sobreinventario tras nivelar — ya no se pudo bajar más su MOS.</p>
+                    <div className="overflow-x-auto custom-scrollbar">
+                      <table className="w-full text-left text-xs min-w-max">
+                        <thead>
+                          <tr className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} border-b ${t.border}`}>
+                            {['Tienda','Zona',nivNivel==='sku'?'SKU':'Clave','OH Final','MOS Final','VTA/mes','Importe'].map(h => <th key={h} className="p-2 whitespace-nowrap">{h}</th>)}
+                          </tr>
+                        </thead>
+                        <tbody className={`divide-y ${isDark ? 'divide-zinc-800/50' : 'divide-gray-100'}`}>
+                          {nivProblematicas.map((p, i) => (
+                            <tr key={i} className="text-xs">
+                              <td className={`p-2 font-bold ${t.textMain}`}>{p.nombre} <span className={`text-[9px] ${t.textMuted}`}>({p.centro})</span></td>
+                              <td className={`p-2 ${t.textMuted}`}>{p.zona}</td>
+                              <td className={`p-2 font-mono ${t.textMain}`}>{nivNivel==='sku'?p.sku:p.clave}</td>
+                              <td className={`p-2 font-black text-amber-400`}>{fmt(p.oh)}</td>
+                              <td className="p-2 font-black text-red-400">{p.mosFinal}m</td>
+                              <td className={`p-2 font-mono ${t.textMuted}`}>{p.vtaProyMes}</td>
+                              <td className={`p-2 font-mono text-emerald-400`}>{fmtMXN(p.importe)}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+
+                {/* Tabla traslados */}
+                <div className={`rounded-xl border overflow-hidden ${t.cardInner}`}>
+                  <div className={`flex items-center justify-between px-4 py-2 border-b ${t.border}`}>
+                    <span className={`text-[10px] font-black uppercase tracking-widest ${t.textMuted}`}>{nivResult.length} traslados de nivelación</span>
+                    <button onClick={exportNivelacion} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black ${t.btnSecondary}`}>
+                      <Icons.Download size={12} /> Exportar Excel
+                    </button>
+                  </div>
+                  <div className="overflow-x-auto max-h-[55vh] custom-scrollbar">
+                    <table className="w-full text-left min-w-max">
+                      <thead>
+                        <tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark ? 'bg-zinc-900 text-gray-400 border-b border-zinc-800' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+                          {['Zona','Marca','GOA',nivNivel==='sku'?'SKU':'Clave','Centro Salida','Centro Receptor','Pzs','Importe','MOS Orig','MOS Dest','Potencial'].map(h => <th key={h} className="p-2 whitespace-nowrap">{h}</th>)}
+                        </tr>
+                      </thead>
+                      <tbody className={`divide-y ${isDark ? 'divide-zinc-800/50' : 'divide-gray-100'}`}>
+                        {nivResult.map((r, i) => (
+                          <tr key={i} className={`text-xs transition-colors ${isDark ? 'hover:bg-zinc-800/30' : 'hover:bg-violet-50/30'}`}>
+                            <td className={`p-2 font-bold ${t.textMuted}`}>{r.zona}</td>
+                            <td className={`p-2 ${t.textMuted}`}>{r.marca}</td>
+                            <td className="p-2"><span className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${t.badge}`}>{r.goa}</span></td>
+                            <td className={`p-2 font-mono text-[10px] ${t.textMain}`}>{r.sku}</td>
+                            <td className={`p-2 font-bold ${t.textMain}`}>{r.nombreSalida} <span className={`text-[9px] font-mono ${t.textMuted}`}>({r.centroSalida})</span></td>
+                            <td className={`p-2 font-bold text-emerald-400`}>{r.nombreReceptor} <span className={`text-[9px] font-mono ${t.textMuted}`}>({r.centroReceptor})</span></td>
+                            <td className={`p-2 font-black ${t.textAccent1}`}>{fmt(r.pzs)}</td>
+                            <td className={`p-2 font-mono text-emerald-400`}>{fmtMXN(r.importe)}</td>
+                            <td className={`p-2 font-mono text-[10px]`}><span className="text-yellow-400">{r.mosSalidaAntes}</span>→<span className="text-violet-400">{r.mosSalidaDespues}</span></td>
+                            <td className={`p-2 font-mono text-[10px]`}><span className="text-yellow-400">{r.mosReceptorAntes}</span>→<span className="text-violet-400">{r.mosReceptorDespues}</span></td>
+                            <td className={`p-2 font-black text-center ${r.potencialReceptor > 0.6 ? 'text-emerald-400' : t.textMuted}`}>{(r.potencialReceptor*100).toFixed(0)}%</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </>
+            ) : nivExecuted ? (
+              <div className={`p-8 rounded-xl border flex flex-col items-center justify-center text-center ${t.cardInner}`}>
+                <Icons.Check size={32} className="text-emerald-400 mb-3" />
+                <p className={`text-sm font-bold ${t.textMain}`}>Inventarios ya nivelados</p>
+                <p className={`text-xs mt-1 ${t.textMuted}`}>No se encontraron desbalances que ameriten traslado con el MOS objetivo actual.</p>
+              </div>
+            ) : (
+              <div className={`p-8 rounded-xl border flex flex-col items-center justify-center text-center ${t.cardInner}`}>
+                <Icons.Sliders size={32} className={`${isDark ? 'text-zinc-600' : 'text-gray-300'} mb-3`} />
+                <p className={`text-sm font-bold ${t.textMain}`}>{rawData.length ? 'Herramienta de nivelación lista' : 'Sin inventario base'}</p>
+                <p className={`text-xs mt-1 ${t.textMuted}`}>{rawData.length ? 'Ajusta el nivel, MOS objetivo y pesos, luego ejecuta la nivelación.' : 'Carga el CSV con VTA_3M para calcular el forecast.'}</p>
               </div>
             )}
           </div>
