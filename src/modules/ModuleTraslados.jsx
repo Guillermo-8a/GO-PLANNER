@@ -1385,7 +1385,10 @@ export default function Traslados() {
   }, [rawData, nivNivel, mosObjetivoMin, mosObjetivoMax, pesoVelocidad, pesoRiesgo, pesoHistorico, mesActual]);
 
   const nivChartData = useMemo(() => {
-    if (!nivResult.length) return { porZona: [], mosAntesDespues: [] };
+    if (!nivResult.length || !rawData.length)
+      return { porZona: [], zonaInvMos: [], topCentros: [], topSkus: [], topProblem: [], scatter: [] };
+
+    // Por zona: pzs/importe movidos
     const porZona = {};
     nivResult.forEach(r => {
       if (!porZona[r.zona]) porZona[r.zona] = { zona: r.zona, pzs: 0, importe: 0, traslados: 0 };
@@ -1393,8 +1396,95 @@ export default function Traslados() {
       porZona[r.zona].importe += r.importe;
       porZona[r.zona].traslados += 1;
     });
-    return { porZona: Object.values(porZona).sort((a,b) => b.pzs - a.pzs) };
-  }, [nivResult]);
+
+    // Movimiento neto de OH por centro (salidas y entradas)
+    const salidas = {}, entradas = {};
+    nivResult.forEach(r => {
+      salidas[r.centroSalida]    = (salidas[r.centroSalida]    || 0) + r.pzs;
+      entradas[r.centroReceptor] = (entradas[r.centroReceptor] || 0) + r.pzs;
+    });
+
+    // Base por centro: OH, VTA_3M, zona (para MOS antes/después y scatter)
+    const getVta3m = (r) => r.vta3m != null && r.vta3m > 0 ? r.vta3m : (r.vta || 0) * (3 / Math.max(1, mesActual));
+    const centros = {};
+    rawData.forEach(r => {
+      if (!centros[r.centro]) centros[r.centro] = { centro: r.centro, nombre: r.nCentro || r.centro, zona: r.zona, oh: 0, vta3m: 0 };
+      centros[r.centro].oh    += r.oh;
+      centros[r.centro].vta3m += getVta3m(r);
+    });
+
+    // Uplift por zona: ratio vta/oh en zona (para fcst de receptoras)
+    // Simplificado: si recibe, sube su venta proyectada proporcional al inventario extra sano
+    const centrosArr = Object.values(centros).map(c => {
+      const vtaProyMes = c.vta3m / 3;
+      const ohDespues  = Math.max(0, c.oh - (salidas[c.centro]||0) + (entradas[c.centro]||0));
+      const recibio    = entradas[c.centro] || 0;
+      // uplift B: si recibió mercancía sana, proyecta hasta +uplift según cuánto recibió vs su venta
+      const upliftFactor = recibio > 0 && vtaProyMes > 0
+        ? 1 + Math.min(0.5, (recibio / (vtaProyMes * 3)) * 0.3) // máximo +50%
+        : 1;
+      const vtaFcst    = vtaProyMes * upliftFactor;
+      const mosAntes   = vtaProyMes > 0 ? c.oh / vtaProyMes : (c.oh > 0 ? 99 : 0);
+      const mosDespues = vtaFcst > 0 ? ohDespues / vtaFcst : (ohDespues > 0 ? 99 : 0);
+      const modificado = (salidas[c.centro]||0) + (entradas[c.centro]||0) > 0;
+      return { ...c, vtaProyMes, vtaFcst, ohDespues, mosAntes, mosDespues, modificado,
+               movido: (salidas[c.centro]||0) + (entradas[c.centro]||0) };
+    });
+
+    // Inv + MOS por zona (antes vs después)
+    const zMap = {};
+    centrosArr.forEach(c => {
+      if (!zMap[c.zona]) zMap[c.zona] = { zona: c.zona, ohAntes: 0, ohDespues: 0, vtaProy: 0, vtaFcst: 0 };
+      zMap[c.zona].ohAntes   += c.oh;
+      zMap[c.zona].ohDespues += c.ohDespues;
+      zMap[c.zona].vtaProy   += c.vtaProyMes;
+      zMap[c.zona].vtaFcst   += c.vtaFcst;
+    });
+    const zonaInvMos = Object.values(zMap).map(z => ({
+      ...z,
+      mosAntes:   z.vtaProy > 0 ? +(z.ohAntes / z.vtaProy).toFixed(1) : 0,
+      mosDespues: z.vtaFcst > 0 ? +(z.ohDespues / z.vtaFcst).toFixed(1) : 0,
+    })).sort((a,b) => b.ohAntes - a.ohAntes);
+
+    // Top centros más modificados
+    const topCentros = centrosArr.filter(c => c.modificado)
+      .sort((a,b) => b.movido - a.movido).slice(0, 12);
+
+    // Top SKUs/modelos más problemáticos (mayor OH con bajo movimiento) — de nivProblematicas
+    // Top tiendas problemáticas ya está en nivProblematicas
+
+    // Scatter: cada punto = centro. antes(x=vta,y=oh) / después(x=vtaFcst,y=ohDespues)
+    const scatter = centrosArr.filter(c => c.oh > 0 || c.vtaProyMes > 0).map(c => ({
+      centro: c.centro, nombre: c.nombre, zona: c.zona,
+      vtaAntes: c.vtaProyMes, ohAntes: c.oh,
+      vtaDespues: c.vtaFcst,  ohDespues: c.ohDespues,
+      modificado: c.modificado,
+    }));
+
+    return {
+      porZona: Object.values(porZona).sort((a,b) => b.pzs - a.pzs),
+      zonaInvMos, topCentros, scatter,
+    };
+  }, [nivResult, rawData, mesActual]);
+
+  // Top problemáticos por SKU y por Modelo (agregado de nivProblematicas)
+  const nivTops = useMemo(() => {
+    if (!nivProblematicas.length) return { skus: [], modelos: [], tiendas: [] };
+    const skuMap = {}, modMap = {};
+    nivProblematicas.forEach(p => {
+      const sk = p.sku || p.clave;
+      if (!skuMap[sk]) skuMap[sk] = { key: sk, goa: p.goa, oh: 0, importe: 0 };
+      skuMap[sk].oh += p.oh; skuMap[sk].importe += p.importe;
+      const mk = p.clave;
+      if (!modMap[mk]) modMap[mk] = { key: mk, goa: p.goa, oh: 0, importe: 0 };
+      modMap[mk].oh += p.oh; modMap[mk].importe += p.importe;
+    });
+    return {
+      skus: Object.values(skuMap).sort((a,b)=>b.importe-a.importe).slice(0,5),
+      modelos: Object.values(modMap).sort((a,b)=>b.importe-a.importe).slice(0,5),
+      tiendas: nivProblematicas.slice(0,5),
+    };
+  }, [nivProblematicas]);
 
   const exportNivelacion = () => {
     const header = ['División','Sección','Nombre Sección','Marca','GOA','Modelo','SKU','N SKU','Zona','# Centro Origen','Tienda Origen','# Centro Destino','Tienda Destino','Pzs','Monto a Traspasar','MOS Origen Antes','MOS Origen Después','MOS Destino Antes','MOS Destino Después'];
@@ -2362,6 +2452,154 @@ export default function Traslados() {
                         </div>
                       );
                     })}
+                  </div>
+                </div>
+
+                {/* Inventario + MOS por zona: antes vs después */}
+                <div className={`p-4 rounded-xl border ${t.cardInner}`}>
+                  <h4 className={`text-sm font-bold mb-3 ${t.textMain}`}>📦 Inventario y MOS por Zona — Antes vs Después</h4>
+                  <div className="space-y-3">
+                    {nivChartData.zonaInvMos.map((z, i) => {
+                      const maxOH = Math.max(...nivChartData.zonaInvMos.map(x => Math.max(x.ohAntes, x.ohDespues)), 1);
+                      return (
+                        <div key={i}>
+                          <div className="flex items-center justify-between mb-1">
+                            <span className={`text-[11px] font-black ${t.textMain}`}>{z.zona}</span>
+                            <span className="text-[10px] font-mono">
+                              <span className="text-yellow-400">MOS {z.mosAntes}</span>
+                              <span className={t.textMuted}> → </span>
+                              <span className="text-violet-400">{z.mosDespues}</span>
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-2">
+                            <span className={`w-10 text-[8px] text-right ${t.textMuted}`}>Antes</span>
+                            <div className="flex-1 h-3 rounded bg-zinc-700/20 overflow-hidden">
+                              <div className="h-full rounded bg-yellow-400/80" style={{width: `${(z.ohAntes/maxOH)*100}%`}} />
+                            </div>
+                            <span className="w-14 text-[9px] font-mono text-yellow-400 text-right">{fmt(z.ohAntes)}</span>
+                          </div>
+                          <div className="flex items-center gap-2 mt-0.5">
+                            <span className={`w-10 text-[8px] text-right ${t.textMuted}`}>Después</span>
+                            <div className="flex-1 h-3 rounded bg-zinc-700/20 overflow-hidden">
+                              <div className="h-full rounded bg-violet-500" style={{width: `${(z.ohDespues/maxOH)*100}%`}} />
+                            </div>
+                            <span className="w-14 text-[9px] font-mono text-violet-400 text-right">{fmt(z.ohDespues)}</span>
+                          </div>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="flex gap-4 mt-3 text-[9px]">
+                    <span className="flex items-center gap-1"><span className="w-3 h-2 rounded bg-yellow-400/80 inline-block"/> OH antes</span>
+                    <span className="flex items-center gap-1"><span className="w-3 h-2 rounded bg-violet-500 inline-block"/> OH después</span>
+                  </div>
+                </div>
+
+                {/* Top centros más modificados */}
+                <div className={`p-4 rounded-xl border ${t.cardInner}`}>
+                  <h4 className={`text-sm font-bold mb-3 ${t.textMain}`}>🏪 Top Centros más Modificados</h4>
+                  <div className="space-y-1.5 max-h-64 overflow-y-auto custom-scrollbar">
+                    {nivChartData.topCentros.map((c, i) => {
+                      const maxMov = nivChartData.topCentros[0]?.movido || 1;
+                      return (
+                        <div key={i} className="flex items-center gap-3">
+                          <span className={`w-36 truncate text-[10px] font-bold text-right ${t.textMain}`} title={c.nombre}>
+                            {c.nombre} <span className={`font-mono ${t.textMuted}`}>({c.centro})</span>
+                          </span>
+                          <div className="flex-1 relative h-5 rounded-lg overflow-hidden bg-zinc-700/20">
+                            <div className="absolute left-0 h-full rounded-lg bg-gradient-to-r from-yellow-400 to-violet-500 flex items-center pl-2"
+                              style={{width: `${Math.max(6,(c.movido/maxMov)*100)}%`}}>
+                              <span className="text-[9px] font-black text-black">{fmt(c.movido)} pzs</span>
+                            </div>
+                          </div>
+                          <span className={`w-20 text-right text-[9px] font-mono`}>
+                            <span className="text-yellow-400">{c.mosAntes.toFixed(1)}</span>
+                            <span className={t.textMuted}>→</span>
+                            <span className="text-violet-400">{c.mosDespues.toFixed(1)}</span>
+                          </span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+
+                {/* Tarjetas top problemáticos */}
+                <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  {[
+                    { title: '🔴 Top SKUs problemáticos', items: nivTops.skus, keyLabel: 'sku' },
+                    { title: '🟠 Top Modelos/Claves', items: nivTops.modelos, keyLabel: 'modelo' },
+                    { title: '🏬 Top Tiendas', items: nivTops.tiendas, keyLabel: 'tienda' },
+                  ].map(({ title, items, keyLabel }) => (
+                    <div key={title} className={`p-4 rounded-xl border ${t.cardInner}`}>
+                      <h4 className={`text-xs font-black mb-2 ${t.textMain}`}>{title}</h4>
+                      {items.length ? (
+                        <div className="space-y-1.5">
+                          {items.map((it, i) => (
+                            <div key={i} className={`flex items-center justify-between text-[10px] pb-1.5 ${i < items.length-1 ? `border-b ${t.border}` : ''}`}>
+                              <div className="min-w-0">
+                                <div className={`font-bold truncate ${t.textMain}`}>
+                                  {keyLabel === 'tienda' ? it.nombre : it.key}
+                                </div>
+                                <div className={`text-[9px] ${t.textMuted}`}>
+                                  {keyLabel === 'tienda' ? `${it.zona} · MOS ${it.mosFinal}` : it.goa}
+                                </div>
+                              </div>
+                              <div className="text-right shrink-0 ml-2">
+                                <div className="font-black text-red-400">{fmt(it.oh)} pzs</div>
+                                <div className={`text-[9px] ${t.textMuted}`}>{fmtMXN(it.importe)}</div>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className={`text-[10px] ${t.textMuted}`}>Sin problemas detectados.</p>
+                      )}
+                    </div>
+                  ))}
+                </div>
+
+                {/* Scatter comparativo: antes vs después */}
+                <div className={`p-4 rounded-xl border ${t.cardInner}`}>
+                  <h4 className={`text-sm font-bold mb-1 ${t.textMain}`}>📊 Dispersión Venta vs Inventario</h4>
+                  <p className={`text-[9px] mb-3 ${t.textMuted}`}>Eje X = Venta · Eje Y = Inventario. Izq: estado actual · Der: tras traslados (con fcst de uplift)</p>
+                  <div className="grid grid-cols-2 gap-3">
+                    {[
+                      { titulo: 'ANTES', xKey: 'vtaAntes', yKey: 'ohAntes', color: '#facc15' },
+                      { titulo: 'DESPUÉS + FCST', xKey: 'vtaDespues', yKey: 'ohDespues', color: '#a78bfa' },
+                    ].map(({ titulo, xKey, yKey, color }) => {
+                      const maxX = Math.max(...nivChartData.scatter.map(d => Math.max(d.vtaAntes, d.vtaDespues)), 1);
+                      const maxY = Math.max(...nivChartData.scatter.map(d => Math.max(d.ohAntes, d.ohDespues)), 1);
+                      const toX = v => 30 + (v/maxX) * 130;
+                      const toY = v => 130 - (v/maxY) * 120;
+                      return (
+                        <div key={titulo}>
+                          <div className={`text-[9px] font-black text-center mb-1 ${titulo==='ANTES' ? 'text-yellow-400' : 'text-violet-400'}`}>{titulo}</div>
+                          <svg viewBox="0 0 175 150" className="w-full">
+                            {[0,1,2,3].map(i => (
+                              <g key={i}>
+                                <line x1={30} y1={10+i*40} x2={170} y2={10+i*40} stroke={isDark?'#3f3f46':'#e5e7eb'} strokeWidth="0.5"/>
+                                <line x1={30+i*47} y1={10} x2={30+i*47} y2={130} stroke={isDark?'#3f3f46':'#e5e7eb'} strokeWidth="0.5"/>
+                              </g>
+                            ))}
+                            {nivChartData.scatter.slice(0,120).map((d, i) => (
+                              <circle key={i} cx={toX(d[xKey])} cy={toY(d[yKey])}
+                                r={d.modificado ? 3 : 1.8} fill={color}
+                                opacity={d.modificado ? 0.9 : 0.3}
+                                stroke={d.modificado ? (titulo==='ANTES'?'#eab308':'#7c3aed') : 'none'} strokeWidth="0.5">
+                                <title>{d.nombre} — VTA {Math.round(d[xKey])} / OH {Math.round(d[yKey])}</title>
+                              </circle>
+                            ))}
+                            <text x={100} y={145} textAnchor="middle" fontSize="6" fill={isDark?'#71717a':'#9ca3af'}>Venta</text>
+                            <text x={10} y={70} textAnchor="middle" fontSize="6" fill={isDark?'#71717a':'#9ca3af'} transform="rotate(-90,10,70)">Inv</text>
+                          </svg>
+                        </div>
+                      );
+                    })}
+                  </div>
+                  <div className="flex gap-4 mt-1 text-[9px] justify-center">
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-400 inline-block"/> Sin fcst</span>
+                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-violet-400 inline-block"/> Con fcst uplift</span>
+                    <span className={t.textMuted}>Puntos grandes = centros modificados</span>
                   </div>
                 </div>
 
