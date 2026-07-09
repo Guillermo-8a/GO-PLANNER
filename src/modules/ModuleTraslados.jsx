@@ -616,12 +616,16 @@ export default function Traslados() {
             seccion:            meta.seccion,
             numSeccion:         meta.numSeccion,
             sku:                meta.sku,
+            nsku:               meta.nsku,
+            modelo:             meta.modelo,
             marca,
             goa,
             centroSalida:       centroOrigen,
             nombreSalida:       dataOrigen.nCentro || centroOrigen,
             centroReceptor:     receptor.centro,
             nombreReceptor:     receptor.data.nCentro || receptor.centro,
+            zonaOrigen:         dataOrigen.zona || '',
+            zonaDestino:        receptor.data.zona || '',
             pzs:                dataOrigen.oh,
             pesos:              dataOrigen.oh * (dataOrigen.precio || 0),
             precio:             dataOrigen.precio,
@@ -757,14 +761,18 @@ export default function Traslados() {
   }, [excResult, rawData, climaMatrix, goasTemporada]);
 
   const exportExcedente = () => {
-    // Layout: División | Sección # | Sección Nom | Marca | GOA | Modelo | SKU | N SKU | PV | # Centro Origen | Tienda Origen | Stock | Pzs a trasladar | # Centro Destino | Tienda Destino | Monto a Traspasar | Costo Traslado | Razón
-    const header = ['División','Sección','Nombre Sección','Marca','GOA','Modelo','SKU','N SKU','PV','# Centro Origen','Tienda Origen','Stock','Pzs a Trasladar','# Centro Destino','Tienda Destino','Monto a Traspasar','Costo Traslado','Razón'];
+    // Layout base + Costo Traslado + Razón
+    const header = ['División','Sección','Sección','Marca','Grupo de artículos','Modelo','Material','Texto breve Material','PVP','# centro tienda origen','Tienda Origen','Stock','Piezas a trasladar','# centro tienda destino','Tienda Destino','MONTO A TRASPASO','ZONA ORIGEN','ZONA DESTINO','Costo Traslado','Razón'];
     const rows = excResult.map(r => [
-      '', r.numSeccion, r.seccion, r.marca, r.goa, r.goa,
-      r.sku, '', r.precio,
-      r.centroSalida, r.nombreSalida, r.pzs,
-      r.pzs, r.centroReceptor, r.nombreReceptor,
-      r.pesos, r.costoTraslado, r.razon
+      '', r.numSeccion, r.seccion, r.marca, r.goa, r.modelo || '',
+      r.sku, r.nsku || '', r.precio,
+      r.centroSalida, r.nombreSalida,
+      r.pzs,               // Stock (OH origen)
+      r.pzs,               // Piezas a trasladar
+      r.centroReceptor, r.nombreReceptor,
+      r.pesos,             // Monto a traspaso
+      r.zonaOrigen || '', r.zonaDestino || '',
+      r.costoTraslado, r.razon
     ]);
     downloadExcel([header, ...rows], 'Traslados_Excedente.csv');
   };
@@ -834,16 +842,16 @@ export default function Traslados() {
 
   // Lookup de centro: busca por nombre o nCentro en rawData
   const lookupCentro = useCallback((input, datos) => {
-    if (!input || !datos.length) return { nombre: input, nCentro: '' };
+    if (!input || !datos.length) return { nombre: input, nCentro: '', zona: '' };
     const q = input.trim().toUpperCase();
     const hit = datos.find(r =>
       r.centro.toUpperCase() === q ||
-      r.nCentro === q ||
-      r.nombre?.toUpperCase() === q
+      (r.nCentro || '').toUpperCase() === q
     );
+    // nombre = nombre tienda (nCentro col), nCentro = número (centro col)
     return hit
-      ? { nombre: hit.centro, nCentro: hit.nCentro }
-      : { nombre: input, nCentro: '' };
+      ? { nombre: hit.nCentro || hit.centro, nCentro: hit.centro, zona: hit.zona || '' }
+      : { nombre: input, nCentro: '', zona: '' };
   }, []);
 
   const fmtCentro = (nombre, nCentro) =>
@@ -1140,8 +1148,10 @@ export default function Traslados() {
             asignaciones.push({
               talla, pzsEnv,
               sku: row.sku, nsku: row.nsku,
-              centro: mejor.centro, nCentro: row.nCentro,
-              nombreCentro: row.centro,
+              centro: mejor.centro,        // número de centro surtidor
+              nCentro: row.nCentro,        // nombre tienda surtidor
+              nombreCentro: row.nCentro,   // nombre tienda (para display)
+              zona: row.zona || '',        // zona del surtidor
               oh: mejor.ohTot, precio: precioTalla[talla]||row.precio,
               seccion: row.seccion, numSeccion: row.numSeccion,
               marca: row.marca, goa: row.goa, modelo: modeloKey,
@@ -1163,8 +1173,15 @@ export default function Traslados() {
               seccion: a.seccion, numSeccion: a.numSeccion,
               marca: a.marca, goa: a.goa, modelo: a.modelo,
               sku: a.sku, nsku: a.nsku, talla: a.talla,
-              centroSalida:   fmtCentro(a.nombreCentro, a.nCentro),
+              centroSalida:   fmtCentro(a.nombreCentro, a.nCentro),  // para tabla (display)
               centroReceptor: fmtCentro(recInfo.nombre, recInfo.nCentro),
+              // campos separados para export
+              centroSalidaNum: a.centro || '',
+              nombreSalida:    a.nCentro || a.nombreCentro,
+              centroReceptorNum: recInfo.nCentro || '',
+              nombreReceptor:  recInfo.nombre,
+              zonaOrigen:      a.zona || '',
+              zonaDestino:     recInfo.zona || '',
               ohDisp: a.oh, pzs: a.pzsEnv,
               ohQueda: a.oh - a.pzsEnv,
               importe: a.pzsEnv * (a.precio||0),
@@ -1223,13 +1240,19 @@ export default function Traslados() {
   }, [necesResult]);
 
   const exportNecesidad = () => {
-    const header = ['Sección', 'Núm. Sección', 'Marca', 'GOA', 'Modelo', 'SKU', 'N SKU', 'Centro Salida', 'Centro Receptor', 'OH Disp', 'Pzs', 'OH Queda', 'Importe ($)'];
+    // Layout base
+    const header = ['División','Sección','Sección','Marca','Grupo de artículos','Modelo','Material','Texto breve Material','PVP','# centro tienda origen','Tienda Origen','Stock','Piezas a trasladar','# centro tienda destino','Tienda Destino','MONTO A TRASPASO','ZONA ORIGEN','ZONA DESTINO'];
     const rows = necesResult.map(r => [
-      r.seccion, r.numSeccion, r.marca, r.goa, r.modelo,
-      r.sku, r.nsku, r.centroSalida, r.centroReceptor,
-      r.ohDisp, r.pzs, r.ohQueda, r.importe
+      '', r.numSeccion, r.seccion, r.marca, r.goa, r.modelo || '',
+      r.sku, r.nsku || '', r.precio,
+      r.centroSalidaNum || '', r.nombreSalida || '',
+      r.ohDisp,            // Stock (OH origen)
+      r.pzs,               // Piezas a trasladar
+      r.centroReceptorNum || '', r.nombreReceptor || '',
+      r.importe,           // Monto a traspaso
+      r.zonaOrigen || '', r.zonaDestino || ''
     ]);
-    downloadExcel([header, ...rows], 'Traslados_Necesidad.csv');
+    downloadExcel([header, ...rows], 'Traslados_Aperturas.csv');
   };
 
   // ══════════════════════════════════════════════════════════════════════
