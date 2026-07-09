@@ -10,6 +10,24 @@ const parseCSVRow = (row, sep) =>
 
 const num = v => parseFloat(String(v || '0').replace(/[^0-9.-]+/g, '')) || 0;
 
+// Regresión lineal + R² para scatter. points = [{x, y}]
+const linReg = (points) => {
+  const n = points.length;
+  if (n < 2) return { slope: 0, intercept: 0, r2: 0 };
+  const sx = points.reduce((s,p) => s+p.x, 0);
+  const sy = points.reduce((s,p) => s+p.y, 0);
+  const sxy = points.reduce((s,p) => s+p.x*p.y, 0);
+  const sxx = points.reduce((s,p) => s+p.x*p.x, 0);
+  const syy = points.reduce((s,p) => s+p.y*p.y, 0);
+  const denom = (n*sxx - sx*sx);
+  const slope = denom !== 0 ? (n*sxy - sx*sy) / denom : 0;
+  const intercept = (sy - slope*sx) / n;
+  const num2 = (n*sxy - sx*sy);
+  const den2 = Math.sqrt((n*sxx - sx*sx) * (n*syy - sy*sy));
+  const r = den2 !== 0 ? num2/den2 : 0;
+  return { slope, intercept, r2: r*r };
+};
+
 const fmt = (n, dec = 0) =>
   n == null ? '-' : n.toLocaleString('es-MX', { minimumFractionDigits: dec, maximumFractionDigits: dec });
 
@@ -2433,7 +2451,8 @@ export default function Traslados() {
                   ))}
                 </div>
 
-                {/* Gráfica por zona */}
+                {/* Fila: Nivelación por zona + Inventario/MOS por zona */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <div className={`p-4 rounded-xl border ${t.cardInner}`}>
                   <h4 className={`text-sm font-bold mb-3 ${t.textMain}`}>⚖️ Nivelación por Zona de Venta</h4>
                   <div className="space-y-2">
@@ -2493,6 +2512,7 @@ export default function Traslados() {
                     <span className="flex items-center gap-1"><span className="w-3 h-2 rounded bg-yellow-400/80 inline-block"/> OH antes</span>
                     <span className="flex items-center gap-1"><span className="w-3 h-2 rounded bg-violet-500 inline-block"/> OH después</span>
                   </div>
+                </div>
                 </div>
 
                 {/* Top centros más modificados */}
@@ -2558,49 +2578,68 @@ export default function Traslados() {
                   ))}
                 </div>
 
-                {/* Scatter comparativo: antes vs después */}
-                <div className={`p-4 rounded-xl border ${t.cardInner}`}>
-                  <h4 className={`text-sm font-bold mb-1 ${t.textMain}`}>📊 Dispersión Venta vs Inventario</h4>
-                  <p className={`text-[9px] mb-3 ${t.textMuted}`}>Eje X = Venta · Eje Y = Inventario. Izq: estado actual · Der: tras traslados (con fcst de uplift)</p>
-                  <div className="grid grid-cols-2 gap-3">
-                    {[
-                      { titulo: 'ANTES', xKey: 'vtaAntes', yKey: 'ohAntes', color: '#facc15' },
-                      { titulo: 'DESPUÉS + FCST', xKey: 'vtaDespues', yKey: 'ohDespues', color: '#a78bfa' },
-                    ].map(({ titulo, xKey, yKey, color }) => {
-                      const maxX = Math.max(...nivChartData.scatter.map(d => Math.max(d.vtaAntes, d.vtaDespues)), 1);
-                      const maxY = Math.max(...nivChartData.scatter.map(d => Math.max(d.ohAntes, d.ohDespues)), 1);
-                      const toX = v => 30 + (v/maxX) * 130;
-                      const toY = v => 130 - (v/maxY) * 120;
-                      return (
-                        <div key={titulo}>
-                          <div className={`text-[9px] font-black text-center mb-1 ${titulo==='ANTES' ? 'text-yellow-400' : 'text-violet-400'}`}>{titulo}</div>
-                          <svg viewBox="0 0 175 150" className="w-full">
-                            {[0,1,2,3].map(i => (
-                              <g key={i}>
-                                <line x1={30} y1={10+i*40} x2={170} y2={10+i*40} stroke={isDark?'#3f3f46':'#e5e7eb'} strokeWidth="0.5"/>
-                                <line x1={30+i*47} y1={10} x2={30+i*47} y2={130} stroke={isDark?'#3f3f46':'#e5e7eb'} strokeWidth="0.5"/>
-                              </g>
-                            ))}
-                            {nivChartData.scatter.slice(0,120).map((d, i) => (
-                              <circle key={i} cx={toX(d[xKey])} cy={toY(d[yKey])}
-                                r={d.modificado ? 3 : 1.8} fill={color}
-                                opacity={d.modificado ? 0.9 : 0.3}
-                                stroke={d.modificado ? (titulo==='ANTES'?'#eab308':'#7c3aed') : 'none'} strokeWidth="0.5">
-                                <title>{d.nombre} — VTA {Math.round(d[xKey])} / OH {Math.round(d[yKey])}</title>
-                              </circle>
-                            ))}
-                            <text x={100} y={145} textAnchor="middle" fontSize="6" fill={isDark?'#71717a':'#9ca3af'}>Venta</text>
-                            <text x={10} y={70} textAnchor="middle" fontSize="6" fill={isDark?'#71717a':'#9ca3af'} transform="rotate(-90,10,70)">Inv</text>
-                          </svg>
+                {/* Scatter comparativo con R²: antes vs después */}
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  {[
+                    { titulo: 'ANTES', xKey: 'vtaAntes', yKey: 'ohAntes', color: '#facc15', lineColor: '#eab308' },
+                    { titulo: 'DESPUÉS + FCST', xKey: 'vtaDespues', yKey: 'ohDespues', color: '#a78bfa', lineColor: '#7c3aed' },
+                  ].map(({ titulo, xKey, yKey, color, lineColor }) => {
+                    const pts = nivChartData.scatter.map(d => ({ x: d[xKey], y: d[yKey], ...d }));
+                    const reg = linReg(pts.map(p => ({ x: p.x, y: p.y })));
+                    const maxX = Math.max(...pts.map(p => p.x), 1);
+                    const maxY = Math.max(...pts.map(p => p.y), 1);
+                    // viewBox 400x260, plot area x:[45,385] y:[15,215]
+                    const toX = v => 45 + (v/maxX) * 340;
+                    const toY = v => 215 - (v/maxY) * 200;
+                    // Línea de regresión: de x=0 a x=maxX
+                    const y0 = reg.intercept;
+                    const y1 = reg.slope * maxX + reg.intercept;
+                    return (
+                      <div key={titulo} className={`p-4 rounded-xl border ${t.cardInner}`}>
+                        <div className="flex items-center justify-between mb-2">
+                          <h4 className={`text-sm font-bold ${titulo==='ANTES' ? 'text-yellow-400' : 'text-violet-400'}`}>
+                            📊 Venta vs Inventario · {titulo}
+                          </h4>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-black border ${titulo==='ANTES' ? 'bg-yellow-500/10 border-yellow-500/40 text-yellow-400' : 'bg-violet-500/10 border-violet-500/40 text-violet-400'}`}>
+                            R² = {reg.r2.toFixed(3)}
+                          </span>
                         </div>
-                      );
-                    })}
-                  </div>
-                  <div className="flex gap-4 mt-1 text-[9px] justify-center">
-                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-400 inline-block"/> Sin fcst</span>
-                    <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-violet-400 inline-block"/> Con fcst uplift</span>
-                    <span className={t.textMuted}>Puntos grandes = centros modificados</span>
-                  </div>
+                        <svg viewBox="0 0 400 240" className="w-full">
+                          {/* Grid */}
+                          {[0,1,2,3,4].map(i => (
+                            <line key={'h'+i} x1={45} y1={15+i*50} x2={385} y2={15+i*50} stroke={isDark?'#27272a':'#f0f0f0'} strokeWidth="0.5"/>
+                          ))}
+                          {[0,1,2,3,4].map(i => (
+                            <line key={'v'+i} x1={45+i*85} y1={15} x2={45+i*85} y2={215} stroke={isDark?'#27272a':'#f0f0f0'} strokeWidth="0.5" strokeDasharray="2,2"/>
+                          ))}
+                          {/* Puntos — todas las tiendas */}
+                          {pts.map((d, i) => (
+                            <circle key={i} cx={toX(d.x)} cy={toY(d.y)}
+                              r={d.modificado ? 4 : 2.5} fill={color}
+                              opacity={d.modificado ? 0.85 : 0.4}
+                              stroke={d.modificado ? lineColor : 'none'} strokeWidth="0.8">
+                              <title>{d.nombre} ({d.zona}) — Venta {Math.round(d.x)} / Inv {Math.round(d.y)}</title>
+                            </circle>
+                          ))}
+                          {/* Línea de regresión */}
+                          <line x1={toX(0)} y1={toY(Math.max(0,y0))} x2={toX(maxX)} y2={toY(Math.max(0,y1))}
+                            stroke={lineColor} strokeWidth="2" opacity="0.9"/>
+                          {/* Ejes labels */}
+                          <text x={215} y={234} textAnchor="middle" fontSize="9" fill={isDark?'#71717a':'#9ca3af'}>Venta</text>
+                          <text x={14} y={115} textAnchor="middle" fontSize="9" fill={isDark?'#71717a':'#9ca3af'} transform="rotate(-90,14,115)">Inventario</text>
+                          <text x={45} y={228} fontSize="7" fill={isDark?'#52525b':'#9ca3af'}>0</text>
+                          <text x={385} y={228} textAnchor="end" fontSize="7" fill={isDark?'#52525b':'#9ca3af'}>{fmt(maxX)}</text>
+                          <text x={40} y={215} textAnchor="end" fontSize="7" fill={isDark?'#52525b':'#9ca3af'}>0</text>
+                          <text x={40} y={20} textAnchor="end" fontSize="7" fill={isDark?'#52525b':'#9ca3af'}>{fmt(maxY)}</text>
+                        </svg>
+                        <div className="flex gap-3 text-[9px] mt-1">
+                          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full inline-block" style={{background: color}}/> Tiendas ({pts.length})</span>
+                          <span className="flex items-center gap-1"><span className="w-4 border-t-2 inline-block" style={{borderColor: lineColor}}/> Tendencia</span>
+                          <span className={t.textMuted}>Grandes = modificados</span>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
 
                 {/* Top 10 problemáticas */}
