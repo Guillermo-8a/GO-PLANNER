@@ -186,6 +186,7 @@ export default function Traslados() {
   const matrizInputRef = useRef(null);
 
   const [rawData,    setRawData]    = useState([]);
+  const [ohEnPesos,  setOhEnPesos]  = useState(true); // true = OH/VTA vienen en pesos, convertir a pzs
   const [brandMatrix, setBrandMatrix] = useState({});
   const [climaMatrix, setClimaMatrix] = useState({});
 
@@ -349,23 +350,31 @@ export default function Traslados() {
       for (let i = 1; i < rows.length; i++) {
         const r = rows[i];
         if (!r[iCentro] || !r[iGoa]) continue;
+        const precioRow = num(iPrecio >= 0 ? r[iPrecio] : 0);
+        const ohRaw     = num(iOH    >= 0 ? r[iOH]     : 0);
+        const vtaRaw    = num(iVta   >= 0 ? r[iVta]    : 0);
+        const vta3mRaw  = iVta3m     >= 0 ? num(r[iVta3m])     : null;
+        const vtaMaRaw  = iVtaMesAnt >= 0 ? num(r[iVtaMesAnt]) : null;
+        // Convertir pesos → piezas si aplica (OH_pzs = OH_pesos / precio)
+        const conv = (v) => ohEnPesos && precioRow > 0 && v != null ? Math.round(v / precioRow) : v;
         extracted.push({
-          numSeccion: iSeccion   >= 0 ? r[iSeccion].trim()    : '',   // número sección
-          seccion:    iNomSec    >= 0 ? r[iNomSec].trim()     : 'GENERAL', // nombre sección
+          numSeccion: iSeccion   >= 0 ? r[iSeccion].trim()    : '',
+          seccion:    iNomSec    >= 0 ? r[iNomSec].trim()     : 'GENERAL',
           goa:        r[iGoa].trim().toUpperCase(),
           sku:        iSku       >= 0 ? r[iSku].trim()        : '',
           nsku:       iNSku      >= 0 ? r[iNSku].trim()       : '',
           modelo:     iModelo    >= 0 ? r[iModelo].trim().toUpperCase()  : '',
           marca:      iMarca     >= 0 ? r[iMarca].trim().toUpperCase()   : '',
-          centro:     r[iCentro].trim(),                                // número de centro
-          nCentro:    iNCentro   >= 0 ? r[iNCentro].trim()    : '',    // nombre tienda
-          oh:         num(iOH    >= 0 ? r[iOH]     : 0),
-          precio:     num(iPrecio >= 0 ? r[iPrecio] : 0),
+          centro:     r[iCentro].trim(),
+          nCentro:    iNCentro   >= 0 ? r[iNCentro].trim()    : '',
+          oh:         conv(ohRaw),        // piezas
+          ohPesos:    ohEnPesos ? ohRaw : ohRaw * precioRow, // valor en pesos
+          precio:     precioRow,
           tipoCentro: iTipoCentro >= 0 ? r[iTipoCentro].trim().toUpperCase() : '',
           zona:       iZona      >= 0 ? r[iZona].trim().toUpperCase()   : '',
-          vta:        num(iVta   >= 0 ? r[iVta]    : 0),
-          vta3m:      iVta3m     >= 0 ? num(r[iVta3m])     : null,
-          vtaMesAnt:  iVtaMesAnt >= 0 ? num(r[iVtaMesAnt]) : null,
+          vta:        conv(vtaRaw),       // piezas
+          vta3m:      vta3mRaw != null ? conv(vta3mRaw) : null,
+          vtaMesAnt:  vtaMaRaw != null ? conv(vtaMaRaw) : null,
           letraDesc:  iLetraDesc >= 0 ? r[iLetraDesc].trim()  : '',
         });
       }
@@ -1227,6 +1236,7 @@ export default function Traslados() {
   // ══════════════════════════════════════════════════════════════════════
 
   const [nivNivel,       setNivNivel]       = useState('sku'); // goa | marca | modelo | sku
+  const [nivZonaMode,    setNivZonaMode]    = useState('misma'); // misma | todas | metro
   const [mosObjetivoMin, setMosObjetivoMin] = useState(2);
   const [mosObjetivoMax, setMosObjetivoMax] = useState(4);
   const [nivResult,      setNivResult]      = useState([]);
@@ -1245,6 +1255,7 @@ export default function Traslados() {
       if (s) {
         const d = JSON.parse(s);
         if (d.nivNivel)       setNivNivel(d.nivNivel);
+        if (d.nivZonaMode)    setNivZonaMode(d.nivZonaMode);
         if (d.mosObjetivoMin != null) setMosObjetivoMin(d.mosObjetivoMin);
         if (d.mosObjetivoMax != null) setMosObjetivoMax(d.mosObjetivoMax);
         if (d.pesoVelocidad != null)  setPesoVelocidad(d.pesoVelocidad);
@@ -1259,10 +1270,10 @@ export default function Traslados() {
   useEffect(() => {
     try {
       localStorage.setItem('gop_traslados_niv', JSON.stringify({
-        nivNivel, mosObjetivoMin, mosObjetivoMax, pesoVelocidad, pesoRiesgo, pesoHistorico, nivResult, nivProblematicas
+        nivNivel, nivZonaMode, mosObjetivoMin, mosObjetivoMax, pesoVelocidad, pesoRiesgo, pesoHistorico, nivResult, nivProblematicas
       }));
     } catch {}
-  }, [nivNivel, mosObjetivoMin, mosObjetivoMax, pesoVelocidad, pesoRiesgo, pesoHistorico, nivResult, nivProblematicas]);
+  }, [nivNivel, nivZonaMode, mosObjetivoMin, mosObjetivoMax, pesoVelocidad, pesoRiesgo, pesoHistorico, nivResult, nivProblematicas]);
 
   const calcularNivelacion = useCallback(() => {
     if (!rawData.length) return;
@@ -1280,12 +1291,18 @@ export default function Traslados() {
       // VTA 3 meses: usar campo vta3m si existe, sino estimar de vta acum
       const getVta3m = (r) => r.vta3m != null && r.vta3m > 0 ? r.vta3m : (r.vta || 0) * (3 / Math.max(1, mesActual));
 
-      // Agrupar por Zona → clave → centro
-      // Cada nodo: { centro, zona, oh, vtaAcum, vta3m, vtaProyMes, mos }
-      const porZonaClave = {}; // { zona: { clave: { centros: {centro: nodo}, meta } } }
+      // Zona efectiva según modo: misma=zona real, todas=una sola bolsa, metro=agrupa todas las METRO
+      const zonaEfectiva = (z) => {
+        const zz = (z || 'SIN ZONA').toUpperCase();
+        if (nivZonaMode === 'todas') return 'GLOBAL';
+        if (nivZonaMode === 'metro' && zz.startsWith('METRO')) return 'METRO (todas)';
+        return zz;
+      };
+
+      const porZonaClave = {};
 
       rawData.forEach(r => {
-        const zona = r.zona || 'SIN ZONA';
+        const zona = zonaEfectiva(r.zona);
         const clave = keyOf(r);
         if (!clave) return;
         if (!porZonaClave[zona]) porZonaClave[zona] = {};
@@ -1399,6 +1416,8 @@ export default function Traslados() {
                 zona, clave, nivel: nivNivel,
                 centro: n.centro, nombre: n.nCentro,
                 goa: n.goa, marca: n.marca, sku: n.sku,
+                ohInicial: n.oh,
+                mosInicial: +n.mos.toFixed(1),
                 oh: ohMut[n.centro],
                 mosFinal: +mosFinal.toFixed(1),
                 vtaProyMes: +n.vtaProyMes.toFixed(1),
@@ -1415,7 +1434,7 @@ export default function Traslados() {
       setNivExecuted(true);
       setNivLoading(false);
     }, 400);
-  }, [rawData, nivNivel, mosObjetivoMin, mosObjetivoMax, pesoVelocidad, pesoRiesgo, pesoHistorico, mesActual]);
+  }, [rawData, nivNivel, nivZonaMode, mosObjetivoMin, mosObjetivoMax, pesoVelocidad, pesoRiesgo, pesoHistorico, mesActual]);
 
   const nivChartData = useMemo(() => {
     if (!nivResult.length || !rawData.length)
@@ -1579,6 +1598,11 @@ export default function Traslados() {
                 {rawData.length.toLocaleString()} filas
               </span>
             )}
+            <button onClick={() => setOhEnPesos(v => !v)}
+              className={`px-3 py-1 rounded-full text-[10px] font-black border transition-all ${ohEnPesos ? t.badgeTeal : t.btnGhost}`}
+              title="Si tu CSV trae OH y VTA en pesos, actívalo para convertir a piezas">
+              OH en {ohEnPesos ? 'pesos → pzs' : 'piezas'}
+            </button>
             {Object.keys(brandMatrix).length > 0 && (
               <span className={`px-3 py-1 rounded-full text-[10px] font-black border ${t.badgeTeal}`}>
                 Matriz marca ✓
@@ -2335,6 +2359,29 @@ export default function Traslados() {
                 </p>
               </div>
 
+              {/* Modo de zona */}
+              <div>
+                <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} block mb-2`}>Alcance de traslados</label>
+                <div className="flex gap-1.5 flex-wrap">
+                  {[
+                    { id: 'misma', label: 'Solo misma zona', desc: 'Nivela dentro de cada zona' },
+                    { id: 'metro', label: 'Metro entre sí', desc: 'Zonas METRO se nivelan entre ellas; resto solo su zona' },
+                    { id: 'todas', label: 'Entre todas', desc: 'Sin restricción de zona' },
+                  ].map(opt => (
+                    <button key={opt.id} onClick={() => setNivZonaMode(opt.id)}
+                      title={opt.desc}
+                      className={`px-4 py-2 rounded-lg text-xs font-black transition-all ${nivZonaMode === opt.id ? t.btnPrimary : `${t.btnGhost} border border-transparent`}`}>
+                      {opt.label}
+                    </button>
+                  ))}
+                </div>
+                <p className={`text-[9px] mt-1 ${t.textMuted}`}>
+                  {nivZonaMode === 'misma' ? 'Cada tienda solo recibe de tiendas de su misma zona.' :
+                   nivZonaMode === 'metro' ? 'Las zonas que empiezan con METRO se tratan como una sola bolsa.' :
+                   'Cualquier tienda puede recibir de cualquier otra, sin importar zona.'}
+                </p>
+              </div>
+
               {/* MOS objetivo */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div>
@@ -2576,14 +2623,22 @@ export default function Traslados() {
                           {[0,1,2,3,4].map(i => (
                             <line key={'v'+i} x1={45+i*85} y1={15} x2={45+i*85} y2={215} stroke={isDark?'#27272a':'#f0f0f0'} strokeWidth="0.5" strokeDasharray="2,2"/>
                           ))}
-                          {/* Puntos — todas las tiendas */}
-                          {pts.map((d, i) => (
-                            <circle key={i} cx={toX(d.x)} cy={toY(d.y)}
-                              r={d.modificado ? 4 : 2.5} fill={color}
-                              opacity={d.modificado ? 0.85 : 0.4}
-                              stroke={d.modificado ? lineColor : 'none'} strokeWidth="0.8">
+                          {/* Puntos sin cambio primero (fondo) */}
+                          {pts.filter(d => !d.modificado).map((d, i) => (
+                            <circle key={'s'+i} cx={toX(d.x)} cy={toY(d.y)}
+                              r={2} fill={color} opacity={0.25}>
                               <title>{d.nombre} ({d.zona}) — Venta {Math.round(d.x)} / Inv {Math.round(d.y)}</title>
                             </circle>
+                          ))}
+                          {/* Puntos modificados encima, brillantes */}
+                          {pts.filter(d => d.modificado).map((d, i) => (
+                            <g key={'m'+i}>
+                              <circle cx={toX(d.x)} cy={toY(d.y)} r={7} fill={color} opacity={0.25} />
+                              <circle cx={toX(d.x)} cy={toY(d.y)} r={4.5} fill={color} opacity={1}
+                                stroke="#fff" strokeWidth="1.2">
+                                <title>{d.nombre} ({d.zona}) — Venta {Math.round(d.x)} / Inv {Math.round(d.y)}</title>
+                              </circle>
+                            </g>
                           ))}
                           {/* Línea de regresión */}
                           <line x1={toX(0)} y1={toY(Math.max(0,y0))} x2={toX(maxX)} y2={toY(Math.max(0,y1))}
@@ -2617,7 +2672,7 @@ export default function Traslados() {
                       <table className="w-full text-left text-xs min-w-max">
                         <thead>
                           <tr className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} border-b ${t.border}`}>
-                            {['Tienda','Zona',nivNivel==='sku'?'SKU':'Clave','OH Final','MOS Final','VTA/mes','Importe'].map(h => <th key={h} className="p-2 whitespace-nowrap">{h}</th>)}
+                            {['Tienda','Zona',nivNivel==='sku'?'SKU':'Clave','OH Inicial','OH Final','MOS Inicial','MOS Final','VTA/mes','Importe'].map(h => <th key={h} className="p-2 whitespace-nowrap">{h}</th>)}
                           </tr>
                         </thead>
                         <tbody className={`divide-y ${isDark ? 'divide-zinc-800/50' : 'divide-gray-100'}`}>
@@ -2626,7 +2681,9 @@ export default function Traslados() {
                               <td className={`p-2 font-bold ${t.textMain}`}>{p.nombre} <span className={`text-[9px] ${t.textMuted}`}>({p.centro})</span></td>
                               <td className={`p-2 ${t.textMuted}`}>{p.zona}</td>
                               <td className={`p-2 font-mono ${t.textMain}`}>{nivNivel==='sku'?p.sku:p.clave}</td>
+                              <td className={`p-2 font-mono text-yellow-400`}>{fmt(p.ohInicial)}</td>
                               <td className={`p-2 font-black text-amber-400`}>{fmt(p.oh)}</td>
+                              <td className={`p-2 font-mono text-yellow-400`}>{p.mosInicial}m</td>
                               <td className="p-2 font-black text-red-400">{p.mosFinal}m</td>
                               <td className={`p-2 font-mono ${t.textMuted}`}>{p.vtaProyMes}</td>
                               <td className={`p-2 font-mono text-emerald-400`}>{fmtMXN(p.importe)}</td>
