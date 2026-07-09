@@ -140,7 +140,7 @@ export default function Traslados() {
   const theme    = gState?.theme || 'light';
   const isDark   = theme === 'dark';
 
-  const [activeTab, setActiveTab] = useState(0); // 0=Dashboard, 1=Excedente, 2=Necesidad
+  const [activeTab, setActiveTab] = useState(1); // 1=Excedente, 2=Solicitud, 3=Nivelación
   const [mesActual, setMesActual] = useState(5); // mes del año para MOS
 
   // ── Temas ──────────────────────────────────────────────────────────────
@@ -777,6 +777,7 @@ export default function Traslados() {
   }, []);
 
   const [necesResult,       setNecesResult]       = useState([]);
+  const [necesAvisos,       setNecesAvisos]       = useState([]);
   const [necesLoading,      setNecesLoading]      = useState(false);
 
   // Modal para tallas faltantes: { sku, nsku, callback }
@@ -797,6 +798,7 @@ export default function Traslados() {
         if (d.chequeraText)        setChequeraText(d.chequeraText);
         if (d.centrosSurtidores)   setCentrosSurtidores(d.centrosSurtidores);
         if (d.necesResult?.length) setNecesResult(d.necesResult);
+        if (d.necesAvisos?.length) setNecesAvisos(d.necesAvisos);
         if (d.tallasCache)         setTallasCache(d.tallasCache);
       }
     } catch {}
@@ -804,9 +806,9 @@ export default function Traslados() {
 
   useEffect(() => {
     try {
-      localStorage.setItem('gop_traslados_nec', JSON.stringify({ chequeraText, centrosSurtidores, necesResult, tallasCache }));
+      localStorage.setItem('gop_traslados_nec', JSON.stringify({ chequeraText, centrosSurtidores, necesResult, necesAvisos, tallasCache }));
     } catch {}
-  }, [chequeraText, centrosSurtidores, necesResult, tallasCache]);
+  }, [chequeraText, centrosSurtidores, necesResult, necesAvisos, tallasCache]);
 
   // Extraer talla del nombre del SKU: "TENIS NIÑA, 17, ROSA CLARO" → "17"
   const extraerTalla = useCallback((nsku = '', sku = '', cache = {}) => {
@@ -921,6 +923,7 @@ export default function Traslados() {
   // HERRAMIENTA NECESIDAD — corridas por modelo+talla
   const calcularNecesidad = useCallback(() => {
     if (!chequeraText.trim() || !rawData.length) return;
+    setNecesAvisos([]);
 
     // Validar campos obligatorios en cada línea
     const lineasRaw = chequeraText.split('\n').map(l => l.trim()).filter(Boolean);
@@ -1006,6 +1009,7 @@ export default function Traslados() {
 
       const invMut = JSON.parse(JSON.stringify(inv));
       const resultado = [];
+      const avisos = []; // mensajes de por qué no se pudo ejecutar algo
 
       chequera.forEach(item => {
         const recInfo = lookupCentro(item.centroReceptor, rawData);
@@ -1076,7 +1080,10 @@ export default function Traslados() {
 
           // Cuántas corridas caben con el ppto
           const corridasMax = pptoRestante > 0 ? Math.floor(pptoRestante / precioCorrida) : 999;
-          if (corridasMax <= 0) return;
+          if (corridasMax <= 0) {
+            avisos.push(`"${item.idRaw}" → modelo ${modeloKey}: el ppto asignado ($${Math.round(pptoRestante).toLocaleString('es-MX')}) no alcanza ni 1 corrida completa. Necesitas mínimo $${Math.round(precioCorrida).toLocaleString('es-MX')} por corrida (${corrida.length} tallas).`);
+            return;
+          }
 
           // Centro receptor para excluirlo de surtidores
           const receptorNombre = recInfo.nombre.toUpperCase().trim();
@@ -1131,7 +1138,10 @@ export default function Traslados() {
             });
           });
 
-          if (!asignaciones.length) return;
+          if (!asignaciones.length) {
+            avisos.push(`"${item.idRaw}" → modelo ${modeloKey}: no hay centros surtidores con stock suficiente (respetando mínimo de corridas a dejar).`);
+            return;
+          }
 
           // Emitir filas y descontar
           asignaciones.forEach(a => {
@@ -1158,6 +1168,11 @@ export default function Traslados() {
       }); // end chequera
 
       setNecesResult(resultado);
+      setNecesAvisos(avisos);
+      // Si no hubo resultados pero sí avisos, mostrarlos
+      if (resultado.length === 0 && avisos.length > 0) {
+        alert('No se generaron traslados:\n\n' + avisos.join('\n\n'));
+      }
       setNecesLoading(false);
     }, 300);
   }, [rawData, extraerTalla, lookupCentro]);
@@ -1581,9 +1596,6 @@ export default function Traslados() {
       {/* ── TABS ── */}
       <div className={`rounded-2xl border overflow-hidden ${t.card}`}>
         <div className={`flex border-b ${t.border} px-2`}>
-          <button className={tabStyle(0)} onClick={() => setActiveTab(0)}>
-            📊 Dashboard
-          </button>
           <button className={tabStyle(1)} onClick={() => setActiveTab(1)}>
             🔁 Excedente de Temporada
           </button>
@@ -1594,134 +1606,6 @@ export default function Traslados() {
             ⚖️ Nivelación
           </button>
         </div>
-
-        {/* ══════════ TAB 0: DASHBOARD ══════════ */}
-        {activeTab === 0 && (
-          <div className="p-5 space-y-5">
-            {/* Mes actual config */}
-            <div className={`flex items-center gap-4 p-4 rounded-xl border ${t.cardInner}`}>
-              <span className={`text-xs font-black uppercase tracking-widest ${t.textMuted}`}>Mes actual (para MOS)</span>
-              <input type="number" min={1} max={12} value={mesActual}
-                onChange={e => setMesActual(Number(e.target.value))}
-                className={`w-20 text-xs px-3 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`} />
-              <span className={`text-[10px] ${t.textMuted}`}>MOS = OH ÷ (VTA acum ÷ mes)</span>
-            </div>
-
-            {dashboardData && dashboardData.fuera.length > 0 ? (
-              <>
-                {/* KPIs principales */}
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  {[
-                    { label: 'SKUs fuera de zona', val: dashboardData.fuera.length, color: 'text-red-400' },
-                    { label: 'Piezas en riesgo',   val: fmt(dashboardData.totalPzs), color: t.textAccent1 },
-                    { label: 'Importe en riesgo',  val: fmtMXN(dashboardData.totalPesos), color: 'text-amber-400' },
-                    { label: 'MOS global',         val: dashboardData.mos != null ? `${dashboardData.mos} meses` : 'N/D', color: dashboardData.mos > 3 ? 'text-red-400' : 'text-emerald-400' },
-                  ].map(({ label, val, color }) => (
-                    <div key={label} className={`p-4 rounded-xl border ${t.cardInner}`}>
-                      <div className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} mb-1`}>{label}</div>
-                      <div className={`text-lg font-black ${color}`}>{val}</div>
-                    </div>
-                  ))}
-                </div>
-
-                {/* Por GOA */}
-                <div className={`p-4 rounded-xl border ${t.cardInner}`}>
-                  <h4 className={`text-sm font-bold mb-3 ${t.textMain}`}>📦 Por GOA</h4>
-                  <div className="overflow-x-auto custom-scrollbar">
-                    <table className="w-full text-left text-xs min-w-max">
-                      <thead>
-                        <tr className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} border-b ${t.border}`}>
-                          {['GOA', 'Pzs', '% del total', 'Importe', 'MOS', 'Con desc', 'Sin desc'].map(h =>
-                            <th key={h} className="p-2 whitespace-nowrap">{h}</th>)}
-                        </tr>
-                      </thead>
-                      <tbody className={`divide-y ${isDark ? 'divide-zinc-800/50' : 'divide-gray-100'}`}>
-                        {dashboardData.porGoa.map((r, i) => (
-                          <tr key={i} className="hover:opacity-80 transition-opacity">
-                            <td className="p-2"><span className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${t.badge}`}>{r.goa}</span></td>
-                            <td className={`p-2 font-black ${t.textMain}`}>{fmt(r.pzs)}</td>
-                            <td className="p-2">
-                              <div className="flex items-center gap-2">
-                                <div className={`h-1.5 rounded-full ${isDark ? 'bg-zinc-700' : 'bg-gray-200'} w-20 overflow-hidden`}>
-                                  <div className="h-full rounded-full bg-orange-400" style={{width: `${r.pctPzs}%`}} />
-                                </div>
-                                <span className={`text-[10px] font-mono ${t.textMuted}`}>{r.pctPzs}%</span>
-                              </div>
-                            </td>
-                            <td className={`p-2 font-mono text-amber-400`}>{fmtMXN(r.pesos)}</td>
-                            <td className={`p-2 font-black ${r.mos == null ? t.textMuted : r.mos > 3 ? 'text-red-400' : 'text-emerald-400'}`}>
-                              {r.mos != null ? `${r.mos}m` : 'N/D'}
-                            </td>
-                            <td className={`p-2 text-emerald-400 font-mono`}>{fmt(r.conDesc)}</td>
-                            <td className={`p-2 text-red-400 font-mono`}>{fmt(r.sinDesc)}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                </div>
-
-                {/* Por descuento */}
-                <div className={`p-4 rounded-xl border ${t.cardInner}`}>
-                  <h4 className={`text-sm font-bold mb-3 ${t.textMain}`}>🏷️ Por Letra de Descuento</h4>
-                  <div className="flex flex-wrap gap-3">
-                    {dashboardData.porDesc.map((r, i) => (
-                      <div key={i} className={`p-3 rounded-xl border flex-1 min-w-[120px] ${t.cardInner}`}>
-                        <div className={`text-[10px] font-black uppercase ${t.textMuted} mb-1`}>{r.letra}</div>
-                        <div className={`text-base font-black ${t.textMain}`}>{fmt(r.pzs)} pzs</div>
-                        <div className={`text-[10px] text-amber-400 font-mono`}>{fmtMXN(r.pesos)}</div>
-                        <div className={`text-[9px] ${t.textMuted} mt-0.5`}>{r.pct}% del total</div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                {/* Por centro (top 15) */}
-                <div className={`p-4 rounded-xl border ${t.cardInner}`}>
-                  <h4 className={`text-sm font-bold mb-3 ${t.textMain}`}>🏪 Top 15 Centros con Mayor Importe Fuera de Zona</h4>
-                  <div className="space-y-2">
-                    {dashboardData.porCentro.map((r, i) => {
-                      const maxPesos = dashboardData.porCentro[0]?.pesos || 1;
-                      return (
-                        <div key={i} className="flex items-center gap-3">
-                          <span className={`w-40 truncate text-[10px] font-bold text-right ${t.textMain}`} title={r.nombre}>
-                            {r.nombre} <span className={`font-mono ${t.textMuted}`}>({r.id})</span>
-                          </span>
-                          <div className="flex-1 relative h-5 rounded-lg overflow-hidden bg-zinc-700/20">
-                            <div className="absolute left-0 top-0 h-full rounded-lg bg-orange-400/70 flex items-center pl-2"
-                              style={{width: `${(r.pesos/maxPesos)*100}%`, minWidth: '1%'}}>
-                            </div>
-                            <span className={`absolute left-2 top-0 h-full flex items-center text-[9px] font-black ${r.pesos/maxPesos > 0.3 ? 'text-black' : t.textMain}`}>
-                              {fmtMXN(r.pesos)} · {fmt(r.pzs)} pzs
-                            </span>
-                          </div>
-                          <span className={`w-14 text-right text-[10px] font-black ${r.mos == null ? t.textMuted : r.mos > 3 ? 'text-red-400' : 'text-emerald-400'}`}>
-                            {r.mos != null ? `${r.mos}m` : 'N/D'}
-                          </span>
-                        </div>
-                      );
-                    })}
-                  </div>
-                  <div className="flex gap-4 mt-3 text-[9px]">
-                    <span className={t.textMuted}>Barra = importe</span>
-                    <span className="text-emerald-400">Verde = MOS ≤3 meses (ok)</span>
-                    <span className="text-red-400">Rojo = MOS &gt;3 (crítico)</span>
-                  </div>
-                </div>
-              </>
-            ) : (
-              <div className={`p-10 rounded-xl border flex flex-col items-center justify-center text-center ${t.cardInner}`}>
-                <Icons.BarChart2 size={36} className={`${isDark ? 'text-zinc-600' : 'text-gray-300'} mb-3`} />
-                <p className={`text-sm font-bold ${t.textMain}`}>Dashboard listo</p>
-                <p className={`text-xs mt-1 ${t.textMuted}`}>
-                  {!rawData.length ? 'Carga el CSV de artículos primero.' :
-                   !Object.keys(goasTemporada).length ? 'Configura los GOAs de temporada en la tab "Excedente de Temporada".' :
-                   'No se detectaron artículos de temporada fuera de zona con los GOAs configurados.'}
-                </p>
-              </div>
-            )}
-          </div>
-        )}
 
         {/* ══════════ TAB 1: EXCEDENTE ══════════ */}
         {activeTab === 1 && (
@@ -1919,8 +1803,8 @@ export default function Traslados() {
                     { label: 'Importe',     val: fmtMXN(excResult.reduce((s, r) => s + r.pesos, 0)), icon: <Icons.DollarSign size={16} />,     color: 'text-emerald-400' },
                     { label: 'GOAs afect.', val: new Set(excResult.map(r => r.goa)).size,             icon: <Icons.Tag size={16} />,            color: 'text-amber-400' },
                   ].map(({ label, val, icon, color }) => (
-                    <div key={label} className={`p-4 rounded-xl border ${t.cardInner}`}>
-                      <div className={`flex items-center gap-2 text-[10px] uppercase font-black tracking-widest ${t.textMuted} mb-1`}>
+                    <div key={label} className={`p-4 rounded-xl border ${t.cardInner} text-center`}>
+                      <div className={`flex items-center justify-center gap-2 text-[10px] uppercase font-black tracking-widest ${t.textMuted} mb-1`}>
                         <span className={color}>{icon}</span> {label}
                       </div>
                       <div className={`text-lg font-black ${t.textMain}`}>{val}</div>
@@ -2272,6 +2156,86 @@ export default function Traslados() {
               )}
             </div>
 
+            {/* Panel de avisos */}
+            {necesAvisos.length > 0 && (
+              <div className={`p-4 rounded-xl border border-amber-500/30 ${isDark ? 'bg-amber-950/20' : 'bg-amber-50'}`}>
+                <h4 className="text-sm font-black text-amber-500 mb-2 flex items-center gap-2">
+                  <Icons.AlertCircle size={15} /> Avisos ({necesAvisos.length})
+                </h4>
+                <ul className="space-y-1.5">
+                  {necesAvisos.map((a, i) => (
+                    <li key={i} className={`text-[11px] ${t.textMuted} flex gap-2`}>
+                      <span className="text-amber-500 shrink-0">•</span>
+                      <span>{a}</span>
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+
+            {/* Gráficas de necesidad */}
+            {necesResult.length > 0 && (
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                {/* Piezas por centro surtidor */}
+                <div className={`p-4 rounded-xl border ${t.cardInner}`}>
+                  <h4 className={`text-sm font-bold mb-3 ${t.textMain}`}>🏪 Piezas por Centro Surtidor</h4>
+                  <div className="space-y-1.5 max-h-56 overflow-y-auto custom-scrollbar">
+                    {(() => {
+                      const porCentro = {};
+                      necesResult.forEach(r => {
+                        if (!porCentro[r.centroSalida]) porCentro[r.centroSalida] = { nombre: r.nombreSalida || r.centroSalida, pzs: 0, importe: 0 };
+                        porCentro[r.centroSalida].pzs += r.pzs;
+                        porCentro[r.centroSalida].importe += r.importe;
+                      });
+                      const arr = Object.entries(porCentro).map(([id,d]) => ({id, ...d})).sort((a,b) => b.pzs - a.pzs);
+                      const maxP = arr[0]?.pzs || 1;
+                      return arr.map((c, i) => (
+                        <div key={i} className="flex items-center gap-2">
+                          <span className={`w-32 truncate text-[10px] font-bold text-right ${t.textMain}`} title={c.nombre}>
+                            {c.nombre} <span className={`font-mono ${t.textMuted}`}>({c.id})</span>
+                          </span>
+                          <div className="flex-1 relative h-5 rounded-lg overflow-hidden bg-zinc-700/20">
+                            <div className="absolute left-0 h-full rounded-lg bg-gradient-to-r from-yellow-400 to-violet-500 flex items-center pl-2"
+                              style={{width: `${Math.max(6,(c.pzs/maxP)*100)}%`}}>
+                              <span className="text-[9px] font-black text-black">{fmt(c.pzs)} pzs</span>
+                            </div>
+                          </div>
+                          <span className="w-20 text-right text-[9px] font-mono text-emerald-400">{fmtMXN(c.importe)}</span>
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                </div>
+
+                {/* Corrida por talla */}
+                <div className={`p-4 rounded-xl border ${t.cardInner}`}>
+                  <h4 className={`text-sm font-bold mb-3 ${t.textMain}`}>📏 Distribución por Talla</h4>
+                  <div className="space-y-1.5 max-h-56 overflow-y-auto custom-scrollbar">
+                    {(() => {
+                      const porTalla = {};
+                      necesResult.forEach(r => {
+                        const t2 = r.talla || '?';
+                        porTalla[t2] = (porTalla[t2] || 0) + r.pzs;
+                      });
+                      const arr = Object.entries(porTalla).sort((a,b) => parseFloat(a[0]) - parseFloat(b[0]));
+                      const maxT = Math.max(...arr.map(x => x[1]), 1);
+                      return arr.map(([talla, pzs], i) => (
+                        <div key={i} className="flex items-center gap-2">
+                          <span className={`w-10 text-[10px] font-black text-right ${t.textAccent1}`}>{talla}</span>
+                          <div className="flex-1 relative h-5 rounded-lg overflow-hidden bg-zinc-700/20">
+                            <div className="absolute left-0 h-full rounded-lg bg-violet-500 flex items-center pl-2"
+                              style={{width: `${Math.max(4,(pzs/maxT)*100)}%`}}>
+                              <span className="text-[9px] font-black text-white">{fmt(pzs)}</span>
+                            </div>
+                          </div>
+                        </div>
+                      ));
+                    })()}
+                  </div>
+                </div>
+              </div>
+            )}
+
             {/* Tabla necesidad */}
             {necesResult.length > 0 && (
               <>
@@ -2282,7 +2246,7 @@ export default function Traslados() {
                     { label: 'Piezas',      val: fmt(necesResult.reduce((s, r) => s + r.pzs, 0)) },
                     { label: 'Importe',     val: fmtMXN(necesResult.reduce((s, r) => s + r.importe, 0)) },
                   ].map(({ label, val }) => (
-                    <div key={label} className={`p-4 rounded-xl border ${t.cardInner}`}>
+                    <div key={label} className={`p-4 rounded-xl border ${t.cardInner} text-center`}>
                       <div className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} mb-1`}>{label}</div>
                       <div className={`text-lg font-black ${t.textMain}`}>{val}</div>
                     </div>
@@ -2361,7 +2325,7 @@ export default function Traslados() {
                     { id: 'sku', label: 'SKU' },
                   ].map(opt => (
                     <button key={opt.id} onClick={() => setNivNivel(opt.id)}
-                      className={`px-4 py-2 rounded-lg text-xs font-black border transition-all ${nivNivel === opt.id ? t.btnPrimary : t.btnGhost}`}>
+                      className={`px-4 py-2 rounded-lg text-xs font-black transition-all ${nivNivel === opt.id ? t.btnPrimary : `${t.btnGhost} border border-transparent`}`}>
                       {opt.label}
                     </button>
                   ))}
@@ -2444,7 +2408,7 @@ export default function Traslados() {
                     { label: 'Importe movido', val: fmtMXN(nivResult.reduce((s,r)=>s+r.importe,0)), color: 'text-emerald-400' },
                     { label: 'Zonas activas', val: new Set(nivResult.map(r=>r.zona)).size, color: 'text-violet-400' },
                   ].map(({label,val,color}) => (
-                    <div key={label} className={`p-4 rounded-xl border ${t.cardInner}`}>
+                    <div key={label} className={`p-4 rounded-xl border ${t.cardInner} text-center`}>
                       <div className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} mb-1`}>{label}</div>
                       <div className={`text-lg font-black ${color}`}>{val}</div>
                     </div>
