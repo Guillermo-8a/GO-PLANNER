@@ -342,6 +342,8 @@ export default function Traslados() {
       const iVta3m      = idx(['VTA_3M', 'VTA3M', 'VTA 3M', 'VTA_3MESES', 'VENTA_3M']);
       const iVtaMesAnt  = idx(['VTA_MES_ANT', 'VTA_MES_ANTERIOR', 'VTA_ANT', 'VENTA_MES_ANT']);
       const iLetraDesc  = idx(['LETRA _DESC', 'LETRA_DESC', 'LETRA DESC', 'DESC', 'DESCUENTO']);
+      const iFechaAlta  = idx(['FECHA_ALTA', 'FECHA ALTA', 'ALTA', 'FECHA_RECEPCION', 'F_ALTA']);
+      const iMesesVida  = idx(['MESES_VIDA', 'MESES VIDA', 'ANTIGUEDAD', 'MESES']);
 
       if (iGoa === -1 || iSku === -1 || iCentro === -1) {
         alert('El CSV debe tener mínimo: GOA, SKU, CENTRO'); return;
@@ -377,6 +379,8 @@ export default function Traslados() {
           vta3m:      vta3mRaw != null ? conv(vta3mRaw) : null,
           vtaMesAnt:  vtaMaRaw != null ? conv(vtaMaRaw) : null,
           letraDesc:  iLetraDesc >= 0 ? r[iLetraDesc].trim()  : '',
+          fechaAlta:  iFechaAlta >= 0 ? r[iFechaAlta].trim()  : '',
+          mesesVida:  iMesesVida >= 0 ? num(r[iMesesVida])    : null,
         });
       }
       setRawData(extracted);
@@ -1261,6 +1265,12 @@ export default function Traslados() {
 
   const [nivNivel,       setNivNivel]       = useState('sku'); // goa | marca | modelo | sku
   const [nivZonaMode,    setNivZonaMode]    = useState('misma'); // misma | todas | metro
+  const [nivMinPzs,      setNivMinPzs]      = useState(0);     // mínimo pzs por traslado
+  const [nivMesesNuevo,  setNivMesesNuevo]  = useState(2);     // modelos con menos de X meses = nuevos
+  const [nivSkusExcluir, setNivSkusExcluir] = useState('');    // SKUs/modelos a excluir manualmente
+  const [nivGoaFiltro,   setNivGoaFiltro]   = useState('ALL'); // desglose MOS por GOA
+  const [nivResumen,     setNivResumen]     = useState(null);  // cuadro de pestañas
+  const [nivTabActiva,   setNivTabActiva]   = useState('total');
   const [mosObjetivoMin, setMosObjetivoMin] = useState(2);
   const [mosObjetivoMax, setMosObjetivoMax] = useState(4);
   const [nivResult,      setNivResult]      = useState([]);
@@ -1282,6 +1292,10 @@ export default function Traslados() {
         const d = JSON.parse(s);
         if (d.nivNivel)       setNivNivel(d.nivNivel);
         if (d.nivZonaMode)    setNivZonaMode(d.nivZonaMode);
+        if (d.nivMinPzs != null) setNivMinPzs(d.nivMinPzs);
+        if (d.nivMesesNuevo != null) setNivMesesNuevo(d.nivMesesNuevo);
+        if (d.nivSkusExcluir) setNivSkusExcluir(d.nivSkusExcluir);
+        if (d.nivResumen)     setNivResumen(d.nivResumen);
         if (d.mosObjetivoMin != null) setMosObjetivoMin(d.mosObjetivoMin);
         if (d.mosObjetivoMax != null) setMosObjetivoMax(d.mosObjetivoMax);
         if (d.pesoVelocidad != null)  setPesoVelocidad(d.pesoVelocidad);
@@ -1298,10 +1312,10 @@ export default function Traslados() {
   useEffect(() => {
     try {
       localStorage.setItem('gop_traslados_niv', JSON.stringify({
-        nivNivel, nivZonaMode, mosObjetivoMin, mosObjetivoMax, pesoVelocidad, pesoRiesgo, pesoHistorico, nivResult, nivProblematicas, nivLiquidacion, nivCobertura
+        nivNivel, nivZonaMode, nivMinPzs, nivMesesNuevo, nivSkusExcluir, nivResumen, mosObjetivoMin, mosObjetivoMax, pesoVelocidad, pesoRiesgo, pesoHistorico, nivResult, nivProblematicas, nivLiquidacion, nivCobertura
       }));
     } catch {}
-  }, [nivNivel, nivZonaMode, mosObjetivoMin, mosObjetivoMax, pesoVelocidad, pesoRiesgo, pesoHistorico, nivResult, nivProblematicas, nivLiquidacion, nivCobertura]);
+  }, [nivNivel, nivZonaMode, nivMinPzs, nivMesesNuevo, nivSkusExcluir, nivResumen, mosObjetivoMin, mosObjetivoMax, pesoVelocidad, pesoRiesgo, pesoHistorico, nivResult, nivProblematicas, nivLiquidacion, nivCobertura]);
 
   const calcularNivelacion = useCallback(() => {
     if (!rawData.length) return;
@@ -1329,12 +1343,38 @@ export default function Traslados() {
 
       const porZonaClave = {};
 
+      // Set de SKUs/modelos a excluir manualmente (pegados por el usuario)
+      const skusExcluidos = new Set(
+        nivSkusExcluir.split(/[,\n;]+/).map(s => s.trim().toUpperCase()).filter(Boolean)
+      );
+      // ¿La fila es de un modelo recién llegado? (menos de nivMesesNuevo meses)
+      const esNuevo = (r) => {
+        if (nivMesesNuevo <= 0) return false;
+        if (r.mesesVida != null && r.mesesVida > 0) return r.mesesVida < nivMesesNuevo;
+        if (r.fechaAlta) {
+          const d = new Date(r.fechaAlta);
+          if (!isNaN(d.getTime())) {
+            const meses = (Date.now() - d.getTime()) / (1000 * 60 * 60 * 24 * 30.44);
+            return meses < nivMesesNuevo;
+          }
+        }
+        return false;
+      };
+
       // Separar: filas excluidas por letra de rebaja van a liquidación directa
       const liquidacionPorLetra = {}; // clave|zona → { rebajado }
+      let pzsNuevosExcluidos = 0;
       rawData.forEach(r => {
         const zona = zonaEfectiva(r.zona);
         const clave = keyOf(r);
         if (!clave) return;
+        // Excluir modelos recién llegados (aún no dio tiempo de venderse)
+        if (esNuevo(r)) { pzsNuevosExcluidos += r.oh; return; }
+        // Excluir SKUs/modelos marcados manualmente
+        if (skusExcluidos.size > 0 && (
+              skusExcluidos.has(String(r.sku).toUpperCase()) ||
+              skusExcluidos.has(String(r.modelo).toUpperCase())
+        )) { pzsNuevosExcluidos += r.oh; return; }
         // Si la letra está excluida, no entra a nivelación (va a liquidación con su nivel)
         if (letrasExcluidas.size > 0 && r.letraDesc && letrasExcluidas.has(r.letraDesc)) {
           const lk = `${zona}||${clave}`;
@@ -1369,6 +1409,10 @@ export default function Traslados() {
       const resultado = [];
       const problematicas = [];
       const liquidacion = []; // claves sin venta en toda la zona → sugerir descuento
+      let rescatablePzs = 0, rescatableImp = 0; // lo que tiene receptor con beneficio
+      let sucioPzs = 0, sucioImp = 0;           // MOS > objetivo máx
+      let lentoPzs = 0, lentoImp = 0;           // sin venta en ningún centro
+      let totalPzs = 0, totalImp = 0;           // inventario total
 
       Object.entries(porZonaClave).forEach(([zona, claves]) => {
         Object.entries(claves).forEach(([clave, { centros, meta }]) => {
@@ -1380,10 +1424,22 @@ export default function Traslados() {
 
           if (nodos.length < 2) return;
 
+          // Acumular inventario total y sucio (MOS > objetivo máx)
+          nodos.forEach(n => {
+            totalPzs += n.oh;
+            totalImp += n.oh * (n.precio || 0);
+            if (n.mos > mosObjetivoMax) {
+              sucioPzs += n.oh;
+              sucioImp += n.oh * (n.precio || 0);
+            }
+          });
+
           // ¿Nadie vende esta clave en la zona? → liquidación, no traslado
           const vtaZonaTotal = nodos.reduce((s,n) => s + n.vtaProyMes, 0);
           const ohZonaTotal  = nodos.reduce((s,n) => s + n.oh, 0);
           if (vtaZonaTotal <= 0.01 && ohZonaTotal > 0) {
+            lentoPzs += ohZonaTotal;
+            lentoImp += nodos.reduce((s,n) => s + n.oh * (n.precio||0), 0);
             liquidacion.push({
               zona, clave, nivel: nivNivel,
               goa: meta.goa, marca: meta.marca, sku: meta.sku, nsku: meta.nsku, modelo: meta.modelo,
@@ -1441,6 +1497,11 @@ export default function Traslados() {
 
               const mover = Math.min(faltante, puedeDonar);
               if (mover <= 0) continue;
+              // Rescatable: lo que SÍ tiene receptor con beneficio (aunque no pase el mínimo)
+              rescatablePzs += mover;
+              rescatableImp += mover * (don.precio || 0);
+              // Filtro logístico: descartar traslados por debajo del mínimo
+              if (nivMinPzs > 0 && mover < nivMinPzs) continue;
 
               ohMut[don.centro] -= mover;
               ohMut[rec.centro] += mover;
@@ -1487,6 +1548,39 @@ export default function Traslados() {
         });
       });
 
+      // ── Resumen: min/max piezas por modelo (entrada y salida por tienda) ──
+      // Por cada modelo, cuánto se envía a UNA tienda y cuánto sale de UNA tienda
+      const porModeloDestino = {}; // modelo|centroDestino → pzs
+      const porModeloOrigen  = {}; // modelo|centroOrigen  → pzs
+      resultado.forEach(r => {
+        const mk = r.modelo || r.clave;
+        const kd = `${mk}||${r.centroReceptor}`;
+        const ko = `${mk}||${r.centroSalida}`;
+        porModeloDestino[kd] = (porModeloDestino[kd] || 0) + r.pzs;
+        porModeloOrigen[ko]  = (porModeloOrigen[ko]  || 0) + r.pzs;
+      });
+      const destArr = Object.values(porModeloDestino);
+      const origArr = Object.values(porModeloOrigen);
+      const transferPzs = resultado.reduce((s,r) => s + r.pzs, 0);
+      const transferImp = resultado.reduce((s,r) => s + r.importe, 0);
+
+      setNivResumen({
+        totalPzs, totalImp,
+        sucioPzs, sucioImp,
+        lentoPzs, lentoImp,
+        rescatablePzs, rescatableImp,
+        transferPzs, transferImp,
+        nuevosExcluidos: pzsNuevosExcluidos,
+        minEnvioTienda: destArr.length ? Math.min(...destArr) : 0,
+        maxEnvioTienda: destArr.length ? Math.max(...destArr) : 0,
+        minSalidaTienda: origArr.length ? Math.min(...origArr) : 0,
+        maxSalidaTienda: origArr.length ? Math.max(...origArr) : 0,
+        promEnvio: destArr.length ? Math.round(destArr.reduce((s,v)=>s+v,0)/destArr.length) : 0,
+        promSalida: origArr.length ? Math.round(origArr.reduce((s,v)=>s+v,0)/origArr.length) : 0,
+        combosDestino: destArr.length,
+        combosOrigen: origArr.length,
+      });
+
       // Agregar las excluidas por letra al array de liquidación, marcadas como "ya rebajado"
       Object.values(liquidacionPorLetra).forEach(l => {
         liquidacion.push({
@@ -1518,7 +1612,7 @@ export default function Traslados() {
       setNivExecuted(true);
       setNivLoading(false);
     }, 400);
-  }, [rawData, nivNivel, nivZonaMode, mosObjetivoMin, mosObjetivoMax, pesoVelocidad, pesoRiesgo, pesoHistorico, mesActual, letrasExcluidas]);
+  }, [rawData, nivNivel, nivZonaMode, mosObjetivoMin, mosObjetivoMax, pesoVelocidad, pesoRiesgo, pesoHistorico, mesActual, letrasExcluidas, nivMinPzs, nivMesesNuevo, nivSkusExcluir]);
 
   const nivChartData = useMemo(() => {
     if (!nivResult.length || !rawData.length)
@@ -1544,6 +1638,8 @@ export default function Traslados() {
     const getVta3m = (r) => r.vta3m != null && r.vta3m > 0 ? r.vta3m : (r.vta || 0) * (3 / Math.max(1, mesActual));
     const centros = {};
     rawData.forEach(r => {
+      // Desglose por GOA si está filtrado
+      if (nivGoaFiltro !== 'ALL' && r.goa !== nivGoaFiltro) return;
       if (!centros[r.centro]) centros[r.centro] = { centro: r.centro, nombre: r.nCentro || r.centro, zona: r.zona, oh: 0, vta3m: 0 };
       centros[r.centro].oh    += r.oh;
       centros[r.centro].vta3m += getVta3m(r);
@@ -1603,7 +1699,7 @@ export default function Traslados() {
       porZona: Object.values(porZona).sort((a,b) => b.pzs - a.pzs),
       zonaInvMos, topCentros, scatter,
     };
-  }, [nivResult, rawData, mesActual]);
+  }, [nivResult, rawData, mesActual, nivGoaFiltro]);
 
   // Top problemáticos por SKU y por Modelo (agregado de nivProblematicas)
   const nivTops = useMemo(() => {
@@ -2516,6 +2612,41 @@ export default function Traslados() {
                 </div>
               )}
 
+              {/* Filtros logísticos y de novedad */}
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div>
+                  <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} block mb-1`}>
+                    Mín. pzs por traslado
+                  </label>
+                  <input type="number" min={0} value={nivMinPzs}
+                    onChange={e => setNivMinPzs(Number(e.target.value))}
+                    className={`w-full text-xs px-3 py-2 rounded-lg border ${t.input} focus:outline-none focus:ring-1`} />
+                  <p className={`text-[9px] mt-1 ${t.textMuted}`}>Descarta traslados chicos que no pagan el flete.</p>
+                </div>
+                <div>
+                  <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} block mb-1`}>
+                    Excluir modelos con menos de X meses
+                  </label>
+                  <input type="number" min={0} value={nivMesesNuevo}
+                    onChange={e => setNivMesesNuevo(Number(e.target.value))}
+                    className={`w-full text-xs px-3 py-2 rounded-lg border ${t.input} focus:outline-none focus:ring-1`} />
+                  <p className={`text-[9px] mt-1 ${t.textMuted}`}>
+                    Usa columna FECHA_ALTA o MESES_VIDA del CSV. Sin esas columnas, usa la lista de abajo.
+                  </p>
+                </div>
+              </div>
+
+              <div>
+                <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} block mb-1`}>
+                  SKUs / modelos a excluir (recién llegados u otros)
+                </label>
+                <textarea rows={2} value={nivSkusExcluir}
+                  onChange={e => setNivSkusExcluir(e.target.value)}
+                  placeholder="5013836444, S6359, 5014611161"
+                  className={`w-full text-xs px-3 py-2 rounded-lg border font-mono ${t.input} focus:outline-none focus:ring-1`} />
+                <p className={`text-[9px] mt-1 ${t.textMuted}`}>Separados por coma o salto de línea. Acepta SKU o modelo.</p>
+              </div>
+
               {/* MOS objetivo */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                 <div>
@@ -2599,6 +2730,102 @@ export default function Traslados() {
               </div>
             )}
 
+            {/* ── Cuadro de pestañas: composición del inventario ── */}
+            {nivResumen && (
+              <div className={`rounded-xl border overflow-hidden ${t.cardInner}`}>
+                <div className={`flex border-b ${t.border} overflow-x-auto custom-scrollbar`}>
+                  {[
+                    { id: 'total',  label: 'Inventario total',  pzs: nivResumen.totalPzs,       imp: nivResumen.totalImp,       color: 'text-gray-300' },
+                    { id: 'sucio',  label: 'Inv. sucio',        pzs: nivResumen.sucioPzs,       imp: nivResumen.sucioImp,       color: 'text-amber-400' },
+                    { id: 'lento',  label: 'Inv. lento',        pzs: nivResumen.lentoPzs,       imp: nivResumen.lentoImp,       color: 'text-orange-400' },
+                    { id: 'resc',   label: 'Rescatable',        pzs: nivResumen.rescatablePzs,  imp: nivResumen.rescatableImp,  color: 'text-violet-400' },
+                    { id: 'transf', label: 'A transferir',      pzs: nivResumen.transferPzs,    imp: nivResumen.transferImp,    color: 'text-emerald-400' },
+                  ].map(tab => {
+                    const activa = nivTabActiva === tab.id;
+                    const pct = nivResumen.totalPzs > 0 ? (tab.pzs / nivResumen.totalPzs * 100) : 0;
+                    return (
+                      <button key={tab.id} onClick={() => setNivTabActiva(tab.id)}
+                        className={`flex-1 min-w-[130px] px-4 py-3 text-left transition-all border-b-2 ${
+                          activa ? 'border-violet-500 ' + (isDark ? 'bg-zinc-800/60' : 'bg-violet-50')
+                                 : 'border-transparent ' + (isDark ? 'hover:bg-zinc-800/30' : 'hover:bg-gray-50')
+                        }`}>
+                        <div className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} mb-1`}>{tab.label}</div>
+                        <div className={`text-base font-black ${tab.color}`}>{fmt(tab.pzs)} <span className="text-[10px] opacity-60">pzs</span></div>
+                        <div className={`text-[9px] font-mono ${t.textMuted}`}>{fmtMXN(tab.imp)} · {pct.toFixed(1)}%</div>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Detalle de la pestaña activa */}
+                <div className="p-4">
+                  {nivTabActiva === 'total' && (
+                    <div>
+                      <p className={`text-xs ${t.textMain} font-bold mb-2`}>Todo el inventario en scope</p>
+                      <p className={`text-[11px] ${t.textMuted}`}>
+                        {fmt(nivResumen.totalPzs)} piezas por {fmtMXN(nivResumen.totalImp)} en las zonas y niveles evaluados.
+                        {nivResumen.nuevosExcluidos > 0 && ` Se excluyeron ${fmt(nivResumen.nuevosExcluidos)} pzs de modelos recién llegados o marcados manualmente.`}
+                      </p>
+                    </div>
+                  )}
+                  {nivTabActiva === 'sucio' && (
+                    <div>
+                      <p className="text-xs text-amber-400 font-bold mb-2">Inventario con sobrecobertura (MOS &gt; {mosObjetivoMax})</p>
+                      <p className={`text-[11px] ${t.textMuted}`}>
+                        {fmt(nivResumen.sucioPzs)} pzs ({(nivResumen.totalPzs>0 ? nivResumen.sucioPzs/nivResumen.totalPzs*100 : 0).toFixed(1)}% del total) tienen más meses de inventario que el objetivo. Es el universo que la nivelación intenta atacar.
+                      </p>
+                    </div>
+                  )}
+                  {nivTabActiva === 'lento' && (
+                    <div>
+                      <p className="text-xs text-orange-400 font-bold mb-2">Sin venta en ningún centro de su zona</p>
+                      <p className={`text-[11px] ${t.textMuted}`}>
+                        {fmt(nivResumen.lentoPzs)} pzs por {fmtMXN(nivResumen.lentoImp)}. Trasladarlos no sirve: nadie los está vendiendo. Van a la tabla de liquidación.
+                      </p>
+                    </div>
+                  )}
+                  {nivTabActiva === 'resc' && (
+                    <div>
+                      <p className="text-xs text-violet-400 font-bold mb-2">Encontró receptor con beneficio</p>
+                      <p className={`text-[11px] ${t.textMuted} mb-2`}>
+                        {fmt(nivResumen.rescatablePzs)} pzs sí tienen una tienda destino que las vendería mejor. De esas, {fmt(nivResumen.transferPzs)} pasan el filtro logístico.
+                      </p>
+                      <div className={`h-3 rounded-full overflow-hidden ${isDark ? 'bg-zinc-700' : 'bg-gray-200'}`}>
+                        <div className="h-full bg-emerald-400" style={{width: `${nivResumen.rescatablePzs>0 ? (nivResumen.transferPzs/nivResumen.rescatablePzs*100) : 0}%`}} />
+                      </div>
+                      <p className={`text-[10px] mt-1 ${t.textMuted}`}>
+                        Se transfiere el {(nivResumen.rescatablePzs>0 ? nivResumen.transferPzs/nivResumen.rescatablePzs*100 : 0).toFixed(1)}% de lo rescatable.
+                        {nivMinPzs > 0 && ` El resto se descartó por el mínimo de ${nivMinPzs} pzs.`}
+                      </p>
+                    </div>
+                  )}
+                  {nivTabActiva === 'transf' && (
+                    <div>
+                      <p className="text-xs text-emerald-400 font-bold mb-3">Traslados que sí se ejecutan</p>
+                      <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                        {[
+                          { l: 'Mín. recibido por tienda', v: nivResumen.minEnvioTienda,  sub: 'en un modelo' },
+                          { l: 'Máx. recibido por tienda', v: nivResumen.maxEnvioTienda,  sub: `prom ${nivResumen.promEnvio}` },
+                          { l: 'Mín. enviado por tienda',  v: nivResumen.minSalidaTienda, sub: 'en un modelo' },
+                          { l: 'Máx. enviado por tienda',  v: nivResumen.maxSalidaTienda, sub: `prom ${nivResumen.promSalida}` },
+                        ].map(({l,v,sub}) => (
+                          <div key={l} className={`p-3 rounded-lg text-center ${isDark ? 'bg-zinc-800/50' : 'bg-gray-50'}`}>
+                            <div className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} mb-1`}>{l}</div>
+                            <div className={`text-lg font-black ${v <= 2 ? 'text-red-400' : t.textMain}`}>{fmt(v)}</div>
+                            <div className={`text-[9px] ${t.textMuted}`}>{sub}</div>
+                          </div>
+                        ))}
+                      </div>
+                      <p className={`text-[10px] mt-2 ${t.textMuted}`}>
+                        {nivResumen.combosDestino} combinaciones modelo-tienda destino · {nivResumen.combosOrigen} modelo-tienda origen.
+                        {nivResumen.minEnvioTienda <= 2 && ' ⚠️ Hay traslados de 1-2 pzs: sube el mínimo si no pagan el flete.'}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            )}
+
             {/* Resultados */}
             {nivResult.length > 0 ? (
               <>
@@ -2674,7 +2901,14 @@ export default function Traslados() {
 
                 {/* Inventario + MOS por zona: antes vs después */}
                 <div className={`p-4 rounded-xl border ${t.cardInner}`}>
-                  <h4 className={`text-sm font-bold mb-3 ${t.textMain}`}>📦 Inventario y MOS por Zona — Antes vs Después</h4>
+                  <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
+                    <h4 className={`text-sm font-bold ${t.textMain}`}>📦 Inventario y MOS por Zona</h4>
+                    <select value={nivGoaFiltro} onChange={e => setNivGoaFiltro(e.target.value)}
+                      className={`text-[10px] px-2 py-1 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}>
+                      <option value="ALL">Todos los GOAs</option>
+                      {opcionesGoa.filter(g => g !== 'ALL').map(g => <option key={g} value={g}>{g}</option>)}
+                    </select>
+                  </div>
                   <div className="space-y-3">
                     {nivChartData.zonaInvMos.map((z, i) => {
                       const maxOH = Math.max(...nivChartData.zonaInvMos.map(x => Math.max(x.ohAntes, x.ohDespues)), 1);
