@@ -305,6 +305,8 @@ export default function ModuleDaily(){
   const [fcstOverridePct,setFcstOverridePct]=useState(0);
   const [scenarioSel,setScenarioSel]=useState('actual');
   const [moneyK,setMoneyK]=useState(true); // columnas $ vienen en miles → PVP ×1000
+  const [bonifMes,setBonifMes]=useState(0);   // bonificación $ mes corriente
+  const [bonifAcum,setBonifAcum]=useState(0); // bonificación $ acumulado periodo
   const [cmpMode,setCmpMode]=useState(0);
   const [tblBasis,setTblBasis]=useState('periodo'); // 'periodo' (vs LY mismo filtro) | 'cierre' (fcst vs LY mes completo)
   const [cmpDayMode,setCmpDayMode]=useState('detalle'); // 'detalle' (lun↔lun) | 'avg'
@@ -318,17 +320,18 @@ export default function ModuleDaily(){
     if(d.manualPromo) setManualPromo(d.manualPromo);
     if(d.defaultUplift!=null) setDefaultUplift(d.defaultUplift);
     if(d.moneyK!=null) setMoneyK(d.moneyK);
+    if(d.bonifMes!=null) setBonifMes(d.bonifMes); if(d.bonifAcum!=null) setBonifAcum(d.bonifAcum);
     if(d.dateFrom) setDateFrom(d.dateFrom); if(d.dateTo) setDateTo(d.dateTo);
     if(Array.isArray(d.fCanal)) setFCanal(d.fCanal); if(Array.isArray(d.fDiv)) setFDiv(d.fDiv); if(Array.isArray(d.fSec)) setFSec(d.fSec);
     if(Array.isArray(d.fMarca)) setFMarca(d.fMarca); if(Array.isArray(d.fNorma)) setFNorma(d.fNorma); if(Array.isArray(d.fPago)) setFPago(d.fPago);
     if(Array.isArray(d.fGoa)) setFGoa(d.fGoa); if(d.usarPromosFijas!=null) setUsarPromosFijas(d.usarPromosFijas);
   }}catch{} },[]);
   useEffect(()=>{ try{
-    const cfg={promoEntries,manualPromo,defaultUplift,moneyK,usarPromosFijas,dateFrom,dateTo,fCanal,fDiv,fSec,fMarca,fNorma,fPago,fGoa};
+    const cfg={promoEntries,manualPromo,defaultUplift,moneyK,usarPromosFijas,bonifMes,bonifAcum,dateFrom,dateTo,fCanal,fDiv,fSec,fMarca,fNorma,fPago,fGoa};
     const small=allData.length<=20000&&invData.length<=20000;
     localStorage.setItem('gop_daily_v3',JSON.stringify(small?{...cfg,allData,invData}:cfg));
   }catch{} },
-    [allData,invData,promoEntries,manualPromo,defaultUplift,moneyK,usarPromosFijas,dateFrom,dateTo,fCanal,fDiv,fSec,fMarca,fNorma,fPago,fGoa]);
+    [allData,invData,promoEntries,manualPromo,defaultUplift,moneyK,usarPromosFijas,bonifMes,bonifAcum,dateFrom,dateTo,fCanal,fDiv,fSec,fMarca,fNorma,fPago,fGoa]);
 
   const decodeBuf=buf=>{ let txt=new TextDecoder('utf-8',{fatal:false}).decode(buf);
     if(txt.includes('\uFFFD')) txt=new TextDecoder('windows-1252').decode(buf); return txt; };
@@ -491,11 +494,16 @@ export default function ModuleDaily(){
     if(lastDateTY){ const month=lastDateTY.getMonth(); allData.forEach(r=>{ if(r.year!==lyYear||!r.fecha||!dimsOk(r)||r.fecha.getMonth()!==month) return; const k=r[key]||'N/D'; lyFull[k]=(lyFull[k]||0)+r.ventaP; }); }
     const pDays=new Set(tyData.filter(r=>r.fecha).map(r=>r.fecha.toDateString())).size||1;
     const diasMes=lastDateTY?new Date(lastDateTY.getFullYear(),lastDateTY.getMonth()+1,0).getDate():30;
-    return Object.values(tyM).map(g=>{ const fcst=g.ventaP/pDays*diasMes;
+    const base=Object.values(tyM).map(g=>({...g,fcstNat:g.ventaP/pDays*diasMes}));
+    // Si hay escenario seleccionado, reparte ese total con la participación natural de cada grupo
+    const sumNat=base.reduce((s,g)=>s+g.fcstNat,0);
+    const target=(scenarioSel!=='actual'&&forecastMes)?forecastMes[scenarioSel].ventaP:null;
+    const factor=(target!=null&&sumNat>0)?target/sumNat:1;
+    return base.map(g=>{ const fcst=g.fcstNat*factor;
       return { ...g, fcst, mgPct:g.ventaP>0?g.utilidad/g.ventaP*100:0,
         tendPeriodo:delta(g.ventaP,lyP[g.key]), tendCierre:delta(fcst,lyFull[g.key]),
         lyP:lyP[g.key]||0, lyFull:lyFull[g.key]||0 }; }).sort((a,b)=>b.ventaP-a.ventaP);
-  },[tyData,lyData,allData,dimsOk,lastDateTY,lyYear]);
+  },[tyData,lyData,allData,dimsOk,lastDateTY,lyYear,scenarioSel,forecastMes]);
 
   const byCanal=useMemo(()=>byKeyFcst('canal'),[byKeyFcst]);
   const byDiv=useMemo(()=>byKeyFcst('division'),[byKeyFcst]);
@@ -557,11 +565,13 @@ export default function ModuleDaily(){
     return Object.keys({...sm,...im}).map(k=>({name:k,x:sm[k]?.ventaP||0,y:(im[k]?.oh||0)+(im[k]?.oo||0)})).filter(p=>p.x>0||p.y>0); },[tyData,filtInv,scatterLevel]);
   const scatterReg=useMemo(()=>scatterData.length>=3?linearRegression(scatterData):null,[scatterData]);
 
-  // ── Resultado del ejercicio: dos alcances (mes corriente y acumulado periodo) ──
+  // ── Resultado del ejercicio: dos alcances (mes corriente y acumulado periodo) + bonificación ──
   const resultado=useMemo(()=>{
     const mg=kpiTY.mgPct;
-    const acum={ venta:kpiTY.ventaP, util:kpiTY.utilidad, costo:invKPI.costoV||(kpiTY.ventaP-kpiTY.utilidad),
-      markdown:kpiTY.markdown, mgFinal:kpiTY.ventaP>0?kpiTY.utilidad/kpiTY.ventaP*100:0 };
+    const utilAcum=kpiTY.utilidad+bonifAcum;
+    const acum={ venta:kpiTY.ventaP, util:utilAcum, bonif:bonifAcum, costo:invKPI.costoV||(kpiTY.ventaP-kpiTY.utilidad),
+      markdown:kpiTY.markdown, mgBase:kpiTY.ventaP>0?kpiTY.utilidad/kpiTY.ventaP*100:0,
+      mgFinal:kpiTY.ventaP>0?utilAcum/kpiTY.ventaP*100:0 };
     let mes=null;
     if(forecastMes&&lastDateTY){
       const month=lastDateTY.getMonth(),year=lastDateTY.getFullYear();
@@ -569,16 +579,19 @@ export default function ModuleDaily(){
       const vMTD=mr.reduce((s,r)=>s+r.ventaP,0),uMTD=mr.reduce((s,r)=>s+r.utilidad,0),mkMTD=mr.reduce((s,r)=>s+r.markdown,0);
       const {diaActual,diasMes}=forecastMes;
       if(scenarioSel==='actual'){
-        mes={ venta:vMTD,util:uMTD,costo:vMTD-uMTD,markdown:mkMTD,mgFinal:vMTD>0?uMTD/vMTD*100:0,proj:false,
+        const u=uMTD+bonifMes;
+        mes={ venta:vMTD,util:u,bonif:bonifMes,costo:vMTD-uMTD,markdown:mkMTD,
+          mgBase:vMTD>0?uMTD/vMTD*100:0, mgFinal:vMTD>0?u/vMTD*100:0,proj:false,
           label:`Real MTD · día ${diaActual}/${diasMes}` };
       } else {
-        const v=forecastMes[scenarioSel].ventaP,u=v*mg/100;
-        mes={ venta:v,util:u,costo:v-u,markdown:diaActual>0?mkMTD/diaActual*diasMes:mkMTD,mgFinal:mg,proj:true,
+        const v=forecastMes[scenarioSel].ventaP,uBase=v*mg/100,u=uBase+bonifMes;
+        mes={ venta:v,util:u,bonif:bonifMes,costo:v-uBase,markdown:diaActual>0?mkMTD/diaActual*diasMes:mkMTD,
+          mgBase:mg, mgFinal:v>0?u/v*100:0,proj:true,
           label:`Proyección cierre · ${{cons:'Conservador',neut:'Neutral',risk:'Arriesgado'}[scenarioSel]}` };
       }
     }
     return {acum,mes};
-  },[scenarioSel,forecastMes,kpiTY,invKPI,lastDateTY,tyData]);
+  },[scenarioSel,forecastMes,kpiTY,invKPI,lastDateTY,tyData,bonifMes,bonifAcum]);
 
   // ── Chart config ──
   const gridC=isDark?'#27272a':'#f0f0f0',axisC=isDark?'#52525b':'#d1d5db',txtC=isDark?'#a1a1aa':'#6b7280';
@@ -666,7 +679,7 @@ export default function ModuleDaily(){
     <div className={`p-4 rounded-xl border ${t.cardInner}`}>
       <div className="flex items-center justify-between mb-3">
         <h4 className={`text-sm font-bold ${t.textMain}`}>{title}</h4>
-        <span className={`text-[8px] px-2 py-0.5 rounded-full border font-black ${t.badge}`}>{data.length} ítems{onPick?' · click filtra':''}</span>
+        <span className={`text-[8px] px-2 py-0.5 rounded-full border font-black ${scenarioSel!=='actual'?t.badgeAmber:t.badge}`}>{data.length} ítems{scenarioSel!=='actual'?` · fcst ${{cons:'Conserv.',neut:'Neutral',risk:'Arriesg.'}[scenarioSel]}`:''}{onPick?' · click filtra':''}</span>
       </div>
       <div className="overflow-x-auto custom-scrollbar max-h-[260px]">
         <table className="w-full text-left text-xs min-w-max">
@@ -1057,27 +1070,36 @@ export default function ModuleDaily(){
           {/* RESULTADO DEL EJERCICIO */}
           <div className={`p-4 rounded-2xl border ${t.card}`}>
             <h4 className={`text-sm font-bold mb-4 ${t.textMain}`}>📊 Resultado del Ejercicio</h4>
-            {[{title:'Mes corriente',r:resultado.mes,badge:resultado.mes?.proj?t.badgeAmber:t.badge},
-              {title:'Acumulado periodo',r:resultado.acum,badge:t.badgeTeal}].map(({title,r,badge})=>(
+            {[{title:'Mes corriente',r:resultado.mes,badge:resultado.mes?.proj?t.badgeAmber:t.badge,bv:bonifMes,bset:setBonifMes},
+              {title:'Acumulado periodo',r:resultado.acum,badge:t.badgeTeal,bv:bonifAcum,bset:setBonifAcum}].map(({title,r,badge,bv,bset})=>(
               <div key={title} className="mb-4 last:mb-0">
-                <div className="flex items-center gap-2 mb-2">
+                <div className="flex items-center gap-2 mb-2 flex-wrap">
                   <span className={`text-[10px] font-black uppercase tracking-widest ${t.textMain}`}>{title}</span>
                   {r?.label&&<span className={`text-[9px] px-2 py-0.5 rounded-full border font-black ${badge}`}>{r.label}</span>}
+                  <div className="flex items-center gap-1.5 ml-auto">
+                    <span className={`text-[9px] font-black uppercase ${t.textMuted}`}>Bonificación $</span>
+                    <input type="number" value={bv||''} placeholder="0" onChange={e=>bset(Number(e.target.value)||0)}
+                      className={`text-xs px-2 py-1 rounded-lg border w-28 font-mono ${t.input} focus:outline-none focus:ring-1`}/>
+                    {bv>0&&<button onClick={()=>bset(0)} className={`text-[9px] px-2 py-1 rounded-lg border font-black ${t.btnGhost}`}>✕</button>}
+                  </div>
                 </div>
                 {r?(
-                  <div className="grid grid-cols-2 md:grid-cols-5 gap-2">
+                  <div className="grid grid-cols-2 md:grid-cols-6 gap-2">
                     {[{label:'Venta',val:fmtM(r.venta),c:'text-violet-400'},
                       {label:'Costo Vendido',val:fmtM(r.costo),c:'text-rose-400'},
-                      {label:'Utilidad',val:fmtM(r.util),c:'text-purple-400'},
+                      {label:'Utilidad + Bonif.',val:fmtM(r.util),c:'text-purple-400'},
                       {label:'Markdowns',val:fmtM(r.markdown),c:'text-amber-400'},
-                      {label:'MG % Final',val:fmtP(r.mgFinal),c:r.mgFinal>=45?'text-violet-400':r.mgFinal>=35?'text-amber-400':'text-rose-400'}].map(({label,val,c})=>(
+                      {label:'MG % Base',val:fmtP(r.mgBase),c:t.textMuted},
+                      {label:'MG % Final',val:fmtP(r.mgFinal),c:r.mgFinal>=45?'text-violet-400':r.mgFinal>=35?'text-amber-400':'text-rose-400',
+                       sub:r.bonif>0?`+${(r.mgFinal-r.mgBase).toFixed(1)} pts`:null}].map(({label,val,c,sub})=>(
                       <div key={label} className={`p-3 rounded-lg border ${isDark?'border-zinc-800 bg-zinc-950':'border-gray-100 bg-gray-50'}`}>
                         <div className={`text-[9px] uppercase font-black ${t.textMuted}`}>{label}</div><div className={`text-base font-black ${c}`}>{val}</div>
+                        {sub&&<div className="text-[9px] font-black text-violet-400">{sub}</div>}
                       </div>))}
                   </div>
                 ):<p className={`text-[10px] ${t.textMuted}`}>Sin datos del mes.</p>}
               </div>))}
-            <p className={`text-[9px] mt-1 ${t.textMuted}`}>"Mes corriente" usa el último mes con datos; cambia según el escenario de forecast que selecciones arriba. "Acumulado periodo" es real sobre todo el filtro activo.</p>
+            <p className={`text-[9px] mt-1 ${t.textMuted}`}>"Mes corriente" usa el último mes con datos; cambia según el escenario de forecast que selecciones arriba. "Acumulado periodo" es real sobre todo el filtro activo. La <strong>bonificación</strong> se suma a la utilidad: MG% Final = (Utilidad + Bonificación) / Venta. Captúrala en la misma escala que tu CSV{moneyK?' (miles)':''}.</p>
           </div>
 
           {/* TABLAS dashboard (respetan filtros · click filtra) */}
