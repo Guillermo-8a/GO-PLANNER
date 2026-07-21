@@ -186,6 +186,10 @@ const MultiSelect = ({label,options,selected,onChange,t,isDark}) => {
               </label>))}
             {filt.length===0&&<p className={`text-[10px] px-2 py-1 ${t.textMuted}`}>Sin resultados</p>}
           </div>
+          <div className={`flex items-center justify-between mt-2 pt-2 border-t ${isDark?'border-zinc-700':'border-gray-200'}`}>
+            <span className={`text-[9px] font-black ${t.textMuted}`}>{selected.length===0?'Todos':`${selected.length} seleccionado${selected.length>1?'s':''}`}</span>
+            <button onClick={()=>setOpen(false)} className={`text-[9px] px-3 py-1 rounded-lg font-black ${t.btnPrimary}`}>Cerrar</button>
+          </div>
         </div>)}
     </div>
   );
@@ -219,9 +223,9 @@ const parseSalesCSV = text => {
 const parseInvCSV = text => {
   const sep=text.includes('\t')?'\t':text.includes(';')?';':',';
   const rows=text.split('\n').map(r=>parseCSVRow(r,sep)); if(rows.length<2) return [];
-  const H=rows[0].map(h=>h.toUpperCase().trim().replace(/\s+/g,'_'));
+  const H=rows[0].map(h=>h.toUpperCase().trim().replace(/\s+/g,'_').replace(/[#ÁÉÍÓÚ]/g,c=>({'#':'NUM',Á:'A',É:'E',Í:'I',Ó:'O',Ú:'U'}[c]||c)));
   const idx=(...ns)=>ns.map(n=>H.findIndex(h=>h===n||h.includes(n))).find(i=>i>=0)??-1;
-  const I={div:idx('DIVISION','DIV'),sec:idx('SECCION'),goa:idx('GOA','FAMILIA'),marca:idx('MARCA','PROVEEDOR'),norma:idx('NORMA','TIPO_COMPRA'),
+  const I={div:idx('DIVISION','DIV'),sec:idx('SECCION'),numSec:idx('NUMSECCION','NUM_SECCION','_SECCION'),goa:idx('GOA','FAMILIA'),marca:idx('MARCA','PROVEEDOR'),norma:idx('NORMA','TIPO_COMPRA'),
     ubic:idx('UBICACION','CENTRO','TIENDA','BODEGA'),tipo:idx('TIPO_UBICACION','TIPO_CENTRO','TIPO'),oh:idx('OH','ON_HAND','INVENTARIO'),
     oo:idx('OO','ON_ORDER','PEDIDO'),cv:idx('COSTO_VENDIDO','COSTO'),uv:idx('UTILIDAD_VENDIDA','UTIL_VENDIDA'),comp:idx('COMPRADO','COMPRA_TOTAL'),
     nac:idx('NACIONAL','NAC'),imp:idx('IMPORTACION','IMP'),vref:idx('VENTA','VENTAS')};
@@ -232,7 +236,10 @@ const parseInvCSV = text => {
       if(u.startsWith('S-')||u.startsWith('S ')) tipo='LOGISTICO';
       else if(u.includes('BODEGA')||u.includes('BDG')) tipo='BODEGA';
       else if(u.includes('PLAN')||u.startsWith('P-')) tipo='PLAN'; else tipo='TIENDA'; }
-    out.push({ division:I.div>=0?r[I.div].trim().toUpperCase():'', seccion:I.sec>=0?r[I.sec].trim().toUpperCase():'',
+    // mismo criterio que ventas: si SECCION es numérica usa el nombre de #SECCION
+    const secRaw=I.sec>=0?r[I.sec].trim():''; const secName=I.numSec>=0?r[I.numSec].trim():'';
+    const seccion=(/^\d+$/.test(secRaw)&&secName&&!/^\d+$/.test(secName))?secName.toUpperCase():secRaw.toUpperCase();
+    out.push({ division:I.div>=0?r[I.div].trim().toUpperCase():'', seccion,
       goa:I.goa>=0?r[I.goa].trim().toUpperCase():'', marca:I.marca>=0?r[I.marca].trim().toUpperCase():'', norma:I.norma>=0?r[I.norma].trim().toUpperCase():'',
       ubicacion:ubicRaw, tipo, oh:num(I.oh>=0?r[I.oh]:0), oo:num(I.oo>=0?r[I.oo]:0), costoVendido:num(I.cv>=0?r[I.cv]:0),
       utilidadVendida:num(I.uv>=0?r[I.uv]:0), comprado:num(I.comp>=0?r[I.comp]:0), nacional:num(I.nac>=0?r[I.nac]:0),
@@ -751,8 +758,8 @@ export default function ModuleDaily(){
         </div>
       ):(
         <div className="space-y-5">
-          <FilterBar/>
-          <KPIStrip/>
+          {FilterBar()}
+          {KPIStrip()}
           <p className={`text-[10px] -mt-2 ${t.textMuted}`}>
             TY hasta <strong className={t.textAccent1}>{lastTYAll?fmtDate(lastTYAll):'—'}</strong> (último día con data) vs LY topado al mismo día. Así la desv% es justa (no compara año parcial contra año completo).
           </p>
@@ -1112,10 +1119,10 @@ export default function ModuleDaily(){
             </div>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            <FcstTable title="Top Marcas" data={byMarca} onPick={k=>setFMarca(p=>p.includes(k)?p.filter(x=>x!==k):[...p,k])} selected={fMarca}/>
-            <FcstTable title="Por Sección" data={bySecMes} accent="text-purple-400" onPick={k=>setFSec(p=>p.includes(k)?p.filter(x=>x!==k):[...p,k])} selected={fSec}/>
+            {FcstTable({title:"Top Marcas",data:byMarca,onPick:k=>setFMarca(p=>p.includes(k)?p.filter(x=>x!==k):[...p,k]),selected:fMarca})}
+            {FcstTable({title:"Por Sección",data:bySecMes,accent:"text-purple-400",onPick:k=>setFSec(p=>p.includes(k)?p.filter(x=>x!==k):[...p,k]),selected:fSec})}
           </div>
-          <FcstTable title="Top GOA" data={byGoa} accent="text-blue-400" onPick={k=>setFGoa(p=>p.includes(k)?p.filter(x=>x!==k):[...p,k])} selected={fGoa}/>
+          {FcstTable({title:"Top GOA",data:byGoa,accent:"text-blue-400",onPick:k=>setFGoa(p=>p.includes(k)?p.filter(x=>x!==k):[...p,k]),selected:fGoa})}
 
           {/* ── INVENTARIO (toggle) ── */}
           {showInv&&(
