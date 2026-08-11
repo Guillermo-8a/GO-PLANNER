@@ -19,6 +19,6 @@ export {
   ToggleRight,Truck,
   Upload,
   X,
-  Wand2,
+  Wand2, Wallet,
   Zap
 } from 'lucide-react';
