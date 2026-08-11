@@ -3,7 +3,7 @@ import { Upload, Plus, Trash2, X, Check, Search, Image as ImageIcon } from 'luci
 import {
   CHEQUERA_FIELDS, autoMapHeaders, parseSpreadsheet, applyMapping,
   extractEmbeddedImages, saveImageBlob, getImageBlob, sortMonthKeys,
-} from '../utilidades/chequeraHelpers';
+}  from '../utils/ChequeraHelpers';
 
 const emptyRow = () => {
   const row = { id: crypto.randomUUID(), imagenUrl: '' };
