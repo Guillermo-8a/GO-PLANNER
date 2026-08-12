@@ -105,7 +105,7 @@ const NAV_ITEMS = [
   { id: 'planning',    label: 'Planning',       Icon: TrendingUp,       desc: 'Planeación compuesta',   dataKey: 'planningData' },
   { id: 'dayli',    label: 'Dayli',       Icon: Map,       desc: 'Ajustes diarios',   dataKey: 'dayliData' },
   { id: 'dispersion',    label: 'Dispersión',       Icon: BarChart2,       desc: 'Revisión inventarios',   dataKey: 'dispersionData' },
-  { id: 'chequera', label: 'Chequera', Icon: Wallet, desc: 'Control de compras', dataKey: 'chequeraData' },
+  { id: 'chequera', label: 'Chequera', Icon: Wallet, desc: 'Control de compras', dataKey: 'Control de compra' },
   { id: 'traslados', label: 'Traslados', Icon: ArrowLeftRight, desc: 'Transferencias entre centros', dataKey: null },
 ];
 
@@ -334,7 +334,7 @@ function Shell() {
       case 'resurtido':    return <ModuleResurtido {...moduleProps} />;
       case 'traslados': return <ModuleTraslados />; 
       case 'dispersion': return <ModuleDispersion />;   
-      case 'chequera': return <ModuleDispersion />;  
+      case 'chequera': return <ModuleChequera />;  
       case 'planning': return <ModulePlanning {...moduleProps} />;    
       default:             return <Dashboard {...moduleProps} />;
     }
