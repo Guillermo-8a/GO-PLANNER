@@ -19,7 +19,7 @@ import ModuleDayli from "./modules/ModuleDayli" ;
 
 import {
   Layers, Bell, Sun, Moon, ShoppingCart, Map, LayoutDashboard,
-  HelpCircle, Zap,} from 'lucide-react';
+  HelpCircle, Wallet, Zap,} from 'lucide-react';
 
 // ─── Paletas de tema ──────────────────────────────────────────────────────────
 export const THEMES = {
