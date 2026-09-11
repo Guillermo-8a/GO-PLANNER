@@ -3,7 +3,8 @@
 // Sidebar: se colapsa a solo iconos al seleccionar módulo, glow en activo
 // Botón Asistencia junto a notificaciones
 // ─────────────────────────────────────────────────────────────────────────────
-import { PackageSearch, Calculator, Boxes, GitMerge, Settings, ChevronRight, Menu, X, Home, UploadCloud, RefreshCw, BarChart2, TrendingUp, ArrowLeftRight } from 'lucide-react';
+import { PackageSearch, Calculator, Boxes, GitMerge, Settings, ChevronRight, Menu, X, Home, UploadCloud, RefreshCw, BarChart2, TrendingUp, ArrowLeftRight, ClipboardList } from 'lucide-react';
+import { Link } from 'react-router-dom';
 
 import { useState, useRef, useEffect } from 'react';
 import { GlobalProvider, useGlobal, useDispatch, globalActions } from './context/GlobalContext';
@@ -413,7 +414,16 @@ function Shell() {
               {showAssist && <AssistPanel isDark={isDark} onClose={() => setShowAssist(false)} />}
             </div>
 
-            {/* Toggle tema */}
+{/* Team Tracker */}
+            <Link
+              to="/team-tracker"
+              title="Team Tracker"
+              className={`p-2.5 rounded-xl border transition ${isDark ? 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-violet-400 hover:border-violet-500/50' : 'bg-white border-gray-200 text-gray-500 hover:text-blue-600 hover:border-blue-300'}`}
+            >
+              <ClipboardList size={17} />
+            </Link>        
+
+    {/* Toggle tema */}
             <button
               onClick={() => globalActions.setTheme(dispatch, isDark ? 'light' : 'dark')}
               className={`p-2.5 rounded-xl border transition ${isDark ? 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-yellow-400' : 'bg-white border-gray-200 text-gray-500 hover:text-blue-600'}`}
