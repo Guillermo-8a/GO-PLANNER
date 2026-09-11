@@ -7,7 +7,7 @@
 // 2) agrega un botón/Link en tu topbar o sidebar que navegue a esa ruta.
 //
 // Antes de usarla, pega tu URL de Apps Script (termina en /exec) aquí abajo:
-const APPS_SCRIPT_URL = 'PEGA_AQUI_TU_URL_DE_APPS_SCRIPT';
+const APPS_SCRIPT_URL = https://script.google.com/macros/s/AKfycbyO2WhyRMxeMFO38SjerexylRPT5UHJaGpMLhc6c_zk4vEfey76SevEROqGfEsGHV8j/exec;
 
 // Si tienes el logo real de GO PLANNER, reemplaza <LogoMark /> más abajo por
 // <img src="/ruta/a/tu/logo.svg" className="tt-logo-img" /> — dejé un monograma
