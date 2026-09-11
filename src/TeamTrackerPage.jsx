@@ -7,7 +7,7 @@
 // 2) agrega un botón/Link en tu topbar o sidebar que navegue a esa ruta.
 //
 // Antes de usarla, pega tu URL de Apps Script (termina en /exec) aquí abajo:
-const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyO2WhyRMxeMFO38SjerexylRPT5UHJaGpMLhc6c_zk4vEfey76SevEROqGfEsGHV8j/exec';
+const APPS_SCRIPT_URL = 'PEGA_AQUI_TU_URL_DE_APPS_SCRIPT';
 
 // Si tienes el logo real de GO PLANNER, reemplaza <LogoMark /> más abajo por
 // <img src="/ruta/a/tu/logo.svg" className="tt-logo-img" /> — dejé un monograma
@@ -452,4 +452,423 @@ export default function TeamTrackerPage() {
               </div>
               <div className="tt-form-row">
                 <label>Fecha límite
-                  <input type="date" value={form.dueDate} onChange={(e) => setForm
+                  <input type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} />
+                </label>
+                <label>Prioridad
+                  <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
+                    {PRIORITY_ORDER.map((p) => (<option key={p} value={p}>{p}</option>))}
+                  </select>
+                </label>
+              </div>
+              {form.id && (
+                <label>Estado
+                  <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                    {STATUS_ORDER.map((s) => (<option key={s} value={s}>{STATUS[s].label}</option>))}
+                  </select>
+                </label>
+              )}
+              <div className="tt-modal-actions">
+                <button type="button" onClick={() => setShowForm(false)}>Cancelar</button>
+                <button type="button" className="tt-primary" onClick={submitForm}>Guardar</button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {pinModal && (
+          <div className="tt-modal-back" onClick={() => setPinModal(null)}>
+            <div className="tt-modal tt-modal-narrow" onClick={(e) => e.stopPropagation()}>
+              <h3>{pinModal === 'create' ? 'Crea tu PIN de edición' : 'Modo edición'}</h3>
+              <label>{pinModal === 'create' ? 'Nuevo PIN (mín. 4 caracteres)' : 'PIN'}
+                <input autoFocus type="password" value={pinInput} onChange={(e) => setPinInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') submitPin(); }} />
+              </label>
+              {pinError && <p className="tt-pin-error">{pinError}</p>}
+              <div className="tt-modal-actions">
+                <button type="button" onClick={() => setPinModal(null)}>Cancelar</button>
+                <button type="button" className="tt-primary" onClick={submitPin}>{pinModal === 'create' ? 'Crear' : 'Entrar'}</button>
+              </div>
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+function LockIcon({ open }) {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+      <rect x="3" y="11" width="18" height="10" rx="2.5" />
+      {open ? <path d="M7 11V7a5 5 0 0 1 9.9-1" /> : <path d="M7 11V7a5 5 0 0 1 10 0v4" />}
+    </svg>
+  );
+}
+function GearIcon() {
+  return (
+    <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+      <circle cx="12" cy="12" r="3" />
+      <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06a1.65 1.65 0 0 0 .33-1.82 1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+    </svg>
+  );
+}
+function ProgressRing({ pct, size = 68, stroke = 6, color = '#E0BB3E' }) {
+  const r = (size - stroke) / 2;
+  const c = 2 * Math.PI * r;
+  const offset = pct === null ? c : c - (pct / 100) * c;
+  return (
+    <svg width={size} height={size} className="tt-ring">
+      <circle cx={size / 2} cy={size / 2} r={r} stroke="rgba(255,255,255,0.12)" strokeWidth={stroke} fill="none" />
+      <circle cx={size / 2} cy={size / 2} r={r} stroke={color} strokeWidth={stroke} fill="none" strokeLinecap="round"
+        strokeDasharray={c} strokeDashoffset={offset}
+        style={{ transition: 'stroke-dashoffset 0.9s cubic-bezier(.4,0,.2,1)', transform: 'rotate(-90deg)', transformOrigin: '50% 50%' }} />
+      <text x="50%" y="50%" textAnchor="middle" dy="0.35em" className="tt-ring-text">{pct === null ? '—' : `${pct}%`}</text>
+    </svg>
+  );
+}
+function PriorityBadge({ code }) {
+  const p = PRIORITY[code] || PRIORITY.C;
+  return <span className="tt-prio" style={{ background: p.bg, color: p.fg }}>{p.label}</span>;
+}
+function PilarTag({ code }) {
+  const p = PILAR[code];
+  if (!p) return null;
+  return <span className="tt-pilar-tag"><span className="tt-dot" style={{ background: p.dot }} />{p.label}</span>;
+}
+
+function TaskCard({ t, isAdmin, onCycle, onDelete, onEdit, drafts, onCommentChange, onCommentBlur, showAssignee = true }) {
+  const overdue = t.status !== 'done' && t.dueDate < todayISO();
+  return (
+    <div className={`tt-card ${overdue ? 'is-overdue' : ''}`} style={{ '--glow': avatarGlow(t.assignee) }}>
+      <div className="tt-card-top">
+        <PriorityBadge code={t.priority} />
+        <PilarTag code={t.pilar} />
+        {isAdmin && (
+          <span className="tt-card-admin-actions">
+            <button className="tt-card-icon" onClick={() => onEdit(t)} title="Editar">✎</button>
+            <button className="tt-card-icon tt-card-x" onClick={() => onDelete(t.id)} title="Eliminar">×</button>
+          </span>
+        )}
+      </div>
+      <p className="tt-card-title">{t.title}</p>
+      <div className="tt-card-foot">
+        {showAssignee && <span className="tt-avatar tt-avatar-sm" style={{ background: avatarGradient(t.assignee) }}>{initials(t.assignee)}</span>}
+        <span className="tt-status-chip"><span className="tt-dot" style={{ background: STATUS[t.status].dot }} />{STATUS[t.status].label}</span>
+        <span className={`tt-due ${overdue ? 'is-overdue-text' : ''}`}>{overdue ? 'venció ' : 'vence '}{fmtShort(t.dueDate)}</span>
+      </div>
+      {t.status === 'done' && (
+        <textarea className="tt-comment" placeholder="Bitácora: ¿qué pasó con esta tarea?"
+          value={t.id in drafts ? drafts[t.id] : (t.comment || '')}
+          onChange={(e) => onCommentChange(t.id, e.target.value)} onBlur={() => onCommentBlur(t.id)} />
+      )}
+      <button className="tt-cycle" onClick={() => onCycle(t)}>
+        Mover a {STATUS[STATUS_ORDER[(STATUS_ORDER.indexOf(t.status) + 1) % 3]].label.toLowerCase()}
+      </button>
+    </div>
+  );
+}
+
+function BoardByStatus({ tasks, isAdmin, onCycle, onDelete, onEdit, drafts, onCommentChange, onCommentBlur }) {
+  const cols = STATUS_ORDER.map((key) => ({
+    key, label: STATUS[key].label,
+    items: tasks.filter((t) => t.status === key).sort((a, b) => PRIORITY_ORDER.indexOf(a.priority) - PRIORITY_ORDER.indexOf(b.priority) || a.dueDate.localeCompare(b.dueDate)),
+  }));
+  if (tasks.length === 0) return <p className="tt-empty-hint tt-empty-big">Sin pendientes todavía.</p>;
+  return (
+    <div className="tt-board">
+      {cols.map((col) => (
+        <div className="tt-col" key={col.key}>
+          <div className="tt-col-head"><span className="tt-dot" style={{ background: STATUS[col.key].dot }} />{col.label}<span className="tt-col-count">{col.items.length}</span></div>
+          <div className="tt-col-body">
+            {col.items.map((t) => (
+              <TaskCard key={t.id} t={t} isAdmin={isAdmin} onCycle={onCycle} onDelete={onDelete} onEdit={onEdit} drafts={drafts} onCommentChange={onCommentChange} onCommentBlur={onCommentBlur} />
+            ))}
+            {col.items.length === 0 && <p className="tt-col-empty">—</p>}
+          </div>
+        </div>
+      ))}
+    </div>
+  );
+}
+
+function BoardByPerson({ tasks, team, isAdmin, onCycle, onDelete, onEdit, drafts, onCommentChange, onCommentBlur }) {
+  if (tasks.length === 0) return <p className="tt-empty-hint tt-empty-big">Sin pendientes todavía.</p>;
+  return (
+    <div className="tt-person-board">
+      {team.map((m) => {
+        const items = tasks.filter((t) => t.assignee === m)
+          .sort((a, b) => STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status) || PRIORITY_ORDER.indexOf(a.priority) - PRIORITY_ORDER.indexOf(b.priority));
+        return (
+          <div className="tt-person-group" key={m}>
+            <div className="tt-person-head">
+              <span className="tt-avatar" style={{ background: avatarGradient(m) }}>{initials(m)}</span>
+              <span className="tt-person-name">{m}</span>
+              <span className="tt-col-count">{items.length}</span>
+            </div>
+            <div className="tt-person-cards">
+              {items.length === 0 && <p className="tt-col-empty">Sin pendientes</p>}
+              {items.map((t) => (
+                <TaskCard key={t.id} t={t} isAdmin={isAdmin} onCycle={onCycle} onDelete={onDelete} onEdit={onEdit} drafts={drafts} onCommentChange={onCommentChange} onCommentBlur={onCommentBlur} showAssignee={false} />
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+function GanttView({ tasks, range }) {
+  const totalMs = range.days * 86400000;
+  const todayOffset = ((new Date() - range.start) / totalMs) * 100;
+  const sorted = [...tasks].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
+  if (sorted.length === 0) return <p className="tt-empty-hint tt-empty-big">Sin pendientes para mostrar en la línea de tiempo.</p>;
+  return (
+    <div className="tt-gantt">
+      <div className="tt-gantt-scale">
+        {Array.from({ length: Math.ceil(range.days / 7) }).map((_, i) => (
+          <span key={i} style={{ left: `${((i * 7) / range.days) * 100}%` }}>{fmtShort(toISO(addDays(range.start, i * 7)))}</span>
+        ))}
+      </div>
+      <div className="tt-gantt-body">
+        <div className="tt-gantt-today" style={{ left: `${todayOffset}%` }} />
+        {sorted.map((t) => {
+          const start = new Date(t.createdDate); const end = new Date(t.dueDate);
+          const left = Math.max(0, ((start - range.start) / totalMs) * 100);
+          const width = Math.max(2, ((end - start) / totalMs) * 100);
+          const overdue = t.status !== 'done' && t.dueDate < todayISO();
+          return (
+            <div className="tt-gantt-row" key={t.id}>
+              <div className="tt-gantt-label">
+                <span className="tt-avatar tt-avatar-sm" style={{ background: avatarGradient(t.assignee) }}>{initials(t.assignee)}</span>
+                <PriorityBadge code={t.priority} />{t.title}
+              </div>
+              <div className="tt-gantt-track">
+                <div className={`tt-gantt-bar status-${t.status} ${overdue ? 'is-overdue' : ''}`} style={{ left: `${left}%`, width: `${width}%` }} title={`${fmtShort(t.createdDate)} → ${fmtShort(t.dueDate)}`} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function ResumenView({ week, totals, byMember, byPilar }) {
+  const rate = totals.total ? Math.round((totals.done / totals.total) * 100) : null;
+  const members = Object.entries(byMember);
+  return (
+    <div className="tt-resumen">
+      <div className="tt-resumen-banner">
+        <div>
+          <span className="tt-tag">Semana del {fmtShort(week.startISO)} al {fmtShort(week.endISO)}</span>
+          <p className="tt-banner-big">{totals.done} de {totals.total || 0}<span className="tt-banner-small"> pendientes con fecha esta semana, completados</span></p>
+        </div>
+        <ProgressRing pct={rate} />
+      </div>
+      <h4 className="tt-subhead">Por persona</h4>
+      {members.length === 0 && <p className="tt-empty-hint">Agrega gente al equipo para ver su avance.</p>}
+      <div className="tt-bars">
+        {members.map(([name, s]) => {
+          const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
+          return (
+            <div className="tt-bar-row" key={name}>
+              <div className="tt-bar-label"><span className="tt-avatar tt-avatar-sm" style={{ background: avatarGradient(name) }}>{initials(name)}</span>{name}</div>
+              <div className="tt-bar-track"><div className="tt-bar-fill" style={{ width: `${pct}%`, background: avatarGradient(name) }} /></div>
+              <div className="tt-bar-value">{s.done}/{s.total}{s.late > 0 && <span className="tt-bar-late"> · {s.late} tarde</span>}</div>
+            </div>
+          );
+        })}
+      </div>
+      <h4 className="tt-subhead">Por pilar</h4>
+      <div className="tt-bars">
+        {PILAR_ORDER.map((p) => {
+          const s = byPilar[p] || { total: 0, done: 0 };
+          const pct = s.total ? Math.round((s.done / s.total) * 100) : 0;
+          return (
+            <div className="tt-bar-row" key={p}>
+              <div className="tt-bar-label"><span className="tt-dot" style={{ background: PILAR[p].dot }} />{PILAR[p].label}</div>
+              <div className="tt-bar-track"><div className="tt-bar-fill" style={{ width: `${pct}%`, background: PILAR[p].dot }} /></div>
+              <div className="tt-bar-value">{s.done}/{s.total}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function DesempenoView({ data }) {
+  return (
+    <div className="tt-desempeno">
+      <p className="tt-empty-hint tt-desempeno-note">Vista privada, solo visible en modo edición. Cumplimiento sobre pendientes cuya fecha límite ya pasó.</p>
+      {data.length === 0 && <p className="tt-empty-hint">Todavía no hay historial suficiente.</p>}
+      <div className="tt-bars">
+        {data.map((s) => {
+          const pct = Math.round(s.rate * 100);
+          return (
+            <div className="tt-bar-row" key={s.name}>
+              <div className="tt-bar-label"><span className="tt-avatar tt-avatar-sm" style={{ background: avatarGradient(s.name) }}>{initials(s.name)}</span>{s.name}</div>
+              <div className="tt-bar-track"><div className="tt-bar-fill" style={{ width: `${pct}%`, background: avatarGradient(s.name) }} /></div>
+              <div className="tt-bar-value">{s.done}/{s.total} · {pct}%{s.onTime < s.done && <span className="tt-bar-late"> · {s.done - s.onTime} tarde</span>}</div>
+            </div>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+const CSS = `
+@keyframes ttFadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes ttFadeIn { from { opacity: 0; } to { opacity: 1; } }
+
+.tt-page {
+  position: relative; padding: 28px; border-radius: 14px; overflow: hidden;
+  background: radial-gradient(ellipse 60% 50% at 15% 10%, rgba(138,115,173,0.35), transparent 60%),
+              radial-gradient(ellipse 55% 45% at 90% 85%, rgba(224,187,62,0.22), transparent 60%),
+              linear-gradient(160deg, #16141a 0%, #1c1720 45%, #14121a 100%);
+}
+.tt-root { position: relative; display: flex; min-height: 560px; color: #EDEBF2; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 14px; }
+.tt-loading { align-items: center; justify-content: center; width: 100%; }
+
+.tt-side { width: 210px; flex-shrink: 0; padding: 16px 12px; display: flex; flex-direction: column; gap: 4px;
+  background: rgba(255,255,255,0.045); backdrop-filter: blur(18px); border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 16px; margin-right: 16px; position: relative; transition: width 0.28s cubic-bezier(.4,0,.2,1); }
+.tt-side.is-collapsed { width: 68px; align-items: center; }
+
+.tt-logo { display: flex; align-items: center; gap: 8px; padding: 2px 4px 16px; }
+.tt-logo-mark { width: 26px; height: 26px; border-radius: 7px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 800; letter-spacing: 0.02em; color: #16141a;
+  background: linear-gradient(135deg, #E0BB3E, #B39DDB); box-shadow: 0 0 14px rgba(224,187,62,0.35); }
+.tt-logo-word { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; color: #B7B2C4; white-space: nowrap; }
+
+.tt-side-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; width: 100%; }
+.tt-side-actions { display: flex; gap: 6px; }
+.tt-tag { font-size: 11px; letter-spacing: 0.02em; color: #948FA0; }
+.tt-icon-btn { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08); color: #948FA0; cursor: pointer; width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; transition: all .18s ease; }
+.tt-icon-btn:hover { color: #EDEBF2; background: rgba(255,255,255,0.12); }
+.tt-icon-btn.is-on { color: #16141a; background: #E0BB3E; border-color: #E0BB3E; }
+
+.tt-member { position: relative; display: flex; align-items: center; gap: 9px; width: 100%; padding: 7px 8px; border: none; background: none; color: #CFCBDA; border-radius: 9px; cursor: pointer; text-align: left; font-size: 13px; transition: all .2s ease; }
+.tt-member:hover { background: rgba(255,255,255,0.07); backdrop-filter: blur(6px); box-shadow: 0 10px 24px -8px var(--glow, transparent); transform: translateY(-1px); }
+.tt-member.is-active { background: rgba(255,255,255,0.1); color: #FFFFFF; font-weight: 600; box-shadow: 0 8px 20px -6px var(--glow, transparent); }
+.tt-side.is-collapsed .tt-member { justify-content: center; padding: 7px 0; }
+.tt-member-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tt-member-count { font-size: 11px; background: rgba(255,255,255,0.1); padding: 1px 6px; border-radius: 10px; }
+
+.tt-avatar { width: 24px; height: 24px; border-radius: 50%; color: #16141a; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; flex-shrink: 0; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
+.tt-avatar-all { background: rgba(255,255,255,0.14); color: #EDEBF2; }
+.tt-avatar-sm { width: 19px; height: 19px; font-size: 9px; }
+
+.tt-collapse-btn { margin-top: auto; align-self: flex-end; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08); color: #948FA0; width: 22px; height: 22px; border-radius: 6px; cursor: pointer; font-size: 11px; }
+.tt-collapse-btn:hover { color: #EDEBF2; background: rgba(255,255,255,0.12); }
+
+.tt-team-edit { margin-top: 10px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 10px; width: 100%; }
+.tt-inline-form { display: flex; gap: 6px; margin-bottom: 8px; }
+.tt-inline-form input { flex: 1; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); color: #EDEBF2; border-radius: 6px; padding: 5px 7px; font-size: 12px; }
+.tt-inline-form button { background: #E0BB3E; border: none; color: #16141a; border-radius: 6px; padding: 5px 10px; font-size: 13px; cursor: pointer; font-weight: 700; }
+.tt-team-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 2px; font-size: 12px; color: #CFCBDA; gap: 6px; }
+.tt-team-row-name { cursor: pointer; border-bottom: 1px dashed rgba(255,255,255,0.25); }
+.tt-team-row-name:hover { color: #E0BB3E; }
+.tt-rename-input { flex: 1; background: rgba(255,255,255,0.08); border: 1px solid #E0BB3E; color: #EDEBF2; border-radius: 5px; padding: 3px 6px; font-size: 12px; }
+.tt-team-row button { background: none; border: none; color: #C99A9A; cursor: pointer; font-size: 11px; flex-shrink: 0; }
+
+.tt-empty-hint { color: #948FA0; font-size: 12px; padding: 6px 2px; }
+.tt-empty-big { padding: 40px 0; text-align: center; font-size: 14px; }
+
+.tt-main { flex: 1; min-width: 0; padding: 4px 4px 4px 0; }
+.tt-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; gap: 12px; flex-wrap: wrap; }
+.tt-tabs { position: relative; display: flex; gap: 2px; background: rgba(255,255,255,0.05); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.08); padding: 3px; border-radius: 10px; }
+.tt-tabs-indicator { position: absolute; top: 3px; bottom: 3px; border-radius: 7px; background: linear-gradient(135deg, #8A73AD, #6E5B8A); box-shadow: 0 4px 14px rgba(138,115,173,0.45); transition: left .3s cubic-bezier(.4,0,.2,1), width .3s cubic-bezier(.4,0,.2,1); z-index: 0; }
+.tt-tabs button { position: relative; z-index: 1; border: none; background: none; padding: 7px 14px; border-radius: 7px; font-size: 13px; cursor: pointer; color: #B7B2C4; transition: color .2s ease; }
+.tt-tabs button.is-active { color: #FFFFFF; font-weight: 600; }
+.tt-header-actions { display: flex; gap: 8px; }
+.tt-new-btn { background: linear-gradient(135deg, #8A73AD, #6E5B8A); color: #FFFFFF; border: none; padding: 8px 14px; border-radius: 9px; font-size: 13px; cursor: pointer; font-weight: 600; box-shadow: 0 6px 16px rgba(138,115,173,0.35); transition: transform .15s ease; }
+.tt-new-btn:hover:not(:disabled) { transform: translateY(-1px); }
+.tt-new-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.tt-ghost-btn { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #EDEBF2; padding: 8px 14px; border-radius: 9px; font-size: 13px; cursor: pointer; backdrop-filter: blur(8px); }
+.tt-ghost-btn:hover { background: rgba(255,255,255,0.12); }
+
+.tt-notice { background: rgba(224,187,62,0.12); color: #E0BB3E; border: 1px solid rgba(224,187,62,0.3); padding: 8px 12px; border-radius: 9px; font-size: 12px; margin-bottom: 12px; backdrop-filter: blur(8px); }
+
+.tt-group-toggle { display: inline-flex; gap: 2px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); padding: 3px; border-radius: 8px; margin-bottom: 14px; }
+.tt-group-toggle button { border: none; background: none; padding: 5px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; color: #B7B2C4; }
+.tt-group-toggle button.is-active { background: rgba(255,255,255,0.12); color: #FFFFFF; }
+
+.tt-board { display: flex; gap: 14px; align-items: flex-start; }
+.tt-col { flex: 1; min-width: 0; background: rgba(255,255,255,0.045); backdrop-filter: blur(14px); border: 1px solid rgba(255,255,255,0.09); border-radius: 12px; }
+.tt-col-head { display: flex; align-items: center; gap: 7px; padding: 11px 13px; font-size: 12px; font-weight: 600; color: #CFCBDA; border-bottom: 1px solid rgba(255,255,255,0.08); }
+.tt-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
+.tt-col-count { margin-left: auto; color: #948FA0; font-weight: 400; }
+.tt-col-body { padding: 10px; display: flex; flex-direction: column; gap: 8px; min-height: 60px; }
+.tt-col-empty { color: #6E6A7A; font-size: 12px; text-align: center; padding: 10px 0; }
+
+.tt-person-board { display: flex; flex-direction: column; gap: 14px; }
+.tt-person-group { background: rgba(255,255,255,0.04); backdrop-filter: blur(14px); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; overflow: hidden; }
+.tt-person-head { display: flex; align-items: center; gap: 9px; padding: 11px 14px; font-size: 13px; font-weight: 600; border-bottom: 1px solid rgba(255,255,255,0.08); }
+.tt-person-name { flex: 1; }
+.tt-person-cards { padding: 10px; display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
+
+.tt-card { background: rgba(255,255,255,0.055); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.09); border-radius: 10px; padding: 10px 11px; animation: ttFadeUp .35s ease both; transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
+.tt-card:hover { transform: translateY(-2px); border-color: rgba(255,255,255,0.2); box-shadow: 0 14px 28px -10px var(--glow, rgba(0,0,0,0.4)); }
+.tt-card.is-overdue { border-color: rgba(196,120,120,0.5); background: rgba(196,120,120,0.08); }
+.tt-card-top { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
+.tt-card-admin-actions { margin-left: auto; display: flex; gap: 4px; }
+.tt-card-icon { background: none; border: none; color: #6E6A7A; cursor: pointer; font-size: 13px; line-height: 1; }
+.tt-card-icon:hover { color: #EDEBF2; }
+.tt-card-x:hover { color: #D98A8A; }
+.tt-prio { font-size: 10.5px; font-weight: 800; padding: 1px 6px; border-radius: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.tt-pilar-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; color: #A9A4B6; }
+.tt-card-title { font-size: 13px; line-height: 1.35; margin: 0 0 8px; color: #F2F0F6; }
+.tt-card-foot { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
+.tt-status-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; color: #A9A4B6; }
+.tt-due { font-size: 11px; color: #948FA0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin-left: auto; }
+.tt-due.is-overdue-text { color: #E0A0A0; font-weight: 600; }
+.tt-comment { width: 100%; resize: vertical; min-height: 40px; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 6px 8px; font-size: 12px; font-family: inherit; margin-bottom: 8px; color: #EDEBF2; background: rgba(0,0,0,0.2); }
+.tt-cycle { width: 100%; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); color: #CFCBDA; border-radius: 7px; padding: 6px 0; font-size: 11px; cursor: pointer; transition: background .15s ease; }
+.tt-cycle:hover { background: rgba(255,255,255,0.14); }
+
+.tt-gantt { font-size: 12px; animation: ttFadeIn .3s ease; }
+.tt-gantt-scale { position: relative; height: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 6px; }
+.tt-gantt-scale span { position: absolute; color: #948FA0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+.tt-gantt-body { position: relative; }
+.tt-gantt-today { position: absolute; top: 0; bottom: 0; width: 2px; background: #E0BB3E; box-shadow: 0 0 8px #E0BB3E; z-index: 1; }
+.tt-gantt-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.tt-gantt-label { width: 240px; flex-shrink: 0; display: flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tt-gantt-track { position: relative; flex: 1; height: 16px; background: rgba(255,255,255,0.05); border-radius: 5px; }
+.tt-gantt-bar { position: absolute; top: 2px; bottom: 2px; border-radius: 5px; background: #9A9CA3; transition: width .5s ease; }
+.tt-gantt-bar.status-pending { background: #9A9CA3; }
+.tt-gantt-bar.status-progress { background: #E0BB3E; }
+.tt-gantt-bar.status-done { background: #8A73AD; }
+.tt-gantt-bar.is-overdue { background: #D98A8A; }
+
+.tt-subhead { font-size: 12.5px; font-weight: 600; color: #B7B2C4; margin: 22px 0 10px; }
+.tt-resumen-banner { display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.05); backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.09); border-radius: 14px; padding: 20px 24px; animation: ttFadeIn .3s ease; }
+.tt-resumen-banner .tt-tag { color: #948FA0; }
+.tt-banner-big { font-size: 27px; font-weight: 700; margin: 6px 0 0; }
+.tt-banner-small { font-size: 13px; font-weight: 400; color: #948FA0; }
+.tt-ring-text { font-size: 14px; font-weight: 700; fill: #EDEBF2; }
+
+.tt-bars { display: flex; flex-direction: column; gap: 12px; }
+.tt-bar-row { display: flex; align-items: center; gap: 12px; }
+.tt-bar-label { width: 170px; flex-shrink: 0; display: flex; align-items: center; gap: 6px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.tt-bar-track { flex: 1; height: 10px; background: rgba(255,255,255,0.08); border-radius: 5px; overflow: hidden; }
+.tt-bar-fill { height: 100%; border-radius: 5px; transition: width .7s cubic-bezier(.4,0,.2,1); }
+.tt-bar-value { width: 130px; flex-shrink: 0; font-size: 12px; color: #B7B2C4; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.tt-bar-late { color: #E0A0A0; }
+.tt-desempeno-note { margin-bottom: 14px; }
+
+.tt-modal-back { position: fixed; inset: 0; background: rgba(10,9,13,0.6); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 10; animation: ttFadeIn .15s ease; }
+.tt-modal { background: rgba(28,25,34,0.85); backdrop-filter: blur(24px); border: 1px solid rgba(255,255,255,0.12); border-radius: 14px; padding: 22px; width: 340px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); animation: ttFadeUp .2s ease; }
+.tt-modal-narrow { width: 280px; }
+.tt-modal h3 { margin: 0 0 4px; font-size: 15px; color: #FFFFFF; }
+.tt-modal label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #B7B2C4; }
+.tt-modal input, .tt-modal select { border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.05); border-radius: 7px; padding: 7px 9px; font-size: 13px; color: #EDEBF2; font-family: inherit; }
+.tt-form-row { display: flex; gap: 10px; }
+.tt-form-row label { flex: 1; }
+.tt-pin-error { color: #E0A0A0; font-size: 12px; margin: -6px 0 0; }
+.tt-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.tt-modal-actions button { border: none; padding: 8px 14px; border-radius: 8px; font-size: 13px; cursor: pointer; background: rgba(255,255,255,0.08); color: #EDEBF2; }
+.tt-modal-actions .tt-primary { background: linear-gradient(135deg, #8A73AD, #6E5B8A); color: #FFFFFF; font-weight: 600; }
+`;
