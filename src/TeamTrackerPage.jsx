@@ -90,6 +90,7 @@ function emptyForm(team) {
     id: null,
     title: '',
     assignee: (team && team[0]) || '',
+    assignAll: false,
     dueDate: todayISO(),
     priority: 'B',
     pilar: 'financiero',
@@ -203,14 +204,24 @@ export default function TeamTrackerPage() {
   }
 
   function submitForm() {
-    if (!form.title.trim() || !form.assignee || !form.dueDate) return;
+    if (!form.title.trim() || !form.dueDate) return;
     if (form.id) {
+      if (!form.assignee) return;
       saveTasks(tasks.map((t) => (t.id === form.id ? { ...t, ...form, title: form.title.trim() } : t)));
+    } else if (form.assignAll) {
+      const groupId = uid();
+      const base = {
+        title: form.title.trim(), dueDate: form.dueDate, createdDate: todayISO(),
+        priority: form.priority, pilar: form.pilar, status: 'pending', completedAt: null, comment: '', groupId,
+      };
+      const newTasks = team.map((m) => ({ id: uid(), assignee: m, ...base }));
+      saveTasks([...(tasks || []), ...newTasks]);
     } else {
+      if (!form.assignee) return;
       const task = {
         id: uid(), title: form.title.trim(), assignee: form.assignee, dueDate: form.dueDate,
         createdDate: todayISO(), priority: form.priority, pilar: form.pilar,
-        status: 'pending', completedAt: null, comment: '',
+        status: 'pending', completedAt: null, comment: '', groupId: null,
       };
       saveTasks([...(tasks || []), task]);
     }
@@ -468,9 +479,13 @@ export default function TeamTrackerPage() {
               </label>
               <div className="tt-form-row">
                 <label>Asignado a
-                  <select value={form.assignee} onChange={(e) => setForm({ ...form, assignee: e.target.value })}>
-                    {team.map((m) => (<option key={m} value={m}>{m}</option>))}
-                  </select>
+                  {form.assignAll ? (
+                    <div className="tt-assign-all-note">Todo el equipo ({team.length})</div>
+                  ) : (
+                    <select value={form.assignee} onChange={(e) => setForm({ ...form, assignee: e.target.value })}>
+                      {team.map((m) => (<option key={m} value={m}>{m}</option>))}
+                    </select>
+                  )}
                 </label>
                 <label>Pilar
                   <select value={form.pilar} onChange={(e) => setForm({ ...form, pilar: e.target.value })}>
@@ -478,6 +493,12 @@ export default function TeamTrackerPage() {
                   </select>
                 </label>
               </div>
+              {!form.id && (
+                <label className="tt-checkbox-row">
+                  <input type="checkbox" checked={form.assignAll} onChange={(e) => setForm({ ...form, assignAll: e.target.checked })} />
+                  Asignar a todo el equipo (crea una tarjeta individual por persona)
+                </label>
+              )}
               <div className="tt-form-row">
                 <label>Fecha límite
                   <input type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} />
@@ -571,6 +592,7 @@ function TaskCard({ t, isAdmin, onCycle, onDelete, onEdit, drafts, onCommentChan
       <div className="tt-card-top">
         <PriorityBadge code={t.priority} />
         <PilarTag code={t.pilar} />
+        {t.groupId && <span className="tt-batch-tag" title="Asignada a todo el equipo">👥</span>}
         {isAdmin && (
           <span className="tt-card-admin-actions">
             <button className="tt-card-icon" onClick={() => onEdit(t)} title="Editar">✎</button>
@@ -914,6 +936,10 @@ body { background: #14121a; }
 .tt-modal input, .tt-modal select { border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.05); border-radius: 7px; padding: 7px 9px; font-size: 13px; color: #EDEBF2; font-family: inherit; }
 .tt-form-row { display: flex; gap: 10px; }
 .tt-form-row label { flex: 1; }
+.tt-assign-all-note { border: 1px dashed rgba(255,255,255,0.18); border-radius: 6px; padding: 7px 9px; font-size: 12.5px; color: #B39DDB; background: rgba(139,115,173,0.08); }
+.tt-checkbox-row { display: flex; flex-direction: row; align-items: center; gap: 8px; font-size: 12.5px; color: #CFCBDA; cursor: pointer; }
+.tt-checkbox-row input { width: auto; }
+.tt-batch-tag { font-size: 11px; }
 .tt-pin-error { color: #E0A0A0; font-size: 12px; margin: -6px 0 0; }
 .tt-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
 .tt-modal-actions button { border: none; padding: 8px 14px; border-radius: 8px; font-size: 13px; cursor: pointer; background: rgba(255,255,255,0.08); color: #EDEBF2; }
