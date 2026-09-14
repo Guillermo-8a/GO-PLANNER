@@ -436,9 +436,6 @@ export default function TeamTrackerPage() {
               ))}
             </nav>
             <div className="tt-header-actions">
-              <Link to="/" className="tt-ghost-btn" title="Volver a GO PLANNER">
-                <HomeIcon /> GO PLANNER
-              </Link>
               <button className="tt-ghost-btn" onClick={exportExcel}>Exportar a Excel</button>
               {isAdmin && <button className="tt-new-btn" onClick={() => openForm(null)} disabled={team.length === 0}>+ Nuevo pendiente</button>}
             </div>
