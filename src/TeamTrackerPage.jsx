@@ -90,11 +90,11 @@ function emptyForm(team) {
     id: null,
     title: '',
     assignee: (team && team[0]) || '',
-    assignAll: false,
     dueDate: todayISO(),
     priority: 'B',
     pilar: 'financiero',
     status: 'pending',
+    notas: '',
   };
 }
 
@@ -134,6 +134,7 @@ export default function TeamTrackerPage() {
   const [collapsed, setCollapsed] = useState(false);
   const [groupBy, setGroupBy] = useState('status');
   const [showInfo, setShowInfo] = useState(false);
+  const [editScope, setEditScope] = useState('solo');
 
   const tabsRef = useRef({});
   const [indicator, setIndicator] = useState({ left: 0, width: 0 });
@@ -199,38 +200,56 @@ export default function TeamTrackerPage() {
   }
 
   function openForm(task) {
-    setForm(task ? { ...task } : emptyForm(team));
+    setForm(task ? { ...task, notas: task.notas || '' } : emptyForm(team));
+    setEditScope('solo');
     setShowForm(true);
+  }
+
+  function notifyNewTask(task) {
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ type: 'notify', title: task.title, assignee: task.assignee, dueDate: task.dueDate, priority: task.priority }),
+    }).catch(() => {});
   }
 
   function submitForm() {
     if (!form.title.trim() || !form.dueDate) return;
     if (form.id) {
       if (!form.assignee) return;
-      saveTasks(tasks.map((t) => (t.id === form.id ? { ...t, ...form, title: form.title.trim() } : t)));
-    } else if (form.assignAll) {
+      if (form.groupId && editScope === 'group') {
+        saveTasks(tasks.map((t) => (t.groupId === form.groupId
+          ? { ...t, title: form.title.trim(), dueDate: form.dueDate, priority: form.priority, pilar: form.pilar, notas: form.notas }
+          : t)));
+      } else {
+        saveTasks(tasks.map((t) => (t.id === form.id ? { ...t, ...form, title: form.title.trim() } : t)));
+      }
+    } else if (form.assignee === '__ALL__') {
       const groupId = uid();
       const base = {
         title: form.title.trim(), dueDate: form.dueDate, createdDate: todayISO(),
-        priority: form.priority, pilar: form.pilar, status: 'pending', completedAt: null, comment: '', groupId,
+        priority: form.priority, pilar: form.pilar, status: 'pending', completedAt: null, comment: '', notas: form.notas, groupId,
       };
       const newTasks = team.map((m) => ({ id: uid(), assignee: m, ...base }));
       saveTasks([...(tasks || []), ...newTasks]);
+      notifyNewTask({ title: base.title, assignee: `Todo el equipo (${team.length})`, dueDate: base.dueDate, priority: base.priority });
     } else {
       if (!form.assignee) return;
       const task = {
         id: uid(), title: form.title.trim(), assignee: form.assignee, dueDate: form.dueDate,
         createdDate: todayISO(), priority: form.priority, pilar: form.pilar,
-        status: 'pending', completedAt: null, comment: '', groupId: null,
+        status: 'pending', completedAt: null, comment: '', notas: form.notas, groupId: null,
       };
       saveTasks([...(tasks || []), task]);
+      notifyNewTask(task);
     }
     setShowForm(false);
   }
 
   function cycleStatus(task) {
     const idx = STATUS_ORDER.indexOf(task.status);
-    const next = STATUS_ORDER[(idx + 1) % STATUS_ORDER.length];
+    let next = STATUS_ORDER[(idx + 1) % STATUS_ORDER.length];
+    if (next === 'done' && !isAdmin) next = 'pending'; // solo admin confirma "Hecho"
     saveTasks(tasks.map((t) => (t.id === task.id ? { ...t, status: next, completedAt: next === 'done' ? todayISO() : null } : t)));
   }
   function deleteTask(id) { saveTasks(tasks.filter((t) => t.id !== id)); }
@@ -479,13 +498,10 @@ export default function TeamTrackerPage() {
               </label>
               <div className="tt-form-row">
                 <label>Asignado a
-                  {form.assignAll ? (
-                    <div className="tt-assign-all-note">Todo el equipo ({team.length})</div>
-                  ) : (
-                    <select value={form.assignee} onChange={(e) => setForm({ ...form, assignee: e.target.value })}>
-                      {team.map((m) => (<option key={m} value={m}>{m}</option>))}
-                    </select>
-                  )}
+                  <select value={form.assignee} onChange={(e) => setForm({ ...form, assignee: e.target.value })}>
+                    {!form.id && <option value="__ALL__">Todo el equipo ({team.length})</option>}
+                    {team.map((m) => (<option key={m} value={m}>{m}</option>))}
+                  </select>
                 </label>
                 <label>Pilar
                   <select value={form.pilar} onChange={(e) => setForm({ ...form, pilar: e.target.value })}>
@@ -493,12 +509,6 @@ export default function TeamTrackerPage() {
                   </select>
                 </label>
               </div>
-              {!form.id && (
-                <label className="tt-checkbox-row">
-                  <input type="checkbox" checked={form.assignAll} onChange={(e) => setForm({ ...form, assignAll: e.target.checked })} />
-                  Asignar a todo el equipo (crea una tarjeta individual por persona)
-                </label>
-              )}
               <div className="tt-form-row">
                 <label>Fecha límite
                   <input type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} />
@@ -509,6 +519,19 @@ export default function TeamTrackerPage() {
                   </select>
                 </label>
               </div>
+              <label>Notas / enlaces (opcional)
+                <textarea className="tt-notes-input" rows={3} placeholder="Contexto, liga de Sheets, Drive, lo que necesiten saber…"
+                  value={form.notas || ''} onChange={(e) => setForm({ ...form, notas: e.target.value })} />
+              </label>
+              {form.id && form.groupId && (
+                <div className="tt-scope-row">
+                  <span className="tt-scope-label">Aplicar cambios a:</span>
+                  <div className="tt-group-toggle">
+                    <button type="button" className={editScope === 'solo' ? 'is-active' : ''} onClick={() => setEditScope('solo')}>Solo {form.assignee}</button>
+                    <button type="button" className={editScope === 'group' ? 'is-active' : ''} onClick={() => setEditScope('group')}>Todo el equipo</button>
+                  </div>
+                </div>
+              )}
               {form.id && (
                 <label>Estado
                   <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
@@ -585,8 +608,18 @@ function PilarTag({ code }) {
   return <span className="tt-pilar-tag"><span className="tt-dot" style={{ background: p.dot }} />{p.label}</span>;
 }
 
+function linkify(text) {
+  if (!text) return null;
+  return text.split(/(https?:\/\/[^\s]+)/g).map((part, i) =>
+    /^https?:\/\//.test(part) ? <a key={i} href={part} target="_blank" rel="noreferrer" className="tt-link">{part}</a> : part
+  );
+}
+
 function TaskCard({ t, isAdmin, onCycle, onDelete, onEdit, drafts, onCommentChange, onCommentBlur, showAssignee = true }) {
   const overdue = t.status !== 'done' && t.dueDate < todayISO();
+  const idx = STATUS_ORDER.indexOf(t.status);
+  let nextKey = STATUS_ORDER[(idx + 1) % STATUS_ORDER.length];
+  if (nextKey === 'done' && !isAdmin) nextKey = 'pending';
   return (
     <div className={`tt-card ${overdue ? 'is-overdue' : ''}`} style={{ '--glow': avatarGlow(t.assignee) }}>
       <div className="tt-card-top">
@@ -601,6 +634,7 @@ function TaskCard({ t, isAdmin, onCycle, onDelete, onEdit, drafts, onCommentChan
         )}
       </div>
       <p className="tt-card-title">{t.title}</p>
+      {t.notas && <p className="tt-card-notes">{linkify(t.notas)}</p>}
       <div className="tt-card-foot">
         {showAssignee && <span className="tt-avatar tt-avatar-sm" style={{ background: avatarGradient(t.assignee) }}>{initials(t.assignee)}</span>}
         <span className="tt-status-chip"><span className="tt-dot" style={{ background: STATUS[t.status].dot }} />{STATUS[t.status].label}</span>
@@ -612,7 +646,7 @@ function TaskCard({ t, isAdmin, onCycle, onDelete, onEdit, drafts, onCommentChan
           onChange={(e) => onCommentChange(t.id, e.target.value)} onBlur={() => onCommentBlur(t.id)} />
       )}
       <button className="tt-cycle" onClick={() => onCycle(t)}>
-        Mover a {STATUS[STATUS_ORDER[(STATUS_ORDER.indexOf(t.status) + 1) % 3]].label.toLowerCase()}
+        Mover a {STATUS[nextKey].label.toLowerCase()}
       </button>
     </div>
   );
@@ -673,32 +707,42 @@ function GanttView({ tasks, range }) {
   const todayOffset = ((new Date() - range.start) / totalMs) * 100;
   const sorted = [...tasks].sort((a, b) => a.dueDate.localeCompare(b.dueDate));
   if (sorted.length === 0) return <p className="tt-empty-hint tt-empty-big">Sin pendientes para mostrar en la línea de tiempo.</p>;
+  const days = Array.from({ length: range.days });
   return (
     <div className="tt-gantt">
-      <div className="tt-gantt-scale">
-        {Array.from({ length: Math.ceil(range.days / 7) }).map((_, i) => (
-          <span key={i} style={{ left: `${((i * 7) / range.days) * 100}%` }}>{fmtShort(toISO(addDays(range.start, i * 7)))}</span>
-        ))}
-      </div>
-      <div className="tt-gantt-body">
-        <div className="tt-gantt-today" style={{ left: `${todayOffset}%` }} />
-        {sorted.map((t) => {
-          const start = new Date(t.createdDate); const end = new Date(t.dueDate);
-          const left = Math.max(0, ((start - range.start) / totalMs) * 100);
-          const width = Math.max(2, ((end - start) / totalMs) * 100);
-          const overdue = t.status !== 'done' && t.dueDate < todayISO();
-          return (
-            <div className="tt-gantt-row" key={t.id}>
-              <div className="tt-gantt-label">
-                <span className="tt-avatar tt-avatar-sm" style={{ background: avatarGradient(t.assignee) }}>{initials(t.assignee)}</span>
-                <PriorityBadge code={t.priority} />{t.title}
-              </div>
-              <div className="tt-gantt-track">
-                <div className={`tt-gantt-bar status-${t.status} ${overdue ? 'is-overdue' : ''}`} style={{ left: `${left}%`, width: `${width}%` }} title={`${fmtShort(t.createdDate)} → ${fmtShort(t.dueDate)}`} />
-              </div>
+      <div className="tt-gantt-grid">
+        <div className="tt-gantt-labels-col">
+          <div className="tt-gantt-labels-spacer" />
+          {sorted.map((t) => (
+            <div className="tt-gantt-label" key={t.id}>
+              <span className="tt-avatar tt-avatar-sm" style={{ background: avatarGradient(t.assignee) }}>{initials(t.assignee)}</span>
+              <PriorityBadge code={t.priority} />{t.title}
             </div>
-          );
-        })}
+          ))}
+        </div>
+        <div className="tt-gantt-tracks-col">
+          <div className="tt-gantt-scale">
+            {days.map((_, i) => (
+              <span key={i} className={`tt-gantt-day-line ${i % 7 === 0 ? 'is-week' : ''}`} style={{ left: `${(i / range.days) * 100}%` }}>
+                {i % 7 === 0 && <em>{fmtShort(toISO(addDays(range.start, i)))}</em>}
+              </span>
+            ))}
+          </div>
+          <div className="tt-gantt-body">
+            <div className="tt-gantt-today" style={{ left: `${todayOffset}%` }} />
+            {sorted.map((t) => {
+              const start = new Date(t.createdDate); const end = new Date(t.dueDate);
+              const left = Math.max(0, ((start - range.start) / totalMs) * 100);
+              const width = Math.max(2, ((end - start) / totalMs) * 100);
+              const overdue = t.status !== 'done' && t.dueDate < todayISO();
+              return (
+                <div className="tt-gantt-track" key={t.id}>
+                  <div className={`tt-gantt-bar status-${t.status} ${overdue ? 'is-overdue' : ''}`} style={{ left: `${left}%`, width: `${width}%` }} title={`${fmtShort(t.createdDate)} → ${fmtShort(t.dueDate)}`} />
+                </div>
+              );
+            })}
+          </div>
+        </div>
       </div>
     </div>
   );
@@ -899,14 +943,19 @@ body { background: #14121a; }
 .tt-cycle:hover { background: rgba(255,255,255,0.14); }
 
 .tt-gantt { font-size: 12px; animation: ttFadeIn .3s ease; }
-.tt-gantt-scale { position: relative; height: 20px; border-bottom: 1px solid rgba(255,255,255,0.1); margin-bottom: 6px; }
-.tt-gantt-scale span { position: absolute; color: #948FA0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+.tt-gantt-grid { display: flex; }
+.tt-gantt-labels-col { width: 240px; flex-shrink: 0; display: flex; flex-direction: column; }
+.tt-gantt-labels-spacer { height: 34px; flex-shrink: 0; }
+.tt-gantt-label { height: 33px; flex-shrink: 0; display: flex; align-items: center; gap: 6px; padding-right: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.tt-gantt-tracks-col { flex: 1; min-width: 0; }
+.tt-gantt-scale { position: relative; height: 34px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+.tt-gantt-day-line { position: absolute; top: 16px; bottom: 0; width: 1px; background: rgba(255,255,255,0.05); }
+.tt-gantt-day-line.is-week { top: 0; background: rgba(255,255,255,0.18); }
+.tt-gantt-day-line em { position: absolute; top: 0; left: 0; font-style: normal; color: #948FA0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; white-space: nowrap; }
 .tt-gantt-body { position: relative; }
 .tt-gantt-today { position: absolute; top: 0; bottom: 0; width: 2px; background: #E0BB3E; box-shadow: 0 0 8px #E0BB3E; z-index: 1; }
-.tt-gantt-row { display: flex; align-items: center; gap: 10px; padding: 7px 0; border-bottom: 1px solid rgba(255,255,255,0.06); }
-.tt-gantt-label { width: 240px; flex-shrink: 0; display: flex; align-items: center; gap: 6px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.tt-gantt-track { position: relative; flex: 1; height: 16px; background: rgba(255,255,255,0.05); border-radius: 5px; }
-.tt-gantt-bar { position: absolute; top: 2px; bottom: 2px; border-radius: 5px; background: #9A9CA3; transition: width .5s ease; }
+.tt-gantt-track { position: relative; height: 33px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.tt-gantt-bar { position: absolute; top: 8px; bottom: 8px; border-radius: 5px; background: #9A9CA3; transition: width .5s ease; }
 .tt-gantt-bar.status-pending { background: #9A9CA3; }
 .tt-gantt-bar.status-progress { background: #E0BB3E; }
 .tt-gantt-bar.status-done { background: #8A73AD; }
@@ -933,7 +982,15 @@ body { background: #14121a; }
 .tt-modal-narrow { width: 280px; }
 .tt-modal h3 { margin: 0 0 4px; font-size: 15px; color: #FFFFFF; }
 .tt-modal label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #B7B2C4; }
-.tt-modal input, .tt-modal select { border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.05); border-radius: 7px; padding: 7px 9px; font-size: 13px; color: #EDEBF2; font-family: inherit; }
+.tt-modal input, .tt-modal select, .tt-modal textarea { border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.05); border-radius: 7px; padding: 7px 9px; font-size: 13px; color: #EDEBF2; font-family: inherit; }
+.tt-modal select { appearance: none; -webkit-appearance: none; background-image: linear-gradient(45deg, transparent 50%, #948FA0 50%), linear-gradient(135deg, #948FA0 50%, transparent 50%); background-position: calc(100% - 16px) center, calc(100% - 11px) center; background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; }
+.tt-modal select option { background: #1c1720; color: #EDEBF2; }
+.tt-modal textarea { resize: vertical; font-family: inherit; }
+.tt-notes-input { width: 100%; box-sizing: border-box; }
+.tt-card-notes { font-size: 12px; color: #B7B2C4; line-height: 1.4; margin: 0 0 8px; white-space: pre-wrap; word-break: break-word; }
+.tt-link { color: #B39DDB; text-decoration: underline; }
+.tt-scope-row { display: flex; flex-direction: column; gap: 6px; }
+.tt-scope-label { font-size: 12px; color: #B7B2C4; }
 .tt-form-row { display: flex; gap: 10px; }
 .tt-form-row label { flex: 1; }
 .tt-assign-all-note { border: 1px dashed rgba(255,255,255,0.18); border-radius: 6px; padding: 7px 9px; font-size: 12.5px; color: #B39DDB; background: rgba(139,115,173,0.08); }
