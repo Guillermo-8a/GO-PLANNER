@@ -7,13 +7,15 @@
 // 2) agrega un botón/Link en tu topbar o sidebar que navegue a esa ruta.
 //
 // Antes de usarla, pega tu URL de Apps Script (termina en /exec) aquí abajo:
-const APPS_SCRIPT_URL = 'PEGA_AQUI_TU_URL_DE_APPS_SCRIPT';
+const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyO2WhyRMxeMFO38SjerexylRPT5UHJaGpMLhc6c_zk4vEfey76SevEROqGfEsGHV8j/exec';
 
 // Si tienes el logo real de GO PLANNER, reemplaza <LogoMark /> más abajo por
 // <img src="/ruta/a/tu/logo.svg" className="tt-logo-img" /> — dejé un monograma
 // de placeholder para que no se vea vacío mientras tanto.
 
 import React, { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
+import { Link } from 'react-router-dom';
+import { Bell, HelpCircle } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
 const STATUS_ORDER = ['pending', 'progress', 'done'];
@@ -130,6 +132,7 @@ export default function TeamTrackerPage() {
   const [drafts, setDrafts] = useState({});
   const [collapsed, setCollapsed] = useState(false);
   const [groupBy, setGroupBy] = useState('status');
+  const [showInfo, setShowInfo] = useState(false);
 
   const tabsRef = useRef({});
   const [indicator, setIndicator] = useState({ left: 0, width: 0 });
@@ -323,6 +326,7 @@ export default function TeamTrackerPage() {
     min = addDays(min, -1); max = addDays(max, 1);
     return { start: min, days: Math.max(7, Math.round((max - min) / 86400000)) };
   }, [tasks]);
+  const overdueCount = useMemo(() => (!tasks ? 0 : tasks.filter((t) => t.status !== 'done' && t.dueDate < todayISO()).length), [tasks]);
 
   if (loading) return (<div className="tt-page"><style>{CSS}</style><div className="tt-root tt-loading"><p>Cargando el tablero…</p></div></div>);
 
@@ -336,13 +340,36 @@ export default function TeamTrackerPage() {
   return (
     <div className="tt-page">
       <style>{CSS}</style>
+
+      <header className="tt-topbar">
+        <Link to="/" className="tt-topbar-brand" title="Volver a GO PLANNER">
+          <span className="tt-logo-mark">GP</span>
+          <span className="tt-topbar-titles">
+            <span className="tt-topbar-title">GO <b>PLANNER</b></span>
+            <span className="tt-topbar-sub">Team Tracker</span>
+          </span>
+        </Link>
+        <div className="tt-topbar-actions">
+          <button className="tt-topbar-icon" title="Pendientes vencidos">
+            <Bell size={16} />
+            {overdueCount > 0 && <span className="tt-topbar-badge">{overdueCount}</span>}
+          </button>
+          <div className="tt-info-wrap">
+            <button className="tt-topbar-icon" onClick={() => setShowInfo((v) => !v)} title="Acerca de Team Tracker">
+              <HelpCircle size={16} />
+            </button>
+            {showInfo && (
+              <div className="tt-info-pop">
+                <p><b>Team Tracker</b></p>
+                <p>Pendientes del equipo, checklist, Gantt y resumen semanal. El candado 🔒 desbloquea agregar, editar o borrar. Los datos viven en un Google Sheet aparte.</p>
+              </div>
+            )}
+          </div>
+        </div>
+      </header>
+
       <div className="tt-root">
         <aside className={`tt-side ${collapsed ? 'is-collapsed' : ''}`}>
-          <div className="tt-logo">
-            <span className="tt-logo-mark">GP</span>
-            {!collapsed && <span className="tt-logo-word">GO PLANNER</span>}
-          </div>
-
           <div className="tt-side-head">
             {!collapsed && <span className="tt-tag">Equipo</span>}
             <div className="tt-side-actions">
@@ -361,6 +388,7 @@ export default function TeamTrackerPage() {
             <span className="tt-avatar tt-avatar-all">{tasks.filter((t) => t.status !== 'done').length}</span>
             {!collapsed && <span className="tt-member-name">Todos</span>}
           </button>
+
 
           {team.map((m) => (
             <button key={m} className={`tt-member ${filter === m ? 'is-active' : ''}`} style={{ '--glow': avatarGlow(m) }} onClick={() => setFilter(m)} title={m}>
@@ -408,6 +436,9 @@ export default function TeamTrackerPage() {
               ))}
             </nav>
             <div className="tt-header-actions">
+              <Link to="/" className="tt-ghost-btn" title="Volver a GO PLANNER">
+                <HomeIcon /> GO PLANNER
+              </Link>
               <button className="tt-ghost-btn" onClick={exportExcel}>Exportar a Excel</button>
               {isAdmin && <button className="tt-new-btn" onClick={() => openForm(null)} disabled={team.length === 0}>+ Nuevo pendiente</button>}
             </div>
@@ -723,14 +754,33 @@ const CSS = `
 @keyframes ttFadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes ttFadeIn { from { opacity: 0; } to { opacity: 1; } }
 
+html, body { margin: 0; padding: 0; }
+body { background: #14121a; }
 .tt-page {
-  position: relative; padding: 28px; border-radius: 14px; overflow: hidden;
+  position: relative; min-height: 100vh; width: 100%; box-sizing: border-box;
+  padding: 28px; overflow: hidden;
   background: radial-gradient(ellipse 60% 50% at 15% 10%, rgba(138,115,173,0.35), transparent 60%),
               radial-gradient(ellipse 55% 45% at 90% 85%, rgba(224,187,62,0.22), transparent 60%),
               linear-gradient(160deg, #16141a 0%, #1c1720 45%, #14121a 100%);
 }
 .tt-root { position: relative; display: flex; min-height: 560px; color: #EDEBF2; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 14px; }
 .tt-loading { align-items: center; justify-content: center; width: 100%; }
+
+.tt-topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; position: relative; z-index: 3; }
+.tt-topbar-brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+.tt-topbar-titles { display: flex; flex-direction: column; line-height: 1.15; }
+.tt-topbar-title { font-size: 15px; font-weight: 800; letter-spacing: 0.02em; color: #EDEBF2; text-transform: uppercase; }
+.tt-topbar-title b { color: #B39DDB; }
+.tt-topbar-sub { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #948FA0; }
+.tt-topbar-actions { display: flex; gap: 8px; }
+.tt-topbar-icon { position: relative; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.09); color: #948FA0; width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; cursor: pointer; backdrop-filter: blur(10px); transition: all .15s ease; }
+.tt-topbar-icon:hover { color: #EDEBF2; background: rgba(255,255,255,0.12); }
+.tt-topbar-badge { position: absolute; top: -4px; right: -4px; background: #A1402C; color: #fff; font-size: 9px; font-weight: 800; min-width: 16px; height: 16px; padding: 0 3px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+.tt-info-wrap { position: relative; }
+.tt-info-pop { position: absolute; top: 42px; right: 0; width: 230px; background: rgba(28,25,34,0.92); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.12); border-radius: 10px; padding: 12px; font-size: 11.5px; line-height: 1.5; color: #B7B2C4; z-index: 20; box-shadow: 0 12px 30px rgba(0,0,0,0.45); animation: ttFadeIn .15s ease; }
+.tt-info-pop b { color: #EDEBF2; }
+.tt-info-pop p { margin: 0 0 6px; }
+.tt-info-pop p:last-child { margin-bottom: 0; }
 
 .tt-side { width: 210px; flex-shrink: 0; padding: 16px 12px; display: flex; flex-direction: column; gap: 4px;
   background: rgba(255,255,255,0.045); backdrop-filter: blur(18px); border: 1px solid rgba(255,255,255,0.09);
