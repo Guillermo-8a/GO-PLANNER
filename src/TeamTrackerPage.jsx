@@ -144,7 +144,7 @@ export default function TeamTrackerPage() {
         const all = await kvLoadAll();
         setTasks(all['tasks-board'] ? JSON.parse(all['tasks-board']) : []);
         setTeam(all['team-roster'] ? JSON.parse(all['team-roster']) : []);
-        setAdminPin(all['admin-pin'] || null);
+        setAdminPin(all['admin-pin'] != null && all['admin-pin'] !== '' ? String(all['admin-pin']) : null);
       } catch (e) {
         setNotice('No se pudo conectar con el backend: ' + (e && e.message ? e.message : 'error desconocido'));
         setTasks([]);
