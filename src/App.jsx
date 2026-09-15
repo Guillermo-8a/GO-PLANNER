@@ -848,7 +848,7 @@ function Shell() {
               <Circle size={16} className={isRecording ? 'fill-current animate-pulse' : ''} />
             </button>
             {showRecordMenu && !isRecording && (
-              <div className={`absolute right-12 bottom-0 w-56 rounded-2xl border shadow-2xl z-50 p-1.5 ${isDark ? 'bg-[#1c1720]/95 border-white/10 backdrop-blur-xl' : 'bg-white border-gray-200'}`}>
+              <div className={`absolute right-12 top-0 w-56 rounded-2xl border shadow-2xl z-50 p-1.5 ${isDark ? 'bg-[#1c1720]/95 border-white/10 backdrop-blur-xl' : 'bg-white border-gray-200'}`}>
                 <button
                   onClick={takeScreenshot}
                   className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold text-left ${isDark ? 'text-zinc-200 hover:bg-white/10' : 'text-gray-700 hover:bg-gray-100'}`}
