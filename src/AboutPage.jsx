@@ -37,44 +37,54 @@ function useParallax(speed = 0.3) {
 // ── Datos ─────────────────────────────────────────────────────────────────────
 const WORLDS = [
   {
-    id: 'far', tag: 'FAR',
-    name: 'Forecast · Assortment · Replenishment',
-    desc: 'El núcleo de la planeación de compra. Proyecta demanda, define el surtido óptimo y mantiene el inventario saludable.',
+    id: 'plan', tag: 'PLANES FINANCIEROS',
+    name: 'Planing',
+    desc: 'El núcleo de la planeación, planes a nivel canal de venta | tienda | goa. ',
     accent: '#8b5cf6', glow: 'rgba(139,92,246,0.18)',
     modules: [
-      { label: 'Forecasting',    Icon: TrendingUp,   desc: 'Regresión lineal con ajuste estacional y 4 escenarios IS.' },
-      { label: 'Assortment OTB', Icon: ShoppingCart, desc: 'Presupuesto de compra, buckets por marca y OTB mensual.' },
-      { label: 'Resurtido',      Icon: RefreshCw,    desc: 'Reposición continua basada en cobertura y fill rate.' },
+      { label: 'Planning', Icon: BarChart3, desc: 'Construye Mejor Estimado, Ajusta tu OTB, Alinea tu canales, y baja a nivel tienda.' },
     ],
   },
   {
-    id: 'planes', tag: 'PLANES',
-    name: 'Planning · Daily',
-    desc: 'Conecta la estrategia con la ejecución diaria. Vista unificada que une forecast, OTB y distribución.',
+    id: 'demanda', tag: 'PLANEACIÓN DE LA DEMANDA',
+    name: 'Assortment · Forecasting · Distribución · Resurtido',
+    desc: 'Conecta la estrategia con la ejecución diaria. Vista unificada que une forecast, OTB y distribución. Proyecta demanda, define el surtido óptimo. |y mantiene el inventario saludable.',
     accent: '#f59e0b', glow: 'rgba(245,158,11,0.15)',
     modules: [
-      { label: 'Planning', Icon: BarChart3, desc: 'Vista unificada de forecast, OTB y distribución por periodo.' },
-      { label: 'Dayli',    Icon: Calendar,  desc: 'Ajustes diarios de inventario, ventas y cobertura.' },
+      { label: 'Forecasting',    Icon: TrendingUp,   desc: 'Regresión lineal con ajuste estacional y 4 escenarios IS.' },
+      { label: 'Assortment', Icon: ShoppingCart, desc: 'Presupuesto de compra, buckets por marca y OTB mensual.' },
+      { label: 'Resurtido',      Icon: RefreshCw,    desc: 'Reposición continua basada en cobertura y fill rate.' 
+      { label: 'Distribución', Icon: Map,            desc: 'Surtido inicial por cluster, curva de tallas y chequera.' },
     ],
   },
   {
-    id: 'ops', tag: 'OPERACIONES',
-    name: 'Distribución · Traslados',
-    desc: 'Movimiento de mercancía entre centros y tiendas. Detecta excedentes y cubre necesidades por presupuesto.',
+    id: 'inventario', tag: 'CONTROL DE INVENTARIOS',
+    name: 'Disperción · Traslados · Chequera',
+    desc: 'Movimiento de mercancía entre tiendas. Detecta excedentes y cubre necesidades por presupuesto con ayuda y como base la famosa Chequera.',
     accent: '#10b981', glow: 'rgba(16,185,129,0.15)',
     modules: [
-      { label: 'Distribución', Icon: Map,            desc: 'Surtido inicial por cluster, curva de tallas y chequera.' },
       { label: 'Traslados',    Icon: ArrowLeftRight, desc: 'Transferencias inter-tienda por clima y presupuesto.' },
+      { label: 'Dispersión',    Icon: ArrowLeftRight, desc: 'Dispersión entre ventas e inventario por centro, goa, o el filtro que necesites.' },
+      { label: 'Chequera',    Icon: ArrowLeftRight, desc: 'Información de modelos a nivel SKU, para organizar y administrar la compra.' },
     ],
   },
-];
+ {
+    id: 'check', tag: 'CHECK DE COORDINADORES',
+    name: 'Dayli',
+    desc: 'Detalle de ventas e inventarios diarios, con una proyección diaria por venta y utilidades.',
+    accent: '#10b981', glow: 'rgba(16,185,129,0.15)',
+    modules: [
+       { label: 'Dayli',    Icon: Calendar,  desc: 'Ajustes diarios de inventario, ventas y margen.' },
+     ],
+   },
+ ];
 
 const FAQS = [
-  { q: '¿Qué es GO PLANNER?', a: 'Sistema integrado de planeación retail desarrollado en El Yaqui. Cubre el ciclo completo: forecast → compra → distribución → reposición → traslados.' },
+  { q: '¿Qué es GO PLANNER?', a: 'Sistema integrado de planeación comercial desarrollado por el propio equipo de PAC. Cubre el ciclo completo de los 3 pilares del negocio: Planeación financiera → Planeación de la demanda → Control de inventarios.' },
   { q: '¿Los módulos comparten datos?', a: 'Sí. El pipeline conecta Forecasting → OTB → Distribución → Resurtido automáticamente. El sidebar muestra qué módulos tienen información activa.' },
-  { q: '¿Qué son los "mundos"?', a: 'Agrupaciones por función: FAR (compra y reposición), Planes (estrategia y operación diaria) y Operaciones (movimiento de mercancía).' },
+  { q: '¿Cómo funciona GO PLANNER?', a: 'Funciona con información dentro de un csv, una vez cargada en cada módulo el app hace los calculos con esa información.' },
   { q: '¿Se guarda mi trabajo?', a: 'Sí. Cada módulo persiste en localStorage (gop_forecast, gop_assortment, etc.). Al volver encontrarás todo como lo dejaste.' },
-  { q: '¿Qué es OTB?', a: 'Open To Buy — presupuesto disponible para comprar en un periodo. GO PLANNER lo calcula con inventario actual, ventas proyectadas y compromisos de compra.' },
+  { q: '¿Mi información corre peligro?', a: 'No. Toda la información cargada en los csv, vive en los csv y en la memoria RAM de tu equipo, GO PLANNER no tiene la facultad ni la memoria para almacenar tu información, todos los procesos trabajan en tu equipo, no en un servidor.' },
 ];
 
 // ── Cursor glow ───────────────────────────────────────────────────────────────
@@ -89,7 +99,7 @@ function CursorGlow() {
     <div style={{
       position: 'fixed', pointerEvents: 'none', zIndex: 1,
       left: pos.x - 200, top: pos.y - 200,
-      width: 400, height: 400, borderRadius: '50%',
+      width: 400, height: 400, borderRadius: '60%',
       background: 'radial-gradient(circle, rgba(139,92,246,0.06) 0%, transparent 70%)',
       transition: 'left 0.1s ease, top 0.1s ease',
     }} />
@@ -212,7 +222,7 @@ function Hero({ navigate }) {
       }}>
         <Zap size={11} color="#8b5cf6" />
         <span style={{ fontSize: '11px', fontWeight: 700, color: '#8b5cf6', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
-          Sistema de planeación retail · El Yaqui
+          Sistema de planeación comercial · SBB
         </span>
       </div>
 
@@ -247,7 +257,7 @@ function Hero({ navigate }) {
         transform: mounted ? 'translateY(0)' : 'translateY(20px)',
         transition: 'all 0.8s ease 0.2s',
       }}>
-        Plataforma integrada de planeación para retail de moda. Desde el forecast hasta los traslados, todo en un sistema que habla solo.
+        Aplicación integrada de planeación comercial para cubrir los tres pilares de PAC. Desde el plan hasta los traslados / dayli, todo en un sistema que habla solo.
       </p>
 
       {/* CTAs */}
@@ -282,7 +292,7 @@ function Hero({ navigate }) {
         onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(139,92,246,0.4)'; e.currentTarget.style.color = 'white'; }}
         onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = '#a1a1aa'; }}
         >
-          Ver mundos
+          Ver pilares
         </a>
       </div>
 
@@ -292,7 +302,7 @@ function Hero({ navigate }) {
         opacity: mounted ? 1 : 0,
         transition: 'all 0.8s ease 0.4s',
       }}>
-        {[{ val: '7', label: 'Módulos' }, { val: '3', label: 'Mundos' }, { val: '∞', label: 'Tiendas' }].map(s => (
+        {[{ val: '7', label: 'Módulos' }, { val: '3', label: 'Pilares' }, { val: '∞', label: 'Tiendas' }].map(s => (
           <div key={s.label} style={{ textAlign: 'center' }}>
             <p style={{ fontSize: '48px', fontWeight: 900, color: 'white', lineHeight: 1, letterSpacing: '-2px', margin: 0 }}>{s.val}</p>
             <p style={{ fontSize: '11px', color: '#52525b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px', marginTop: '6px' }}>{s.label}</p>
@@ -378,7 +388,7 @@ function WorldCard({ world, index }) {
   );
 }
 
-// ── Mundos ────────────────────────────────────────────────────────────────────
+// ── Pilares ────────────────────────────────────────────────────────────────────
 function WorldsSection() {
   const [ref, visible] = useInView(0.1);
   return (
@@ -392,10 +402,10 @@ function WorldsSection() {
           Arquitectura modular
         </p>
         <h2 style={{ fontSize: 'clamp(36px, 6vw, 64px)', fontWeight: 900, color: 'white', letterSpacing: '-3px', margin: 0 }}>
-          Los 3 mundos
+          Los 3 pilares
         </h2>
         <p style={{ color: '#52525b', marginTop: '16px', fontSize: '15px', maxWidth: '480px', margin: '16px auto 0' }}>
-          Módulos agrupados por función y flujo de trabajo. Cada mundo opera de forma independiente pero comparte datos con los demás.
+          Módulos agrupados por función y flujo de trabajo. Cada pilar opera de forma independiente pero comparte datos con los demás.
         </p>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
@@ -607,7 +617,7 @@ function Footer({ navigate }) {
           <Layers size={14} color="white" />
         </div>
         <span style={{ fontSize: '13px', fontWeight: 700, color: '#3f3f46' }}>
-          GO PLANNER · El Yaqui · {new Date().getFullYear()}
+          GO PLANNER · SBB · {new Date().getFullYear()}
         </span>
       </div>
       <button onClick={() => navigate('/')} style={{
