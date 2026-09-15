@@ -3,7 +3,7 @@
 // Sidebar: se colapsa a solo iconos al seleccionar módulo, glow en activo
 // Botón Asistencia junto a notificaciones
 // ─────────────────────────────────────────────────────────────────────────────
-import { PackageSearch, Calculator, Boxes, GitMerge, Settings, ChevronRight, Menu, X, Home, UploadCloud, RefreshCw, BarChart2, TrendingUp, ArrowLeftRight, ClipboardList } from 'lucide-react';
+import { PackageSearch, Calculator, Boxes, GitMerge, Settings, ChevronRight, Menu, X, Home, UploadCloud, RefreshCw, BarChart2, TrendingUp, ArrowLeftRight, ClipboardList, CircleCheck } from 'lucide-react';
 import { Link } from 'react-router-dom';
 
 import { useState, useRef, useEffect } from 'react';
@@ -20,7 +20,7 @@ import ModuleDayli from "./modules/ModuleDayli" ;
 
 import {
   Layers, Bell, Sun, Moon, ShoppingCart, Map, LayoutDashboard,
-  HelpCircle, Wallet, Zap,} from 'lucide-react';
+  HelpCircle, Wallet, Zap, Search, Mail, Circle,} from 'lucide-react';
 
 // ─── Paletas de tema ──────────────────────────────────────────────────────────
 export const THEMES = {
@@ -100,7 +100,7 @@ export const THEMES = {
 const NAV_ITEMS = [
   { id: 'dashboard',    label: 'Dashboard',      Icon: LayoutDashboard, desc: 'KPIs y alertas',        dataKey: null },
   { id: 'forecast',     label: 'Forecasting',    Icon: TrendingUp,      desc: 'Proyección de demanda', dataKey: 'forecastData' },
-  { id: 'assortment',   label: 'Assortment OTB', Icon: ShoppingCart,    desc: 'Compra y presupuesto',  dataKey: 'otbData' },
+  { id: 'assortment',   label: 'Assortment', Icon: ShoppingCart,    desc: 'Compra y presupuesto',  dataKey: 'otbData' },
   { id: 'distribucion', label: 'Distribución',   Icon: Map,             desc: 'Surtido a tiendas',     dataKey: 'distributionData' },
   { id: 'resurtido',    label: 'Resurtido',       Icon: RefreshCw,       desc: 'Reposición continua',   dataKey: 'replenishmentData' },
   { id: 'planning',    label: 'Planning',       Icon: TrendingUp,       desc: 'Planeación compuesta',   dataKey: 'planningData' },
@@ -114,6 +114,14 @@ const PIPELINE_STEPS = [
   { label: 'Forecast → OTB',     from: 'forecastData',     to: 'assortment' },
   { label: 'OTB → Distribución', from: 'otbData',          to: 'distribucion' },
   { label: 'Dist → Resurtido',   from: 'distributionData', to: 'resurtido' },
+];
+
+// ─── Mundos (agrupación del sidebar y del dashboard) ──────────────────────────
+const NAV_GROUPS = [
+  { id: 'financial',  label: 'Financial',        Icon: Calculator,   color: '#B39DDB', items: ['planning'] },
+  { id: 'demand',     label: 'Demand Planner',   Icon: TrendingUp,   color: '#E0BB3E', items: ['assortment', 'forecast', 'distribucion', 'resurtido'] },
+  { id: 'inventory',  label: 'Inventory Control',Icon: Boxes,        color: '#8A73AD', items: ['dispersion', 'traslados', 'chequera'] },
+  { id: 'checkcoo',   label: 'Check Coo',        Icon: CircleCheck,  color: '#9A9CA3', items: ['dayli'] },
 ];
 
 // ─── Panel de Asistencia ──────────────────────────────────────────────────────
@@ -219,6 +227,9 @@ function Dashboard({ t, isDark }) {
 
   const anyData = NAV_ITEMS.slice(1).some(m => m.dataKey && !!global[m.dataKey]);
 
+  const [openGroups, setOpenGroups] = useState(() => Object.fromEntries(NAV_GROUPS.map(g => [g.id, true])));
+  const toggleGroup = (id) => setOpenGroups(o => ({ ...o, [id]: !o[id] }));
+
   return (
     <div className="max-w-5xl mx-auto p-8 space-y-8">
       <div>
@@ -242,27 +253,59 @@ function Dashboard({ t, isDark }) {
         </div>
       )}
 
-      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-        {NAV_ITEMS.slice(1).map(m => {
-          const hasData = m.dataKey && !!global[m.dataKey];
-          const Icon = m.Icon;
+      <div className="space-y-4">
+        {NAV_GROUPS.map(group => {
+          const mods = group.items.map(id => NAV_ITEMS.find(n => n.id === id)).filter(Boolean);
+          const withData = mods.filter(m => m.dataKey && !!global[m.dataKey]).length;
+          const isOpen = openGroups[group.id];
+          const GroupIcon = group.Icon;
           return (
-            <button
-              key={m.id}
-              onClick={() => globalActions.setModule(dispatch, m.id)}
-              className={`p-6 rounded-[28px] border text-left transition-all hover:scale-[1.01] ${t.card} ${isDark ? 'hover:border-violet-500/40' : 'hover:border-blue-300'}`}
-            >
-              <div className="flex items-center gap-3 mb-2">
-                <div className={`p-2.5 rounded-xl ${isDark ? 'bg-violet-600/20 text-violet-400' : 'bg-blue-50 text-blue-600'}`}>
-                  <Icon size={20} />
+            <div key={group.id} className={`rounded-[28px] border overflow-hidden ${t.card}`}>
+              <button
+                onClick={() => toggleGroup(group.id)}
+                className="w-full flex items-center justify-between gap-3 p-5 text-left"
+              >
+                <div className="flex items-center gap-3">
+                  <div className="p-2.5 rounded-xl" style={{ background: `${group.color}22`, color: group.color }}>
+                    <GroupIcon size={20} />
+                  </div>
+                  <p className={`font-black ${t.text}`}>{group.label}</p>
                 </div>
-                <div>
-                  <p className={`font-black ${t.text}`}>{m.label}</p>
-                  {hasData && <span className={`text-[9px] font-bold ${isDark ? 'text-emerald-400' : 'text-green-600'}`}>✓ Con datos</span>}
+                <div className="flex items-center gap-3 shrink-0">
+                  {withData > 0 && (
+                    <span className={`text-[9px] font-bold ${isDark ? 'text-emerald-400' : 'text-green-600'}`}>{withData}/{mods.length} con datos</span>
+                  )}
+                  <ChevronRight size={16} className={`transition-transform duration-200 ${t.textMuted} ${isOpen ? 'rotate-90' : ''}`} />
                 </div>
-              </div>
-              <p className={`text-xs ${t.textMuted}`}>{m.desc}</p>
-            </button>
+              </button>
+
+              {isOpen && (
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-4 pt-0">
+                  {mods.map(m => {
+                    const hasData = m.dataKey && !!global[m.dataKey];
+                    const Icon = m.Icon;
+                    return (
+                      <button
+                        key={m.id}
+                        onClick={() => globalActions.setModule(dispatch, m.id)}
+                        className={`p-4 rounded-2xl border text-left transition-all hover:scale-[1.01] ${t.cardInner} ${isDark ? 'hover:border-violet-500/40' : 'hover:border-blue-300'}`}
+                      >
+                        <div className="flex items-center gap-3 mb-1">
+                          <div className={`p-2 rounded-lg ${isDark ? 'bg-violet-600/20 text-violet-400' : 'bg-blue-50 text-blue-600'}`}>
+                            <Icon size={17} />
+                          </div>
+                          <div>
+                            <p className={`font-black text-sm ${t.text}`}>{m.label}</p>
+                            {hasData && <span className={`text-[9px] font-bold ${isDark ? 'text-emerald-400' : 'text-green-600'}`}>✓ Con datos</span>}
+                          </div>
+                        </div>
+                        <p className={`text-xs ${t.textMuted}`}>{m.desc}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+              )}
+            </div>
           );
         })}
       </div>
@@ -303,7 +346,20 @@ function Shell() {
   // false = colapsado (solo iconos) | true = expandido (labels visibles)
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
   const [showAssist,      setShowAssist]      = useState(false);
-  const assistRef = useRef(null);
+  const [openGroups,      setOpenGroups]      = useState({});
+  const [showSearch,      setShowSearch]      = useState(false);
+  const [searchQuery,     setSearchQuery]     = useState('');
+  const [showSupport,     setShowSupport]     = useState(false);
+  const [showSettings,    setShowSettings]    = useState(false);
+  const [showRecordMenu,  setShowRecordMenu]  = useState(false);
+  const [isRecording,     setIsRecording]     = useState(false);
+  const assistRef    = useRef(null);
+  const searchRef    = useRef(null);
+  const supportRef   = useRef(null);
+  const settingsRef  = useRef(null);
+  const recordRef    = useRef(null);
+  const mediaRecorderRef   = useRef(null);
+  const recordedChunksRef  = useRef([]);
 
   const critical = alerts.filter(a => a.level === 'critical').length;
 
@@ -311,10 +367,77 @@ function Shell() {
   useEffect(() => {
     const h = (e) => {
       if (assistRef.current && !assistRef.current.contains(e.target)) setShowAssist(false);
+      if (searchRef.current && !searchRef.current.contains(e.target)) setShowSearch(false);
+      if (supportRef.current && !supportRef.current.contains(e.target)) setShowSupport(false);
+      if (settingsRef.current && !settingsRef.current.contains(e.target)) setShowSettings(false);
+      if (recordRef.current && !recordRef.current.contains(e.target)) setShowRecordMenu(false);
     };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
   }, []);
+
+  const downloadBlob = (blob, filename) => {
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = filename;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const takeScreenshot = async () => {
+    setShowRecordMenu(false);
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true });
+      const track = stream.getVideoTracks()[0];
+      const video = document.createElement('video');
+      video.srcObject = stream;
+      await video.play();
+      await new Promise(r => setTimeout(r, 150));
+      const canvas = document.createElement('canvas');
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      canvas.getContext('2d').drawImage(video, 0, 0);
+      track.stop();
+      canvas.toBlob((blob) => {
+        if (blob) downloadBlob(blob, `go-planner-captura-${Date.now()}.png`);
+      }, 'image/png');
+    } catch (err) {
+      console.error('No se pudo capturar la pantalla:', err);
+    }
+  };
+
+  const startRecording = async () => {
+    setShowRecordMenu(false);
+    try {
+      const stream = await navigator.mediaDevices.getDisplayMedia({ video: true, audio: false });
+      recordedChunksRef.current = [];
+      const recorder = new MediaRecorder(stream, { mimeType: 'video/webm' });
+      recorder.ondataavailable = (e) => { if (e.data.size > 0) recordedChunksRef.current.push(e.data); };
+      recorder.onstop = () => {
+        const blob = new Blob(recordedChunksRef.current, { type: 'video/webm' });
+        downloadBlob(blob, `go-planner-clip-${Date.now()}.webm`);
+        stream.getTracks().forEach(t => t.stop());
+        setIsRecording(false);
+      };
+      stream.getVideoTracks()[0].onended = () => {
+        if (recorder.state !== 'inactive') recorder.stop();
+      };
+      mediaRecorderRef.current = recorder;
+      recorder.start();
+      setIsRecording(true);
+    } catch (err) {
+      console.error('No se pudo iniciar la grabación:', err);
+    }
+  };
+
+  const stopRecording = () => {
+    mediaRecorderRef.current?.stop();
+  };
+
+  const searchResults = searchQuery.trim()
+    ? NAV_ITEMS.filter(i => i.label.toLowerCase().includes(searchQuery.trim().toLowerCase()))
+    : [];
 
   // Navegar y colapsar sidebar automáticamente
   const handleNavigate = (id) => {
@@ -322,7 +445,94 @@ function Shell() {
     setSidebarExpanded(false);
   };
 
-  const moduleProps = { t, isDark };
+  const activeNav = NAV_ITEMS.find(n => n.id === activeModule);
+  const moduleProps = { t, isDark, navIcon: activeNav?.Icon, navLabel: activeNav?.label, navDesc: activeNav?.desc };
+
+  // Botón de un módulo individual (reusable para Dashboard y para items dentro de un mundo)
+  const renderNavButton = (item) => {
+    const isActive = activeModule === item.id;
+    const hasData  = item.dataKey && !!global[item.dataKey];
+    const Icon     = item.Icon;
+
+    return (
+      <button
+        key={item.id}
+        onClick={() => handleNavigate(item.id)}
+        title={!sidebarExpanded ? item.label : undefined}
+        className={`w-full flex items-center rounded-xl transition-all duration-200 relative group overflow-hidden
+          ${sidebarExpanded ? 'px-2.5 py-2 gap-3' : 'justify-center py-2.5 gap-0'}
+          ${isActive
+            ? isDark ? 'bg-violet-600/12 text-white' : 'bg-blue-50 text-blue-700'
+            : isDark ? 'text-zinc-500 hover:text-zinc-200 hover:bg-zinc-900/50' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'
+          }`}
+        style={isActive
+          ? isDark
+            ? { boxShadow: 'inset 0 0 20px rgba(124,58,237,0.08)' }
+            : { boxShadow: 'inset 0 0 10px rgba(59,130,246,0.08)' }
+          : {}
+        }
+      >
+        {/* Línea lateral glow */}
+        {isActive && (
+          <span
+            className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-full"
+            style={{
+              background: isDark ? '#8b5cf6' : '#3b82f6',
+              boxShadow: isDark
+                ? '0 0 10px 2px rgba(139,92,246,0.7)'
+                : '0 0 8px 1px rgba(59,130,246,0.5)',
+            }}
+          />
+        )}
+
+        {/* Ícono con glow si activo */}
+        <span
+          className={`shrink-0 flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200 ${
+            isActive
+              ? isDark ? 'bg-violet-600 text-white' : 'bg-blue-600 text-white'
+              : isDark ? 'text-zinc-500' : 'text-gray-400'
+          }`}
+          style={isActive && isDark
+            ? { boxShadow: '0 0 14px rgba(139,92,246,0.65)' }
+            : isActive && !isDark
+              ? { boxShadow: '0 0 10px rgba(59,130,246,0.4)' }
+              : {}
+          }
+        >
+          <Icon size={15} />
+        </span>
+
+        {/* Labels — solo expandido */}
+        {sidebarExpanded && (
+          <div className="flex-1 min-w-0 text-left">
+            <p className={`font-bold text-xs truncate leading-tight ${isActive ? (isDark ? 'text-white' : 'text-blue-700') : ''}`}>
+              {item.label}
+            </p>
+            <p className={`text-[10px] truncate leading-tight mt-0.5 ${isDark ? 'text-zinc-600' : 'text-gray-400'}`}>
+              {item.desc}
+            </p>
+          </div>
+        )}
+
+        {/* Punto de datos — solo expandido */}
+        {sidebarExpanded && hasData && (
+          <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isDark ? 'bg-emerald-500' : 'bg-green-500'}`} />
+        )}
+
+        {/* Tooltip flotante — solo colapsado */}
+        {!sidebarExpanded && (
+          <span className={`absolute left-14 px-2.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap z-50
+            pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-100
+            ${isDark ? 'bg-zinc-800 border border-zinc-700 text-white' : 'bg-white border border-gray-200 text-gray-800 shadow-md'}`}>
+            {item.label}
+            {hasData && (
+              <span className={`ml-1.5 text-[9px] ${isDark ? 'text-emerald-400' : 'text-green-600'}`}>✓</span>
+            )}
+          </span>
+        )}
+      </button>
+    );
+  };
 
   const renderModule = () => {
     switch (activeModule) {
@@ -341,7 +551,7 @@ function Shell() {
   };
 
   return (
-    <div className={`min-h-screen flex flex-col font-sans relative ${isDark ? 'text-[#EDEBF2]' : t.app}`}>
+    <div className={`h-screen flex flex-col font-sans relative overflow-hidden ${isDark ? 'text-[#EDEBF2]' : t.app}`}>
 
       {isDark && (
         <div
@@ -434,13 +644,43 @@ function Shell() {
               <ClipboardList size={17} />
             </Link>        
 
-    {/* Toggle tema */}
-            <button
-              onClick={() => globalActions.setTheme(dispatch, isDark ? 'light' : 'dark')}
-              className={`p-2.5 rounded-xl border transition ${isDark ? 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-yellow-400' : 'bg-white border-gray-200 text-gray-500 hover:text-blue-600'}`}
-            >
-              {isDark ? <Sun size={17} /> : <Moon size={17} />}
-            </button>
+            {/* ── Buscar ── */}
+            <div className="relative" ref={searchRef}>
+              <button
+                onClick={() => setShowSearch(v => !v)}
+                title="Buscar módulo"
+                className={`p-2.5 rounded-xl border transition ${isDark ? 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-violet-400 hover:border-violet-500/50' : 'bg-white border-gray-200 text-gray-500 hover:text-blue-600 hover:border-blue-300'}`}
+              >
+                <Search size={17} />
+              </button>
+              {showSearch && (
+                <div className={`absolute right-0 top-12 w-64 rounded-2xl border shadow-2xl z-50 p-2 ${isDark ? 'bg-[#1c1720]/95 border-white/10 backdrop-blur-xl' : 'bg-white border-gray-200'}`}>
+                  <input
+                    autoFocus
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    placeholder="Ir a un módulo…"
+                    className={`w-full px-3 py-2 rounded-xl text-sm outline-none ${t.input}`}
+                  />
+                  {searchResults.length > 0 && (
+                    <div className="mt-1.5 space-y-0.5">
+                      {searchResults.map(r => (
+                        <button
+                          key={r.id}
+                          onClick={() => { globalActions.setModule(dispatch, r.id); setShowSearch(false); setSearchQuery(''); }}
+                          className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold text-left ${isDark ? 'text-zinc-300 hover:bg-white/10' : 'text-gray-700 hover:bg-gray-100'}`}
+                        >
+                          <r.Icon size={13} />
+                          {r.label}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+    {/* Toggle tema ahora vive dentro de Configuración, en el rail derecho */}
           </div>
         </div>
 
@@ -455,7 +695,7 @@ function Shell() {
         </div>
       </header>
 
-      <div className="flex flex-1 overflow-hidden">
+      <div className="flex flex-1 min-h-0 overflow-hidden">
 
         {/* ══════════ SIDEBAR ══════════ */}
         <aside
@@ -474,88 +714,70 @@ function Shell() {
 
           {/* Nav items */}
           <nav className="flex-1 overflow-y-auto py-3 space-y-1 px-1.5 overflow-x-hidden">
-            {NAV_ITEMS.map(item => {
-              const isActive = activeModule === item.id;
-              const hasData  = item.dataKey && !!global[item.dataKey];
-              const Icon     = item.Icon;
+            {renderNavButton(NAV_ITEMS[0])}
+
+            {NAV_GROUPS.map(group => {
+              const groupItems = NAV_ITEMS.filter(i => group.items.includes(i.id));
+              const isOpen = !!openGroups[group.id];
+              const groupHasActive = groupItems.some(i => i.id === activeModule);
+              const GroupIcon = group.Icon;
 
               return (
-                <button
-                  key={item.id}
-                  onClick={() => handleNavigate(item.id)}
-                  title={!sidebarExpanded ? item.label : undefined}
-                  className={`w-full flex items-center rounded-xl transition-all duration-200 relative group overflow-hidden
-                    ${sidebarExpanded ? 'px-2.5 py-2 gap-3' : 'justify-center py-2.5 gap-0'}
-                    ${isActive
-                      ? isDark ? 'bg-violet-600/12 text-white' : 'bg-blue-50 text-blue-700'
-                      : isDark ? 'text-zinc-500 hover:text-zinc-200 hover:bg-zinc-900/50' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'
-                    }`}
-                  style={isActive
-                    ? isDark
-                      ? { boxShadow: 'inset 0 0 20px rgba(124,58,237,0.08)' }
-                      : { boxShadow: 'inset 0 0 10px rgba(59,130,246,0.08)' }
-                    : {}
-                  }
-                >
-                  {/* Línea lateral glow */}
-                  {isActive && (
-                    <span
-                      className="absolute left-0 top-1/2 -translate-y-1/2 w-[3px] h-5 rounded-full"
-                      style={{
-                        background: isDark ? '#8b5cf6' : '#3b82f6',
-                        boxShadow: isDark
-                          ? '0 0 10px 2px rgba(139,92,246,0.7)'
-                          : '0 0 8px 1px rgba(59,130,246,0.5)',
-                      }}
-                    />
-                  )}
-
-                  {/* Ícono con glow si activo */}
-                  <span
-                    className={`shrink-0 flex items-center justify-center w-8 h-8 rounded-lg transition-all duration-200 ${
-                      isActive
-                        ? isDark ? 'bg-violet-600 text-white' : 'bg-blue-600 text-white'
-                        : isDark ? 'text-zinc-500' : 'text-gray-400'
-                    }`}
-                    style={isActive && isDark
-                      ? { boxShadow: '0 0 14px rgba(139,92,246,0.65)' }
-                      : isActive && !isDark
-                        ? { boxShadow: '0 0 10px rgba(59,130,246,0.4)' }
-                        : {}
-                    }
+                <div key={group.id} className="w-full pt-1">
+                  <button
+                    onClick={() => {
+                      if (!sidebarExpanded) setSidebarExpanded(true);
+                      setOpenGroups(g => ({ ...g, [group.id]: !g[group.id] }));
+                    }}
+                    title={!sidebarExpanded ? group.label : undefined}
+                    className={`w-full flex items-center rounded-xl transition-all duration-200
+                      ${sidebarExpanded ? 'px-2.5 py-2 gap-3' : 'justify-center py-2.5'}
+                      ${groupHasActive
+                        ? isDark ? 'text-white' : 'text-gray-900'
+                        : isDark ? 'text-zinc-500 hover:text-zinc-200 hover:bg-zinc-900/50' : 'text-gray-400 hover:text-gray-700 hover:bg-gray-100'
+                      }`}
                   >
-                    <Icon size={15} />
-                  </span>
+                    <span
+                      className="shrink-0 flex items-center justify-center w-8 h-8 rounded-lg"
+                      style={{ background: `${group.color}22`, color: group.color }}
+                    >
+                      <GroupIcon size={14} />
+                    </span>
+                    {sidebarExpanded && (
+                      <>
+                        <span className="flex-1 min-w-0 text-left text-[11px] font-black uppercase tracking-widest truncate">
+                          {group.label}
+                        </span>
+                        <ChevronRight size={13} className={`shrink-0 transition-transform duration-200 ${isOpen ? 'rotate-90' : ''}`} />
+                      </>
+                    )}
+                  </button>
 
-                  {/* Labels — solo expandido */}
-                  {sidebarExpanded && (
-                    <div className="flex-1 min-w-0 text-left">
-                      <p className={`font-bold text-xs truncate leading-tight ${isActive ? (isDark ? 'text-white' : 'text-blue-700') : ''}`}>
-                        {item.label}
-                      </p>
-                      <p className={`text-[10px] truncate leading-tight mt-0.5 ${isDark ? 'text-zinc-600' : 'text-gray-400'}`}>
-                        {item.desc}
-                      </p>
+                  {sidebarExpanded && isOpen && (
+                    <div className="pl-3 ml-4 mt-0.5 space-y-0.5 border-l" style={{ borderColor: `${group.color}30` }}>
+                      {groupItems.map(item => {
+                        const isActive = activeModule === item.id;
+                        const hasData  = item.dataKey && !!global[item.dataKey];
+                        const Icon     = item.Icon;
+                        return (
+                          <button
+                            key={item.id}
+                            onClick={() => handleNavigate(item.id)}
+                            className={`w-full flex items-center gap-2.5 pl-2 pr-2 py-1.5 rounded-lg text-xs font-bold transition ${
+                              isActive
+                                ? isDark ? 'bg-violet-600/15 text-white' : 'bg-blue-50 text-blue-700'
+                                : isDark ? 'text-zinc-500 hover:text-zinc-200' : 'text-gray-400 hover:text-gray-700'
+                            }`}
+                          >
+                            <Icon size={13} className="shrink-0" />
+                            <span className="truncate flex-1 text-left">{item.label}</span>
+                            {hasData && <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isDark ? 'bg-emerald-500' : 'bg-green-500'}`} />}
+                          </button>
+                        );
+                      })}
                     </div>
                   )}
-
-                  {/* Punto de datos — solo expandido */}
-                  {sidebarExpanded && hasData && (
-                    <span className={`w-1.5 h-1.5 rounded-full shrink-0 ${isDark ? 'bg-emerald-500' : 'bg-green-500'}`} />
-                  )}
-
-                  {/* Tooltip flotante — solo colapsado */}
-                  {!sidebarExpanded && (
-                    <span className={`absolute left-14 px-2.5 py-1.5 rounded-lg text-xs font-bold whitespace-nowrap z-50
-                      pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity duration-100
-                      ${isDark ? 'bg-zinc-800 border border-zinc-700 text-white' : 'bg-white border border-gray-200 text-gray-800 shadow-md'}`}>
-                      {item.label}
-                      {hasData && (
-                        <span className={`ml-1.5 text-[9px] ${isDark ? 'text-emerald-400' : 'text-green-600'}`}>✓</span>
-                      )}
-                    </span>
-                  )}
-                </button>
+                </div>
               );
             })}
           </nav>
@@ -609,6 +831,88 @@ function Shell() {
         <main className={`flex-1 overflow-y-auto min-w-0 ${isDark ? 'bg-transparent' : 'bg-gray-50'}`}>
           {renderModule()}
         </main>
+
+        {/* ══════════ RAIL DERECHO ══════════ */}
+        <aside className={`flex flex-col items-center gap-2 py-4 px-2 border-l shrink-0 ${t.sidebar}`}>
+          {/* Grabar */}
+          <div className="relative" ref={recordRef}>
+            <button
+              title={isRecording ? 'Detener grabación' : 'Grabar'}
+              onClick={() => isRecording ? stopRecording() : setShowRecordMenu(v => !v)}
+              className={`relative p-2.5 rounded-xl border transition ${
+                isRecording
+                  ? 'bg-red-500/20 border-red-500/50 text-red-400'
+                  : isDark ? 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-red-400 hover:border-red-500/40' : 'bg-white border-gray-200 text-gray-500 hover:text-red-500 hover:border-red-300'
+              }`}
+            >
+              <Circle size={16} className={isRecording ? 'fill-current animate-pulse' : ''} />
+            </button>
+            {showRecordMenu && !isRecording && (
+              <div className={`absolute right-12 bottom-0 w-56 rounded-2xl border shadow-2xl z-50 p-1.5 ${isDark ? 'bg-[#1c1720]/95 border-white/10 backdrop-blur-xl' : 'bg-white border-gray-200'}`}>
+                <button
+                  onClick={takeScreenshot}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold text-left ${isDark ? 'text-zinc-200 hover:bg-white/10' : 'text-gray-700 hover:bg-gray-100'}`}
+                >
+                  📸 Captura de pantalla
+                </button>
+                <button
+                  onClick={startRecording}
+                  className={`w-full flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-xs font-bold text-left ${isDark ? 'text-zinc-200 hover:bg-white/10' : 'text-gray-700 hover:bg-gray-100'}`}
+                >
+                  🎥 Grabar clip
+                </button>
+              </div>
+            )}
+          </div>
+
+          {/* Settings */}
+          <div className="relative" ref={settingsRef}>
+            <button
+              title="Configuración"
+              onClick={() => setShowSettings(v => !v)}
+              className={`p-2.5 rounded-xl border transition ${isDark ? 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-zinc-200' : 'bg-white border-gray-200 text-gray-400 hover:text-gray-600'}`}
+            >
+              <Settings size={16} />
+            </button>
+            {showSettings && (
+              <div className={`absolute right-12 bottom-0 w-56 rounded-2xl border shadow-2xl z-50 p-4 ${isDark ? 'bg-[#1c1720]/95 border-white/10 backdrop-blur-xl' : 'bg-white border-gray-200'}`}>
+                <p className={`font-black text-xs uppercase tracking-widest mb-3 ${t.text}`}>Configuración</p>
+                <div className="flex items-center justify-between">
+                  <span className={`text-xs font-bold ${t.textMuted}`}>Modo {isDark ? 'oscuro' : 'claro'}</span>
+                  <button
+                    onClick={() => globalActions.setTheme(dispatch, isDark ? 'light' : 'dark')}
+                    className={`p-2 rounded-lg border transition ${isDark ? 'bg-white/5 border-white/10 text-yellow-400' : 'bg-gray-50 border-gray-200 text-blue-600'}`}
+                  >
+                    {isDark ? <Sun size={15} /> : <Moon size={15} />}
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Soporte */}
+          <div className="relative" ref={supportRef}>
+            <button
+              title="Soporte"
+              onClick={() => setShowSupport(v => !v)}
+              className={`p-2.5 rounded-xl border transition ${isDark ? 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-violet-400 hover:border-violet-500/50' : 'bg-white border-gray-200 text-gray-500 hover:text-blue-600 hover:border-blue-300'}`}
+            >
+              <HelpCircle size={16} />
+            </button>
+            {showSupport && (
+              <div className={`absolute right-12 bottom-0 w-64 rounded-2xl border shadow-2xl z-50 p-4 ${isDark ? 'bg-[#1c1720]/95 border-white/10 backdrop-blur-xl' : 'bg-white border-gray-200'}`}>
+                <p className={`font-black text-xs uppercase tracking-widest mb-2 ${t.text}`}>Soporte</p>
+                <p className={`text-xs mb-3 ${t.textMuted}`}>¿Algo no jala o tienes una idea? Escríbeme:</p>
+                <a
+                  href="mailto:lgochoa@suburbia.com.mx?subject=GO%20Planner"
+                  className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-bold ${t.btnSec}`}
+                >
+                  <Mail size={14} /> lgochoa@suburbia.com.mx
+                </a>
+              </div>
+            )}
+          </div>
+        </aside>
       </div>
     </div>
   );
