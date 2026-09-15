@@ -53,9 +53,10 @@ const WORLDS = [
     modules: [
       { label: 'Forecasting',    Icon: TrendingUp,   desc: 'Regresión lineal con ajuste estacional y 4 escenarios IS.' },
       { label: 'Assortment', Icon: ShoppingCart, desc: 'Presupuesto de compra, buckets por marca y OTB mensual.' },
-      { label: 'Resurtido',      Icon: RefreshCw,    desc: 'Reposición continua basada en cobertura y fill rate.' 
+      { label: 'Resurtido',      Icon: RefreshCw,    desc: 'Reposición continua basada en cobertura y fill rate.' },
       { label: 'Distribución', Icon: Map,            desc: 'Surtido inicial por cluster, curva de tallas y chequera.' },
     ],
+   }, 
   {
     id: 'inventario', tag: 'CONTROL DE INVENTARIOS',
     name: 'Disperción · Traslados · Chequera',
