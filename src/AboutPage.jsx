@@ -438,7 +438,7 @@ function CSVFormatsSection() {
           Formatos de CSV
         </h2>
         <p style={{ color: '#71717a', fontSize: '14px', margin: '14px auto 0', maxWidth: '520px', lineHeight: 1.6 }}>
-          Qué columnas espera cada módulo, sacado directo de su parser. Si un módulo cambia su formato, esta lista se actualiza aquí — un array en <code style={{ background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: '5px' }}>csvSchemas.js</code>.
+          Qué columnas espera cada módulo. Qué titulos necesita el csv y que datos debe contener. <code style={{ background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: '5px' }}>csvSchemas.js</code>.
         </p>
       </div>
 
