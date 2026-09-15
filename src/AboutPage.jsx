@@ -4,8 +4,9 @@ import { useNavigate } from 'react-router-dom';
 import {
   TrendingUp, ShoppingCart, Map, RefreshCw,
   ArrowLeftRight, ChevronDown, Zap, BarChart3,
-  Calendar, ArrowRight, Layers
+  Calendar, ArrowRight, Layers, FileSpreadsheet
 } from 'lucide-react';
+import { CSV_SCHEMAS } from './csvSchemas';
 
 // ── Hook: detecta si el elemento es visible ───────────────────────────────────
 function useInView(threshold = 0.15) {
@@ -399,6 +400,85 @@ function WorldsSection() {
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
         {WORLDS.map((w, i) => <WorldCard key={w.id} world={w} index={i} />)}
+      </div>
+    </section>
+  );
+}
+
+// ── Formatos CSV ──────────────────────────────────────────────────────────────
+function CSVFormatsSection() {
+  const [openModule, setOpenModule] = useState(null);
+  const [ref, visible] = useInView(0.1);
+
+  return (
+    <section style={{ padding: '80px 2rem', maxWidth: '900px', margin: '0 auto' }}>
+      <div ref={ref} style={{
+        textAlign: 'center', marginBottom: '50px',
+        opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(30px)',
+        transition: 'all 0.7s ease',
+      }}>
+        <p style={{ fontSize: '11px', fontWeight: 700, color: '#52525b', letterSpacing: '2.5px', textTransform: 'uppercase', marginBottom: '16px' }}>
+          Referencia
+        </p>
+        <h2 style={{ fontSize: 'clamp(32px, 5vw, 52px)', fontWeight: 900, color: 'white', letterSpacing: '-2px', margin: 0 }}>
+          Formatos de CSV
+        </h2>
+        <p style={{ color: '#71717a', fontSize: '14px', margin: '14px auto 0', maxWidth: '520px', lineHeight: 1.6 }}>
+          Qué columnas espera cada módulo, sacado directo de su parser. Si un módulo cambia su formato, esta lista se actualiza aquí — un array en <code style={{ background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: '5px' }}>csvSchemas.js</code>.
+        </p>
+      </div>
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
+        {CSV_SCHEMAS.map((mod, i) => {
+          const isOpen = openModule === i;
+          return (
+            <div key={mod.module} style={{
+              background: isOpen ? 'rgba(139,92,246,0.06)' : 'rgba(255,255,255,0.02)',
+              border: `1px solid ${isOpen ? 'rgba(139,92,246,0.3)' : 'rgba(255,255,255,0.07)'}`,
+              borderRadius: '18px', overflow: 'hidden',
+              transition: 'all 0.25s ease',
+              opacity: visible ? 1 : 0,
+              transform: visible ? 'translateY(0)' : 'translateY(20px)',
+              transitionDelay: `${i * 0.05}s`,
+            }}>
+              <button onClick={() => setOpenModule(isOpen ? null : i)} style={{
+                width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+                padding: '20px 26px', background: 'none', border: 'none',
+                cursor: 'pointer', textAlign: 'left',
+              }}>
+                <span style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px', fontWeight: 700, color: 'white' }}>
+                  <FileSpreadsheet size={15} color="#8b5cf6" /> {mod.module}
+                </span>
+                <ChevronDown size={16} color={isOpen ? '#8b5cf6' : '#52525b'}
+                  style={{ flexShrink: 0, marginLeft: '12px', transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.25s' }} />
+              </button>
+              {isOpen && (
+                <div style={{
+                  padding: '0 26px 24px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '18px',
+                  display: 'flex', flexDirection: 'column', gap: '18px',
+                }}>
+                  {mod.formats.map((f, fi) => (
+                    <div key={fi}>
+                      <p style={{ fontSize: '13px', fontWeight: 700, color: '#c4b5fd', margin: '0 0 6px' }}>{f.title}</p>
+                      <p style={{ fontSize: '12.5px', color: '#a1a1aa', lineHeight: 1.6, margin: '0 0 10px' }}>{f.desc}</p>
+                      {f.columns.length > 0 && (
+                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
+                          {f.columns.map(c => (
+                            <span key={c} style={{
+                              fontFamily: 'monospace', fontSize: '11px', color: '#e4e4e7',
+                              background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
+                              borderRadius: '6px', padding: '3px 8px',
+                            }}>{c}</span>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          );
+        })}
       </div>
     </section>
   );
