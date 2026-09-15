@@ -15,8 +15,10 @@ const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyO2WhyRMxeMFO3
 
 import React, { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
 import { Link } from 'react-router-dom';
-import { Bell, HelpCircle } from 'lucide-react';
+import { Home } from 'lucide-react';
 import * as XLSX from 'xlsx';
+import AppHeader from './components/AppHeader';
+import { THEMES } from './App';
 
 const STATUS_ORDER = ['pending', 'progress', 'done'];
 const STATUS = {
@@ -133,7 +135,6 @@ export default function TeamTrackerPage() {
   const [drafts, setDrafts] = useState({});
   const [collapsed, setCollapsed] = useState(false);
   const [groupBy, setGroupBy] = useState('status');
-  const [showInfo, setShowInfo] = useState(false);
   const [editScope, setEditScope] = useState('solo');
 
   const tabsRef = useRef({});
@@ -371,32 +372,15 @@ export default function TeamTrackerPage() {
     <div className="tt-page">
       <style>{CSS}</style>
 
-      <header className="tt-topbar">
-        <Link to="/" className="tt-topbar-brand" title="Volver a GO PLANNER">
-          <span className="tt-logo-mark">GP</span>
-          <span className="tt-topbar-titles">
-            <span className="tt-topbar-title">GO <b>PLANNER</b></span>
-            <span className="tt-topbar-sub">Team Tracker</span>
-          </span>
-        </Link>
-        <div className="tt-topbar-actions">
-          <button className="tt-topbar-icon" title="Pendientes vencidos">
-            <Bell size={16} />
-            {overdueCount > 0 && <span className="tt-topbar-badge">{overdueCount}</span>}
-          </button>
-          <div className="tt-info-wrap">
-            <button className="tt-topbar-icon" onClick={() => setShowInfo((v) => !v)} title="Acerca de Team Tracker">
-              <HelpCircle size={16} />
-            </button>
-            {showInfo && (
-              <div className="tt-info-pop">
-                <p><b>Team Tracker</b></p>
-                <p>Pendientes del equipo, checklist, Gantt y resumen semanal. El candado 🔒 desbloquea agregar, editar o borrar. Los datos viven en un Google Sheet aparte.</p>
-              </div>
-            )}
-          </div>
-        </div>
-      </header>
+            <AppHeader
+        t={THEMES.dark}
+        isDark={true}
+        sticky={false}
+        subtitle="Team Tracker"
+        bell={{ count: overdueCount, critical: overdueCount > 0, title: 'Pendientes vencidos' }}
+        extraLinks={[{ to: '/', title: 'Volver a módulos', Icon: Home }]}
+        assistDescription="Pendientes del equipo, checklist, Gantt y resumen semanal. El candado 🔒 desbloquea agregar, editar o borrar. Los datos viven en un Google Sheet aparte."
+      />
 
       <div className="tt-root">
         <aside className={`tt-side ${collapsed ? 'is-collapsed' : ''}`}>
