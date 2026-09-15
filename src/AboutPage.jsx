@@ -70,11 +70,11 @@ const WORLDS = [
   },
  {
     id: 'check', tag: 'CHECK DE COORDINADORES',
-    name: 'Dayli',
+    name: 'Daily',
     desc: 'Detalle de ventas e inventarios diarios, con una proyección diaria por venta y utilidades.',
-    accent: '#10b981', glow: 'rgba(16,185,129,0.15)',
+    accent: '#06b6d4', glow: 'rgba(6, 182, 212, 0.15)',
     modules: [
-       { label: 'Dayli',    Icon: Calendar,  desc: 'Ajustes diarios de inventario, ventas y margen.' },
+       { label: 'Daily',    Icon: Calendar,  desc: 'Ajustes diarios de inventario, ventas y margen.' },
      ],
    },
  ];
