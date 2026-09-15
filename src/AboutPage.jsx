@@ -319,9 +319,10 @@ function Hero({ navigate }) {
 }
 
 // ── World card ────────────────────────────────────────────────────────────────
-function WorldCard({ world, index }) {
+function WorldCard({ world, index, total }) {
   const [ref, visible] = useInView(0.1);
   const [hovered, setHovered] = useState(false);
+  const esUltimoSolitario = index === total - 1 && total % 3 === 1;
 
   return (
     <div
@@ -330,6 +331,7 @@ function WorldCard({ world, index }) {
       onMouseEnter={() => setHovered(true)}
       onMouseLeave={() => setHovered(false)}
       style={{
+        gridColumn: esUltimoSolitario ? '1 / -1' : 'auto', // 👈 ESTA LÍNEA HACE LA MAGIA
         background: hovered ? `rgba(255,255,255,0.035)` : 'rgba(255,255,255,0.02)',
         border: `1px solid ${hovered ? world.accent + '50' : 'rgba(255,255,255,0.07)'}`,
         borderRadius: '28px', padding: '36px',
@@ -408,9 +410,11 @@ function WorldsSection() {
           Módulos agrupados por función y flujo de trabajo. Cada pilar opera de forma independiente pero comparte datos con los demás.
         </p>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))', gap: '20px' }}>
-        {WORLDS.map((w, i) => <WorldCard key={w.id} world={w} index={i} />)}
-      </div>
+<div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
+  {WORLDS.map((w, i) => (
+    <WorldCard key={w.id} world={w} index={i} total={WORLDS.length} />
+  ))}
+</div>
     </section>
   );
 }
