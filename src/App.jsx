@@ -135,7 +135,7 @@ function AssistPanel({ isDark, onClose }) {
 
   const topics = [
     { Icon: TrendingUp,   color: 'text-violet-400', label: 'Forecasting',      desc: 'Modelos, parámetros y horizonte' },
-    { Icon: ShoppingCart, color: 'text-yellow-400', label: 'Assortment OTB',   desc: 'Clusters, curvas y presupuesto' },
+    { Icon: ShoppingCart, color: 'text-yellow-400', label: 'Assortment',   desc: 'Clusters, curvas y presupuesto' },
     { Icon: Map,          color: 'text-blue-400',   label: 'Distribución',      desc: 'Surtido por cluster y chequera' },
     { Icon: RefreshCw,    color: 'text-emerald-400',label: 'Resurtido',         desc: 'CSV, filtros y exportación' },
     { Icon: Wallet, color: 'text-teal-400', label: 'Chequera', desc: 'Compras por SKU/modelo vs OTB' },
