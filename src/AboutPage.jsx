@@ -644,6 +644,7 @@ export default function AboutPage() {
         <NavBar navigate={navigate} />
         <Hero navigate={navigate} />
         <WorldsSection />
+        <CSVFormatsSection />
         <FAQSection />
         <CTASection navigate={navigate} />
         <Footer navigate={navigate} />
