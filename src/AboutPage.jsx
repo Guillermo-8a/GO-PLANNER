@@ -56,7 +56,6 @@ const WORLDS = [
       { label: 'Resurtido',      Icon: RefreshCw,    desc: 'Reposición continua basada en cobertura y fill rate.' 
       { label: 'Distribución', Icon: Map,            desc: 'Surtido inicial por cluster, curva de tallas y chequera.' },
     ],
-  },
   {
     id: 'inventario', tag: 'CONTROL DE INVENTARIOS',
     name: 'Disperción · Traslados · Chequera',
