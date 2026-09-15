@@ -25,39 +25,39 @@ import {
 // ─── Paletas de tema ──────────────────────────────────────────────────────────
 export const THEMES = {
   dark: {
-    app:          'bg-black text-gray-300',
-    header:       'bg-zinc-950/90 border-zinc-800 backdrop-blur-md',
-    sidebar:      'bg-zinc-950 border-zinc-800',
-    card:         'bg-zinc-900 border-zinc-800 shadow-lg',
-    cardInner:    'bg-zinc-950 border-zinc-800',
-    input:        'bg-zinc-950 border-zinc-700 text-white placeholder-gray-600 focus:ring-violet-500',
-    inputY:       'bg-zinc-950 border-zinc-700 text-yellow-400 font-bold focus:ring-yellow-500',
-    btn:          'bg-yellow-500 text-black hover:bg-yellow-400',
-    btnSec:       'bg-violet-600 text-white hover:bg-violet-500',
-    btnGhost:     'bg-zinc-800 text-gray-300 hover:bg-zinc-700',
-    btnDanger:    'text-gray-400 hover:text-red-400 bg-zinc-900 border-zinc-800',
-    btnEdit:      'text-gray-400 hover:text-yellow-400 bg-zinc-900 border-zinc-800',
-    text:         'text-white',
-    textMuted:    'text-gray-400',
-    accent1:      'text-violet-400',
-    accent2:      'text-yellow-400',
-    border:       'border-zinc-800',
-    tabActive:    'border-yellow-400 text-yellow-400',
-    tabInactive:  'border-transparent text-gray-500 hover:text-gray-300',
-    tableHead:    'bg-zinc-950 text-gray-500 border-zinc-800',
-    tableRow:     'hover:bg-zinc-800/50',
+    app:          'bg-transparent text-[#EDEBF2]',
+    header:       'bg-[#1c1720]/70 border-white/10 backdrop-blur-xl',
+    sidebar:      'bg-white/[0.045] backdrop-blur-xl border-white/10',
+    card:         'bg-white/[0.045] backdrop-blur-xl border-white/10 shadow-lg shadow-black/40 transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)]',
+    cardInner:    'bg-white/5 border-white/10',
+    input:        'bg-white/5 border-white/10 text-white placeholder-white/30 focus:ring-[#8A73AD]',
+    inputY:       'bg-white/5 border-[#E0BB3E]/40 text-[#E0BB3E] font-bold focus:ring-[#E0BB3E]',
+    btn:          'bg-[#E0BB3E] text-[#16141a] hover:brightness-110 transition-all duration-300',
+    btnSec:       'bg-gradient-to-br from-[#8A73AD] to-[#6E5B8A] text-white hover:brightness-110 transition-all duration-300 shadow-lg shadow-[#8A73AD]/30',
+    btnGhost:     'bg-white/5 text-[#CFCBDA] hover:bg-white/10 transition-all duration-300',
+    btnDanger:    'text-[#948FA0] hover:text-[#C99A9A] bg-white/5 border-white/10',
+    btnEdit:      'text-[#948FA0] hover:text-[#E0BB3E] bg-white/5 border-white/10',
+    text:         'text-[#EDEBF2]',
+    textMuted:    'text-[#948FA0]',
+    accent1:      'text-[#B39DDB]',
+    accent2:      'text-[#E0BB3E]',
+    border:       'border-white/10',
+    tabActive:    'border-[#E0BB3E] text-[#E0BB3E]',
+    tabInactive:  'border-transparent text-[#6b6778] hover:text-[#B7B2C4]',
+    tableHead:    'bg-white/5 text-[#948FA0] border-white/10',
+    tableRow:     'hover:bg-white/5',
     success:      'text-emerald-400',
     successBg:    'bg-emerald-900/20 border-emerald-500/50 text-emerald-300',
-    warning:      'text-yellow-400',
-    warningBg:    'bg-yellow-900/20 border-yellow-500/50 text-yellow-300',
-    danger:       'text-red-400',
-    dangerBg:     'bg-red-900/20 border-red-500/50 text-red-300',
-    toggle:       'bg-zinc-950 border-zinc-800',
-    toggleActive: 'bg-zinc-800 text-white shadow',
-    menuBg:       'bg-zinc-900 border-zinc-700 shadow-xl',
-    badge: (c) => c === 'AA' ? 'text-violet-400 bg-violet-900/30 border-violet-500/50'
-                : c === 'A'  ? 'text-yellow-400 bg-yellow-900/30 border-yellow-500/50'
-                :              'text-gray-300 bg-zinc-800 border-zinc-600',
+    warning:      'text-[#E0BB3E]',
+    warningBg:    'bg-[#E0BB3E]/10 border-[#E0BB3E]/40 text-[#E0BB3E]',
+    danger:       'text-[#C99A9A]',
+    dangerBg:     'bg-[#A1402C]/15 border-[#A1402C]/40 text-[#C99A9A]',
+    toggle:       'bg-white/5 border-white/10',
+    toggleActive: 'bg-white/15 text-white shadow',
+    menuBg:       'bg-[#1c1720]/95 border-white/10 shadow-xl backdrop-blur-xl',
+    badge: (c) => c === 'AA' ? 'text-[#B39DDB] bg-[#8A73AD]/20 border-[#8A73AD]/40'
+                : c === 'A'  ? 'text-[#E0BB3E] bg-[#E0BB3E]/15 border-[#E0BB3E]/40'
+                :              'text-[#CFCBDA] bg-white/10 border-white/15',
   },
   light: {
     app:          'bg-gray-50 text-gray-800',
@@ -190,17 +190,16 @@ function AssistPanel({ isDark, onClose }) {
           Usa el sidebar para pasar datos entre módulos. Los botones se activan automáticamente cuando hay datos disponibles en el módulo anterior.
         </p>
       </div>
-    <a href="/about"
-      style={{
-        display:'flex', alignItems: 'center', justiContent: 'center', gap: '6xp',
-        margin: '0 12px', border: '1px solid rgba (139,92,246,0,25)',
-        background: 'rgba (139,92,246,0.08)',
-        color: '#8b5cf6', frontSize: '11px', fontWeight: 700,
-        textDecoration: 'none', letterSpacing: '0.5px',
-      }}
-      >
-    Acerca de GO PLANNER 
-    </a>
+    <Link
+      to="/about"
+      onClick={onClose}
+      className={`flex items-center justify-center gap-1.5 mx-3 mb-1 py-2.5 rounded-xl border text-[11px] font-bold tracking-wide transition ${
+        isDark ? 'border-violet-500/25 bg-violet-500/10 text-violet-400 hover:bg-violet-500/20'
+               : 'border-blue-200 bg-blue-50 text-blue-600 hover:bg-blue-100'
+      }`}
+    >
+      Acerca de GO PLANNER
+    </Link>
     </div>
   );
 }
@@ -342,7 +341,19 @@ function Shell() {
   };
 
   return (
-    <div className={`min-h-screen flex flex-col font-sans ${t.app}`}>
+    <div className={`min-h-screen flex flex-col font-sans relative ${isDark ? 'text-[#EDEBF2]' : t.app}`}>
+
+      {isDark && (
+        <div
+          className="fixed inset-0 -z-10 pointer-events-none"
+          style={{
+            background:
+              'radial-gradient(ellipse 60% 50% at 15% 10%, rgba(138,115,173,0.35), transparent 60%),' +
+              'radial-gradient(ellipse 55% 45% at 90% 85%, rgba(224,187,62,0.22), transparent 60%),' +
+              'linear-gradient(160deg, #16141a 0%, #1c1720 45%, #14121a 100%)',
+          }}
+        />
+      )}
 
       {/* ══════════ TOPBAR ══════════ */}
       <header className={`sticky top-0 z-30 border-b ${t.header}`}>
@@ -595,7 +606,7 @@ function Shell() {
         </aside>
 
         {/* ══════════ CONTENIDO ══════════ */}
-        <main className={`flex-1 overflow-y-auto min-w-0 ${isDark ? 'bg-black' : 'bg-gray-50'}`}>
+        <main className={`flex-1 overflow-y-auto min-w-0 ${isDark ? 'bg-transparent' : 'bg-gray-50'}`}>
           {renderModule()}
         </main>
       </div>
