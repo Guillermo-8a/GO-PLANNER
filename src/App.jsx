@@ -8,6 +8,7 @@ import { Link } from 'react-router-dom';
 
 import { useState, useRef, useEffect } from 'react';
 import { GlobalProvider, useGlobal, useDispatch, globalActions } from './context/GlobalContext';
+import AppHeader from './components/AppHeader';
 import ModuleForecast     from './modules/ModuleForecast';
 import ModuleAssortment   from './modules/ModuleAssortment';
 import ModuleDistribucion from './modules/ModuleDistribucion';
@@ -123,94 +124,6 @@ const NAV_GROUPS = [
   { id: 'inventory',  label: 'Inventory Control',Icon: Boxes,        color: '#8A73AD', items: ['dispersion', 'traslados', 'chequera'] },
   { id: 'checkcoo',   label: 'Check Coo',        Icon: CircleCheck,  color: '#9A9CA3', items: ['dayli'] },
 ];
-
-// ─── Panel de Asistencia ──────────────────────────────────────────────────────
-function AssistPanel({ isDark, onClose }) {
-  const bg    = isDark ? 'bg-zinc-950 border-zinc-800' : 'bg-white border-gray-200';
-  const text  = isDark ? 'text-white' : 'text-gray-900';
-  const muted = isDark ? 'text-zinc-400' : 'text-gray-500';
-  const item  = isDark
-    ? 'bg-zinc-900 border-zinc-800 hover:border-violet-500/40'
-    : 'bg-gray-50 border-gray-200 hover:border-blue-300';
-
-  const topics = [
-    { Icon: TrendingUp,   color: 'text-violet-400', label: 'Forecasting',      desc: 'Modelos, parámetros y horizonte' },
-    { Icon: ShoppingCart, color: 'text-yellow-400', label: 'Assortment',   desc: 'Clusters, curvas y presupuesto' },
-    { Icon: Map,          color: 'text-blue-400',   label: 'Distribución',      desc: 'Surtido por cluster y chequera' },
-    { Icon: RefreshCw,    color: 'text-emerald-400',label: 'Resurtido',         desc: 'CSV, filtros y exportación' },
-    { Icon: Wallet, color: 'text-teal-400', label: 'Chequera', desc: 'Compras por SKU/modelo vs OTB' },
-    { Icon: BarChart2,    color: 'text-violet-400',label: 'Dispersión',         desc: 'Dispersión de inventarios' },
-    
-    { Icon: Zap,          color: 'text-orange-400', label: 'Pipeline de datos', desc: 'Cómo comparten info los módulos' },
-  ];
-
-  return (
-    <div
-      className={`absolute right-0 top-12 w-76 rounded-2xl border shadow-2xl z-50 overflow-hidden ${bg}`}
-      style={{
-        width: '300px',
-        boxShadow: isDark
-          ? '0 0 40px rgba(124,58,237,0.2), 0 20px 40px rgba(0,0,0,0.6)'
-          : '0 8px 32px rgba(0,0,0,0.15)',
-      }}
-    >
-      {/* Header */}
-      <div className={`flex items-center justify-between px-4 py-3 border-b ${isDark ? 'border-zinc-800 bg-zinc-900/60' : 'border-gray-100 bg-gray-50'}`}>
-        <div className="flex items-center gap-2">
-          <div className={`p-1.5 rounded-lg ${isDark ? 'bg-violet-600/20' : 'bg-blue-50'}`}>
-            <HelpCircle size={14} className={isDark ? 'text-violet-400' : 'text-blue-600'} />
-          </div>
-          <span className={`font-black text-sm uppercase tracking-wider ${text}`}>Asistencia</span>
-        </div>
-        <button
-          onClick={onClose}
-          className={`p-1 rounded-lg transition ${isDark ? 'hover:bg-zinc-800 text-zinc-500 hover:text-white' : 'hover:bg-gray-200 text-gray-400'}`}
-        >
-          <X size={14} />
-        </button>
-      </div>
-
-      {/* Descripción */}
-      <div className="px-4 pt-3 pb-2">
-        <p className={`text-xs leading-relaxed ${muted}`}>
-          GO Planner es un sistema de planeación retail end-to-end. Cada módulo funciona de forma independiente y puede compartir datos con los demás.
-        </p>
-      </div>
-
-      {/* Módulos */}
-      <div className="px-3 pb-3 space-y-1.5">
-        <p className={`text-[9px] font-black uppercase tracking-widest px-1 mb-2 ${muted}`}>Módulos disponibles</p>
-        {topics.map(({ Icon, color, label, desc }) => (
-          <div key={label} className={`flex items-center gap-3 p-2.5 rounded-xl border cursor-default transition ${item}`}>
-            <Icon size={14} className={color} />
-            <div className="min-w-0">
-              <p className={`font-bold text-xs ${text}`}>{label}</p>
-              <p className={`text-[10px] truncate ${muted}`}>{desc}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-
-      {/* Tip */}
-      <div className={`mx-3 mb-3 p-3 rounded-xl border ${isDark ? 'bg-violet-900/20 border-violet-500/30' : 'bg-blue-50 border-blue-200'}`}>
-        <p className={`text-[9px] font-black uppercase tracking-widest mb-1 ${isDark ? 'text-violet-400' : 'text-blue-600'}`}>💡 Tip del pipeline</p>
-        <p className={`text-[10px] leading-relaxed ${muted}`}>
-          Usa el sidebar para pasar datos entre módulos. Los botones se activan automáticamente cuando hay datos disponibles en el módulo anterior.
-        </p>
-      </div>
-    <Link
-      to="/about"
-      onClick={onClose}
-      className={`flex items-center justify-center gap-1.5 mx-3 mb-1 py-2.5 rounded-xl border text-[11px] font-bold tracking-wide transition ${
-        isDark ? 'border-violet-500/25 bg-violet-500/10 text-violet-400 hover:bg-violet-500/20'
-               : 'border-blue-200 bg-blue-50 text-blue-600 hover:bg-blue-100'
-      }`}
-    >
-      Acerca de GO PLANNER
-    </Link>
-    </div>
-  );
-}
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
 function Dashboard({ t, isDark }) {
@@ -345,16 +258,11 @@ function Shell() {
 
   // false = colapsado (solo iconos) | true = expandido (labels visibles)
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
-  const [showAssist,      setShowAssist]      = useState(false);
   const [openGroups,      setOpenGroups]      = useState({});
-  const [showSearch,      setShowSearch]      = useState(false);
-  const [searchQuery,     setSearchQuery]     = useState('');
   const [showSupport,     setShowSupport]     = useState(false);
   const [showSettings,    setShowSettings]    = useState(false);
   const [showRecordMenu,  setShowRecordMenu]  = useState(false);
   const [isRecording,     setIsRecording]     = useState(false);
-  const assistRef    = useRef(null);
-  const searchRef    = useRef(null);
   const supportRef   = useRef(null);
   const settingsRef  = useRef(null);
   const recordRef    = useRef(null);
@@ -366,8 +274,6 @@ function Shell() {
   // Cerrar asistencia al hacer click fuera
   useEffect(() => {
     const h = (e) => {
-      if (assistRef.current && !assistRef.current.contains(e.target)) setShowAssist(false);
-      if (searchRef.current && !searchRef.current.contains(e.target)) setShowSearch(false);
       if (supportRef.current && !supportRef.current.contains(e.target)) setShowSupport(false);
       if (settingsRef.current && !settingsRef.current.contains(e.target)) setShowSettings(false);
       if (recordRef.current && !recordRef.current.contains(e.target)) setShowRecordMenu(false);
@@ -434,10 +340,6 @@ function Shell() {
   const stopRecording = () => {
     mediaRecorderRef.current?.stop();
   };
-
-  const searchResults = searchQuery.trim()
-    ? NAV_ITEMS.filter(i => i.label.toLowerCase().includes(searchQuery.trim().toLowerCase()))
-    : [];
 
   // Navegar y colapsar sidebar automáticamente
   const handleNavigate = (id) => {
@@ -566,134 +468,28 @@ function Shell() {
       )}
 
       {/* ══════════ TOPBAR ══════════ */}
-      <header className={`sticky top-0 z-30 border-b ${t.header}`}>
-        <div className="flex items-center justify-between px-4 py-3">
-
-          {/* Logo */}
-          <div className="flex items-center gap-3">
-            <div className={`p-2 rounded-xl ${isDark ? 'bg-violet-600' : 'bg-blue-600'} text-white shadow-lg shrink-0`}>
-              <Layers size={18} />
-            </div>
-            <div className="hidden sm:block">
-              <h1 className={`text-lg font-black tracking-tighter uppercase leading-none ${t.text}`}>
-                GO <span className={isDark ? 'text-violet-500' : 'text-blue-600'}>PLANNER</span>
-              </h1>
-              <span className={`text-[10px] font-bold uppercase tracking-widest ${t.textMuted}`}>
-                {NAV_ITEMS.find(n => n.id === activeModule)?.label || 'Dashboard'}
+      <AppHeader
+        t={t}
+        isDark={isDark}
+        subtitle={NAV_ITEMS.find(n => n.id === activeModule)?.label || 'Dashboard'}
+        bell={{ count: alerts.length, critical: critical > 0, title: 'Alertas' }}
+        kpiChips={[
+          ...(kpis.coverageWeeks > 0 ? [{ label: 'Cobertura', value: `${kpis.coverageWeeks.toFixed(1)}sem`, valueClass: isDark ? 'text-yellow-400' : 'text-amber-600' }] : []),
+          ...(kpis.fillRate > 0 ? [{ label: 'Fill', value: `${kpis.fillRate.toFixed(1)}%`, valueClass: kpis.fillRate < 85 ? 'text-red-400' : (isDark ? 'text-emerald-400' : 'text-green-600') }] : []),
+        ]}
+        search={{ items: NAV_ITEMS, onSelect: (id) => globalActions.setModule(dispatch, id) }}
+        extraLinks={[{ to: '/team-tracker', title: 'Team Tracker', Icon: ClipboardList }]}
+        statusBar={
+          <div className={`flex items-center gap-2 px-4 py-1.5 text-[10px] border-t overflow-x-auto ${isDark ? 'border-zinc-800/50 bg-black/20' : 'border-gray-100 bg-gray-50/50'}`}>
+            <span className={`font-black uppercase tracking-widest mr-1 shrink-0 ${t.textMuted}`}>Datos:</span>
+            {NAV_ITEMS.slice(1).map((m, i) => (
+              <span key={m.id} className={`font-bold whitespace-nowrap ${global[m.dataKey] ? (isDark ? 'text-emerald-400' : 'text-green-600') : (isDark ? 'text-zinc-700' : 'text-gray-300')}`}>
+                {global[m.dataKey] ? '✓ ' : '○ '}{m.label}{i < 3 ? ' ·' : ''}
               </span>
-            </div>
+            ))}
           </div>
-
-          {/* Acciones */}
-          <div className="flex items-center gap-2">
-
-            {/* KPIs rápidos */}
-            {kpis.coverageWeeks > 0 && (
-              <div className="hidden lg:flex gap-2">
-                <div className={`px-3 py-1.5 rounded-xl border text-xs ${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-gray-200'}`}>
-                  <span className={t.textMuted}>Cobertura: </span>
-                  <span className={`font-black ${isDark ? 'text-yellow-400' : 'text-amber-600'}`}>{kpis.coverageWeeks.toFixed(1)}sem</span>
-                </div>
-                {kpis.fillRate > 0 && (
-                  <div className={`px-3 py-1.5 rounded-xl border text-xs ${isDark ? 'bg-zinc-900 border-zinc-800' : 'bg-white border-gray-200'}`}>
-                    <span className={t.textMuted}>Fill: </span>
-                    <span className={`font-black ${kpis.fillRate < 85 ? 'text-red-400' : (isDark ? 'text-emerald-400' : 'text-green-600')}`}>{kpis.fillRate.toFixed(1)}%</span>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* Alertas */}
-            <button className={`relative p-2.5 rounded-xl border transition ${
-              critical > 0
-                ? isDark ? 'bg-red-900/30 border-red-500/50 text-red-400' : 'bg-red-50 border-red-300 text-red-600'
-                : isDark ? 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white' : 'bg-white border-gray-200 text-gray-500 hover:text-gray-900'
-            }`}>
-              <Bell size={17} />
-              {alerts.length > 0 && (
-                <span className={`absolute -top-1 -right-1 w-4 h-4 rounded-full text-[9px] font-black flex items-center justify-center text-white ${critical > 0 ? 'bg-red-500' : 'bg-yellow-500'}`}>
-                  {alerts.length}
-                </span>
-              )}
-            </button>
-
-            {/* ── Botón Asistencia ── */}
-            <div className="relative" ref={assistRef}>
-              <button
-                onClick={() => setShowAssist(v => !v)}
-                title="Asistencia GO Planner"
-                className={`p-2.5 rounded-xl border transition-all ${
-                  showAssist
-                    ? isDark ? 'bg-violet-600 border-violet-500 text-white' : 'bg-blue-600 border-blue-500 text-white'
-                    : isDark ? 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-violet-400 hover:border-violet-500/50'
-                              : 'bg-white border-gray-200 text-gray-500 hover:text-blue-600 hover:border-blue-300'
-                }`}
-                style={showAssist && isDark ? { boxShadow: '0 0 18px rgba(124,58,237,0.5)' } : {}}
-              >
-                <HelpCircle size={17} />
-              </button>
-              {showAssist && <AssistPanel isDark={isDark} onClose={() => setShowAssist(false)} />}
-            </div>
-
-{/* Team Tracker */}
-            <Link
-              to="/team-tracker"
-              title="Team Tracker"
-              className={`p-2.5 rounded-xl border transition ${isDark ? 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-violet-400 hover:border-violet-500/50' : 'bg-white border-gray-200 text-gray-500 hover:text-blue-600 hover:border-blue-300'}`}
-            >
-              <ClipboardList size={17} />
-            </Link>        
-
-            {/* ── Buscar ── */}
-            <div className="relative" ref={searchRef}>
-              <button
-                onClick={() => setShowSearch(v => !v)}
-                title="Buscar módulo"
-                className={`p-2.5 rounded-xl border transition ${isDark ? 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-violet-400 hover:border-violet-500/50' : 'bg-white border-gray-200 text-gray-500 hover:text-blue-600 hover:border-blue-300'}`}
-              >
-                <Search size={17} />
-              </button>
-              {showSearch && (
-                <div className={`absolute right-0 top-12 w-64 rounded-2xl border shadow-2xl z-50 p-2 ${isDark ? 'bg-[#1c1720]/95 border-white/10 backdrop-blur-xl' : 'bg-white border-gray-200'}`}>
-                  <input
-                    autoFocus
-                    value={searchQuery}
-                    onChange={(e) => setSearchQuery(e.target.value)}
-                    placeholder="Ir a un módulo…"
-                    className={`w-full px-3 py-2 rounded-xl text-sm outline-none ${t.input}`}
-                  />
-                  {searchResults.length > 0 && (
-                    <div className="mt-1.5 space-y-0.5">
-                      {searchResults.map(r => (
-                        <button
-                          key={r.id}
-                          onClick={() => { globalActions.setModule(dispatch, r.id); setShowSearch(false); setSearchQuery(''); }}
-                          className={`w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-xs font-bold text-left ${isDark ? 'text-zinc-300 hover:bg-white/10' : 'text-gray-700 hover:bg-gray-100'}`}
-                        >
-                          <r.Icon size={13} />
-                          {r.label}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-            </div>
-
-    {/* Toggle tema ahora vive dentro de Configuración, en el rail derecho */}
-          </div>
-        </div>
-
-        {/* Barra de estado del pipeline */}
-        <div className={`flex items-center gap-2 px-4 py-1.5 text-[10px] border-t overflow-x-auto ${isDark ? 'border-zinc-800/50 bg-black/20' : 'border-gray-100 bg-gray-50/50'}`}>
-          <span className={`font-black uppercase tracking-widest mr-1 shrink-0 ${t.textMuted}`}>Datos:</span>
-          {NAV_ITEMS.slice(1).map((m, i) => (
-            <span key={m.id} className={`font-bold whitespace-nowrap ${global[m.dataKey] ? (isDark ? 'text-emerald-400' : 'text-green-600') : (isDark ? 'text-zinc-700' : 'text-gray-300')}`}>
-              {global[m.dataKey] ? '✓ ' : '○ '}{m.label}{i < 3 ? ' ·' : ''}
-            </span>
-          ))}
-        </div>
-      </header>
+        }
+      />
 
       <div className="flex flex-1 min-h-0 overflow-hidden">
 
@@ -875,7 +671,7 @@ function Shell() {
               <Settings size={16} />
             </button>
             {showSettings && (
-              <div className={`absolute right-12 bottom-0 w-56 rounded-2xl border shadow-2xl z-50 p-4 ${isDark ? 'bg-[#1c1720]/95 border-white/10 backdrop-blur-xl' : 'bg-white border-gray-200'}`}>
+              <div className={`absolute right-12 top-0 w-56 rounded-2xl border shadow-2xl z-50 p-4 ${isDark ? 'bg-[#1c1720]/95 border-white/10 backdrop-blur-xl' : 'bg-white border-gray-200'}`}>
                 <p className={`font-black text-xs uppercase tracking-widest mb-3 ${t.text}`}>Configuración</p>
                 <div className="flex items-center justify-between">
                   <span className={`text-xs font-bold ${t.textMuted}`}>Modo {isDark ? 'oscuro' : 'claro'}</span>
@@ -900,7 +696,7 @@ function Shell() {
               <HelpCircle size={16} />
             </button>
             {showSupport && (
-              <div className={`absolute right-12 bottom-0 w-64 rounded-2xl border shadow-2xl z-50 p-4 ${isDark ? 'bg-[#1c1720]/95 border-white/10 backdrop-blur-xl' : 'bg-white border-gray-200'}`}>
+              <div className={`absolute right-12 top-0 w-64 rounded-2xl border shadow-2xl z-50 p-4 ${isDark ? 'bg-[#1c1720]/95 border-white/10 backdrop-blur-xl' : 'bg-white border-gray-200'}`}>
                 <p className={`font-black text-xs uppercase tracking-widest mb-2 ${t.text}`}>Soporte</p>
                 <p className={`text-xs mb-3 ${t.textMuted}`}>¿Algo no jala o tienes una idea? Escríbeme:</p>
                 <a
