@@ -151,7 +151,7 @@ function NavBar({ navigate }) {
         </span>
       </div>
       <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-        {['FAR', 'Planes', 'Operaciones'].map(w => (
+        {['PLANES', 'DEMANDA', 'INVENTARIOS', 'COOR' ].map(w => (
           <a key={w} href={`#${w.toLowerCase()}`} style={{
             fontSize: '12px', fontWeight: 600, color: '#71717a',
             textDecoration: 'none', transition: 'color 0.2s',
@@ -257,7 +257,7 @@ function Hero({ navigate }) {
         transform: mounted ? 'translateY(0)' : 'translateY(20px)',
         transition: 'all 0.8s ease 0.2s',
       }}>
-        Aplicación integrada de planeación comercial para cubrir los tres pilares de PAC. Desde el plan hasta los traslados / dayli, todo en un sistema que habla solo.
+        Aplicación integrada de planeación comercial para cubrir los tres pilares de PAC. Desde el plan hasta los traslados, todo en un sistema que funciona en tu equipo.
       </p>
 
       {/* CTAs */}
@@ -302,7 +302,7 @@ function Hero({ navigate }) {
         opacity: mounted ? 1 : 0,
         transition: 'all 0.8s ease 0.4s',
       }}>
-        {[{ val: '7', label: 'Módulos' }, { val: '3', label: 'Pilares' }, { val: '∞', label: 'Tiendas' }].map(s => (
+        {[{ val: '9', label: 'Módulos' }, { val: '3', label: 'Pilares' }, { val: '∞', label: 'Tiendas' }].map(s => (
           <div key={s.label} style={{ textAlign: 'center' }}>
             <p style={{ fontSize: '48px', fontWeight: 900, color: 'white', lineHeight: 1, letterSpacing: '-2px', margin: 0 }}>{s.val}</p>
             <p style={{ fontSize: '11px', color: '#52525b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px', marginTop: '6px' }}>{s.label}</p>
