@@ -644,7 +644,7 @@ function Footer({ navigate }) {
 export default function AboutPage() {
   const navigate = useNavigate();
   return (
-    <div style={{ background: '#000', minHeight: '100vh', fontFamily: 'system-ui, -apple-system, sans-serif', position: 'relative' }}>
+    <div className="animate-fade-in" style={{ background: '#000', minHeight: '100vh', fontFamily: 'system-ui, -apple-system, sans-serif', position: 'relative' }}>
       <style>{`
         * { box-sizing: border-box; margin: 0; }
         html { scroll-behavior: smooth; }
