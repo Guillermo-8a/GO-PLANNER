@@ -145,8 +145,8 @@ function Dashboard({ t, isDark }) {
 
   return (
     <div className="max-w-5xl mx-auto p-8 space-y-8">
-      <div>
-        <h2 className={`text-5xl font-black tracking-tighter uppercase leading-none ${t.text}`}>
+      <div className="text-center">
+  <h2 className={`text-5xl font-black tracking-tighter uppercase leading-none ${t.text}`}>
           GO <span className={isDark ? 'text-violet-500' : 'text-blue-600'}>PLANNER</span>
         </h2>
         <p className={`mt-2 text-sm ${t.textMuted}`}>
@@ -270,6 +270,13 @@ function Shell() {
   const recordedChunksRef  = useRef([]);
 
   const critical = alerts.filter(a => a.level === 'critical').length;
+
+    useEffect(() => {
+    if (activeModule === 'dashboard') {
+      setSidebarExpanded(false);
+      setOpenGroups({});
+    }
+  }, [activeModule]);
 
   // Cerrar asistencia al hacer click fuera
   useEffect(() => {
@@ -472,7 +479,7 @@ function Shell() {
         t={t}
         isDark={isDark}
         subtitle={NAV_ITEMS.find(n => n.id === activeModule)?.label || 'Dashboard'}
-        bell={{ count: alerts.length, critical: critical > 0, title: 'Alertas' }}
+        bell={{ count: alerts.length, critical: critical > 0, title: 'Alertas', items: alerts.map(a => ({ title: a.title, desc: a.desc })) }}
         kpiChips={[
           ...(kpis.coverageWeeks > 0 ? [{ label: 'Cobertura', value: `${kpis.coverageWeeks.toFixed(1)}sem`, valueClass: isDark ? 'text-yellow-400' : 'text-amber-600' }] : []),
           ...(kpis.fillRate > 0 ? [{ label: 'Fill', value: `${kpis.fillRate.toFixed(1)}%`, valueClass: kpis.fillRate < 85 ? 'text-red-400' : (isDark ? 'text-emerald-400' : 'text-green-600') }] : []),
