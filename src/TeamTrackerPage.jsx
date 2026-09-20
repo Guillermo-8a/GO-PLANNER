@@ -359,7 +359,7 @@ export default function TeamTrackerPage() {
   }, [tasks]);
   const overdueCount = useMemo(() => (!tasks ? 0 : tasks.filter((t) => t.status !== 'done' && t.dueDate < todayISO()).length), [tasks]);
 
-  if (loading) return (<div className="tt-page"><style>{CSS}</style><div className="tt-root tt-loading"><p>Cargando el tablero…</p></div></div>);
+  if (loading) return (<div className="tt-page animate-fade-in"><style>{CSS}</style><div className="tt-root tt-loading"><p>Cargando el tablero…</p></div></div>);
 
   const TABS = [
     { key: 'board', label: 'Tablero' },
@@ -369,7 +369,7 @@ export default function TeamTrackerPage() {
   ];
 
   return (
-    <div className="tt-page">
+    <div className="tt-page animate-fade-in">
       <style>{CSS}</style>
 
             <AppHeader
