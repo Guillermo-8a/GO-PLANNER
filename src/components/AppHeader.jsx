@@ -4,7 +4,7 @@
 // Props:
 //   t, isDark        — tokens de tema (THEMES.dark/light de App.jsx)
 //   subtitle         — texto chico bajo "GO PLANNER" (ej. "Dashboard", "Team Tracker")
-//   bell             — { count, critical, title } → muestra el ícono de campana. Omite para ocultarla.
+//   bell             — { count, critical, title, items: [{title, desc}] } → campana clickeable con dropdown. Omite para ocultarla.
 //   search           — { items: [{id,label,Icon}], onSelect(id) } → muestra buscador. Omite para ocultarlo.
 //   extraLinks       — [{ to, title, Icon }] → íconos de Link extra entre Asistencia y buscador.
 //   statusBar        — nodo opcional, la franja delgada debajo del header (ej. "Datos: ...").
@@ -22,14 +22,17 @@ export default function AppHeader({
 }) {
   const [showAssist, setShowAssist] = useState(false);
   const [showSearch, setShowSearch] = useState(false);
+  const [showBell, setShowBell] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const assistRef = useRef(null);
   const searchRef = useRef(null);
+  const bellRef = useRef(null);
 
   useEffect(() => {
     const h = (e) => {
       if (assistRef.current && !assistRef.current.contains(e.target)) setShowAssist(false);
       if (searchRef.current && !searchRef.current.contains(e.target)) setShowSearch(false);
+      if (bellRef.current && !bellRef.current.contains(e.target)) setShowBell(false);
     };
     document.addEventListener('mousedown', h);
     return () => document.removeEventListener('mousedown', h);
@@ -40,11 +43,11 @@ export default function AppHeader({
     : [];
 
   return (
-    <header className={sticky ? `sticky top-0 z-30 border-b ${t.header}` : `rounded-2xl border mb-4 ${t.header}`}>
+    <header className={sticky ? `sticky top-0 z-30 border-b ${t.header}` : `relative z-20 rounded-2xl border mb-4 ${t.header}`}>
       <div className="flex items-center justify-between px-4 py-3">
         <Link to="/about" className="flex items-center gap-3">
-          <div className={`p-2 rounded-xl ${isDark ? 'bg-violet-600' : 'bg-blue-600'} text-white shadow-lg shrink-0`}>
-            <Layers size={18} />
+          <div className="w-9 h-9 rounded-xl overflow-hidden shadow-lg shrink-0">
+            <img src="/logo.png" alt="GO Planner" className="w-full h-full object-cover" />
           </div>
           <div className="hidden sm:block">
             <h1 className={`text-lg font-black tracking-tighter uppercase leading-none ${t.text}`}>
@@ -69,21 +72,43 @@ export default function AppHeader({
           )}
 
           {bell && (
-            <button
-              title={bell.title}
-              className={`relative p-2.5 rounded-xl border transition ${
-                bell.critical
-                  ? isDark ? 'bg-red-900/30 border-red-500/50 text-red-400' : 'bg-red-50 border-red-300 text-red-600'
-                  : isDark ? 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white' : 'bg-white border-gray-200 text-gray-500 hover:text-gray-900'
-              }`}
-            >
-              <Bell size={17} />
-              {bell.count > 0 && (
-                <span className={`absolute -top-1 -right-1 w-4 h-4 rounded-full text-[9px] font-black flex items-center justify-center text-white ${bell.critical ? 'bg-red-500' : 'bg-yellow-500'}`}>
-                  {bell.count}
-                </span>
+            <div className="relative" ref={bellRef}>
+              <button
+                onClick={() => setShowBell((v) => !v)}
+                title={bell.title}
+                className={`relative p-2.5 rounded-xl border transition ${
+                  bell.critical
+                    ? isDark ? 'bg-red-900/30 border-red-500/50 text-red-400' : 'bg-red-50 border-red-300 text-red-600'
+                    : isDark ? 'bg-zinc-900 border-zinc-800 text-zinc-400 hover:text-white' : 'bg-white border-gray-200 text-gray-500 hover:text-gray-900'
+                }`}
+              >
+                <Bell size={17} />
+                {bell.count > 0 && (
+                  <span className={`absolute -top-1 -right-1 w-4 h-4 rounded-full text-[9px] font-black flex items-center justify-center text-white ${bell.critical ? 'bg-red-500' : 'bg-yellow-500'}`}>
+                    {bell.count}
+                  </span>
+                )}
+              </button>
+              {showBell && (
+                <div className={`absolute right-0 top-12 w-72 rounded-2xl border shadow-2xl z-50 overflow-hidden ${isDark ? 'bg-zinc-950 border-zinc-800' : 'bg-white border-gray-200'}`}>
+                  <div className={`px-4 py-3 border-b ${isDark ? 'border-zinc-800' : 'border-gray-100'}`}>
+                    <span className={`font-black text-xs uppercase tracking-widest ${t.text}`}>{bell.title || 'Alertas'}</span>
+                  </div>
+                  <div className="max-h-72 overflow-y-auto p-2">
+                    {bell.items && bell.items.length > 0 ? (
+                      bell.items.map((it, i) => (
+                        <div key={i} className={`p-2.5 rounded-xl mb-1 last:mb-0 ${isDark ? 'hover:bg-white/5' : 'hover:bg-gray-50'}`}>
+                          <p className={`text-xs font-bold ${t.text}`}>{it.title}</p>
+                          {it.desc && <p className={`text-[11px] mt-0.5 ${t.textMuted}`}>{it.desc}</p>}
+                        </div>
+                      ))
+                    ) : (
+                      <p className={`text-xs p-2.5 ${t.textMuted}`}>Sin pendientes por aquí 🎉</p>
+                    )}
+                  </div>
+                </div>
               )}
-            </button>
+            </div>
           )}
 
           <div className="relative" ref={assistRef}>
