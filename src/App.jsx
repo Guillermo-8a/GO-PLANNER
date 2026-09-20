@@ -453,7 +453,7 @@ function Shell() {
   };
 
   return (
-    <div className={`h-screen flex flex-col font-sans relative overflow-hidden ${isDark ? 'text-[#EDEBF2]' : t.app}`}>
+    <div className={`h-screen flex flex-col font-sans relative overflow-hidden animate-fade-in ${isDark ? 'text-[#EDEBF2]' : t.app}`}>
 
       {isDark && (
         <div
@@ -625,7 +625,9 @@ function Shell() {
 
         {/* ══════════ CONTENIDO ══════════ */}
         <main className={`flex-1 overflow-y-auto min-w-0 ${isDark ? 'bg-transparent' : 'bg-gray-50'}`}>
-          {renderModule()}
+          <div key={activeModule} className="animate-fade-in">
+  {renderModule()}
+</div>
         </main>
 
         {/* ══════════ RAIL DERECHO ══════════ */}
