@@ -78,6 +78,13 @@ function addDays(d, n) {
   date.setDate(date.getDate() + n);
   return date;
 }
+function isoWeekNumber(d) {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  return Math.ceil(((date - yearStart) / 86400000 + 1) / 7);
+}
 function fmtShort(iso) {
   if (!iso) return '—';
   const [y, m, d] = iso.split('-');
@@ -358,6 +365,10 @@ export default function TeamTrackerPage() {
     return { start: min, days: Math.max(7, Math.round((max - min) / 86400000)) };
   }, [tasks]);
   const overdueCount = useMemo(() => (!tasks ? 0 : tasks.filter((t) => t.status !== 'done' && t.dueDate < todayISO()).length), [tasks]);
+  const overdueTasks = useMemo(() => (!tasks ? [] : tasks
+  .filter((t) => t.status !== 'done' && t.dueDate < todayISO())
+  .map((t) => ({ title: t.title, desc: `${t.assignee || 'Sin asignar'} · venció ${fmtShort(t.dueDate)}` }))
+), [tasks]);
 
   if (loading) return (<div className="tt-page animate-fade-in"><style>{CSS}</style><div className="tt-root tt-loading"><p>Cargando el tablero…</p></div></div>);
 
@@ -377,7 +388,7 @@ export default function TeamTrackerPage() {
         isDark={true}
         sticky={false}
         subtitle="Team Tracker"
-        bell={{ count: overdueCount, critical: overdueCount > 0, title: 'Pendientes vencidos' }}
+        bell={{ count: overdueCount, critical: overdueCount > 0, title: 'Pendientes vencidos', items: overdueTasks }}
         extraLinks={[{ to: '/', title: 'Volver a módulos', Icon: Home }]}
         assistDescription="Pendientes del equipo, checklist, Gantt y resumen semanal. El candado 🔒 desbloquea agregar, editar o borrar. Los datos viven en un Google Sheet aparte."
       />
@@ -449,6 +460,7 @@ export default function TeamTrackerPage() {
                 </button>
               ))}
             </nav>
+            <span className="tt-week-badge">Semana {isoWeekNumber(week.start)} · {fmtShort(week.startISO)}–{fmtShort(week.endISO)}</span>
             <div className="tt-header-actions">
               <button className="tt-ghost-btn" onClick={exportExcel}>Exportar a Excel</button>
               {isAdmin && <button className="tt-new-btn" onClick={() => openForm(null)} disabled={team.length === 0}>+ Nuevo pendiente</button>}
@@ -804,14 +816,13 @@ const CSS = `
 html, body { margin: 0; padding: 0; }
 body { background: #14121a; }
 .tt-page {
-  position: relative; min-height: 100vh; width: 100%; box-sizing: border-box;
-  padding: 28px; overflow: hidden;
+  position: relative; height: 100vh; width: 100%; box-sizing: border-box;
+  padding: 28px; overflow: hidden; display: flex; flex-direction: column;
   background: radial-gradient(ellipse 60% 50% at 15% 10%, rgba(138,115,173,0.35), transparent 60%),
               radial-gradient(ellipse 55% 45% at 90% 85%, rgba(224,187,62,0.22), transparent 60%),
               linear-gradient(160deg, #16141a 0%, #1c1720 45%, #14121a 100%);
 }
-.tt-root { position: relative; display: flex; min-height: 560px; color: #EDEBF2; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 14px; }
-.tt-loading { align-items: center; justify-content: center; width: 100%; }
+.tt-root { position: relative; display: flex; flex: 1; min-height: 0; overflow: hidden; color: #EDEBF2; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 14px; }
 
 .tt-topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; position: relative; z-index: 3; }
 .tt-topbar-brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
@@ -829,7 +840,7 @@ body { background: #14121a; }
 .tt-info-pop p { margin: 0 0 6px; }
 .tt-info-pop p:last-child { margin-bottom: 0; }
 
-.tt-side { width: 210px; flex-shrink: 0; padding: 16px 12px; display: flex; flex-direction: column; gap: 4px;
+.tt-side { width: 210px; flex-shrink: 0; padding: 16px 12px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto;
   background: rgba(255,255,255,0.045); backdrop-filter: blur(18px); border: 1px solid rgba(255,255,255,0.09);
   border-radius: 16px; margin-right: 16px; position: relative; transition: width 0.28s cubic-bezier(.4,0,.2,1); }
 .tt-side.is-collapsed { width: 68px; align-items: center; }
@@ -874,12 +885,13 @@ body { background: #14121a; }
 .tt-empty-hint { color: #948FA0; font-size: 12px; padding: 6px 2px; }
 .tt-empty-big { padding: 40px 0; text-align: center; font-size: 14px; }
 
-.tt-main { flex: 1; min-width: 0; padding: 4px 4px 4px 0; }
+.tt-main { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; padding: 4px 4px 4px 0; }
 .tt-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; gap: 12px; flex-wrap: wrap; }
 .tt-tabs { position: relative; display: flex; gap: 2px; background: rgba(255,255,255,0.05); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.08); padding: 3px; border-radius: 10px; }
 .tt-tabs-indicator { position: absolute; top: 3px; bottom: 3px; border-radius: 7px; background: linear-gradient(135deg, #8A73AD, #6E5B8A); box-shadow: 0 4px 14px rgba(138,115,173,0.45); transition: left .3s cubic-bezier(.4,0,.2,1), width .3s cubic-bezier(.4,0,.2,1); z-index: 0; }
 .tt-tabs button { position: relative; z-index: 1; border: none; background: none; padding: 7px 14px; border-radius: 7px; font-size: 13px; cursor: pointer; color: #B7B2C4; transition: color .2s ease; }
 .tt-tabs button.is-active { color: #FFFFFF; font-weight: 600; }
+.tt-week-badge { font-size: 11px; font-weight: 700; color: #B39DDB; background: rgba(139,115,173,0.12); border: 1px solid rgba(139,115,173,0.3); padding: 6px 12px; border-radius: 9px; white-space: nowrap; }
 .tt-header-actions { display: flex; gap: 8px; }
 .tt-new-btn { background: linear-gradient(135deg, #8A73AD, #6E5B8A); color: #FFFFFF; border: none; padding: 8px 14px; border-radius: 9px; font-size: 13px; cursor: pointer; font-weight: 600; box-shadow: 0 6px 16px rgba(138,115,173,0.35); transition: transform .15s ease; }
 .tt-new-btn:hover:not(:disabled) { transform: translateY(-1px); }
