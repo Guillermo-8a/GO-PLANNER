@@ -1572,10 +1572,11 @@ export default function App() {
       <header className={`border-b sticky top-0 z-20 transition-colors duration-300 ${t.header}`}>
         <div className="w-full mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
-            <div className="flex items-center">
-              <h1 className={`text-2xl font-black tracking-widest flex items-center ${t.textMain}`}>
-                GO <span className="mx-3 text-gray-500 font-light">|</span> <ShoppingCart size={28} className={t.textAccent1} />
-              </h1>
+            <div className="flex items-center gap-3">
+              <span className={`p-2 rounded-xl ${theme === 'dark' ? 'bg-violet-500/20' : 'bg-violet-50'}`}>
+                <ShoppingCart size={20} className={t.textAccent1} />
+              </span>
+              <h1 className={`text-xl font-black tracking-tight leading-none ${t.textMain}`}>Assortment</h1>
             </div>
             
             <div className="relative">

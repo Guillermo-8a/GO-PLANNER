@@ -770,18 +770,20 @@ export default function App() {
     };
 
     return (
-        <div className="min-h-screen w-full p-4 md:p-6 transition-colors duration-300 bg-white dark:bg-black text-gray-900 dark:text-gray-200">
-            
-            {/* HEADER UNIFICADO GO PLANNER (Con borde inferior y sombra) */}
-            <header className="mb-6 pb-4 flex flex-col md:flex-row justify-between items-start md:items-center gap-4 border-b border-gray-200 dark:border-[#262626] shadow-[0_4px_10px_-4px_rgba(0,0,0,0.1)] dark:shadow-[0_4px_10px_-4px_rgba(0,0,0,0.4)] transition-colors">
-                <div className="flex items-center px-2">
-                    <h1 className="text-2xl font-black tracking-widest flex items-center text-gray-900 dark:text-white">
-                        GO
-                        <span className="mx-3 text-gray-400 font-light">|</span>
-                        <RefreshCw size={28} className="text-purple-600 dark:text-purple-500" />
-                    </h1>
+        <div className="min-h-screen w-full p-4 md:p-6 transition-colors duration-300 text-gray-900 dark:text-gray-200">
+
+            {/* HEADER */}
+            <header className="mb-6 p-5 rounded-2xl border bg-white dark:bg-zinc-900/80 border-gray-200 dark:border-zinc-800 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-colors">
+                <div className="flex items-center gap-3">
+                    <span className="p-2 rounded-xl bg-purple-100 dark:bg-purple-500/20">
+                        <RefreshCw size={22} className="text-purple-600 dark:text-purple-400" />
+                    </span>
+                    <div>
+                        <h1 className="text-2xl font-black tracking-tight text-gray-900 dark:text-white leading-none">Resurtido</h1>
+                        <p className="text-xs mt-1 text-gray-500 dark:text-gray-400">Reposición continua · Cobertura y sugerido de compra</p>
+                    </div>
                 </div>
-                
+
                 <div className="w-full md:w-auto flex flex-col sm:flex-row items-center gap-3">
                     <div className="flex flex-col sm:flex-row items-center gap-3 bg-gray-50 dark:bg-[#141414] p-2 rounded-lg border border-gray-200 dark:border-[#333] transition-colors w-full sm:w-auto">
                         <label className="cursor-pointer flex items-center justify-center gap-2 px-4 py-2 rounded-md font-medium text-sm transition-all bg-purple-600 hover:bg-purple-700 dark:hover:bg-purple-500 text-white w-full sm:w-auto whitespace-nowrap shadow-sm">

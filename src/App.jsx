@@ -105,13 +105,38 @@ const NAV_ITEMS = [
   { id: 'assortment',   label: 'Assortment', Icon: ShoppingCart,    desc: 'Compra y presupuesto',  dataKey: 'otbData' },
   { id: 'distribucion', label: 'Distribución',   Icon: Map,             desc: 'Surtido a tiendas',     dataKey: 'distributionData' },
   { id: 'resurtido',    label: 'Resurtido',       Icon: RefreshCw,       desc: 'Reposición continua',   dataKey: 'replenishmentData' },
-  { id: 'planning',    label: 'Planning',       Icon: TrendingUp,       desc: 'Planeación compuesta',   dataKey: 'planningData' },
-  { id: 'dayli',    label: 'Dayli',       Icon: Map,       desc: 'Ajustes diarios',   dataKey: 'dayliData' },
+  { id: 'planning',    label: 'Planning',       Icon: TrendingUp,       desc: 'Planeación compuesta',   dataKey: null },
+  { id: 'dayli',    label: 'Dayli',       Icon: Map,       desc: 'Ajustes diarios',   dataKey: null },
   { id: 'dispersion',    label: 'Dispersión',       Icon: BarChart2,       desc: 'Revisión inventarios',   dataKey: 'dispersionData' },
-  { id: 'chequera', label: 'Chequera', Icon: Wallet, desc: 'Control de compras', dataKey: 'Control de compra' },
+  { id: 'chequera', label: 'Chequera', Icon: Wallet, desc: 'Control de compras', dataKey: null },
   { id: 'traslados', label: 'Traslados', Icon: ArrowLeftRight, desc: 'Transferencias entre centros', dataKey: null },
   { id: 'eventos', label: 'Eventos', Icon: Tag, desc: 'Eventos promocionales', dataKey: null },
 ];
+
+// Módulos que no guardan su data en el estado global (dataKey: null) sino en
+// su propio localStorage — para la barra "Datos:" del header.
+const LOCAL_DATA_KEYS = {
+  traslados: ['gop_traslados_exc', 'gop_traslados_nec', 'gop_traslados_niv'],
+  eventos:   ['gop_eventos'],
+  chequera:  ['chequera_externa', 'chequera_propia'],
+  dayli:     ['gop_daily_v3'],
+  planning:  ['gop_forecast_setup'],
+};
+function moduleHasData(m, global) {
+  return m.dataKey ? !!global[m.dataKey] : hasLocalData(m.id);
+}
+function hasLocalData(moduleId) {
+  const keys = LOCAL_DATA_KEYS[moduleId];
+  if (!keys) return false;
+  try {
+    return keys.some(k => {
+      const v = localStorage.getItem(k);
+      if (!v) return false;
+      const parsed = JSON.parse(v);
+      return Array.isArray(parsed) ? parsed.length > 0 : !!parsed;
+    });
+  } catch { return false; }
+}
 
 const PIPELINE_STEPS = [
   { label: 'Forecast → OTB',     from: 'forecastData',     to: 'assortment' },
@@ -140,7 +165,7 @@ function Dashboard({ t, isDark }) {
     { label: 'OTB Disponible',   val: kpis.otbRemaining != null ? `$${Math.abs(kpis.otbRemaining).toLocaleString()}` : '—', unit: kpis.otbRemaining < 0 ? '⚠ excedido' : '', color: kpis.otbRemaining < 0 ? 'text-red-400' : (isDark ? 'text-emerald-400' : 'text-green-600') },
   ];
 
-  const anyData = NAV_ITEMS.slice(1).some(m => m.dataKey && !!global[m.dataKey]);
+  const anyData = NAV_ITEMS.slice(1).some(m => moduleHasData(m, global));
 
   const [openGroups, setOpenGroups] = useState(() => {
     try {
@@ -181,7 +206,7 @@ function Dashboard({ t, isDark }) {
       <div className="space-y-4">
         {NAV_GROUPS.map(group => {
           const mods = group.items.map(id => NAV_ITEMS.find(n => n.id === id)).filter(Boolean);
-          const withData = mods.filter(m => m.dataKey && !!global[m.dataKey]).length;
+          const withData = mods.filter(m => moduleHasData(m, global)).length;
           const isOpen = openGroups[group.id];
           const GroupIcon = group.Icon;
           return (
@@ -207,7 +232,7 @@ function Dashboard({ t, isDark }) {
               {isOpen && (
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3 p-4 pt-0">
                   {mods.map(m => {
-                    const hasData = m.dataKey && !!global[m.dataKey];
+                    const hasData = moduleHasData(m, global);
                     const Icon = m.Icon;
                     return (
                       <button
@@ -372,7 +397,7 @@ function Shell() {
   // Botón de un módulo individual (reusable para Dashboard y para items dentro de un mundo)
   const renderNavButton = (item) => {
     const isActive = activeModule === item.id;
-    const hasData  = item.dataKey && !!global[item.dataKey];
+    const hasData  = moduleHasData(item, global);
     const Icon     = item.Icon;
 
     return (
@@ -502,11 +527,14 @@ function Shell() {
         statusBar={
           <div className={`flex items-center gap-2 px-4 py-1.5 text-[10px] border-t overflow-x-auto ${isDark ? 'border-zinc-800/50 bg-black/20' : 'border-gray-100 bg-gray-50/50'}`}>
             <span className={`font-black uppercase tracking-widest mr-1 shrink-0 ${t.textMuted}`}>Datos:</span>
-            {NAV_ITEMS.slice(1).map((m, i) => (
-              <span key={m.id} className={`font-bold whitespace-nowrap ${global[m.dataKey] ? (isDark ? 'text-emerald-400' : 'text-green-600') : (isDark ? 'text-zinc-700' : 'text-gray-300')}`}>
-                {global[m.dataKey] ? '✓ ' : '○ '}{m.label}{i < 3 ? ' ·' : ''}
-              </span>
-            ))}
+            {NAV_ITEMS.slice(1).map((m, i, arr) => {
+              const hasData = m.dataKey ? !!global[m.dataKey] : hasLocalData(m.id);
+              return (
+                <span key={m.id} className={`font-bold whitespace-nowrap ${hasData ? (isDark ? 'text-emerald-400' : 'text-green-600') : (isDark ? 'text-zinc-700' : 'text-gray-300')}`}>
+                  {hasData ? '✓ ' : '○ '}{m.label}{i < arr.length - 1 ? ' ·' : ''}
+                </span>
+              );
+            })}
           </div>
         }
       />
@@ -573,7 +601,7 @@ function Shell() {
                     <div className="pl-3 ml-4 mt-0.5 space-y-0.5 border-l" style={{ borderColor: `${group.color}30` }}>
                       {groupItems.map(item => {
                         const isActive = activeModule === item.id;
-                        const hasData  = item.dataKey && !!global[item.dataKey];
+                        const hasData  = moduleHasData(item, global);
                         const Icon     = item.Icon;
                         return (
                           <button

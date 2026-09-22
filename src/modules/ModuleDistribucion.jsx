@@ -2840,16 +2840,14 @@ useEffect(() => {
     //<div className={`h-full flex flex-col font-sans transition-colors duration-300 ${t.appBg}`}>
     <div className={`min-h-screen w-full flex flex-col font-sans transition-colors duration-300 ${t.appBg}`}>  
       
-      {/* ENCABEZADO HOMOLOGADO */}
-      <header className={`px-6 py-4 mb-2 flex items-center justify-between border-b transition-colors
-        ${theme === 'dark' ? 'border-zinc-800' : 'border-gray-200'}
-        shadow-[0_4px_10px_-4px_rgba(0,0,0,0.08)] dark:shadow-[0_4px_10px_-4px_rgba(0,0,0,0.4)]`}>
-        <div className="flex items-center">
-          <h1 className={`text-2xl font-black tracking-widest flex items-center ${t.textMain}`}>
-            GO
-            <span className="mx-3 text-gray-400 font-light">|</span>
-            <Icons.MapIcon size={28} className={t.textAccent1} />
-          </h1>
+      {/* HEADER */}
+      <header className={`mx-4 md:mx-6 mt-4 mb-2 p-5 rounded-2xl border flex items-center gap-3 transition-colors ${t.card}`}>
+        <span className={`p-2 rounded-xl ${theme === 'dark' ? 'bg-violet-500/20' : 'bg-violet-50'}`}>
+          <Icons.MapIcon size={22} className={t.textAccent1} />
+        </span>
+        <div>
+          <h1 className={`text-2xl font-black tracking-tight leading-none ${t.textMain}`}>Distribución</h1>
+          <p className={`text-xs mt-1 ${t.textMuted}`}>Surtido a tiendas · Clústeres y distribución por store</p>
         </div>
       </header>
 

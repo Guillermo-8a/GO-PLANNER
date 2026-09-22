@@ -1,5 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
-import { Upload, Plus, Trash2, X, Check, Search, Image as ImageIcon } from 'lucide-react';
+import { Upload, Plus, Trash2, X, Check, Search, Image as ImageIcon, Wallet } from 'lucide-react';
 import {
   CHEQUERA_FIELDS, autoMapHeaders, parseSpreadsheet, applyMapping,
   extractEmbeddedImages, saveImageBlob, getImageBlob, sortMonthKeys,
@@ -309,10 +309,18 @@ export default function ModuleChequera() {
 
   return (
     <div className="p-4 md:p-6">
-      <div className="flex items-center justify-between mb-4">
-        <h2 className="text-xl font-bold text-neutral-900 dark:text-white">Chequera</h2>
+      <div className="p-5 rounded-2xl border bg-white dark:bg-zinc-900/80 border-neutral-200 dark:border-neutral-800 shadow-sm mb-6 flex items-center justify-between gap-4 flex-wrap">
+        <div className="flex items-center gap-3">
+          <span className="p-2 rounded-xl bg-violet-100 dark:bg-violet-500/20">
+            <Wallet size={22} className="text-violet-600 dark:text-violet-400" />
+          </span>
+          <div>
+            <h1 className="text-2xl font-black tracking-tight text-neutral-900 dark:text-white leading-none">Chequera</h1>
+            <p className="text-xs mt-1 text-neutral-500 dark:text-neutral-400">Control de compras · Marca externa y marca propia</p>
+          </div>
+        </div>
         {tab !== 'resumen' && (
-          <button onClick={() => setImportOpen(tab)} className="flex items-center gap-1 text-sm px-3 py-2 rounded-lg bg-violet-600 text-white">
+          <button onClick={() => setImportOpen(tab)} className="flex items-center gap-1 text-sm px-3 py-2 rounded-lg bg-violet-600 text-white font-bold">
             <Upload size={16} /> Importar archivo
           </button>
         )}

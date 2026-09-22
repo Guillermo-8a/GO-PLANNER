@@ -353,11 +353,16 @@ export default function ModuleEventos(){
   // ═══ VISTA: LISTA DE EVENTOS ═══
   if(!activeId){
     return (
-      <div className={`p-6 space-y-5 ${t.appBg}`}>
-        <div className="flex items-center justify-between">
-          <div>
-            <h2 className={`text-lg font-black flex items-center gap-2 ${t.textMain}`}><Icons.Tag size={20} className={t.textAccent1}/> Eventos Promocionales</h2>
-            <p className={`text-xs mt-1 ${t.textMuted}`}>Detalle por SKU de cada evento — snapshot de arranque, venta, margen, sell-through y remanente.</p>
+      <div className={`min-h-screen p-4 md:p-6 space-y-5 ${t.appBg}`}>
+        <div className={`p-5 rounded-2xl border flex items-center justify-between flex-wrap gap-4 ${t.card}`}>
+          <div className="flex items-center gap-3">
+            <span className={`p-2 rounded-xl ${isDark?'bg-violet-500/20':'bg-violet-50'}`}>
+              <Icons.Tag size={22} className={t.textAccent1}/>
+            </span>
+            <div>
+              <h1 className={`text-2xl font-black tracking-tight leading-none ${t.textMain}`}>Eventos</h1>
+              <p className={`text-xs mt-1 ${t.textMuted}`}>Eventos promocionales · Detalle por SKU, venta, margen, sell-through y remanente</p>
+            </div>
           </div>
           <button onClick={()=>setShowForm(true)} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold ${t.btnPrimary}`}>
             <Icons.Plus size={14}/> Nuevo evento

@@ -145,22 +145,64 @@ export default function TeamTrackerPage() {
   const [editScope, setEditScope] = useState('solo');
 
   const tabsRef = useRef({});
+  const editingRef = useRef(false);
   const [indicator, setIndicator] = useState({ left: 0, width: 0 });
 
+  // El modal de tarea, el de equipo, el PIN o un rename en curso bloquean
+  // que un refresco automático pise lo que se está escribiendo.
   useEffect(() => {
-    (async () => {
-      try {
-        const all = await kvLoadAll();
-        setTasks(all['tasks-board'] ? JSON.parse(all['tasks-board']) : []);
-        setTeam(all['team-roster'] ? JSON.parse(all['team-roster']) : []);
-        setAdminPin(all['admin-pin'] != null && all['admin-pin'] !== '' ? String(all['admin-pin']) : null);
-      } catch (e) {
+    editingRef.current = !!(showForm || pinModal || renamingMember || newMemberName);
+  }, [showForm, pinModal, renamingMember, newMemberName]);
+
+  async function loadAll({ silent } = {}) {
+    try {
+      const all = await kvLoadAll();
+      if (editingRef.current) return; // no pisar mientras hay algo abierto
+      const nextTasks = all['tasks-board'] ? JSON.parse(all['tasks-board']) : [];
+      const nextTeam = all['team-roster'] ? JSON.parse(all['team-roster']) : [];
+      const nextPin = all['admin-pin'] != null && all['admin-pin'] !== '' ? String(all['admin-pin']) : null;
+      setTasks((prev) => {
+        const s = JSON.stringify(nextTasks);
+        return prev && JSON.stringify(prev) === s ? prev : nextTasks;
+      });
+      setTeam((prev) => {
+        const s = JSON.stringify(nextTeam);
+        return prev && JSON.stringify(prev) === s ? prev : nextTeam;
+      });
+      setAdminPin(nextPin);
+    } catch (e) {
+      if (!silent) {
         setNotice('No se pudo conectar con el backend: ' + (e && e.message ? e.message : 'error desconocido'));
         setTasks([]);
         setTeam([]);
         setAdminPin(null);
       }
-    })();
+      // en un refresco silencioso en segundo plano, si falla, dejamos lo
+      // que ya está en pantalla en vez de vaciarlo
+    }
+  }
+
+  useEffect(() => {
+    loadAll();
+    let ticks = 0;
+    // Con el foco: cada 7s. Sin foco (ventana de fondo, ej. otro monitor
+    // mientras trabajas en otra app): cada ~42s, para no gastar cuota de
+    // Apps Script cuando nadie está realmente viendo la pantalla.
+    const interval = setInterval(() => {
+      ticks++;
+      if (document.hasFocus() || ticks % 6 === 0) loadAll({ silent: true });
+    }, 7000);
+    const onFocusOrVisible = () => {
+      if (document.visibilityState === 'visible') loadAll({ silent: true });
+    };
+    document.addEventListener('visibilitychange', onFocusOrVisible);
+    window.addEventListener('focus', onFocusOrVisible);
+    return () => {
+      clearInterval(interval);
+      document.removeEventListener('visibilitychange', onFocusOrVisible);
+      window.removeEventListener('focus', onFocusOrVisible);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -366,9 +408,9 @@ export default function TeamTrackerPage() {
   }, [tasks]);
   const overdueCount = useMemo(() => (!tasks ? 0 : tasks.filter((t) => t.status !== 'done' && t.dueDate < todayISO()).length), [tasks]);
   const overdueTasks = useMemo(() => (!tasks ? [] : tasks
-  .filter((t) => t.status !== 'done' && t.dueDate < todayISO())
-  .map((t) => ({ title: t.title, desc: `${t.assignee || 'Sin asignar'} · venció ${fmtShort(t.dueDate)}` }))
-), [tasks]);
+    .filter((t) => t.status !== 'done' && t.dueDate < todayISO())
+    .map((t) => ({ title: t.title, desc: `${t.assignee || 'Sin asignar'} · venció ${fmtShort(t.dueDate)}` }))
+  ), [tasks]);
 
   if (loading) return (<div className="tt-page animate-fade-in"><style>{CSS}</style><div className="tt-root tt-loading"><p>Cargando el tablero…</p></div></div>);
 
