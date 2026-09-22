@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
+import * as XLSX from 'xlsx';
 import * as Icons from '../utils/icons';
 import { useGlobal } from '../context/GlobalContext';
 
@@ -59,6 +60,28 @@ const parseSnapshotCSV = text => {
       marca:I.marca>=0?r[I.marca].trim().toUpperCase():'SIN MARCA', goa:I.goa>=0?r[I.goa].trim().toUpperCase():'',
       seccion:I.seccion>=0?r[I.seccion].trim().toUpperCase():'GENERAL', centro:I.centro>=0?r[I.centro].trim():'',
       oh:num(I.oh>=0?r[I.oh]:0), precio:num(I.precio>=0?r[I.precio]:0), letraDesc:I.letra>=0?r[I.letra].trim():'' });
+  }
+  return {rows:out,error:null};
+};
+// Snapshot desde el layout de descuentos (pestaña "OH y Montos" — catálogo completo con OH y letra de descuento)
+const parseSnapshotXLSX = async file => {
+  const buf = await file.arrayBuffer();
+  const wb = XLSX.read(buf,{type:'array'});
+  const sheetName = wb.SheetNames.find(n=>n.trim()==='OH y Montos') || wb.SheetNames.find(n=>/OH.*Monto/i.test(n));
+  if(!sheetName) return {rows:[],error:'El archivo debe incluir la pestaña "OH y Montos".'};
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName],{header:1,defval:'',raw:true});
+  if(rows.length<2) return {rows:[],error:null};
+  // Columnas fijas por posición (duplican nombre "Artículo" en el layout, no se puede indexar por header):
+  // 0 Rebaja | 6 Sección | 7 Grupo artículos(GOA) | 9 Marca | 11 Letra Actual | 13 Modelo Proveedor | 14 Artículo(SKU) | 15 Artículo(desc) | 17 Precio Venta Act | 18 OH_
+  const out=[];
+  for(let i=1;i<rows.length;i++){ const r=rows[i]; if(!r||r.every(c=>c===''||c==null)) continue;
+    const sku=String(r[14]||'').trim(); if(!sku) continue;
+    const letra=String(r[11]||'').trim().toUpperCase();
+    const letraDesc=(letra&&letra!=='RG'&&letra!=='SIN ASIGNAR')?letra:'';
+    out.push({ sku, nsku:String(r[15]||'').trim(), modelo:String(r[13]||'').trim().toUpperCase(),
+      marca:(String(r[9]||'').trim().toUpperCase())||'SIN MARCA', goa:String(r[7]||'').trim().toUpperCase(),
+      seccion:(String(r[6]||'').trim().toUpperCase())||'GENERAL', centro:'',
+      oh:num(r[18]), precio:num(r[17]), letraDesc });
   }
   return {rows:out,error:null};
 };
@@ -229,13 +252,18 @@ export default function ModuleEventos(){
     if(snapRows.length>0 && !window.confirm('Ya existe un snapshot de arranque para este evento (inmutable por diseño). Subir uno nuevo lo REEMPLAZARÁ. ¿Continuar?')){
       if(snapRef.current) snapRef.current.value=''; return;
     }
-    const reader=new FileReader();
-    reader.onload=ev=>{ const {rows,error}=parseSnapshotCSV(ev.target.result);
-      if(error){ alert(error); return; }
-      if(rows.length===0){ alert('No se encontraron filas válidas en el CSV.'); return; }
+    const finish=({rows,error})=>{
+      if(error){ alert(error); if(snapRef.current) snapRef.current.value=''; return; }
+      if(rows.length===0){ alert('No se encontraron filas válidas en el archivo.'); if(snapRef.current) snapRef.current.value=''; return; }
       setSnapRows(rows); idbSet(`snap_${activeId}`,rows).catch(()=>{});
       if(snapRef.current) snapRef.current.value='';
     };
+    if(/\.xlsx?$/i.test(file.name)){
+      parseSnapshotXLSX(file).then(finish).catch(()=>{ alert('No se pudo leer el archivo .xlsx.'); if(snapRef.current) snapRef.current.value=''; });
+      return;
+    }
+    const reader=new FileReader();
+    reader.onload=ev=>finish(parseSnapshotCSV(ev.target.result));
     reader.readAsText(file,'ISO-8859-1');
   };
   const uploadSales=e=>{
@@ -526,9 +554,9 @@ export default function ModuleEventos(){
 
         {/* Carga de datos */}
         <div className={`p-4 rounded-xl border flex flex-wrap items-center gap-3 no-print ${t.card}`}>
-          <input ref={snapRef} type="file" accept=".csv,.txt" className="hidden" onChange={uploadSnapshot}/>
+          <input ref={snapRef} type="file" accept=".xlsx,.xls,.csv,.txt" className="hidden" onChange={uploadSnapshot}/>
           <button onClick={()=>snapRef.current?.click()} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border ${t.btnGhost}`}>
-            <Icons.Upload size={13}/> CSV Snapshot arranque {snapRows.length>0 && `(${calc?.nSkuSnap} SKU)`}
+            <Icons.Upload size={13}/> Snapshot arranque (xlsx/csv) {snapRows.length>0 && `(${calc?.nSkuSnap} SKU)`}
           </button>
           <input ref={salesRef} type="file" accept=".csv,.txt" className="hidden" onChange={uploadSales}/>
           <button onClick={()=>salesRef.current?.click()} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border ${t.btnGhost}`}>
