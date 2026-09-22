@@ -18,10 +18,11 @@ import ModulePlanning from "./modules/ModulePlanning" ;
 import ModuleDispersion from "./modules/ModuleDispersion" ;
 import ModuleChequera from "./modules/ModuleChequera" ;
 import ModuleDayli from "./modules/ModuleDayli" ;
+import ModuleEventos from "./modules/ModuleEventos" ;
 
 import {
   Layers, Bell, Sun, Moon, ShoppingCart, Map, LayoutDashboard,
-  HelpCircle, Wallet, Zap, Search, Mail, Circle,} from 'lucide-react';
+  HelpCircle, Wallet, Zap, Search, Mail, Circle, Tag,} from 'lucide-react';
 
 // ─── Paletas de tema ──────────────────────────────────────────────────────────
 export const THEMES = {
@@ -109,6 +110,7 @@ const NAV_ITEMS = [
   { id: 'dispersion',    label: 'Dispersión',       Icon: BarChart2,       desc: 'Revisión inventarios',   dataKey: 'dispersionData' },
   { id: 'chequera', label: 'Chequera', Icon: Wallet, desc: 'Control de compras', dataKey: 'Control de compra' },
   { id: 'traslados', label: 'Traslados', Icon: ArrowLeftRight, desc: 'Transferencias entre centros', dataKey: null },
+  { id: 'eventos', label: 'Eventos', Icon: Tag, desc: 'Eventos promocionales', dataKey: null },
 ];
 
 const PIPELINE_STEPS = [
@@ -121,7 +123,7 @@ const PIPELINE_STEPS = [
 const NAV_GROUPS = [
   { id: 'financial',  label: 'Financial',        Icon: Calculator,   color: '#B39DDB', items: ['planning'] },
   { id: 'demand',     label: 'Demand Planner',   Icon: TrendingUp,   color: '#E0BB3E', items: ['assortment', 'forecast', 'distribucion', 'resurtido'] },
-  { id: 'inventory',  label: 'Inventory Control',Icon: Boxes,        color: '#8A73AD', items: ['dispersion', 'traslados', 'chequera'] },
+  { id: 'inventory',  label: 'Inventory Control',Icon: Boxes,        color: '#8A73AD', items: ['dispersion', 'traslados', 'chequera', 'eventos'] },
   { id: 'checkcoo',   label: 'Check Coo',        Icon: CircleCheck,  color: '#9A9CA3', items: ['dayli'] },
 ];
 
@@ -455,6 +457,7 @@ function Shell() {
       case 'dispersion': return <ModuleDispersion />;   
       case 'chequera': return <ModuleChequera />;  
       case 'planning': return <ModulePlanning {...moduleProps} />;    
+      case 'eventos': return <ModuleEventos />;
       default:             return <Dashboard {...moduleProps} />;
     }
   };
