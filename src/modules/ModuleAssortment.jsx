@@ -1571,12 +1571,15 @@ export default function App() {
       {/* HEADER Y MINI MENU */}
       <header className={`border-b sticky top-0 z-20 transition-colors duration-300 ${t.header}`}>
         <div className="w-full mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between h-16">
+          <div className="flex items-center justify-between py-3 min-h-16">
             <div className="flex items-center gap-3">
               <span className={`p-2 rounded-xl ${theme === 'dark' ? 'bg-violet-500/20' : 'bg-violet-50'}`}>
-                <ShoppingCart size={20} className={t.textAccent1} />
+                <ShoppingCart size={22} className={t.textAccent1} />
               </span>
-              <h1 className={`text-xl font-black tracking-tight leading-none ${t.textMain}`}>Assortment</h1>
+              <div>
+                <h1 className={`text-2xl font-black tracking-tight leading-none ${t.textMain}`}>Assortment</h1>
+                <p className={`text-xs mt-1 ${t.textMuted}`}>Compra y presupuesto · Tiendas, curvas, forecast y preventa</p>
+              </div>
             </div>
             
             <div className="relative">

@@ -158,13 +158,6 @@ function Dashboard({ t, isDark }) {
   const dispatch = useDispatch();
   const { kpis = {}, alerts = [] } = global;
 
-  const kpiCards = [
-    { label: 'Inventario Total', val: kpis.totalInv?.toLocaleString()  || '—', unit: 'uds',    color: t.text },
-    { label: 'Cobertura',        val: kpis.coverageWeeks?.toFixed(1)   || '—', unit: 'semanas', color: isDark ? 'text-yellow-400' : 'text-amber-600' },
-    { label: 'Fill Rate',        val: kpis.fillRate?.toFixed(1)        || '—', unit: '%',       color: kpis.fillRate > 0 && kpis.fillRate < 85 ? 'text-red-400' : (isDark ? 'text-emerald-400' : 'text-green-600') },
-    { label: 'OTB Disponible',   val: kpis.otbRemaining != null ? `$${Math.abs(kpis.otbRemaining).toLocaleString()}` : '—', unit: kpis.otbRemaining < 0 ? '⚠ excedido' : '', color: kpis.otbRemaining < 0 ? 'text-red-400' : (isDark ? 'text-emerald-400' : 'text-green-600') },
-  ];
-
   const anyData = NAV_ITEMS.slice(1).some(m => moduleHasData(m, global));
 
   const [openGroups, setOpenGroups] = useState(() => {
@@ -190,18 +183,6 @@ function Dashboard({ t, isDark }) {
           Sistema integrado de planeación retail · Los módulos se comunican pero funcionan de forma independiente
         </p>
       </div>
-
-      {anyData && (
-        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          {kpiCards.map((c, i) => (
-            <div key={i} className={`p-5 rounded-[28px] border ${t.card}`}>
-              <p className={`text-[9px] font-black uppercase tracking-widest mb-2 ${t.textMuted}`}>{c.label}</p>
-              <p className={`text-3xl font-black leading-none ${c.color}`}>{c.val}</p>
-              {c.unit && <p className={`text-[10px] font-bold mt-1 ${t.textMuted}`}>{c.unit}</p>}
-            </div>
-          ))}
-        </div>
-      )}
 
       <div className="space-y-4">
         {NAV_GROUPS.map(group => {

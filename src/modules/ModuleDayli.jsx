@@ -38,6 +38,14 @@ const fmtDate = d => d?d.toLocaleDateString('es-MX',{day:'2-digit',month:'2-digi
 const maxOf = arr => arr.length?arr.reduce((m,v)=>v>m?v:m,arr[0]):null;
 const minOf = arr => arr.length?arr.reduce((m,v)=>v<m?v:m,arr[0]):null;
 
+// ─── INDEXEDDB (dataset completo, sin límite de tamaño de localStorage) ───────
+const DAYLI_DB='gop_dayli_db', DAYLI_STORE='dayli';
+const dbOpen=()=>new Promise((res,rej)=>{ const o=indexedDB.open(DAYLI_DB,1);
+  o.onupgradeneeded=()=>{ if(!o.result.objectStoreNames.contains(DAYLI_STORE)) o.result.createObjectStore(DAYLI_STORE); };
+  o.onsuccess=()=>res(o.result); o.onerror=()=>rej(o.error); });
+const dbSet=async(k,v)=>{ const db=await dbOpen(); return new Promise((res,rej)=>{ const tx=db.transaction(DAYLI_STORE,'readwrite'); tx.objectStore(DAYLI_STORE).put(v,k); tx.oncomplete=()=>{db.close();res();}; tx.onerror=()=>rej(tx.error); }); };
+const dbGet=async k=>{ const db=await dbOpen(); return new Promise((res,rej)=>{ const tx=db.transaction(DAYLI_STORE,'readonly'); const rq=tx.objectStore(DAYLI_STORE).get(k); rq.onsuccess=()=>{db.close();res(rq.result);}; rq.onerror=()=>rej(rq.error); }); };
+
 const linearRegression = pts => {
   const n=pts.length; if(n<2) return {slope:0,intercept:0,r2:0};
   const sx=pts.reduce((s,p)=>s+p.x,0), sy=pts.reduce((s,p)=>s+p.y,0);
@@ -319,10 +327,8 @@ export default function ModuleDaily(){
   const [cmpDayMode,setCmpDayMode]=useState('detalle'); // 'detalle' (lun↔lun) | 'avg'
   const [scatterLevel,setScatterLevel]=useState(0);
 
-  // Persistencia
+  // Persistencia — config chica en localStorage, dataset completo en IndexedDB (sin límite de tamaño)
   useEffect(()=>{ try{ const s=localStorage.getItem('gop_daily_v3'); if(s){ const d=JSON.parse(s);
-    if(d.allData?.length) setAllData(d.allData.map(r=>({...r,fecha:r.fecha?new Date(r.fecha):null})));
-    if(d.invData?.length) setInvData(d.invData);
     if(d.promoEntries) setPromoEntries(d.promoEntries);
     if(d.manualPromo) setManualPromo(d.manualPromo);
     if(d.defaultUplift!=null) setDefaultUplift(d.defaultUplift);
@@ -332,13 +338,19 @@ export default function ModuleDaily(){
     if(Array.isArray(d.fCanal)) setFCanal(d.fCanal); if(Array.isArray(d.fDiv)) setFDiv(d.fDiv); if(Array.isArray(d.fSec)) setFSec(d.fSec);
     if(Array.isArray(d.fMarca)) setFMarca(d.fMarca); if(Array.isArray(d.fNorma)) setFNorma(d.fNorma); if(Array.isArray(d.fPago)) setFPago(d.fPago);
     if(Array.isArray(d.fGoa)) setFGoa(d.fGoa); if(d.usarPromosFijas!=null) setUsarPromosFijas(d.usarPromosFijas);
-  }}catch{} },[]);
+  }}catch{}
+    (async()=>{ try{
+      const a=await dbGet('allData'); if(Array.isArray(a)&&a.length) setAllData(a.map(r=>({...r,fecha:r.fecha?new Date(r.fecha):null})));
+      const i=await dbGet('invData'); if(Array.isArray(i)&&i.length) setInvData(i);
+    }catch{} })();
+  },[]);
   useEffect(()=>{ try{
     const cfg={promoEntries,manualPromo,defaultUplift,moneyK,usarPromosFijas,bonifMes,bonifAcum,dateFrom,dateTo,fCanal,fDiv,fSec,fMarca,fNorma,fPago,fGoa};
-    const small=allData.length<=20000&&invData.length<=20000;
-    localStorage.setItem('gop_daily_v3',JSON.stringify(small?{...cfg,allData,invData}:cfg));
+    localStorage.setItem('gop_daily_v3',JSON.stringify(cfg));
   }catch{} },
-    [allData,invData,promoEntries,manualPromo,defaultUplift,moneyK,usarPromosFijas,bonifMes,bonifAcum,dateFrom,dateTo,fCanal,fDiv,fSec,fMarca,fNorma,fPago,fGoa]);
+    [promoEntries,manualPromo,defaultUplift,moneyK,usarPromosFijas,bonifMes,bonifAcum,dateFrom,dateTo,fCanal,fDiv,fSec,fMarca,fNorma,fPago,fGoa]);
+  useEffect(()=>{ dbSet('allData',allData).catch(()=>{}); },[allData]);
+  useEffect(()=>{ dbSet('invData',invData).catch(()=>{}); },[invData]);
 
   const decodeBuf=buf=>{ let txt=new TextDecoder('utf-8',{fatal:false}).decode(buf);
     if(txt.includes('\uFFFD')) txt=new TextDecoder('windows-1252').decode(buf); return txt; };
