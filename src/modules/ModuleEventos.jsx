@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
 import * as Icons from '../utils/icons';
 import { useGlobal } from '../context/GlobalContext';
 
@@ -119,6 +120,10 @@ export default function ModuleEventos(){
       badgeAmber:'bg-amber-100 text-amber-700 border-amber-300',badgeRed:'bg-rose-100 text-rose-700 border-rose-300'},
   };
   const t=themes[theme]||themes.light;
+  const gridC=isDark?'#27272a':'#f0f0f0', axisC=isDark?'#52525b':'#d1d5db', txtC=isDark?'#a1a1aa':'#6b7280';
+  const TTip=({active,payload,label})=>{ if(!active||!payload?.length) return null;
+    return <div className={`p-3 rounded-xl border text-xs shadow-xl ${t.card}`}><p className={`font-bold mb-1 ${t.textMain}`}>{label}</p>
+      {payload.map((p,i)=><p key={i} style={{color:p.color}}>{p.name}: {fmtM(p.value)}</p>)}</div>; };
 
   // ── Event master ──
   const [events,setEvents]=useState(()=>{ try{ return JSON.parse(localStorage.getItem('gop_eventos')||'[]'); }catch{ return []; } });
@@ -353,12 +358,24 @@ export default function ModuleEventos(){
       {editingLY && (
         <div className={`p-4 rounded-xl border space-y-3 ${t.card}`}>
           <div className="grid grid-cols-4 gap-3">
-            <select value={form.objetivo} onChange={e=>setForm(f=>({...f,objetivo:e.target.value}))} className={`px-3 py-2 rounded-lg border text-sm ${t.input}`}>
-              {OBJETIVOS.map(x=><option key={x} value={x}>{x}</option>)}
-            </select>
-            <input value={form.lyVentaP} onChange={e=>setForm(f=>({...f,lyVentaP:e.target.value}))} placeholder="Venta $ LY" className={`px-3 py-2 rounded-lg border text-sm ${t.input}`}/>
-            <input value={form.lyMargenPct} onChange={e=>setForm(f=>({...f,lyMargenPct:e.target.value}))} placeholder="Margen % LY" className={`px-3 py-2 rounded-lg border text-sm ${t.input}`}/>
-            <input value={form.lyStPct} onChange={e=>setForm(f=>({...f,lyStPct:e.target.value}))} placeholder="ST % LY" className={`px-3 py-2 rounded-lg border text-sm ${t.input}`}/>
+            <div>
+              <label className={`text-[10px] font-bold uppercase ${t.textMuted}`}>Objetivo</label>
+              <select value={form.objetivo} onChange={e=>setForm(f=>({...f,objetivo:e.target.value}))} className={`w-full mt-1 px-3 py-2 rounded-lg border text-sm ${t.input}`}>
+                {OBJETIVOS.map(x=><option key={x} value={x}>{x}</option>)}
+              </select>
+            </div>
+            <div>
+              <label className={`text-[10px] font-bold uppercase ${t.textMuted}`}>Venta $ LY</label>
+              <input value={form.lyVentaP} onChange={e=>setForm(f=>({...f,lyVentaP:e.target.value}))} className={`w-full mt-1 px-3 py-2 rounded-lg border text-sm ${t.input}`}/>
+            </div>
+            <div>
+              <label className={`text-[10px] font-bold uppercase ${t.textMuted}`}>Margen % LY</label>
+              <input value={form.lyMargenPct} onChange={e=>setForm(f=>({...f,lyMargenPct:e.target.value}))} className={`w-full mt-1 px-3 py-2 rounded-lg border text-sm ${t.input}`}/>
+            </div>
+            <div>
+              <label className={`text-[10px] font-bold uppercase ${t.textMuted}`}>Sell-through % LY</label>
+              <input value={form.lyStPct} onChange={e=>setForm(f=>({...f,lyStPct:e.target.value}))} className={`w-full mt-1 px-3 py-2 rounded-lg border text-sm ${t.input}`}/>
+            </div>
           </div>
           <div className="flex gap-2 justify-end">
             <button onClick={()=>setEditingLY(false)} className={`px-3 py-1.5 rounded-lg text-xs font-bold border ${t.btnGhost}`}>Cancelar</button>
@@ -414,6 +431,17 @@ export default function ModuleEventos(){
                 ))}
               </tbody>
             </table>
+            <ResponsiveContainer width="100%" height={160}>
+              <BarChart data={[{name:'Regular',ventaP:calc.regular.ventaP},{name:'Depreciado',ventaP:calc.depreciado.ventaP}]} margin={{top:10}}>
+                <CartesianGrid strokeDasharray="3 3" stroke={gridC} vertical={false}/>
+                <XAxis dataKey="name" tick={{fontSize:10,fill:txtC}} stroke={axisC}/>
+                <YAxis tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
+                <Tooltip content={<TTip/>}/>
+                <Bar dataKey="ventaP" name="Venta $" radius={[4,4,0,0]}>
+                  <Cell fill="#8b5cf6"/><Cell fill="#f59e0b"/>
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
           </div>
 
           {/* Breakdown por categoría */}
@@ -434,6 +462,33 @@ export default function ModuleEventos(){
                   ))}
                 </tbody>
               </table>
+              <ResponsiveContainer width="100%" height={Math.max(160,calc.categorias.length*32)}>
+                <BarChart data={calc.categorias} layout="vertical" margin={{left:10}}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={gridC} horizontal={false}/>
+                  <XAxis type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
+                  <YAxis type="category" dataKey="seccion" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={110}/>
+                  <Tooltip content={<TTip/>}/>
+                  <Bar dataKey="ventaP" name="Venta $" fill="#8b5cf6" radius={[0,4,4,0]}/>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
+
+          {/* Top 10 SKU — gráfica */}
+          {calc.top10.length>0 && (
+            <div className={`p-4 rounded-xl border overflow-x-auto ${t.card}`}>
+              <p className={`text-xs font-black mb-3 ${t.textMain}`}>Top 10 SKU · Venta $</p>
+              <ResponsiveContainer width="100%" height={260}>
+                <BarChart data={calc.top10} layout="vertical" margin={{left:10}}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={gridC} horizontal={false}/>
+                  <XAxis type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
+                  <YAxis type="category" dataKey="sku" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={70}/>
+                  <Tooltip content={<TTip/>}/>
+                  <Bar dataKey="ventaP" name="Venta $" radius={[0,4,4,0]}>
+                    {calc.top10.map((r,i)=><Cell key={i} fill={r.clasif==='depreciado'?'#f59e0b':r.clasif==='regular'?'#8b5cf6':'#fb7185'}/>)}
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
             </div>
           )}
 
