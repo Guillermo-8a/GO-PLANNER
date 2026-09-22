@@ -142,8 +142,18 @@ function Dashboard({ t, isDark }) {
 
   const anyData = NAV_ITEMS.slice(1).some(m => m.dataKey && !!global[m.dataKey]);
 
-  const [openGroups, setOpenGroups] = useState(() => Object.fromEntries(NAV_GROUPS.map(g => [g.id, true])));
-  const toggleGroup = (id) => setOpenGroups(o => ({ ...o, [id]: !o[id] }));
+  const [openGroups, setOpenGroups] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem('gop_dashboard_groups') || 'null');
+      if (saved) return saved;
+    } catch {}
+    return Object.fromEntries(NAV_GROUPS.map(g => [g.id, false])); // colapsados por default
+  });
+  const toggleGroup = (id) => setOpenGroups(o => {
+    const next = { ...o, [id]: !o[id] };
+    try { localStorage.setItem('gop_dashboard_groups', JSON.stringify(next)); } catch {}
+    return next;
+  });
 
   return (
     <div className="max-w-5xl mx-auto p-8 space-y-8">
