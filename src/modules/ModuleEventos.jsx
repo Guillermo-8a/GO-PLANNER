@@ -84,7 +84,21 @@ const parseSnapshotXLSX = async file => {
       seccion:(String(r[6]||'').trim().toUpperCase())||'GENERAL', centro:'',
       oh:num(r[18]), precio:num(r[17]), letraDesc });
   }
-  return {rows:out,error:null};
+  // Ventas del evento, si el mismo archivo trae la pestaña "Vtas_Evento" (export SAP diario por SKU)
+  // Columnas: 0 Día/Periodo(DD.MM.YYYY) | 2 N_Seccion | 4 Artículo(SKU) | 9 Vtas.U | 10 Vtas.$ (en miles) | 11 GM (margen $ real) | 12 Total Descuentos (en miles)
+  let salesRows=null;
+  const salesSheetName = wb.SheetNames.find(n=>n.trim()==='Vtas_Evento');
+  if(salesSheetName){
+    const vrows = XLSX.utils.sheet_to_json(wb.Sheets[salesSheetName],{header:1,defval:'',raw:true});
+    salesRows=[];
+    for(let i=1;i<vrows.length;i++){ const r=vrows[i]; if(!r||r.every(c=>c===''||c==null)) continue;
+      const sku=String(r[4]||'').trim(); if(!sku) continue;
+      salesRows.push({ fecha:parseDate(String(r[0]||'')), sku, modelo:'', marca:'', goa:'',
+        seccion:(String(r[2]||'').trim().toUpperCase())||'', centro:'',
+        ventaU:Number(r[9])||0, ventaP:(Number(r[10])||0)*1000, utilidad:Number(r[11])||0 });
+    }
+  }
+  return {rows:out,error:null,salesRows};
 };
 // Ventas del evento — SKU-level, FECHA + VENTA_U + VENTA_$ + (MG% o UTILIDAD_$)
 const parseSalesCSV = text => {
@@ -253,10 +267,11 @@ export default function ModuleEventos(){
     if(snapRows.length>0 && !window.confirm('Ya existe un snapshot de arranque para este evento (inmutable por diseño). Subir uno nuevo lo REEMPLAZARÁ. ¿Continuar?')){
       if(snapRef.current) snapRef.current.value=''; return;
     }
-    const finish=({rows,error})=>{
+    const finish=({rows,error,salesRows:sr})=>{
       if(error){ alert(error); if(snapRef.current) snapRef.current.value=''; return; }
       if(rows.length===0){ alert('No se encontraron filas válidas en el archivo.'); if(snapRef.current) snapRef.current.value=''; return; }
       setSnapRows(rows); idbSet(`snap_${activeId}`,rows).catch(()=>{});
+      if(sr && sr.length){ setSalesRows(sr); idbSet(`sales_${activeId}`,sr).catch(()=>{}); }
       if(snapRef.current) snapRef.current.value='';
     };
     if(/\.xlsx?$/i.test(file.name)){
@@ -561,9 +576,10 @@ export default function ModuleEventos(){
           </button>
           <input ref={salesRef} type="file" accept=".csv,.txt" className="hidden" onChange={uploadSales}/>
           <button onClick={()=>salesRef.current?.click()} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border ${t.btnGhost}`}>
-            <Icons.Upload size={13}/> CSV Ventas del evento {salesRows.length>0 && `(${calc?.nSkuVenta} SKU)`}
+            <Icons.Upload size={13}/> CSV Ventas del evento (opcional) {salesRows.length>0 && `(${calc?.nSkuVenta} SKU)`}
           </button>
           {snapRows.length>0 && <span className={`text-[10px] px-2 py-1 rounded-full border ${t.badgeAmber}`}>Snapshot inmutable — reemplazar pide confirmación</span>}
+          <span className={`text-[10px] ${t.textMuted}`}>Si el xlsx trae la pestaña "Vtas_Evento", las ventas se cargan solas — el CSV ya no es necesario.</span>
           {calc?.sinSnapshot>0 && <span className={`text-[10px] px-2 py-1 rounded-full border ${t.badgeRed}`}>{calc.sinSnapshot} SKU con venta sin snapshot inicial (no cuentan en remanente/ST)</span>}
         </div>
 
