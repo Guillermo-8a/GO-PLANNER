@@ -72,12 +72,13 @@ const parseSnapshotXLSX = async file => {
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName],{header:1,defval:'',raw:true});
   if(rows.length<2) return {rows:[],error:null};
   // Columnas fijas por posición (duplican nombre "Artículo" en el layout, no se puede indexar por header):
-  // 0 Rebaja | 6 Sección | 7 Grupo artículos(GOA) | 9 Marca | 11 Letra Actual | 13 Modelo Proveedor | 14 Artículo(SKU) | 15 Artículo(desc) | 17 Precio Venta Act | 18 OH_
+  // 0 Rebaja | 6 Sección | 7 Grupo artículos(GOA) | 9 Marca | 13 Modelo Proveedor | 14 Artículo(SKU) | 15 Artículo(desc) | 17 Precio Venta Act | 18 OH_
+  // Col 0 "Rebaja" ya trae la clasificación: Regular = sin descuento; Depreciado/MS = artículo rebajado (trae letra).
   const out=[];
   for(let i=1;i<rows.length;i++){ const r=rows[i]; if(!r||r.every(c=>c===''||c==null)) continue;
     const sku=String(r[14]||'').trim(); if(!sku) continue;
-    const letra=String(r[11]||'').trim().toUpperCase();
-    const letraDesc=(letra&&letra!=='RG'&&letra!=='SIN ASIGNAR')?letra:'';
+    const rebaja=String(r[0]||'').trim();
+    const letraDesc=(rebaja&&rebaja.toUpperCase()!=='REGULAR')?rebaja:'';
     out.push({ sku, nsku:String(r[15]||'').trim(), modelo:String(r[13]||'').trim().toUpperCase(),
       marca:(String(r[9]||'').trim().toUpperCase())||'SIN MARCA', goa:String(r[7]||'').trim().toUpperCase(),
       seccion:(String(r[6]||'').trim().toUpperCase())||'GENERAL', centro:'',
