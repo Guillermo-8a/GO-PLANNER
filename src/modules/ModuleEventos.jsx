@@ -33,10 +33,11 @@ const idbGet=async k=>{ const db=await idbOpen(); return new Promise((res,rej)=>
 const idbDel=async k=>{ const db=await idbOpen(); return new Promise((res,rej)=>{ const tx=db.transaction(STORE,'readwrite'); tx.objectStore(STORE).delete(k); tx.oncomplete=()=>{db.close();res();}; tx.onerror=()=>rej(tx.error); }); };
 
 // ─── CATÁLOGOS ────────────────────────────────────────────────────────────────
-const TIPOS_EVENTO=['BTS','Buen Fin','Navidad','Hot Sale','Día de las Madres','Liquidación','Otro'];
+const TIPOS_EVENTO=['NM Mamás','NM Papás','BTS','MS','GVL','ATH','NM Navidad','NM','Hot Sale','Buen Fin','Otro'];
 const OBJETIVOS=['Liquidar depreciado','Tráfico','Margen'];
 // Paleta validada (CVD-safe, dark + light) para las 3 clasificaciones
-const CLASIF_COLOR={ regular:'#8b5cf6', descuento:'#0891b2', depreciado:'#d97706', sin_snapshot:'#dc2626' };
+const CLASIF_COLOR={ regular:'#8b5cf6', descuento:'#059669', depreciado:'#c2410c', sin_snapshot:'#dc2626' };
+const CLASIF_GRAD={ regular:'gradRegular', descuento:'gradDescuento', depreciado:'gradDepreciado', sin_snapshot:'gradAlerta' };
 const CLASIF_LABEL={ regular:'Regular', descuento:'Descuento', depreciado:'Depreciado', sin_snapshot:'Sin snapshot' };
 
 // ─── PARSERS ─────────────────────────────────────────────────────────────────
@@ -111,7 +112,7 @@ const EmptyState = ({Icon,title,sub,t}) => (
   </div>
 );
 const ClasifBadge = ({clasif,t}) => {
-  const cls = clasif==='depreciado'?t.badgeAmber:clasif==='descuento'?t.badgeCyan:clasif==='regular'?t.badge:t.badgeRed;
+  const cls = clasif==='depreciado'?t.badgeOrange:clasif==='descuento'?t.badgeEmerald:clasif==='regular'?t.badge:t.badgeRed;
   return <span className={`text-[9px] px-1.5 py-0.5 rounded-full border font-bold ${cls}`}>{CLASIF_LABEL[clasif]||clasif}</span>;
 };
 // Popup de cristal — usado para crear evento y editar LY/objetivo
@@ -138,13 +139,15 @@ export default function ModuleEventos(){
       input:'bg-zinc-950 border-zinc-700 text-white focus:ring-violet-500',btnPrimary:'bg-violet-500 text-white hover:bg-violet-400 shadow-[0_0_18px_rgba(139,92,246,0.4)]',
       btnGhost:'bg-zinc-800/80 text-gray-300 hover:text-white hover:bg-zinc-700 border-zinc-700',
       badge:'bg-violet-500/25 text-violet-300 border-violet-400/60',badgeCyan:'bg-cyan-500/20 text-cyan-300 border-cyan-400/50',
-      badgeAmber:'bg-amber-600/25 text-amber-400 border-amber-500/60',badgeRed:'bg-rose-500/25 text-rose-300 border-rose-400/60'},
+      badgeAmber:'bg-amber-600/25 text-amber-400 border-amber-500/60',badgeRed:'bg-rose-500/25 text-rose-300 border-rose-400/60',
+      badgeEmerald:'bg-emerald-500/20 text-emerald-300 border-emerald-400/50',badgeOrange:'bg-orange-600/25 text-orange-400 border-orange-500/60'},
     light:{appBg:'bg-transparent text-gray-800',card:'bg-white/80 backdrop-blur-xl border-gray-200 shadow-sm',cardInner:'bg-gray-50/80 backdrop-blur-xl border-gray-200',
       textMain:'text-gray-900',textMuted:'text-gray-500',textAccent1:'text-violet-600',textAccent2:'text-purple-600',border:'border-gray-200',
       input:'bg-white border-gray-300 text-gray-900 focus:ring-violet-500',btnPrimary:'bg-violet-600 text-white hover:bg-violet-700 shadow-md',
       btnGhost:'bg-gray-100/80 text-gray-600 hover:text-gray-900 hover:bg-gray-200 border-gray-200',
       badge:'bg-violet-100 text-violet-700 border-violet-300',badgeCyan:'bg-cyan-100 text-cyan-700 border-cyan-300',
-      badgeAmber:'bg-amber-100 text-amber-800 border-amber-300',badgeRed:'bg-rose-100 text-rose-700 border-rose-300'},
+      badgeAmber:'bg-amber-100 text-amber-800 border-amber-300',badgeRed:'bg-rose-100 text-rose-700 border-rose-300',
+      badgeEmerald:'bg-emerald-100 text-emerald-700 border-emerald-300',badgeOrange:'bg-orange-100 text-orange-800 border-orange-300'},
   };
   const t=themes[theme]||themes.light;
   const gridC=isDark?'#27272a':'#f0f0f0', axisC=isDark?'#52525b':'#d1d5db', txtC=isDark?'#a1a1aa':'#6b7280';
@@ -487,6 +490,23 @@ export default function ModuleEventos(){
         </Modal>
       )}
 
+      <svg width="0" height="0" style={{position:'absolute'}}>
+        <defs>
+          {Object.entries(CLASIF_COLOR).map(([k,hex])=>(
+            <React.Fragment key={k}>
+              <linearGradient id={`${CLASIF_GRAD[k]}V`} x1="0" y1="0" x2="0" y2="1">
+                <stop offset="0%" stopColor={hex} stopOpacity="1"/>
+                <stop offset="100%" stopColor={hex} stopOpacity="0.72"/>
+              </linearGradient>
+              <linearGradient id={`${CLASIF_GRAD[k]}H`} x1="0" y1="0" x2="1" y2="0">
+                <stop offset="0%" stopColor={hex} stopOpacity="0.72"/>
+                <stop offset="100%" stopColor={hex} stopOpacity="1"/>
+              </linearGradient>
+            </React.Fragment>
+          ))}
+        </defs>
+      </svg>
+
       <div id="eventos-print-area" className="space-y-5">
         <div className={`p-5 rounded-xl border ${t.card}`}>
           <div className="flex items-center gap-2">
@@ -557,13 +577,13 @@ export default function ModuleEventos(){
                     </tbody>
                   </table>
                   <ResponsiveContainer width="100%" height={170}>
-                    <BarChart data={[{name:'Regular',ventaP:calc.regular.ventaP},{name:'Descuento',ventaP:calc.descuento.ventaP},{name:'Depreciado',ventaP:calc.depreciado.ventaP}]} margin={{top:10}}>
+                    <BarChart data={[{name:'Regular',ventaP:calc.regular.ventaP},{name:'Descuento',ventaP:calc.descuento.ventaP},{name:'Depreciado',ventaP:calc.depreciado.ventaP}]} margin={{top:10}} barCategoryGap="35%">
                       <CartesianGrid strokeDasharray="3 3" stroke={gridC} vertical={false}/>
                       <XAxis dataKey="name" tick={{fontSize:10,fill:txtC}} stroke={axisC}/>
                       <YAxis tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
                       <Tooltip content={<TTip/>}/>
-                      <Bar dataKey="ventaP" name="Venta $" radius={[4,4,0,0]}>
-                        <Cell fill={CLASIF_COLOR.regular}/><Cell fill={CLASIF_COLOR.descuento}/><Cell fill={CLASIF_COLOR.depreciado}/>
+                      <Bar dataKey="ventaP" name="Venta $" radius={[6,6,0,0]} maxBarSize={64}>
+                        <Cell fill="url(#gradRegularV)"/><Cell fill="url(#gradDescuentoV)"/><Cell fill="url(#gradDepreciadoV)"/>
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
@@ -588,12 +608,12 @@ export default function ModuleEventos(){
                       </tbody>
                     </table>
                     <ResponsiveContainer width="100%" height={Math.max(160,calc.categorias.length*32)}>
-                      <BarChart data={calc.categorias} layout="vertical" margin={{left:10}}>
+                      <BarChart data={calc.categorias} layout="vertical" margin={{left:10}} barCategoryGap="30%">
                         <CartesianGrid strokeDasharray="3 3" stroke={gridC} horizontal={false}/>
                         <XAxis type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
                         <YAxis type="category" dataKey="seccion" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={110}/>
                         <Tooltip content={<TTip/>}/>
-                        <Bar dataKey="ventaP" name="Venta $" fill={CLASIF_COLOR.regular} radius={[0,4,4,0]}/>
+                        <Bar dataKey="ventaP" name="Venta $" fill="url(#gradRegularH)" radius={[0,6,6,0]} maxBarSize={22}/>
                       </BarChart>
                     </ResponsiveContainer>
                   </div>
@@ -602,15 +622,24 @@ export default function ModuleEventos(){
                 {/* Top 10 SKU — gráfica */}
                 {calc.top10.length>0 && (
                   <div className={`p-4 rounded-xl border overflow-x-auto ${t.card}`}>
-                    <p className={`text-xs font-black mb-3 ${t.textMain}`}>Top 10 SKU · Venta $</p>
-                    <ResponsiveContainer width="100%" height={260}>
-                      <BarChart data={calc.top10} layout="vertical" margin={{left:10}}>
+                    <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
+                      <p className={`text-xs font-black ${t.textMain}`}>Top 10 SKU · Venta $</p>
+                      <div className="flex items-center gap-3">
+                        {['regular','descuento','depreciado','sin_snapshot'].map(k=>(
+                          <span key={k} className={`flex items-center gap-1 text-[10px] font-bold ${t.textMuted}`}>
+                            <span className="w-2 h-2 rounded-full" style={{background:CLASIF_COLOR[k]}}/>{CLASIF_LABEL[k]}
+                          </span>
+                        ))}
+                      </div>
+                    </div>
+                    <ResponsiveContainer width="100%" height={320}>
+                      <BarChart data={calc.top10} layout="vertical" margin={{left:10}} barCategoryGap="28%">
                         <CartesianGrid strokeDasharray="3 3" stroke={gridC} horizontal={false}/>
                         <XAxis type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
                         <YAxis type="category" dataKey="sku" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={70}/>
                         <Tooltip content={<TTip/>}/>
-                        <Bar dataKey="ventaP" name="Venta $" radius={[0,4,4,0]}>
-                          {calc.top10.map((r,i)=><Cell key={i} fill={CLASIF_COLOR[r.clasif]||CLASIF_COLOR.sin_snapshot}/>)}
+                        <Bar dataKey="ventaP" name="Venta $" radius={[0,6,6,0]} maxBarSize={22}>
+                          {calc.top10.map((r,i)=><Cell key={i} fill={`url(#${CLASIF_GRAD[r.clasif]||CLASIF_GRAD.sin_snapshot}H)`}/>)}
                         </Bar>
                       </BarChart>
                     </ResponsiveContainer>
