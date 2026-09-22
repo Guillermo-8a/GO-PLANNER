@@ -151,6 +151,7 @@ export default function ModuleEventos(){
   };
   const t=themes[theme]||themes.light;
   const gridC=isDark?'#27272a':'#f0f0f0', axisC=isDark?'#52525b':'#d1d5db', txtC=isDark?'#a1a1aa':'#6b7280';
+  const cursorFill=isDark?'rgba(139,92,246,0.14)':'rgba(139,92,246,0.08)'; // glass violeta, en vez del cursor gris/blanco default de recharts
   const TTip=({active,payload,label})=>{ if(!active||!payload?.length) return null;
     return <div className={`p-3 rounded-xl border text-xs shadow-xl ${t.card}`}><p className={`font-bold mb-1 ${t.textMain}`}>{label}</p>
       {payload.map((p,i)=><p key={i} style={{color:p.color}}>{p.name}: {fmtM(p.value)}</p>)}</div>; };
@@ -581,7 +582,7 @@ export default function ModuleEventos(){
                       <CartesianGrid strokeDasharray="3 3" stroke={gridC} vertical={false}/>
                       <XAxis dataKey="name" tick={{fontSize:10,fill:txtC}} stroke={axisC}/>
                       <YAxis tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
-                      <Tooltip content={<TTip/>}/>
+                      <Tooltip content={<TTip/>} cursor={{fill:cursorFill}}/>
                       <Bar dataKey="ventaP" name="Venta $" radius={[6,6,0,0]} maxBarSize={64}>
                         <Cell fill="url(#gradRegularV)"/><Cell fill="url(#gradDescuentoV)"/><Cell fill="url(#gradDepreciadoV)"/>
                       </Bar>
@@ -612,7 +613,7 @@ export default function ModuleEventos(){
                         <CartesianGrid strokeDasharray="3 3" stroke={gridC} horizontal={false}/>
                         <XAxis type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
                         <YAxis type="category" dataKey="seccion" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={110}/>
-                        <Tooltip content={<TTip/>}/>
+                        <Tooltip content={<TTip/>} cursor={{fill:cursorFill}}/>
                         <Bar dataKey="ventaP" name="Venta $" fill="url(#gradRegularH)" radius={[0,6,6,0]} maxBarSize={22}/>
                       </BarChart>
                     </ResponsiveContainer>
@@ -637,7 +638,7 @@ export default function ModuleEventos(){
                         <CartesianGrid strokeDasharray="3 3" stroke={gridC} horizontal={false}/>
                         <XAxis type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
                         <YAxis type="category" dataKey="sku" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={70}/>
-                        <Tooltip content={<TTip/>}/>
+                        <Tooltip content={<TTip/>} cursor={{fill:cursorFill}}/>
                         <Bar dataKey="ventaP" name="Venta $" radius={[0,6,6,0]} maxBarSize={22}>
                           {calc.top10.map((r,i)=><Cell key={i} fill={`url(#${CLASIF_GRAD[r.clasif]||CLASIF_GRAD.sin_snapshot}H)`}/>)}
                         </Bar>
