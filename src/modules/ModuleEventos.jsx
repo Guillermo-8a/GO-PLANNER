@@ -1,5 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { jsPDF } from 'jspdf';
+import html2canvas from 'html2canvas';
 import * as Icons from '../utils/icons';
 import { useGlobal } from '../context/GlobalContext';
 
@@ -162,6 +164,30 @@ export default function ModuleEventos(){
   const [expanded,setExpanded]=useState(()=>new Set());
   const blankForm={nombre:'',tipo:TIPOS_EVENTO[0],tipoOtro:'',fechaInicio:'',fechaFin:'',objetivo:OBJETIVOS[0],lyVentaP:'',lyMargenPct:'',lyStPct:''};
   const [form,setForm]=useState(blankForm);
+  const [exporting,setExporting]=useState(false);
+
+  const handleDownloadPDF=async()=>{
+    const node=document.getElementById('eventos-print-area');
+    if(!node||exporting) return;
+    setExporting(true);
+    try{
+      const canvas=await html2canvas(node,{
+        scale:2, backgroundColor:isDark?'#18181b':'#ffffff', useCORS:true,
+        ignoreElements:el=>el.classList?.contains('no-print'),
+      });
+      const imgData=canvas.toDataURL('image/png');
+      const pdf=new jsPDF({orientation:'p',unit:'pt',format:'letter'});
+      const pageW=pdf.internal.pageSize.getWidth(), pageH=pdf.internal.pageSize.getHeight();
+      const imgW=pageW, imgH=canvas.height*imgW/canvas.width;
+      let heightLeft=imgH, position=0;
+      pdf.addImage(imgData,'PNG',0,position,imgW,imgH);
+      heightLeft-=pageH;
+      while(heightLeft>0){ position=heightLeft-imgH; pdf.addPage(); pdf.addImage(imgData,'PNG',0,position,imgW,imgH); heightLeft-=pageH; }
+      const slug=(active?.nombre||'evento').trim().replace(/\s+/g,'_').replace(/[^\w\-]/g,'');
+      pdf.save(`resumen_${slug||'evento'}.pdf`);
+    }catch(err){ console.error(err); alert('No se pudo generar el PDF. Revisa la consola.'); }
+    finally{ setExporting(false); }
+  };
 
   const createEvent=()=>{
     if(!form.nombre.trim()||!form.fechaInicio||!form.fechaFin){ alert('Nombre, fecha inicio y fecha fin son obligatorios.'); return; }
@@ -423,8 +449,8 @@ export default function ModuleEventos(){
           <Icons.ChevronLeft size={14}/> Eventos
         </button>
         <div className="flex gap-2">
-          <button onClick={()=>window.print()} className={`flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-lg border ${t.btnGhost}`}>
-            <Icons.Download size={13}/> Descargar resumen
+          <button onClick={handleDownloadPDF} disabled={exporting} className={`flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-lg border disabled:opacity-50 ${t.btnGhost}`}>
+            <Icons.Download size={13}/> {exporting?'Generando PDF…':'Descargar PDF'}
           </button>
           <button onClick={()=>{setEditingLY(true);setForm(f=>({...f,lyVentaP:active.lyVentaP||'',lyMargenPct:active.lyMargenPct||'',lyStPct:active.lyStPct||'',objetivo:active.objetivo}));}}
             className={`text-xs font-bold px-3 py-1.5 rounded-lg border ${t.btnGhost}`}>Editar LY / objetivo</button>
