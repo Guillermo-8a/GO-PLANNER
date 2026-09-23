@@ -239,8 +239,10 @@ export default function ModuleEventos(){
   const cursorFill=isDark?'rgba(139,92,246,0.14)':'rgba(139,92,246,0.08)'; // glass violeta, en vez del cursor gris/blanco default de recharts
   const lineC=isDark?'#f4f4f5':'#18181b';
   const TTip=({active,payload,label})=>{ if(!active||!payload?.length) return null;
+    const d=payload[0].payload;
     return <div className={`p-3 rounded-xl border text-xs shadow-xl ${t.card}`}><p className={`font-bold mb-1 ${t.textMain}`}>{label}</p>
-      {payload.map((p,i)=><p key={i} style={{color:p.color}}>{p.name}: {fmtM(p.value)}</p>)}</div>; };
+      {payload.map((p,i)=><p key={i} style={{color:p.color}}>{p.name}: {fmtM(p.value)}</p>)}
+      {d?.vsAA!=null && <p className="mt-1 flex items-center gap-1">vs AA: <DeltaBadge value={d.vsAA}/></p>}</div>; };
   const DiaTTip=({active,payload,label})=>{ if(!active||!payload?.length) return null;
     return <div className={`p-3 rounded-xl border text-xs shadow-xl ${t.card}`}><p className={`font-bold mb-1 ${t.textMain}`}>{label}</p>
       {payload.map((p,i)=><p key={i} style={{color:p.color}}>{p.name}: {p.dataKey==='margenPct'?fmtP(p.value):fmtM(p.value)}</p>)}</div>; };
@@ -250,7 +252,8 @@ export default function ModuleEventos(){
       {d.seccion && <p className={t.textMuted}>Sección: {d.seccion}</p>}
       {d.marca && <p className={t.textMuted}>Marca: {d.marca}</p>}
       {d.goa && <p className={t.textMuted}>GOA: {d.goa}</p>}
-      {payload.map((p,i)=><p key={i} style={{color:p.color}}>{p.name}: {fmtM(p.value)}</p>)}</div>; };
+      {payload.map((p,i)=><p key={i} style={{color:p.color}}>{p.name}: {fmtM(p.value)}</p>)}
+      {d.vsAA!=null && <p className="mt-1 flex items-center gap-1">vs AA: <DeltaBadge value={d.vsAA}/></p>}</div>; };
 
   // ── Event master ──
   const [events,setEvents]=useState(()=>{ try{ return JSON.parse(localStorage.getItem('gop_eventos')||'[]'); }catch{ return []; } });
@@ -410,7 +413,12 @@ export default function ModuleEventos(){
       estatus: uniq([...Object.values(snapBySku).map(s=>s.estatus),...salesRows.map(r=>r.estatus)]),
       subcanal: uniq(salesRows.map(r=>r.subcanal)),
     };
-    return { snapBySku, clasifBySku, opciones,
+    // Año actual / año anterior — se detecta solo por el año de las fechas en Vtas_Evento (sin config manual)
+    const years=[...new Set(salesRows.map(r=>r.fecha?r.fecha.getFullYear():null).filter(Boolean))].sort((a,b)=>b-a);
+    const anoActual=years[0]??null;
+    const anoAnterior=years.length>1?years[1]:(anoActual?anoActual-1:null);
+    const hasLY=anoAnterior!=null && years.includes(anoAnterior);
+    return { snapBySku, clasifBySku, opciones, anoActual, anoAnterior, hasLY,
       nSkuSnap:Object.keys(snapBySku).length, nSkuVenta:Object.keys(salesBySkuFull).length };
   },[snapRows,salesRows]);
 
@@ -425,13 +433,25 @@ export default function ModuleEventos(){
     };
     const salesF=salesRows.filter(r=>
       (filtros.subcanal.length===0||filtros.subcanal.includes(r.subcanal)) && passSnap(r.sku));
+    // Año actual vs año anterior — detectado solo, por año de fecha (si la data trae 2 años en Vtas_Evento).
+    // Filas sin fecha se tratan como "actual" (no se pueden ubicar en el histórico).
+    const {anoActual,anoAnterior,hasLY}=joined;
+    const salesFActual=salesF.filter(r=>!r.fecha||r.fecha.getFullYear()!==anoAnterior);
+    const salesFLY=hasLY?salesF.filter(r=>r.fecha&&r.fecha.getFullYear()===anoAnterior):[];
+    const pctVs=(act,ly)=>(ly>0)?(act-ly)/ly*100:null;
     const salesBySku={};
     let fMin=null,fMax=null;
-    salesF.forEach(r=>{
+    salesFActual.forEach(r=>{
       const k=r.sku;
       if(!salesBySku[k]) salesBySku[k]={sku:k,modelo:r.modelo,marca:r.marca,goa:r.goa,seccion:r.seccion,ventaU:0,ventaP:0,utilidad:0};
       salesBySku[k].ventaU+=r.ventaU; salesBySku[k].ventaP+=r.ventaP; salesBySku[k].utilidad+=r.utilidad;
       if(r.fecha){ if(!fMin||r.fecha<fMin) fMin=r.fecha; if(!fMax||r.fecha>fMax) fMax=r.fecha; }
+    });
+    const salesBySkuLY={};
+    salesFLY.forEach(r=>{
+      const k=r.sku;
+      if(!salesBySkuLY[k]) salesBySkuLY[k]={sku:k,modelo:r.modelo,marca:r.marca,goa:r.goa,seccion:r.seccion,ventaU:0,ventaP:0,utilidad:0};
+      salesBySkuLY[k].ventaU+=r.ventaU; salesBySkuLY[k].ventaP+=r.ventaP; salesBySkuLY[k].utilidad+=r.utilidad;
     });
     const allSkus=new Set([...Object.keys(snapBySku).filter(passSnap),...Object.keys(salesBySku)]);
     const detail=[]; let sinSnapshot=0;
@@ -457,22 +477,40 @@ export default function ModuleEventos(){
     const regular=rollup(detail.filter(r=>r.clasif==='regular'));
     const descuento=rollup(detail.filter(r=>r.clasif==='descuento'));
     const depreciado=rollup(detail.filter(r=>r.clasif==='depreciado'));
+    // ── Año anterior (mismos SKU, misma clasificación actual) — solo venta, no hay OH histórico ──
+    const rollupSimple = rows => { const ventaP=rows.reduce((s,r)=>s+r.ventaP,0), ventaU=rows.reduce((s,r)=>s+r.ventaU,0),
+      utilidad=rows.reduce((s,r)=>s+r.utilidad,0);
+      return { ventaP, ventaU, utilidad, margenPct: ventaP>0?utilidad/ventaP*100:null }; };
+    const detailLY=Object.entries(salesBySkuLY).map(([sku,v])=>({ sku, clasif:clasifBySku[sku]||'sin_snapshot',
+      seccion:v.seccion||snapBySku[sku]?.seccion||'GENERAL', modelo:v.modelo||snapBySku[sku]?.modelo||sku, ...v }));
+    const totalLY=rollupSimple(detailLY);
+    const regularLY=rollupSimple(detailLY.filter(r=>r.clasif==='regular'));
+    const descuentoLY=rollupSimple(detailLY.filter(r=>r.clasif==='descuento'));
+    const depreciadoLY=rollupSimple(detailLY.filter(r=>r.clasif==='depreciado'));
+    total.vsAA=hasLY?pctVs(total.ventaP,totalLY.ventaP):null;
+    regular.vsAA=hasLY?pctVs(regular.ventaP,regularLY.ventaP):null;
+    descuento.vsAA=hasLY?pctVs(descuento.ventaP,descuentoLY.ventaP):null;
+    depreciado.vsAA=hasLY?pctVs(depreciado.ventaP,depreciadoLY.ventaP):null;
     // Breakdown por categoría (sección) — venta/margen/ST, solo secciones con venta
     const catMap={};
     detail.forEach(r=>{ const k=r.seccion||'GENERAL'; if(!catMap[k]) catMap[k]=[]; catMap[k].push(r); });
-    const categorias=Object.entries(catMap).map(([seccion,rows])=>({seccion,...rollup(rows)}))
+    const catMapLY={}; detailLY.forEach(r=>{ const k=r.seccion||'GENERAL'; catMapLY[k]=(catMapLY[k]||0)+r.ventaP; });
+    const categorias=Object.entries(catMap).map(([seccion,rows])=>{ const rl=rollup(rows);
+        return {seccion,...rl, vsAA:hasLY?pctVs(rl.ventaP,catMapLY[seccion]||0):null}; })
       .filter(c=>c.ventaP>0).sort((a,b)=>b.ventaP-a.ventaP);
-    // Top 10 por modelo (agrega SKU → modelo)
+    // Top 10 / Bottom 10 por modelo (agrega SKU → modelo)
     const modMap={};
     detail.forEach(r=>{ const k=r.modelo||r.sku;
       if(!modMap[k]) modMap[k]={modelo:k,marca:r.marca,goa:r.goa,seccion:r.seccion,ventaP:0,ventaU:0,ohInicio:0};
       modMap[k].ventaP+=r.ventaP; modMap[k].ventaU+=r.ventaU; modMap[k].ohInicio+=r.ohInicio; });
-    const modArr=Object.values(modMap).map(m=>({...m, stPct: m.ohInicio>0?Math.min(100,m.ventaU/m.ohInicio*100):null}));
+    const modMapLY={}; detailLY.forEach(r=>{ const k=r.modelo||r.sku; modMapLY[k]=(modMapLY[k]||0)+r.ventaP; });
+    const modArr=Object.values(modMap).map(m=>({...m, stPct: m.ohInicio>0?Math.min(100,m.ventaU/m.ohInicio*100):null,
+      vsAA: hasLY?pctVs(m.ventaP,modMapLY[m.modelo]||0):null}));
     const topModelo=modArr.filter(m=>m.ventaP>0).sort((a,b)=>b.ventaP-a.ventaP).slice(0,10);
     const bottom10=modArr.filter(m=>m.ohInicio>0).sort((a,b)=>a.ventaP-b.ventaP).slice(0,10);
-    // Por día (combo venta+margen), subcanal, estatus, norma — desde ventas filtradas
+    // Por día (combo venta+margen), subcanal, estatus, norma — desde ventas filtradas del año actual
     const porDiaMap={};
-    salesF.forEach(r=>{
+    salesFActual.forEach(r=>{
       if(!r.fecha) return;
       const key=r.fecha.toISOString().slice(0,10);
       if(!porDiaMap[key]) porDiaMap[key]={fecha:key,regular:0,descuento:0,depreciado:0,ventaP:0,utilidad:0};
@@ -480,17 +518,25 @@ export default function ModuleEventos(){
       if(porDiaMap[key][c]!=null) porDiaMap[key][c]+=r.ventaP;
       porDiaMap[key].ventaP+=r.ventaP; porDiaMap[key].utilidad+=r.utilidad;
     });
+    const porDiaMapLY={};
+    salesFLY.forEach(r=>{ if(!r.fecha) return;
+      const label=r.fecha.toISOString().slice(8,10)+'/'+r.fecha.toISOString().slice(5,7);
+      porDiaMapLY[label]=(porDiaMapLY[label]||0)+r.ventaP; });
     const porDia=Object.values(porDiaMap).sort((a,b)=>a.fecha<b.fecha?-1:1)
-      .map(d=>({...d, label:d.fecha.slice(8,10)+'/'+d.fecha.slice(5,7), margenPct: d.ventaP>0?d.utilidad/d.ventaP*100:null}));
-    const groupSum=key=>{ const m={}; salesF.forEach(r=>{ const k=r[key]||'SIN DATO'; m[k]=(m[k]||0)+r.ventaP; });
-      return Object.entries(m).map(([name,ventaP])=>({name,ventaP})).sort((a,b)=>b.ventaP-a.ventaP); };
-    const porSubcanal=groupSum('subcanal');
-    const porEstatus=groupSum('estatus');
-    const porNorma=groupSum('norma');
-    const porGoa=groupSum('goa').slice(0,12);
-    // Deltas vs LY
-    const deltaVentaP = active.lyVentaP ? (total.ventaP-active.lyVentaP)/active.lyVentaP*100 : null;
-    const deltaMargen = active.lyMargenPct!=null && total.margenPct!=null ? total.margenPct-active.lyMargenPct : null;
+      .map(d=>{ const label=d.fecha.slice(8,10)+'/'+d.fecha.slice(5,7);
+        return {...d, label, margenPct: d.ventaP>0?d.utilidad/d.ventaP*100:null, ventaPLY: hasLY?(porDiaMapLY[label]??null):null}; });
+    const groupSum=(key,rows)=>{ const m={}; rows.forEach(r=>{ const k=r[key]||'SIN DATO'; m[k]=(m[k]||0)+r.ventaP; }); return m; };
+    const groupCombined=key=>{ const mAct=groupSum(key,salesFActual), mLY=groupSum(key,salesFLY);
+      return Object.entries(mAct).map(([name,ventaP])=>({name,ventaP,vsAA:hasLY?pctVs(ventaP,mLY[name]||0):null}))
+        .sort((a,b)=>b.ventaP-a.ventaP); };
+    const porSubcanal=groupCombined('subcanal');
+    const porEstatus=groupCombined('estatus');
+    const porNorma=groupCombined('norma');
+    const porGoa=groupCombined('goa').slice(0,12);
+    // Deltas vs LY — usa la data del propio archivo si trae año anterior; si no, cae a los campos manuales del evento
+    const deltaVentaP = hasLY ? total.vsAA : (active.lyVentaP ? (total.ventaP-active.lyVentaP)/active.lyVentaP*100 : null);
+    const deltaMargen = hasLY ? (totalLY.margenPct!=null && total.margenPct!=null ? total.margenPct-totalLY.margenPct : null)
+      : (active.lyMargenPct!=null && total.margenPct!=null ? total.margenPct-active.lyMargenPct : null);
     const deltaST = active.lyStPct!=null && total.stPct!=null ? total.stPct-active.lyStPct : null;
 
     // ── Desglose de inventario Regular / Descuento / Depreciado (valor $, no venta) ──
@@ -524,7 +570,8 @@ export default function ModuleEventos(){
 
     return { total, regular, descuento, depreciado, categorias, topModelo, bottom10, sinSnapshot, fMin, fMax,
       deltaVentaP, deltaMargen, deltaST, nSkuSnap:joined.nSkuSnap, nSkuVenta:joined.nSkuVenta,
-      grand, treeMarca, treeGoa, porDia, porSubcanal, porEstatus, porNorma, porGoa, opciones };
+      grand, treeMarca, treeGoa, porDia, porSubcanal, porEstatus, porNorma, porGoa, opciones,
+      hasLY, anoActual, anoAnterior };
   },[active,joined,salesRows,filtros]);
 
   const toggleExpand=key=>setExpanded(s=>{ const n=new Set(s); n.has(key)?n.delete(key):n.add(key); return n; });
@@ -785,6 +832,11 @@ export default function ModuleEventos(){
 
             {reportTab==='resumen' && (
               <>
+                {calc.hasLY && (
+                  <span className={`inline-flex items-center gap-1 w-fit text-[10px] font-bold px-2 py-1 rounded-full border ${t.badge}`}>
+                    <Icons.Calendar size={11}/> Comparando {calc.anoActual} vs {calc.anoAnterior} (detectado de la data)
+                  </span>
+                )}
                 {/* KPIs totales */}
                 <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
                   <KpiCard label="Venta $" value={fmtM(calc.total.ventaP)} delta={calc.deltaVentaP} t={t} isDark={isDark}/>
@@ -801,6 +853,7 @@ export default function ModuleEventos(){
                   <table className="w-full text-xs">
                     <thead><tr className={t.textMuted}>
                       <th className="text-left pb-2">Clasificación (al arranque)</th><th className="text-right pb-2">Venta $</th>
+                      {calc.hasLY && <th className="text-right pb-2">vs AA</th>}
                       <th className="text-right pb-2">Venta U</th><th className="text-right pb-2">Margen %</th>
                       <th className="text-right pb-2">Sell-through</th><th className="text-right pb-2">Remanente U</th>
                     </tr></thead>
@@ -809,6 +862,7 @@ export default function ModuleEventos(){
                         <tr key={key} className={`border-t ${t.border} ${key==='total'?'font-black':''} ${t.textMain}`}>
                           <td className="py-2">{key==='total'?'Total':<span className="inline-flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{background:CLASIF_COLOR[key]}}/>{CLASIF_LABEL[key]}</span>}</td>
                           <td className="text-right">{fmtM(r.ventaP)}</td>
+                          {calc.hasLY && <td className="text-right"><DeltaBadge value={r.vsAA}/></td>}
                           <td className="text-right">{fmt(r.ventaU)}</td><td className="text-right">{fmtP(r.margenPct)}</td>
                           <td className="text-right">{fmtP(r.stPct)}</td><td className="text-right">{fmt(r.remanente)}</td>
                         </tr>
@@ -835,12 +889,14 @@ export default function ModuleEventos(){
                     <table className="w-full text-xs">
                       <thead><tr className={t.textMuted}>
                         <th className="text-left pb-2">Sección</th><th className="text-right pb-2">Venta $</th>
+                        {calc.hasLY && <th className="text-right pb-2">vs AA</th>}
                         <th className="text-right pb-2">Venta U</th><th className="text-right pb-2">Margen %</th><th className="text-right pb-2">Sell-through</th>
                       </tr></thead>
                       <tbody>
                         {calc.categorias.map(c=>(
                           <tr key={c.seccion} className={`border-t ${t.border} ${t.textMain}`}>
                             <td className="py-2">{c.seccion}</td><td className="text-right">{fmtM(c.ventaP)}</td>
+                            {calc.hasLY && <td className="text-right"><DeltaBadge value={c.vsAA}/></td>}
                             <td className="text-right">{fmt(c.ventaU)}</td><td className="text-right">{fmtP(c.margenPct)}</td><td className="text-right">{fmtP(c.stPct)}</td>
                           </tr>
                         ))}
@@ -884,7 +940,7 @@ export default function ModuleEventos(){
                   {/* Desempeño por día */}
                   {calc.porDia.length>0 && (
                     <div className={`p-4 rounded-xl border overflow-x-auto lg:col-span-2 ${t.card}`}>
-                      <p className={`text-xs font-black mb-3 ${t.textMain}`}>Desempeño por día — venta por clasificación y margen %</p>
+                      <p className={`text-xs font-black mb-3 ${t.textMain}`}>Desempeño por día — venta por clasificación y margen %{calc.hasLY?' (línea punteada = AA)':''}</p>
                       <ResponsiveContainer width="100%" height={280}>
                         <ComposedChart data={calc.porDia} margin={{top:10}} barCategoryGap="20%">
                           <CartesianGrid strokeDasharray="3 3" stroke={gridC} vertical={false}/>
@@ -897,6 +953,7 @@ export default function ModuleEventos(){
                           <Bar yAxisId="izq" dataKey="descuento" stackId="v" name="Descuento" fill="url(#gradDescuentoV)"/>
                           <Bar yAxisId="izq" dataKey="depreciado" stackId="v" name="Depreciado" fill="url(#gradDepreciadoV)" radius={[6,6,0,0]}/>
                           <Line yAxisId="der" type="monotone" dataKey="margenPct" name="Margen %" stroke={lineC} strokeWidth={2} dot={false}/>
+                          {calc.hasLY && <Line yAxisId="izq" type="monotone" dataKey="ventaPLY" name="Venta $ AA" stroke={txtC} strokeWidth={1.5} strokeDasharray="4 3" dot={false}/>}
                         </ComposedChart>
                       </ResponsiveContainer>
                     </div>
@@ -953,15 +1010,18 @@ export default function ModuleEventos(){
                   <p className={`text-xs font-black mb-3 ${t.textMain}`}>Bottom 10 Modelo · Venta $ (con inventario inicial)</p>
                   <table className="w-full text-xs">
                     <thead><tr className={t.textMuted}><th className="text-left pb-2">Modelo</th><th className="text-left pb-2">Marca</th><th className="text-left pb-2">GOA</th>
-                      <th className="text-right pb-2">Venta $</th><th className="text-right pb-2">Venta U</th><th className="text-right pb-2">ST%</th></tr></thead>
+                      <th className="text-right pb-2">Venta $</th>{calc.hasLY && <th className="text-right pb-2">vs AA</th>}
+                      <th className="text-right pb-2">Venta U</th><th className="text-right pb-2">ST%</th></tr></thead>
                     <tbody>
-                      {calc.bottom10.length===0 ? (<tr><td colSpan={6} className={`py-3 text-center ${t.textMuted}`}>Sin datos</td></tr>) :
+                      {calc.bottom10.length===0 ? (<tr><td colSpan={7} className={`py-3 text-center ${t.textMuted}`}>Sin datos</td></tr>) :
                       calc.bottom10.map(r=>(
                         <tr key={r.modelo} className={`border-t ${t.border} ${t.textMain}`}>
                           <td className="py-1.5">{r.modelo}</td>
                           <td className={t.textMuted}>{r.marca}</td>
                           <td className={t.textMuted}>{r.goa}</td>
-                          <td className="text-right">{fmtM(r.ventaP)}</td><td className="text-right">{fmt(r.ventaU)}</td><td className="text-right">{fmtP(r.stPct)}</td>
+                          <td className="text-right">{fmtM(r.ventaP)}</td>
+                          {calc.hasLY && <td className="text-right"><DeltaBadge value={r.vsAA}/></td>}
+                          <td className="text-right">{fmt(r.ventaU)}</td><td className="text-right">{fmtP(r.stPct)}</td>
                         </tr>
                       ))}
                     </tbody>
