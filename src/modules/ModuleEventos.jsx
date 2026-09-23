@@ -72,20 +72,31 @@ const parseSnapshotXLSX = async file => {
   if(!sheetName) return {rows:[],error:'El archivo debe incluir la pestaña "OH y Montos".'};
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName],{header:1,defval:'',raw:true});
   if(rows.length<2) return {rows:[],error:null};
-  // Columnas fijas por posición (duplican nombre "Artículo" en el layout, no se puede indexar por header):
-  // 0 Rebaja | 6 Sección | 7 Grupo artículos(GOA) | 9 Marca | 10 Norma Aprov. | 12 Estatus | 13 Modelo Proveedor | 14 Artículo(SKU) | 15 Artículo(desc) | 17 Precio Venta Act | 18 OH_ | 20 OH aant | 21 Monto aant (en miles)
-  // Col 0 "Rebaja": Regular = sin letra; Depreciado = liquidación permanente; MS = letra temporal (regresa a precio).
+  // Se indexa por NOMBRE de columna (no posición): este layout ya cambió más de una vez (letra de descuento,
+  // y ahora columna "Año" para traer 2 años de snapshot apilados) y leer por índice fijo rompe todo silenciosamente.
+  // "Artículo" se repite 2 veces (SKU y descripción) — se toman en el orden en que aparecen.
+  const head=(rows[0]||[]).map(s=>String(s||'').trim());
+  const hidx=(...names)=>{ for(const n of names){ const i=head.indexOf(n); if(i>=0) return i; } return -1; };
+  const artIdx=head.reduce((a,h,i)=>{ if(h==='Artículo') a.push(i); return a; },[]);
+  const iAno=hidx('Año'), iRebaja=hidx('Rebaja'), iSeccion=hidx('Sección'), iGoa=hidx('Grupo artículos'),
+    iMarca=hidx('Marca'), iNorma=hidx('Norma de Aprovisionamiento'), iEstatus=hidx('Estatus del Artículo'),
+    iModelo=hidx('Modelo Proveedor'), iSku=artIdx.length?artIdx[0]:-1, iDesc=artIdx.length>1?artIdx[1]:iSku,
+    iPrecio=hidx('Precio De Venta Act'), iOh=hidx('OH_'), iOhAant=hidx('OH aant'), iMontoAant=hidx('Monto aant');
+  // Col "Rebaja": Regular = sin letra; Depreciado = liquidación permanente; MS = letra temporal (regresa a precio).
+  // Col "Año": si existe, marca a qué ejercicio pertenece cada bloque de filas (permite clasificar por año real, no por hoy).
   const out=[];
   for(let i=1;i<rows.length;i++){ const r=rows[i]; if(!r||r.every(c=>c===''||c==null)) continue;
-    const sku=String(r[14]||'').trim(); if(!sku) continue;
-    const rebaja=String(r[0]||'').trim();
+    const sku=iSku>=0?String(r[iSku]||'').trim():''; if(!sku) continue;
+    const rebaja=iRebaja>=0?String(r[iRebaja]||'').trim():'';
     const letraDesc=(rebaja&&rebaja.toUpperCase()!=='REGULAR')?rebaja:'';
-    out.push({ sku, nsku:String(r[15]||'').trim(), modelo:String(r[13]||'').trim().toUpperCase(),
-      marca:(String(r[9]||'').trim().toUpperCase())||'SIN MARCA', goa:String(r[7]||'').trim().toUpperCase(),
-      seccion:(String(r[6]||'').trim().toUpperCase())||'GENERAL', centro:'',
-      norma:String(r[10]||'').trim().toUpperCase(), estatus:String(r[12]||'').trim().toUpperCase(),
-      oh:num(r[18]), precio:num(r[17]), letraDesc,
-      ohAant:num(r[20]), montoAant:num(r[21])*1000 });
+    const anoRaw=iAno>=0?String(r[iAno]||'').trim():'';
+    out.push({ sku, nsku:iDesc>=0?String(r[iDesc]||'').trim():'', modelo:iModelo>=0?String(r[iModelo]||'').trim().toUpperCase():'',
+      marca:(iMarca>=0?String(r[iMarca]||'').trim().toUpperCase():'')||'SIN MARCA', goa:iGoa>=0?String(r[iGoa]||'').trim().toUpperCase():'',
+      seccion:(iSeccion>=0?String(r[iSeccion]||'').trim().toUpperCase():'')||'GENERAL', centro:'',
+      norma:iNorma>=0?String(r[iNorma]||'').trim().toUpperCase():'', estatus:iEstatus>=0?String(r[iEstatus]||'').trim().toUpperCase():'',
+      ano:anoRaw?(parseInt(anoRaw,10)||null):null,
+      oh:num(iOh>=0?r[iOh]:0), precio:num(iPrecio>=0?r[iPrecio]:0), letraDesc,
+      ohAant:num(iOhAant>=0?r[iOhAant]:0), montoAant:num(iMontoAant>=0?r[iMontoAant]:0)*1000 });
   }
   // Ventas del evento, si el mismo archivo trae la pestaña "Vtas_Evento" (export SAP diario por SKU).
   // Se indexa por NOMBRE de columna (no posición): el layout de este export cambia si se agregan/quitan
@@ -378,34 +389,60 @@ export default function ModuleEventos(){
 
   // ── Join pesado (snapshot + ventas → SKU, clasificación) — solo recalcula al cargar archivos ──
   const joined=useMemo(()=>{
-    const snapBySku={};
-    snapRows.forEach(r=>{
-      const k=r.sku;
-      if(!snapBySku[k]) snapBySku[k]={sku:k,nsku:r.nsku,modelo:r.modelo,marca:r.marca,goa:r.goa,seccion:r.seccion,norma:r.norma||'',estatus:r.estatus||'',oh:0,precio:0,letraDesc:r.letraDesc,ohAant:0,montoAant:0};
-      snapBySku[k].oh+=r.oh;
-      snapBySku[k].ohAant+=r.ohAant||0; snapBySku[k].montoAant+=r.montoAant||0;
-      if(r.precio>snapBySku[k].precio) snapBySku[k].precio=r.precio;
-      if(r.letraDesc && !snapBySku[k].letraDesc) snapBySku[k].letraDesc=r.letraDesc;
-    });
+    // Año actual / año anterior — se detecta solo por el año de las fechas en Vtas_Evento (sin config manual)
+    const years=[...new Set(salesRows.map(r=>r.fecha?r.fecha.getFullYear():null).filter(Boolean))].sort((a,b)=>b-a);
+    const anoActual=years[0]??null;
+    const anoAnterior=years.length>1?years[1]:(anoActual?anoActual-1:null);
+    const hasLY=anoAnterior!=null && years.includes(anoAnterior);
+    // El snapshot (OH y Montos) puede traer 2 bloques apilados por año (columna "Año"). Si existe, el snapshot
+    // "de hoy" usa solo el bloque del año actual, y hay un bloque aparte para el año anterior (misma letra/rebaja
+    // que tenía ESE año). Archivos viejos sin columna "Año" se tratan como un solo bloque (comportamiento previo).
+    const hasAnoCol = snapRows.some(r=>r.ano!=null);
+    const snapRowsActual = hasAnoCol ? snapRows.filter(r=>r.ano===anoActual || r.ano==null) : snapRows;
+    const snapRowsLY = hasAnoCol && hasLY ? snapRows.filter(r=>r.ano===anoAnterior) : [];
+    const buildSnapBySku = rows => { const m={};
+      rows.forEach(r=>{ const k=r.sku;
+        if(!m[k]) m[k]={sku:k,nsku:r.nsku,modelo:r.modelo,marca:r.marca,goa:r.goa,seccion:r.seccion,norma:r.norma||'',estatus:r.estatus||'',oh:0,precio:0,letraDesc:r.letraDesc,ohAant:0,montoAant:0};
+        m[k].oh+=r.oh;
+        m[k].ohAant+=r.ohAant||0; m[k].montoAant+=r.montoAant||0;
+        if(r.precio>m[k].precio) m[k].precio=r.precio;
+        if(r.letraDesc && !m[k].letraDesc) m[k].letraDesc=r.letraDesc;
+      });
+      return m; };
+    const snapBySku = buildSnapBySku(snapRowsActual);
+    const snapBySkuLY = hasLY ? buildSnapBySku(snapRowsLY) : {};
     const salesBySkuFull={};
     salesRows.forEach(r=>{
       const k=r.sku;
       if(!salesBySkuFull[k]) salesBySkuFull[k]={ventaU:0,ventaP:0};
       salesBySkuFull[k].ventaU+=r.ventaU; salesBySkuFull[k].ventaP+=r.ventaP;
     });
+    const salesBySkuFullLY={};
+    if(hasLY) salesRows.filter(r=>r.fecha&&r.fecha.getFullYear()===anoAnterior).forEach(r=>{
+      const k=r.sku;
+      if(!salesBySkuFullLY[k]) salesBySkuFullLY[k]={ventaU:0,ventaP:0};
+      salesBySkuFullLY[k].ventaU+=r.ventaU; salesBySkuFullLY[k].ventaP+=r.ventaP;
+    });
     // Clasificación (estructural, no depende de filtros): depreciado = liquidación permanente;
     // descuento = letra temporal (MS) o venta bajo lista sin letra; regular = resto.
-    const clasifBySku={};
-    const allSkus=new Set([...Object.keys(snapBySku),...Object.keys(salesBySkuFull)]);
-    allSkus.forEach(sku=>{
-      const s=snapBySku[sku], v=salesBySkuFull[sku];
-      if(!s){ clasifBySku[sku]='sin_snapshot'; return; }
-      const tag=(s.letraDesc||'').trim().toUpperCase();
-      if(tag==='MS'){ clasifBySku[sku]='descuento'; return; }
-      if(tag){ clasifBySku[sku]='depreciado'; return; }
-      const realizado = v&&v.ventaU>0 ? v.ventaP/v.ventaU : null;
-      clasifBySku[sku] = (realizado!=null && s.precio>0 && realizado<s.precio*0.99) ? 'descuento' : 'regular';
-    });
+    const buildClasif = (snapMap, ventaMap) => { const m={};
+      const allSkus=new Set([...Object.keys(snapMap),...Object.keys(ventaMap)]);
+      allSkus.forEach(sku=>{
+        const s=snapMap[sku], v=ventaMap[sku];
+        if(!s){ m[sku]='sin_snapshot'; return; }
+        const tag=(s.letraDesc||'').trim().toUpperCase();
+        if(tag==='MS'){ m[sku]='descuento'; return; }
+        if(tag){ m[sku]='depreciado'; return; }
+        const realizado = v&&v.ventaU>0 ? v.ventaP/v.ventaU : null;
+        m[sku] = (realizado!=null && s.precio>0 && realizado<s.precio*0.99) ? 'descuento' : 'regular';
+      });
+      return m; };
+    const clasifBySku = buildClasif(snapBySku, salesBySkuFull);
+    // Clasificación del año anterior: usa el snapshot/letra que tenía ESE año (no la de hoy aplicada al pasado).
+    // Sin columna "Año" o sin bloque histórico, cae a la clasificación de hoy (comportamiento previo, como fallback).
+    const clasifBySkuLY = (hasLY && hasAnoCol && Object.keys(snapBySkuLY).length>0)
+      ? buildClasif(snapBySkuLY, salesBySkuFullLY)
+      : clasifBySku;
     const uniq=arr=>[...new Set(arr.filter(Boolean))].sort();
     const opciones={
       seccion: uniq([...Object.values(snapBySku).map(s=>s.seccion),...salesRows.map(r=>r.seccion)]),
@@ -416,19 +453,14 @@ export default function ModuleEventos(){
       subcanal: uniq(salesRows.map(r=>r.subcanal)),
       clasif: uniq(Object.values(clasifBySku)),
     };
-    // Año actual / año anterior — se detecta solo por el año de las fechas en Vtas_Evento (sin config manual)
-    const years=[...new Set(salesRows.map(r=>r.fecha?r.fecha.getFullYear():null).filter(Boolean))].sort((a,b)=>b-a);
-    const anoActual=years[0]??null;
-    const anoAnterior=years.length>1?years[1]:(anoActual?anoActual-1:null);
-    const hasLY=anoAnterior!=null && years.includes(anoAnterior);
-    return { snapBySku, clasifBySku, opciones, anoActual, anoAnterior, hasLY,
+    return { snapBySku, clasifBySku, clasifBySkuLY, opciones, anoActual, anoAnterior, hasLY,
       nSkuSnap:Object.keys(snapBySku).length, nSkuVenta:Object.keys(salesBySkuFull).length };
   },[snapRows,salesRows]);
 
   // ── Cálculos filtrados — rápido, solo agrupa lo ya unido ──
   const calc=useMemo(()=>{
     if(!active) return null;
-    const {snapBySku,clasifBySku,opciones}=joined;
+    const {snapBySku,clasifBySku,clasifBySkuLY,opciones}=joined;
     const passSnap=sku=>{
       const s=snapBySku[sku];
       const v=f=>filtros[f].length===0 || filtros[f].includes(s?.[f]||'');
@@ -485,7 +517,7 @@ export default function ModuleEventos(){
     const rollupSimple = rows => { const ventaP=rows.reduce((s,r)=>s+r.ventaP,0), ventaU=rows.reduce((s,r)=>s+r.ventaU,0),
       utilidad=rows.reduce((s,r)=>s+r.utilidad,0);
       return { ventaP, ventaU, utilidad, margenPct: ventaP>0?utilidad/ventaP*100:null }; };
-    const detailLY=Object.entries(salesBySkuLY).map(([sku,v])=>({ sku, clasif:clasifBySku[sku]||'sin_snapshot',
+    const detailLY=Object.entries(salesBySkuLY).map(([sku,v])=>({ sku, clasif:clasifBySkuLY[sku]||'sin_snapshot',
       seccion:v.seccion||snapBySku[sku]?.seccion||'GENERAL', modelo:v.modelo||snapBySku[sku]?.modelo||sku, ...v }));
     const totalLY=rollupSimple(detailLY);
     const regularLY=rollupSimple(detailLY.filter(r=>r.clasif==='regular'));
