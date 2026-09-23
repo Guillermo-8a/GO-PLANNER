@@ -265,14 +265,14 @@ export default function ModuleEventos(){
   const [reportTab,setReportTab]=useState('resumen'); // 'resumen' | 'desglose'
   const [groupBy,setGroupBy]=useState('marca'); // 'marca' | 'goa'
   const [expanded,setExpanded]=useState(()=>new Set());
-  const FILTRO_DIMS=['seccion','marca','goa','norma','estatus','subcanal'];
-  const FILTRO_LABEL={seccion:'Sección',marca:'Marca',goa:'GOA',norma:'Norma',estatus:'Estatus',subcanal:'Subcanal'};
-  const [filtros,setFiltros]=useState({seccion:[],marca:[],goa:[],norma:[],estatus:[],subcanal:[]});
+  const FILTRO_DIMS=['seccion','marca','goa','norma','estatus','subcanal','clasif'];
+  const FILTRO_LABEL={seccion:'Sección',marca:'Marca',goa:'GOA',norma:'Norma',estatus:'Estatus',subcanal:'Subcanal',clasif:'Rebaja'};
+  const [filtros,setFiltros]=useState({seccion:[],marca:[],goa:[],norma:[],estatus:[],subcanal:[],clasif:[]});
   const [filtroAbierto,setFiltroAbierto]=useState(null);
   const [filtroQuery,setFiltroQuery]=useState('');
   const toggleFiltroValor=(dim,val)=>setFiltros(f=>{ const s=f[dim].includes(val)?f[dim].filter(v=>v!==val):[...f[dim],val]; return {...f,[dim]:s}; });
   const limpiarFiltro=dim=>setFiltros(f=>({...f,[dim]:[]}));
-  const limpiarFiltros=()=>setFiltros({seccion:[],marca:[],goa:[],norma:[],estatus:[],subcanal:[]});
+  const limpiarFiltros=()=>setFiltros({seccion:[],marca:[],goa:[],norma:[],estatus:[],subcanal:[],clasif:[]});
   const nFiltrosActivos=FILTRO_DIMS.reduce((n,d)=>n+(filtros[d].length>0?1:0),0);
   const blankForm={nombre:'',tipo:TIPOS_EVENTO[0],tipoOtro:'',fechaInicio:'',fechaFin:'',objetivo:OBJETIVOS[0],lyVentaP:'',lyMargenPct:'',lyStPct:''};
   const [form,setForm]=useState(blankForm);
@@ -414,6 +414,7 @@ export default function ModuleEventos(){
       norma: uniq([...Object.values(snapBySku).map(s=>s.norma),...salesRows.map(r=>r.norma)]),
       estatus: uniq([...Object.values(snapBySku).map(s=>s.estatus),...salesRows.map(r=>r.estatus)]),
       subcanal: uniq(salesRows.map(r=>r.subcanal)),
+      clasif: uniq(Object.values(clasifBySku)),
     };
     // Año actual / año anterior — se detecta solo por el año de las fechas en Vtas_Evento (sin config manual)
     const years=[...new Set(salesRows.map(r=>r.fecha?r.fecha.getFullYear():null).filter(Boolean))].sort((a,b)=>b-a);
@@ -431,7 +432,8 @@ export default function ModuleEventos(){
     const passSnap=sku=>{
       const s=snapBySku[sku];
       const v=f=>filtros[f].length===0 || filtros[f].includes(s?.[f]||'');
-      return v('seccion')&&v('marca')&&v('goa')&&v('norma')&&v('estatus');
+      const passClasif=filtros.clasif.length===0 || filtros.clasif.includes(clasifBySku[sku]||'sin_snapshot');
+      return v('seccion')&&v('marca')&&v('goa')&&v('norma')&&v('estatus')&&passClasif;
     };
     const salesF=salesRows.filter(r=>
       (filtros.subcanal.length===0||filtros.subcanal.includes(r.subcanal)) && passSnap(r.sku));
@@ -472,9 +474,9 @@ export default function ModuleEventos(){
     });
     const rollup = rows => { const ventaP=rows.reduce((s,r)=>s+r.ventaP,0), ventaU=rows.reduce((s,r)=>s+r.ventaU,0),
       utilidad=rows.reduce((s,r)=>s+r.utilidad,0), ohInicio=rows.reduce((s,r)=>s+r.ohInicio,0),
-      remanente=rows.reduce((s,r)=>s+(r.remanente||0),0);
+      remanente=rows.reduce((s,r)=>s+(r.remanente||0),0), montoRemanente=rows.reduce((s,r)=>s+(r.montoRemanente||0),0);
       return { ventaP, ventaU, utilidad, margenPct: ventaP>0?utilidad/ventaP*100:null,
-        ohInicio, remanente, stPct: ohInicio>0?Math.min(100,ventaU/ohInicio*100):null }; };
+        ohInicio, remanente, montoRemanente, stPct: ohInicio>0?Math.min(100,ventaU/ohInicio*100):null }; };
     const total=rollup(detail);
     const regular=rollup(detail.filter(r=>r.clasif==='regular'));
     const descuento=rollup(detail.filter(r=>r.clasif==='descuento'));
@@ -503,8 +505,9 @@ export default function ModuleEventos(){
     // Top 10 / Bottom 10 por modelo (agrega SKU → modelo)
     const modMap={};
     detail.forEach(r=>{ const k=r.modelo||r.sku;
-      if(!modMap[k]) modMap[k]={modelo:k,marca:r.marca,goa:r.goa,seccion:r.seccion,ventaP:0,ventaU:0,ohInicio:0};
-      modMap[k].ventaP+=r.ventaP; modMap[k].ventaU+=r.ventaU; modMap[k].ohInicio+=r.ohInicio; });
+      if(!modMap[k]) modMap[k]={modelo:k,marca:r.marca,goa:r.goa,seccion:r.seccion,ventaP:0,ventaU:0,ohInicio:0,remanente:0,montoRemanente:0};
+      modMap[k].ventaP+=r.ventaP; modMap[k].ventaU+=r.ventaU; modMap[k].ohInicio+=r.ohInicio;
+      modMap[k].remanente+=r.remanente||0; modMap[k].montoRemanente+=r.montoRemanente||0; });
     const modMapLY={}; detailLY.forEach(r=>{ const k=r.modelo||r.sku; modMapLY[k]=(modMapLY[k]||0)+r.ventaP; });
     const modArr=Object.values(modMap).map(m=>({...m, stPct: m.ohInicio>0?Math.min(100,m.ventaU/m.ohInicio*100):null,
       vsAA: hasLY?pctVs(m.ventaP,modMapLY[m.modelo]||0):null}));
@@ -799,7 +802,8 @@ export default function ModuleEventos(){
                 const opts=calc.opciones[dim]||[];
                 if(opts.length===0) return null;
                 const n=filtros[dim].length;
-                const optsF = filtroQuery.trim() ? opts.filter(v=>v.toUpperCase().includes(filtroQuery.trim().toUpperCase())) : opts;
+                const dimLabel=val=>dim==='clasif'?(CLASIF_LABEL[val]||val):val;
+                const optsF = filtroQuery.trim() ? opts.filter(v=>dimLabel(v).toUpperCase().includes(filtroQuery.trim().toUpperCase())) : opts;
                 return (
                   <div key={dim} className="relative">
                     <button onClick={()=>{ setFiltroAbierto(o=>o===dim?null:dim); setFiltroQuery(''); }}
@@ -818,7 +822,7 @@ export default function ModuleEventos(){
                         {optsF.map(val=>(
                           <label key={val} className={`flex items-center gap-2 py-1 text-[11px] cursor-pointer ${t.textMain}`}>
                             <input type="checkbox" checked={filtros[dim].includes(val)} onChange={()=>toggleFiltroValor(dim,val)}/>
-                            <span className="truncate">{val}</span>
+                            <span className="truncate">{dimLabel(val)}</span>
                           </label>
                         ))}
                       </div>
@@ -859,7 +863,7 @@ export default function ModuleEventos(){
                       <th className="text-left pb-2">Clasificación (al arranque)</th><th className="text-right pb-2">Venta $</th>
                       {calc.hasLY && <th className="text-right pb-2">vs AA</th>}
                       <th className="text-right pb-2">Venta U</th><th className="text-right pb-2">Margen %</th>
-                      <th className="text-right pb-2">Sell-through</th><th className="text-right pb-2">Remanente U</th>
+                      <th className="text-right pb-2">Sell-through</th><th className="text-right pb-2">Remanente U</th><th className="text-right pb-2">Remanente $</th>
                     </tr></thead>
                     <tbody>
                       {[['regular',calc.regular],['descuento',calc.descuento],['depreciado',calc.depreciado],['total',calc.total]].map(([key,r])=>(
@@ -870,6 +874,7 @@ export default function ModuleEventos(){
                           <td className="text-right">{fmt(r.ventaU)}{calc.hasLY && <div><DeltaBadge value={r.vsAA_u}/></div>}</td>
                           <td className="text-right">{fmtP(r.margenPct)}{calc.hasLY && <div><DeltaBadge value={r.vsAA_mg}/></div>}</td>
                           <td className="text-right">{fmtP(r.stPct)}</td><td className="text-right">{fmt(r.remanente)}</td>
+                          <td className="text-right">{fmtM(r.montoRemanente)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -1013,13 +1018,14 @@ export default function ModuleEventos(){
 
                 {/* Bottom 10 Modelo */}
                 <div className={`p-4 rounded-xl border overflow-x-auto ${t.card}`}>
-                  <p className={`text-xs font-black mb-3 ${t.textMain}`}>Bottom 10 Modelo · Venta $ (con inventario inicial)</p>
+                  <p className={`text-xs font-black mb-3 ${t.textMain}`}>Bottom 10 Modelo · Venta $ (con inventario inicial y remanente)</p>
                   <table className="w-full text-xs">
                     <thead><tr className={t.textMuted}><th className="text-left pb-2">Modelo</th><th className="text-left pb-2">Marca</th><th className="text-left pb-2">GOA</th>
                       <th className="text-right pb-2">Venta $</th>{calc.hasLY && <th className="text-right pb-2">vs AA</th>}
-                      <th className="text-right pb-2">Venta U</th><th className="text-right pb-2">ST%</th></tr></thead>
+                      <th className="text-right pb-2">Venta U</th><th className="text-right pb-2">ST%</th>
+                      <th className="text-right pb-2">Remanente U</th><th className="text-right pb-2">Remanente $</th></tr></thead>
                     <tbody>
-                      {calc.bottom10.length===0 ? (<tr><td colSpan={7} className={`py-3 text-center ${t.textMuted}`}>Sin datos</td></tr>) :
+                      {calc.bottom10.length===0 ? (<tr><td colSpan={9} className={`py-3 text-center ${t.textMuted}`}>Sin datos</td></tr>) :
                       calc.bottom10.map(r=>(
                         <tr key={r.modelo} className={`border-t ${t.border} ${t.textMain}`}>
                           <td className="py-1.5">{r.modelo}</td>
@@ -1028,6 +1034,7 @@ export default function ModuleEventos(){
                           <td className="text-right">{fmtM(r.ventaP)}</td>
                           {calc.hasLY && <td className="text-right"><DeltaBadge value={r.vsAA}/></td>}
                           <td className="text-right">{fmt(r.ventaU)}</td><td className="text-right">{fmtP(r.stPct)}</td>
+                          <td className="text-right">{fmt(r.remanente)}</td><td className="text-right">{fmtM(r.montoRemanente)}</td>
                         </tr>
                       ))}
                     </tbody>
