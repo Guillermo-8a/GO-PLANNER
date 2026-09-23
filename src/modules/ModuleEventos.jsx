@@ -87,22 +87,35 @@ const parseSnapshotXLSX = async file => {
       oh:num(r[18]), precio:num(r[17]), letraDesc,
       ohAant:num(r[20]), montoAant:num(r[21])*1000 });
   }
-  // Ventas del evento, si el mismo archivo trae la pestaña "Vtas_Evento" (export SAP diario por SKU)
-  // Columnas: 0 Día/Periodo(DD.MM.YYYY) | 2 N_Seccion | 3 Subcanal | 4 Artículo(SKU) | 7 N_Estatus | 8 Norma Aprov. | 9 Vtas.U | 10 Vtas.$ (en miles) | 11 GM (margen $ real) | 12 Total Descuentos (en miles)
+  // Ventas del evento, si el mismo archivo trae la pestaña "Vtas_Evento" (export SAP diario por SKU).
+  // Se indexa por NOMBRE de columna (no posición): el layout de este export cambia si se agregan/quitan
+  // columnas (p.ej. GOA/Modelo/Marca), y leer por índice fijo rompe todo silenciosamente.
   let salesRows=null;
   const salesSheetName = wb.SheetNames.find(n=>n.trim()==='Vtas_Evento');
   if(salesSheetName){
     const vrows = XLSX.utils.sheet_to_json(wb.Sheets[salesSheetName],{header:1,defval:'',raw:true});
-    salesRows=[];
-    for(let i=1;i<vrows.length;i++){ const r=vrows[i]; if(!r||r.every(c=>c===''||c==null)) continue;
-      const sku=String(r[4]||'').trim(); if(!sku) continue;
-      salesRows.push({ fecha:parseDate(String(r[0]||'')), sku, modelo:'', marca:'', goa:'',
-        seccion:(String(r[2]||'').trim().toUpperCase())||'', centro:'',
-        subcanal:(String(r[3]||'').trim().toUpperCase())||'SIN DATO',
-        estatus:String(r[7]||'').trim().toUpperCase(), norma:String(r[8]||'').trim().toUpperCase(),
-        ventaU:Number(r[9])||0, ventaP:(Number(r[10])||0)*1000, utilidad:Number(r[11])||0,
-        totalDescuento:(Number(r[12])||0)*1000 });
-    }
+    const norm=s=>String(s||'').trim();
+    const vhead=(vrows[0]||[]).map(norm);
+    const vidx=(...names)=>{ for(const n of names){ const i=vhead.indexOf(norm(n)); if(i>=0) return i; } return -1; };
+    const iFecha=vidx('Día/Periodo'), iSeccion=vidx('N_Seccion'), iSubcanal=vidx('Subcanal'),
+      iGoa=vidx('N_GOA'), iModelo=vidx('Modelo Proveedor'), iSku=vidx('Artículo'), iMarca=vidx('Marca'),
+      iEstatus=vidx('N_Estatus'), iNorma=vidx('Norma de Aprovisionamiento'),
+      iVentaU=vidx('Vtas. U'), iVentaP=vidx('Vtas. $'), iGM=vidx('GM'), iDescuento=vidx('Total Descuentos');
+    salesRows = iSku<0 ? [] : (()=>{ const out2=[];
+      for(let i=1;i<vrows.length;i++){ const r=vrows[i]; if(!r||r.every(c=>c===''||c==null)) continue;
+        const sku=String(r[iSku]||'').trim(); if(!sku) continue;
+        out2.push({ fecha:parseDate(String(r[iFecha]||'')), sku,
+          modelo:iModelo>=0?String(r[iModelo]||'').trim().toUpperCase():'',
+          marca:iMarca>=0?String(r[iMarca]||'').trim().toUpperCase():'',
+          goa:iGoa>=0?String(r[iGoa]||'').trim().toUpperCase():'',
+          seccion:(iSeccion>=0?String(r[iSeccion]||'').trim().toUpperCase():'')||'', centro:'',
+          subcanal:(iSubcanal>=0?String(r[iSubcanal]||'').trim().toUpperCase():'')||'SIN DATO',
+          estatus:iEstatus>=0?String(r[iEstatus]||'').trim().toUpperCase():'',
+          norma:iNorma>=0?String(r[iNorma]||'').trim().toUpperCase():'',
+          ventaU:iVentaU>=0?(Number(r[iVentaU])||0):0, ventaP:iVentaP>=0?(Number(r[iVentaP])||0)*1000:0,
+          utilidad:iGM>=0?(Number(r[iGM])||0):0, totalDescuento:iDescuento>=0?(Number(r[iDescuento])||0)*1000:0 });
+      }
+      return out2; })();
   }
   return {rows:out,error:null,salesRows};
 };
