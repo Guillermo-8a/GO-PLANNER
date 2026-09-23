@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ComposedChart, Line, PieChart, Pie, Legend } from 'recharts';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import * as XLSX from 'xlsx';
@@ -38,6 +38,7 @@ const TIPOS_EVENTO=['NM Mamás','NM Papás','BTS','MS','GVL','ATH','NM Navidad',
 const OBJETIVOS=['Liquidar depreciado','Tráfico','Margen'];
 // Paleta validada (CVD-safe, dark + light) para las 3 clasificaciones
 const CLASIF_COLOR={ regular:'#8b5cf6', descuento:'#059669', depreciado:'#c2410c', sin_snapshot:'#dc2626' };
+const VIOLET_SHADES=['#8b5cf6','#a78bfa','#c4b5fd','#7c3aed','#ddd6fe','#6d28d9','#e9d5ff','#5b21b6'];
 const CLASIF_GRAD={ regular:'gradRegular', descuento:'gradDescuento', depreciado:'gradDepreciado', sin_snapshot:'gradAlerta' };
 const CLASIF_LABEL={ regular:'Regular', descuento:'Descuento', depreciado:'Depreciado', sin_snapshot:'Sin snapshot' };
 
@@ -72,7 +73,7 @@ const parseSnapshotXLSX = async file => {
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName],{header:1,defval:'',raw:true});
   if(rows.length<2) return {rows:[],error:null};
   // Columnas fijas por posición (duplican nombre "Artículo" en el layout, no se puede indexar por header):
-  // 0 Rebaja | 6 Sección | 7 Grupo artículos(GOA) | 9 Marca | 13 Modelo Proveedor | 14 Artículo(SKU) | 15 Artículo(desc) | 17 Precio Venta Act | 18 OH_ | 20 OH aant | 21 Monto aant (en miles)
+  // 0 Rebaja | 6 Sección | 7 Grupo artículos(GOA) | 9 Marca | 10 Norma Aprov. | 12 Estatus | 13 Modelo Proveedor | 14 Artículo(SKU) | 15 Artículo(desc) | 17 Precio Venta Act | 18 OH_ | 20 OH aant | 21 Monto aant (en miles)
   // Col 0 "Rebaja": Regular = sin letra; Depreciado = liquidación permanente; MS = letra temporal (regresa a precio).
   const out=[];
   for(let i=1;i<rows.length;i++){ const r=rows[i]; if(!r||r.every(c=>c===''||c==null)) continue;
@@ -82,11 +83,12 @@ const parseSnapshotXLSX = async file => {
     out.push({ sku, nsku:String(r[15]||'').trim(), modelo:String(r[13]||'').trim().toUpperCase(),
       marca:(String(r[9]||'').trim().toUpperCase())||'SIN MARCA', goa:String(r[7]||'').trim().toUpperCase(),
       seccion:(String(r[6]||'').trim().toUpperCase())||'GENERAL', centro:'',
+      norma:String(r[10]||'').trim().toUpperCase(), estatus:String(r[12]||'').trim().toUpperCase(),
       oh:num(r[18]), precio:num(r[17]), letraDesc,
       ohAant:num(r[20]), montoAant:num(r[21])*1000 });
   }
   // Ventas del evento, si el mismo archivo trae la pestaña "Vtas_Evento" (export SAP diario por SKU)
-  // Columnas: 0 Día/Periodo(DD.MM.YYYY) | 2 N_Seccion | 4 Artículo(SKU) | 9 Vtas.U | 10 Vtas.$ (en miles) | 11 GM (margen $ real) | 12 Total Descuentos (en miles)
+  // Columnas: 0 Día/Periodo(DD.MM.YYYY) | 2 N_Seccion | 3 Subcanal | 4 Artículo(SKU) | 7 N_Estatus | 8 Norma Aprov. | 9 Vtas.U | 10 Vtas.$ (en miles) | 11 GM (margen $ real) | 12 Total Descuentos (en miles)
   let salesRows=null;
   const salesSheetName = wb.SheetNames.find(n=>n.trim()==='Vtas_Evento');
   if(salesSheetName){
@@ -96,7 +98,10 @@ const parseSnapshotXLSX = async file => {
       const sku=String(r[4]||'').trim(); if(!sku) continue;
       salesRows.push({ fecha:parseDate(String(r[0]||'')), sku, modelo:'', marca:'', goa:'',
         seccion:(String(r[2]||'').trim().toUpperCase())||'', centro:'',
-        ventaU:Number(r[9])||0, ventaP:(Number(r[10])||0)*1000, utilidad:Number(r[11])||0 });
+        subcanal:(String(r[3]||'').trim().toUpperCase())||'SIN DATO',
+        estatus:String(r[7]||'').trim().toUpperCase(), norma:String(r[8]||'').trim().toUpperCase(),
+        ventaU:Number(r[9])||0, ventaP:(Number(r[10])||0)*1000, utilidad:Number(r[11])||0,
+        totalDescuento:(Number(r[12])||0)*1000 });
     }
   }
   return {rows:out,error:null,salesRows};
@@ -191,9 +196,13 @@ export default function ModuleEventos(){
   const t=themes[theme]||themes.light;
   const gridC=isDark?'#27272a':'#f0f0f0', axisC=isDark?'#52525b':'#d1d5db', txtC=isDark?'#a1a1aa':'#6b7280';
   const cursorFill=isDark?'rgba(139,92,246,0.14)':'rgba(139,92,246,0.08)'; // glass violeta, en vez del cursor gris/blanco default de recharts
+  const lineC=isDark?'#f4f4f5':'#18181b';
   const TTip=({active,payload,label})=>{ if(!active||!payload?.length) return null;
     return <div className={`p-3 rounded-xl border text-xs shadow-xl ${t.card}`}><p className={`font-bold mb-1 ${t.textMain}`}>{label}</p>
       {payload.map((p,i)=><p key={i} style={{color:p.color}}>{p.name}: {fmtM(p.value)}</p>)}</div>; };
+  const DiaTTip=({active,payload,label})=>{ if(!active||!payload?.length) return null;
+    return <div className={`p-3 rounded-xl border text-xs shadow-xl ${t.card}`}><p className={`font-bold mb-1 ${t.textMain}`}>{label}</p>
+      {payload.map((p,i)=><p key={i} style={{color:p.color}}>{p.name}: {p.dataKey==='margenPct'?fmtP(p.value):fmtM(p.value)}</p>)}</div>; };
 
   // ── Event master ──
   const [events,setEvents]=useState(()=>{ try{ return JSON.parse(localStorage.getItem('gop_eventos')||'[]'); }catch{ return []; } });
@@ -205,6 +214,14 @@ export default function ModuleEventos(){
   const [reportTab,setReportTab]=useState('resumen'); // 'resumen' | 'desglose'
   const [groupBy,setGroupBy]=useState('marca'); // 'marca' | 'goa'
   const [expanded,setExpanded]=useState(()=>new Set());
+  const FILTRO_DIMS=['seccion','marca','goa','norma','estatus','subcanal'];
+  const FILTRO_LABEL={seccion:'Sección',marca:'Marca',goa:'GOA',norma:'Norma',estatus:'Estatus',subcanal:'Subcanal'};
+  const [filtros,setFiltros]=useState({seccion:[],marca:[],goa:[],norma:[],estatus:[],subcanal:[]});
+  const [filtroAbierto,setFiltroAbierto]=useState(null);
+  const toggleFiltroValor=(dim,val)=>setFiltros(f=>{ const s=f[dim].includes(val)?f[dim].filter(v=>v!==val):[...f[dim],val]; return {...f,[dim]:s}; });
+  const limpiarFiltro=dim=>setFiltros(f=>({...f,[dim]:[]}));
+  const limpiarFiltros=()=>setFiltros({seccion:[],marca:[],goa:[],norma:[],estatus:[],subcanal:[]});
+  const nFiltrosActivos=FILTRO_DIMS.reduce((n,d)=>n+(filtros[d].length>0?1:0),0);
   const blankForm={nombre:'',tipo:TIPOS_EVENTO[0],tipoOtro:'',fechaInicio:'',fechaFin:'',objetivo:OBJETIVOS[0],lyVentaP:'',lyMargenPct:'',lyStPct:''};
   const [form,setForm]=useState(blankForm);
   const [exporting,setExporting]=useState(false);
@@ -305,45 +322,74 @@ export default function ModuleEventos(){
     if(salesRef.current) salesRef.current.value='';
   };
 
-  // ── Cálculos ──
-  const calc=useMemo(()=>{
-    if(!active) return null;
-    // Snapshot agregado a nivel SKU (nacional — suma OH entre centros; precio = mayor precio visto)
+  // ── Join pesado (snapshot + ventas → SKU, clasificación) — solo recalcula al cargar archivos ──
+  const joined=useMemo(()=>{
     const snapBySku={};
     snapRows.forEach(r=>{
       const k=r.sku;
-      if(!snapBySku[k]) snapBySku[k]={sku:k,nsku:r.nsku,modelo:r.modelo,marca:r.marca,goa:r.goa,seccion:r.seccion,oh:0,precio:0,letraDesc:r.letraDesc,ohAant:0,montoAant:0};
+      if(!snapBySku[k]) snapBySku[k]={sku:k,nsku:r.nsku,modelo:r.modelo,marca:r.marca,goa:r.goa,seccion:r.seccion,norma:r.norma||'',estatus:r.estatus||'',oh:0,precio:0,letraDesc:r.letraDesc,ohAant:0,montoAant:0};
       snapBySku[k].oh+=r.oh;
       snapBySku[k].ohAant+=r.ohAant||0; snapBySku[k].montoAant+=r.montoAant||0;
       if(r.precio>snapBySku[k].precio) snapBySku[k].precio=r.precio;
       if(r.letraDesc && !snapBySku[k].letraDesc) snapBySku[k].letraDesc=r.letraDesc;
     });
-    // Ventas agregadas a nivel SKU
+    const salesBySkuFull={};
+    salesRows.forEach(r=>{
+      const k=r.sku;
+      if(!salesBySkuFull[k]) salesBySkuFull[k]={ventaU:0,ventaP:0};
+      salesBySkuFull[k].ventaU+=r.ventaU; salesBySkuFull[k].ventaP+=r.ventaP;
+    });
+    // Clasificación (estructural, no depende de filtros): depreciado = liquidación permanente;
+    // descuento = letra temporal (MS) o venta bajo lista sin letra; regular = resto.
+    const clasifBySku={};
+    const allSkus=new Set([...Object.keys(snapBySku),...Object.keys(salesBySkuFull)]);
+    allSkus.forEach(sku=>{
+      const s=snapBySku[sku], v=salesBySkuFull[sku];
+      if(!s){ clasifBySku[sku]='sin_snapshot'; return; }
+      const tag=(s.letraDesc||'').trim().toUpperCase();
+      if(tag==='MS'){ clasifBySku[sku]='descuento'; return; }
+      if(tag){ clasifBySku[sku]='depreciado'; return; }
+      const realizado = v&&v.ventaU>0 ? v.ventaP/v.ventaU : null;
+      clasifBySku[sku] = (realizado!=null && s.precio>0 && realizado<s.precio*0.99) ? 'descuento' : 'regular';
+    });
+    const uniq=arr=>[...new Set(arr.filter(Boolean))].sort();
+    const opciones={
+      seccion: uniq([...Object.values(snapBySku).map(s=>s.seccion),...salesRows.map(r=>r.seccion)]),
+      marca: uniq(Object.values(snapBySku).map(s=>s.marca)),
+      goa: uniq(Object.values(snapBySku).map(s=>s.goa)),
+      norma: uniq([...Object.values(snapBySku).map(s=>s.norma),...salesRows.map(r=>r.norma)]),
+      estatus: uniq([...Object.values(snapBySku).map(s=>s.estatus),...salesRows.map(r=>r.estatus)]),
+      subcanal: uniq(salesRows.map(r=>r.subcanal)),
+    };
+    return { snapBySku, clasifBySku, opciones,
+      nSkuSnap:Object.keys(snapBySku).length, nSkuVenta:Object.keys(salesBySkuFull).length };
+  },[snapRows,salesRows]);
+
+  // ── Cálculos filtrados — rápido, solo agrupa lo ya unido ──
+  const calc=useMemo(()=>{
+    if(!active) return null;
+    const {snapBySku,clasifBySku,opciones}=joined;
+    const passSnap=sku=>{
+      const s=snapBySku[sku];
+      const v=f=>filtros[f].length===0 || filtros[f].includes(s?.[f]||'');
+      return v('seccion')&&v('marca')&&v('goa')&&v('norma')&&v('estatus');
+    };
+    const salesF=salesRows.filter(r=>
+      (filtros.subcanal.length===0||filtros.subcanal.includes(r.subcanal)) && passSnap(r.sku));
     const salesBySku={};
     let fMin=null,fMax=null;
-    salesRows.forEach(r=>{
+    salesF.forEach(r=>{
       const k=r.sku;
       if(!salesBySku[k]) salesBySku[k]={sku:k,modelo:r.modelo,marca:r.marca,goa:r.goa,seccion:r.seccion,ventaU:0,ventaP:0,utilidad:0};
       salesBySku[k].ventaU+=r.ventaU; salesBySku[k].ventaP+=r.ventaP; salesBySku[k].utilidad+=r.utilidad;
       if(r.fecha){ if(!fMin||r.fecha<fMin) fMin=r.fecha; if(!fMax||r.fecha>fMax) fMax=r.fecha; }
     });
-    const allSkus=new Set([...Object.keys(snapBySku),...Object.keys(salesBySku)]);
+    const allSkus=new Set([...Object.keys(snapBySku).filter(passSnap),...Object.keys(salesBySku)]);
     const detail=[]; let sinSnapshot=0;
     allSkus.forEach(sku=>{
       const s=snapBySku[sku], v=salesBySku[sku]||{ventaU:0,ventaP:0,utilidad:0};
       const ohInicio=s?.oh||0, precio=s?.precio||0;
-      const realizado = v.ventaU>0 ? v.ventaP/v.ventaU : null;
-      // 3 vías: depreciado = ya está en liquidación (o pronto a estarlo) — permanente;
-      // descuento = letra temporal (MS) que regresa a precio lista después del evento,
-      // o sin letra pero se vendió por debajo del precio de lista durante el evento;
-      // regular = sin letra y sin evidencia de descuento.
-      const tag=(s?.letraDesc||'').trim().toUpperCase();
-      let clasif;
-      if(!s) clasif='sin_snapshot';
-      else if(tag==='MS') clasif='descuento';
-      else if(tag) clasif='depreciado';
-      else if(realizado!=null && precio>0 && realizado < precio*0.99) clasif='descuento';
-      else clasif='regular';
+      const clasif=clasifBySku[sku]||'sin_snapshot';
       if(clasif==='sin_snapshot') sinSnapshot++;
       const remanente = s ? Math.max(0,ohInicio-v.ventaU) : null;
       detail.push({ sku, marca:v.marca||s?.marca||'', goa:v.goa||s?.goa||'', seccion:v.seccion||s?.seccion||'GENERAL',
@@ -362,14 +408,33 @@ export default function ModuleEventos(){
     const regular=rollup(detail.filter(r=>r.clasif==='regular'));
     const descuento=rollup(detail.filter(r=>r.clasif==='descuento'));
     const depreciado=rollup(detail.filter(r=>r.clasif==='depreciado'));
-    // Breakdown por categoría (sección) — venta/margen/ST, para el tab Resumen
+    // Breakdown por categoría (sección) — venta/margen/ST, solo secciones con venta
     const catMap={};
     detail.forEach(r=>{ const k=r.seccion||'GENERAL'; if(!catMap[k]) catMap[k]=[]; catMap[k].push(r); });
-    const categorias=Object.entries(catMap).map(([seccion,rows])=>({seccion,...rollup(rows)})).sort((a,b)=>b.ventaP-a.ventaP);
-    // Top/bottom SKU
-    const bySkuVenta=[...detail].sort((a,b)=>b.ventaP-a.ventaP);
-    const top10=bySkuVenta.slice(0,10);
+    const categorias=Object.entries(catMap).map(([seccion,rows])=>({seccion,...rollup(rows)}))
+      .filter(c=>c.ventaP>0).sort((a,b)=>b.ventaP-a.ventaP);
+    // Top 10 por modelo (agrega SKU → modelo)
+    const modMap={};
+    detail.forEach(r=>{ if(r.ventaP<=0) return; const k=r.modelo||r.sku; if(!modMap[k]) modMap[k]={modelo:k,ventaP:0,ventaU:0}; modMap[k].ventaP+=r.ventaP; modMap[k].ventaU+=r.ventaU; });
+    const topModelo=Object.values(modMap).sort((a,b)=>b.ventaP-a.ventaP).slice(0,10);
     const bottom10=[...detail].filter(r=>r.ohInicio>0).sort((a,b)=>a.ventaP-b.ventaP).slice(0,10);
+    // Por día (combo venta+margen), subcanal, estatus, norma — desde ventas filtradas
+    const porDiaMap={};
+    salesF.forEach(r=>{
+      if(!r.fecha) return;
+      const key=r.fecha.toISOString().slice(0,10);
+      if(!porDiaMap[key]) porDiaMap[key]={fecha:key,regular:0,descuento:0,depreciado:0,ventaP:0,utilidad:0};
+      const c=clasifBySku[r.sku]||'sin_snapshot';
+      if(porDiaMap[key][c]!=null) porDiaMap[key][c]+=r.ventaP;
+      porDiaMap[key].ventaP+=r.ventaP; porDiaMap[key].utilidad+=r.utilidad;
+    });
+    const porDia=Object.values(porDiaMap).sort((a,b)=>a.fecha<b.fecha?-1:1)
+      .map(d=>({...d, label:d.fecha.slice(8,10)+'/'+d.fecha.slice(5,7), margenPct: d.ventaP>0?d.utilidad/d.ventaP*100:null}));
+    const groupSum=key=>{ const m={}; salesF.forEach(r=>{ const k=r[key]||'SIN DATO'; m[k]=(m[k]||0)+r.ventaP; });
+      return Object.entries(m).map(([name,ventaP])=>({name,ventaP})).sort((a,b)=>b.ventaP-a.ventaP); };
+    const porSubcanal=groupSum('subcanal');
+    const porEstatus=groupSum('estatus');
+    const porNorma=groupSum('norma');
     // Deltas vs LY
     const deltaVentaP = active.lyVentaP ? (total.ventaP-active.lyVentaP)/active.lyVentaP*100 : null;
     const deltaMargen = active.lyMargenPct!=null && total.margenPct!=null ? total.margenPct-active.lyMargenPct : null;
@@ -404,10 +469,10 @@ export default function ModuleEventos(){
     const treeMarca=buildTree('marca');
     const treeGoa=buildTree('goa');
 
-    return { total, regular, descuento, depreciado, categorias, top10, bottom10, sinSnapshot, fMin, fMax,
-      deltaVentaP, deltaMargen, deltaST, nSkuSnap:Object.keys(snapBySku).length, nSkuVenta:Object.keys(salesBySku).length,
-      grand, treeMarca, treeGoa };
-  },[active,snapRows,salesRows]);
+    return { total, regular, descuento, depreciado, categorias, topModelo, bottom10, sinSnapshot, fMin, fMax,
+      deltaVentaP, deltaMargen, deltaST, nSkuSnap:joined.nSkuSnap, nSkuVenta:joined.nSkuVenta,
+      grand, treeMarca, treeGoa, porDia, porSubcanal, porEstatus, porNorma, opciones };
+  },[active,joined,salesRows,filtros]);
 
   const toggleExpand=key=>setExpanded(s=>{ const n=new Set(s); n.has(key)?n.delete(key):n.add(key); return n; });
   const tree = groupBy==='marca' ? calc?.treeMarca : calc?.treeGoa;
@@ -577,34 +642,39 @@ export default function ModuleEventos(){
 
       <div id="eventos-print-area" className="space-y-5">
         <div className={`p-5 rounded-xl border ${t.card}`}>
-          <div className="flex items-center gap-2">
-            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${t.badge}`}>{active.tipo}</span>
-            <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${t.badgeCyan}`}>{active.objetivo}</span>
-          </div>
-          <h2 className={`text-xl font-black mt-2 ${t.textMain}`}>{active.nombre}</h2>
-          <p className={`text-xs mt-1 ${t.textMuted}`}>{active.fechaInicio} → {active.fechaFin}
-            {calc?.fMin && ` · Venta capturada: ${calc.fMin.toLocaleDateString('es-MX')} – ${calc.fMax.toLocaleDateString('es-MX')}`}</p>
-        </div>
+          <div className="flex items-start justify-between gap-3 flex-wrap">
+            <div>
+              <div className="flex items-center gap-2">
+                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${t.badge}`}>{active.tipo}</span>
+                <span className={`text-[10px] font-black px-2 py-0.5 rounded-full border ${t.badgeCyan}`}>{active.objetivo}</span>
+              </div>
+              <h2 className={`text-xl font-black mt-2 ${t.textMain}`}>{active.nombre}</h2>
+              <p className={`text-xs mt-1 ${t.textMuted}`}>{active.fechaInicio} → {active.fechaFin}
+                {calc?.fMin && ` · Venta capturada: ${calc.fMin.toLocaleDateString('es-MX')} – ${calc.fMax.toLocaleDateString('es-MX')}`}</p>
+            </div>
 
-        {/* Carga de datos */}
-        <div className={`p-4 rounded-xl border flex flex-wrap items-center gap-3 no-print ${t.card}`}>
-          <input ref={snapRef} type="file" accept=".xlsx,.xls,.csv,.txt" className="hidden" onChange={uploadSnapshot}/>
-          <div className="flex items-center gap-1">
-            <button onClick={()=>snapRef.current?.click()} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border ${t.btnGhost}`}>
-              <Icons.Upload size={13}/> Snapshot arranque (xlsx/csv) {snapRows.length>0 && `(${calc?.nSkuSnap} SKU)`}
-            </button>
-            {snapRows.length>0 && <button onClick={clearSnapshot} title="Eliminar snapshot" className={`p-2 rounded-lg border ${t.btnGhost} opacity-60 hover:opacity-100`}><Icons.Trash2 size={13}/></button>}
+            {/* Carga de datos — compacto */}
+            <div className="flex items-center gap-1 no-print">
+              <input ref={snapRef} type="file" accept=".xlsx,.xls,.csv,.txt" className="hidden" onChange={uploadSnapshot}/>
+              <button onClick={()=>snapRef.current?.click()} title='Snapshot arranque (xlsx/csv) — si trae la pestaña "Vtas_Evento", las ventas se cargan solas'
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold border ${t.btnGhost}`}>
+                <Icons.Upload size={12}/> {snapRows.length>0 ? `Snapshot (${joined.nSkuSnap})` : 'Snapshot'}
+              </button>
+              {snapRows.length>0 && <button onClick={clearSnapshot} title="Eliminar snapshot" className={`p-1.5 rounded-lg border ${t.btnGhost} opacity-60 hover:opacity-100`}><Icons.Trash2 size={12}/></button>}
+              <input ref={salesRef} type="file" accept=".csv,.txt" className="hidden" onChange={uploadSales}/>
+              <button onClick={()=>salesRef.current?.click()} title="CSV Ventas del evento (opcional)"
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold border ${t.btnGhost}`}>
+                <Icons.Upload size={12}/> {salesRows.length>0 ? `Ventas (${joined.nSkuVenta})` : 'Ventas'}
+              </button>
+              {salesRows.length>0 && <button onClick={clearSales} title="Eliminar ventas" className={`p-1.5 rounded-lg border ${t.btnGhost} opacity-60 hover:opacity-100`}><Icons.Trash2 size={12}/></button>}
+            </div>
           </div>
-          <input ref={salesRef} type="file" accept=".csv,.txt" className="hidden" onChange={uploadSales}/>
-          <div className="flex items-center gap-1">
-            <button onClick={()=>salesRef.current?.click()} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border ${t.btnGhost}`}>
-              <Icons.Upload size={13}/> CSV Ventas del evento (opcional) {salesRows.length>0 && `(${calc?.nSkuVenta} SKU)`}
-            </button>
-            {salesRows.length>0 && <button onClick={clearSales} title="Eliminar ventas" className={`p-2 rounded-lg border ${t.btnGhost} opacity-60 hover:opacity-100`}><Icons.Trash2 size={13}/></button>}
-          </div>
-          {snapRows.length>0 && <span className={`text-[10px] px-2 py-1 rounded-full border ${t.badgeAmber}`}>Snapshot inmutable — reemplazar pide confirmación</span>}
-          <span className={`text-[10px] ${t.textMuted}`}>Si el xlsx trae la pestaña "Vtas_Evento", las ventas se cargan solas — el CSV ya no es necesario.</span>
-          {calc?.sinSnapshot>0 && <span className={`text-[10px] px-2 py-1 rounded-full border ${t.badgeRed}`}>{calc.sinSnapshot} SKU con venta sin snapshot inicial (no cuentan en remanente/ST)</span>}
+          {(snapRows.length>0 || calc?.sinSnapshot>0) && (
+            <div className="flex flex-wrap gap-2 mt-3 no-print">
+              {snapRows.length>0 && <span className={`text-[10px] px-2 py-1 rounded-full border ${t.badgeAmber}`}>Snapshot inmutable — reemplazar pide confirmación</span>}
+              {calc?.sinSnapshot>0 && <span className={`text-[10px] px-2 py-1 rounded-full border ${t.badgeRed}`}>{calc.sinSnapshot} SKU con venta sin snapshot inicial (no cuentan en remanente/ST)</span>}
+            </div>
+          )}
         </div>
 
         {(!calc || (snapRows.length===0 && salesRows.length===0)) ? (
@@ -617,6 +687,40 @@ export default function ModuleEventos(){
                 <button key={k} onClick={()=>setReportTab(k)}
                   className={`px-4 py-2 rounded-lg text-xs font-bold border transition-all ${reportTab===k?t.btnPrimary:t.btnGhost}`}>{lbl}</button>
               ))}
+            </div>
+
+            {/* Filtros — aplican a todo el dashboard (resumen y desglose) */}
+            <div className="flex flex-wrap items-center gap-2 no-print relative">
+              {filtroAbierto && <div className="fixed inset-0 z-10" onClick={()=>setFiltroAbierto(null)}/>}
+              {FILTRO_DIMS.map(dim=>{
+                const opts=calc.opciones[dim]||[];
+                if(opts.length===0) return null;
+                const n=filtros[dim].length;
+                return (
+                  <div key={dim} className="relative">
+                    <button onClick={()=>setFiltroAbierto(o=>o===dim?null:dim)}
+                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold border ${n>0?t.badge:t.btnGhost}`}>
+                      {FILTRO_LABEL[dim]}{n>0?` (${n})`:''} <Icons.ChevronDown size={11}/>
+                    </button>
+                    {filtroAbierto===dim && (
+                      <div className={`absolute z-20 mt-1 w-56 max-h-64 overflow-y-auto p-2 rounded-lg border shadow-xl ${t.card}`}>
+                        {n>0 && <button onClick={()=>limpiarFiltro(dim)} className={`text-[10px] font-bold mb-1 ${t.textMuted} hover:underline`}>Limpiar</button>}
+                        {opts.map(val=>(
+                          <label key={val} className={`flex items-center gap-2 py-1 text-[11px] cursor-pointer ${t.textMain}`}>
+                            <input type="checkbox" checked={filtros[dim].includes(val)} onChange={()=>toggleFiltroValor(dim,val)}/>
+                            <span className="truncate">{val}</span>
+                          </label>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+              {nFiltrosActivos>0 && (
+                <button onClick={limpiarFiltros} className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-bold border ${t.badgeRed}`}>
+                  <Icons.X size={11}/> Limpiar filtros ({nFiltrosActivos})
+                </button>
+              )}
             </div>
 
             {reportTab==='resumen' && (
@@ -664,7 +768,7 @@ export default function ModuleEventos(){
                   </ResponsiveContainer>
                 </div>
 
-                {/* Breakdown por categoría */}
+                {/* Breakdown por categoría — solo secciones con venta */}
                 {calc.categorias.length>0 && (
                   <div className={`p-4 rounded-xl border overflow-x-auto ${t.card}`}>
                     <p className={`text-xs font-black mb-3 ${t.textMain}`}>Breakdown por categoría</p>
@@ -682,66 +786,110 @@ export default function ModuleEventos(){
                         ))}
                       </tbody>
                     </table>
-                    <ResponsiveContainer width="100%" height={Math.max(160,calc.categorias.length*32)}>
-                      <BarChart data={calc.categorias} layout="vertical" margin={{left:10}} barCategoryGap="30%">
-                        <CartesianGrid strokeDasharray="3 3" stroke={gridC} horizontal={false}/>
-                        <XAxis type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
-                        <YAxis type="category" dataKey="seccion" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={110}/>
-                        <Tooltip content={<TTip/>} cursor={{fill:cursorFill}}/>
-                        <Bar dataKey="ventaP" name="Venta $" fill="url(#gradRegularH)" radius={[0,6,6,0]} maxBarSize={22}/>
-                      </BarChart>
-                    </ResponsiveContainer>
                   </div>
                 )}
 
-                {/* Top 10 SKU — gráfica */}
-                {calc.top10.length>0 && (
-                  <div className={`p-4 rounded-xl border overflow-x-auto ${t.card}`}>
-                    <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-                      <p className={`text-xs font-black ${t.textMain}`}>Top 10 SKU · Venta $</p>
-                      <div className="flex items-center gap-3">
-                        {['regular','descuento','depreciado','sin_snapshot'].map(k=>(
-                          <span key={k} className={`flex items-center gap-1 text-[10px] font-bold ${t.textMuted}`}>
-                            <span className="w-2 h-2 rounded-full" style={{background:CLASIF_COLOR[k]}}/>{CLASIF_LABEL[k]}
-                          </span>
-                        ))}
-                      </div>
-                    </div>
-                    <ResponsiveContainer width="100%" height={320}>
-                      <BarChart data={calc.top10} layout="vertical" margin={{left:10}} barCategoryGap="28%">
-                        <CartesianGrid strokeDasharray="3 3" stroke={gridC} horizontal={false}/>
-                        <XAxis type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
-                        <YAxis type="category" dataKey="sku" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={70}/>
-                        <Tooltip content={<TTip/>} cursor={{fill:cursorFill}}/>
-                        <Bar dataKey="ventaP" name="Venta $" radius={[0,6,6,0]} maxBarSize={22}>
-                          {calc.top10.map((r,i)=><Cell key={i} fill={`url(#${CLASIF_GRAD[r.clasif]||CLASIF_GRAD.sin_snapshot}H)`}/>)}
-                        </Bar>
-                      </BarChart>
-                    </ResponsiveContainer>
-                  </div>
-                )}
-
-                {/* Top / Bottom SKU */}
+                {/* Dashboard de venta del evento — ligado a los filtros */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {[['Top 10 SKU · Venta $',calc.top10],['Bottom 10 SKU · Venta $ (con inventario inicial)',calc.bottom10]].map(([title,rows])=>(
-                    <div key={title} className={`p-4 rounded-xl border overflow-x-auto ${t.card}`}>
-                      <p className={`text-xs font-black mb-3 ${t.textMain}`}>{title}</p>
-                      <table className="w-full text-xs">
-                        <thead><tr className={t.textMuted}><th className="text-left pb-2">SKU</th><th className="text-left pb-2">Clasif.</th>
-                          <th className="text-right pb-2">Venta $</th><th className="text-right pb-2">Venta U</th><th className="text-right pb-2">ST%</th></tr></thead>
-                        <tbody>
-                          {rows.length===0 ? (<tr><td colSpan={5} className={`py-3 text-center ${t.textMuted}`}>Sin datos</td></tr>) :
-                          rows.map(r=>(
-                            <tr key={r.sku} className={`border-t ${t.border} ${t.textMain}`}>
-                              <td className="py-1.5">{r.sku}<div className={`text-[9px] ${t.textMuted}`}>{r.modelo||r.marca}</div></td>
-                              <td><ClasifBadge clasif={r.clasif} t={t}/></td>
-                              <td className="text-right">{fmtM(r.ventaP)}</td><td className="text-right">{fmt(r.ventaU)}</td><td className="text-right">{fmtP(r.stPct)}</td>
-                            </tr>
-                          ))}
-                        </tbody>
-                      </table>
+                  {/* Top 10 Modelo */}
+                  {calc.topModelo.length>0 && (
+                    <div className={`p-4 rounded-xl border overflow-x-auto ${t.card}`}>
+                      <p className={`text-xs font-black mb-3 ${t.textMain}`}>Top 10 Modelo · Venta $</p>
+                      <ResponsiveContainer width="100%" height={320}>
+                        <BarChart data={calc.topModelo} layout="vertical" margin={{left:10}} barCategoryGap="28%">
+                          <CartesianGrid strokeDasharray="3 3" stroke={gridC} horizontal={false}/>
+                          <XAxis type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
+                          <YAxis type="category" dataKey="modelo" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={80}/>
+                          <Tooltip content={<TTip/>} cursor={{fill:cursorFill}}/>
+                          <Bar dataKey="ventaP" name="Venta $" fill="url(#gradRegularH)" radius={[0,6,6,0]} maxBarSize={22}/>
+                        </BarChart>
+                      </ResponsiveContainer>
                     </div>
-                  ))}
+                  )}
+                  {/* Venta por Subcanal */}
+                  {calc.porSubcanal.length>0 && (
+                    <div className={`p-4 rounded-xl border ${t.card}`}>
+                      <p className={`text-xs font-black mb-3 ${t.textMain}`}>Venta por Subcanal</p>
+                      <ResponsiveContainer width="100%" height={320}>
+                        <PieChart>
+                          <Pie data={calc.porSubcanal} dataKey="ventaP" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={100} paddingAngle={2}>
+                            {calc.porSubcanal.map((r,i)=><Cell key={i} fill={VIOLET_SHADES[i%VIOLET_SHADES.length]}/>)}
+                          </Pie>
+                          <Tooltip content={<TTip/>}/>
+                          <Legend wrapperStyle={{fontSize:10,color:txtC}}/>
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                  {/* Desempeño por día */}
+                  {calc.porDia.length>0 && (
+                    <div className={`p-4 rounded-xl border overflow-x-auto lg:col-span-2 ${t.card}`}>
+                      <p className={`text-xs font-black mb-3 ${t.textMain}`}>Desempeño por día — venta por clasificación y margen %</p>
+                      <ResponsiveContainer width="100%" height={280}>
+                        <ComposedChart data={calc.porDia} margin={{top:10}} barCategoryGap="20%">
+                          <CartesianGrid strokeDasharray="3 3" stroke={gridC} vertical={false}/>
+                          <XAxis dataKey="label" tick={{fontSize:9,fill:txtC}} stroke={axisC}/>
+                          <YAxis yAxisId="izq" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
+                          <YAxis yAxisId="der" orientation="right" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>v.toFixed(0)+'%'}/>
+                          <Tooltip content={<DiaTTip/>} cursor={{fill:cursorFill}}/>
+                          <Legend wrapperStyle={{fontSize:10,color:txtC}}/>
+                          <Bar yAxisId="izq" dataKey="regular" stackId="v" name="Regular" fill="url(#gradRegularV)"/>
+                          <Bar yAxisId="izq" dataKey="descuento" stackId="v" name="Descuento" fill="url(#gradDescuentoV)"/>
+                          <Bar yAxisId="izq" dataKey="depreciado" stackId="v" name="Depreciado" fill="url(#gradDepreciadoV)" radius={[6,6,0,0]}/>
+                          <Line yAxisId="der" type="monotone" dataKey="margenPct" name="Margen %" stroke={lineC} strokeWidth={2} dot={false}/>
+                        </ComposedChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                  {/* N_Estatus */}
+                  {calc.porEstatus.length>0 && (
+                    <div className={`p-4 rounded-xl border overflow-x-auto ${t.card}`}>
+                      <p className={`text-xs font-black mb-3 ${t.textMain}`}>Venta por Estatus del artículo</p>
+                      <ResponsiveContainer width="100%" height={Math.max(160,calc.porEstatus.length*32)}>
+                        <BarChart data={calc.porEstatus} layout="vertical" margin={{left:10}} barCategoryGap="30%">
+                          <CartesianGrid strokeDasharray="3 3" stroke={gridC} horizontal={false}/>
+                          <XAxis type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
+                          <YAxis type="category" dataKey="name" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={120}/>
+                          <Tooltip content={<TTip/>} cursor={{fill:cursorFill}}/>
+                          <Bar dataKey="ventaP" name="Venta $" fill="url(#gradRegularH)" radius={[0,6,6,0]} maxBarSize={22}/>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                  {/* Norma de Aprovisionamiento */}
+                  {calc.porNorma.length>0 && (
+                    <div className={`p-4 rounded-xl border overflow-x-auto ${t.card}`}>
+                      <p className={`text-xs font-black mb-3 ${t.textMain}`}>Venta por Norma de Aprovisionamiento</p>
+                      <ResponsiveContainer width="100%" height={Math.max(160,calc.porNorma.length*32)}>
+                        <BarChart data={calc.porNorma} layout="vertical" margin={{left:10}} barCategoryGap="30%">
+                          <CartesianGrid strokeDasharray="3 3" stroke={gridC} horizontal={false}/>
+                          <XAxis type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
+                          <YAxis type="category" dataKey="name" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={120}/>
+                          <Tooltip content={<TTip/>} cursor={{fill:cursorFill}}/>
+                          <Bar dataKey="ventaP" name="Venta $" fill="url(#gradRegularH)" radius={[0,6,6,0]} maxBarSize={22}/>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
+                </div>
+
+                {/* Bottom 10 SKU */}
+                <div className={`p-4 rounded-xl border overflow-x-auto ${t.card}`}>
+                  <p className={`text-xs font-black mb-3 ${t.textMain}`}>Bottom 10 SKU · Venta $ (con inventario inicial)</p>
+                  <table className="w-full text-xs">
+                    <thead><tr className={t.textMuted}><th className="text-left pb-2">SKU</th><th className="text-left pb-2">Clasif.</th>
+                      <th className="text-right pb-2">Venta $</th><th className="text-right pb-2">Venta U</th><th className="text-right pb-2">ST%</th></tr></thead>
+                    <tbody>
+                      {calc.bottom10.length===0 ? (<tr><td colSpan={5} className={`py-3 text-center ${t.textMuted}`}>Sin datos</td></tr>) :
+                      calc.bottom10.map(r=>(
+                        <tr key={r.sku} className={`border-t ${t.border} ${t.textMain}`}>
+                          <td className="py-1.5">{r.sku}<div className={`text-[9px] ${t.textMuted}`}>{r.modelo||r.marca}</div></td>
+                          <td><ClasifBadge clasif={r.clasif} t={t}/></td>
+                          <td className="text-right">{fmtM(r.ventaP)}</td><td className="text-right">{fmt(r.ventaU)}</td><td className="text-right">{fmtP(r.stPct)}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
                 </div>
               </>
             )}
