@@ -332,6 +332,8 @@ export default function ModuleEventos(){
     }).catch(()=>{});
   },[activeId]);
 
+  useEffect(()=>{ if(snapRows.length===0 && reportTab==='desglose') setReportTab('resumen'); },[snapRows.length,reportTab]);
+
   const uploadSnapshot=e=>{
     const file=e.target.files[0]; if(!file) return;
     if(snapRows.length>0 && !window.confirm('Ya existe un snapshot de arranque para este evento (inmutable por diseño). Subir uno nuevo lo REEMPLAZARÁ. ¿Continuar?')){
@@ -487,10 +489,10 @@ export default function ModuleEventos(){
     const regularLY=rollupSimple(detailLY.filter(r=>r.clasif==='regular'));
     const descuentoLY=rollupSimple(detailLY.filter(r=>r.clasif==='descuento'));
     const depreciadoLY=rollupSimple(detailLY.filter(r=>r.clasif==='depreciado'));
-    total.vsAA=hasLY?pctVs(total.ventaP,totalLY.ventaP):null;
-    regular.vsAA=hasLY?pctVs(regular.ventaP,regularLY.ventaP):null;
-    descuento.vsAA=hasLY?pctVs(descuento.ventaP,descuentoLY.ventaP):null;
-    depreciado.vsAA=hasLY?pctVs(depreciado.ventaP,depreciadoLY.ventaP):null;
+    const attachVsAA=(r,rLY)=>{ r.vsAA=hasLY?pctVs(r.ventaP,rLY.ventaP):null;
+      r.vsAA_u=hasLY?pctVs(r.ventaU,rLY.ventaU):null;
+      r.vsAA_mg=hasLY?pctVs(r.utilidad,rLY.utilidad):null; };
+    attachVsAA(total,totalLY); attachVsAA(regular,regularLY); attachVsAA(descuento,descuentoLY); attachVsAA(depreciado,depreciadoLY);
     // Breakdown por categoría (sección) — venta/margen/ST, solo secciones con venta
     const catMap={};
     detail.forEach(r=>{ const k=r.seccion||'GENERAL'; if(!catMap[k]) catMap[k]=[]; catMap[k].push(r); });
@@ -527,7 +529,8 @@ export default function ModuleEventos(){
         return {...d, label, margenPct: d.ventaP>0?d.utilidad/d.ventaP*100:null, ventaPLY: hasLY?(porDiaMapLY[label]??null):null}; });
     const groupSum=(key,rows)=>{ const m={}; rows.forEach(r=>{ const k=r[key]||'SIN DATO'; m[k]=(m[k]||0)+r.ventaP; }); return m; };
     const groupCombined=key=>{ const mAct=groupSum(key,salesFActual), mLY=groupSum(key,salesFLY);
-      return Object.entries(mAct).map(([name,ventaP])=>({name,ventaP,vsAA:hasLY?pctVs(ventaP,mLY[name]||0):null}))
+      return Object.entries(mAct).filter(([,ventaP])=>ventaP!==0)
+        .map(([name,ventaP])=>({name,ventaP,vsAA:hasLY?pctVs(ventaP,mLY[name]||0):null}))
         .sort((a,b)=>b.ventaP-a.ventaP); };
     const porSubcanal=groupCombined('subcanal');
     const porEstatus=groupCombined('estatus');
@@ -783,7 +786,7 @@ export default function ModuleEventos(){
           <>
             {/* Tabs */}
             <div className="flex gap-2 no-print">
-              {[['resumen','Resumen Ejecutivo'],['desglose','Regular · Descuento · Depreciado']].map(([k,lbl])=>(
+              {[['resumen','Resumen Ejecutivo'],...(snapRows.length>0?[['desglose','Regular · Descuento · Depreciado']]:[])].map(([k,lbl])=>(
                 <button key={k} onClick={()=>setReportTab(k)}
                   className={`px-4 py-2 rounded-lg text-xs font-bold border transition-all ${reportTab===k?t.btnPrimary:t.btnGhost}`}>{lbl}</button>
               ))}
@@ -847,7 +850,8 @@ export default function ModuleEventos(){
                   <KpiCard label="Remanente U" value={fmt(calc.total.remanente)} t={t} isDark={isDark}/>
                 </div>
 
-                {/* Regular / Descuento / Depreciado */}
+                {/* Regular / Descuento / Depreciado — solo si hay snapshot (sin él, la clasificación no existe) */}
+                {snapRows.length>0 && (
                 <div className={`p-4 rounded-xl border overflow-x-auto ${t.card}`}>
                   <p className={`text-xs font-black mb-3 ${t.textMain}`}>Regular · Descuento · Depreciado</p>
                   <table className="w-full text-xs">
@@ -863,7 +867,8 @@ export default function ModuleEventos(){
                           <td className="py-2">{key==='total'?'Total':<span className="inline-flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{background:CLASIF_COLOR[key]}}/>{CLASIF_LABEL[key]}</span>}</td>
                           <td className="text-right">{fmtM(r.ventaP)}</td>
                           {calc.hasLY && <td className="text-right"><DeltaBadge value={r.vsAA}/></td>}
-                          <td className="text-right">{fmt(r.ventaU)}</td><td className="text-right">{fmtP(r.margenPct)}</td>
+                          <td className="text-right">{fmt(r.ventaU)}{calc.hasLY && <div><DeltaBadge value={r.vsAA_u}/></div>}</td>
+                          <td className="text-right">{fmtP(r.margenPct)}{calc.hasLY && <div><DeltaBadge value={r.vsAA_mg}/></div>}</td>
                           <td className="text-right">{fmtP(r.stPct)}</td><td className="text-right">{fmt(r.remanente)}</td>
                         </tr>
                       ))}
@@ -881,6 +886,7 @@ export default function ModuleEventos(){
                     </BarChart>
                   </ResponsiveContainer>
                 </div>
+                )}
 
                 {/* Breakdown por categoría — solo secciones con venta */}
                 {calc.categorias.length>0 && (
@@ -1050,6 +1056,9 @@ export default function ModuleEventos(){
                       </p>
                       <p className={`text-sm font-black mt-1 ${t.textMain}`}>{fmtM(calc.grand[k].montoA)}</p>
                       <p className={`text-[10px] ${t.textMuted}`}>{calc.grand.total.montoA>0?fmtP(calc.grand[k].montoA/calc.grand.total.montoA*100):'-'} del total · {fmt(calc.grand[k].ohA)} pzs</p>
+                      <p className="text-[10px] mt-1 flex items-center gap-1">vs AA:{' '}
+                        {calc.grand[k].montoAant>0?<DeltaBadge value={(calc.grand[k].montoA-calc.grand[k].montoAant)/calc.grand[k].montoAant*100}/>:<span className="text-gray-400">Sin AA</span>}
+                      </p>
                     </div>
                   ))}
                 </div>
@@ -1059,7 +1068,7 @@ export default function ModuleEventos(){
                     <tr className={t.textMuted}>
                       <th className="text-left pb-2" rowSpan={2}>Sección / {groupBy==='marca'?'Marca':'GOA'}</th>
                       {['regular','descuento','depreciado'].map(k=>(
-                        <th key={k} className="text-center pb-1 border-l" colSpan={2} style={{color:CLASIF_COLOR[k]}}>{CLASIF_LABEL[k]}</th>
+                        <th key={k} className="text-center pb-1 border-l" colSpan={3} style={{color:CLASIF_COLOR[k]}}>{CLASIF_LABEL[k]}</th>
                       ))}
                       <th className="text-center pb-1 border-l" colSpan={3}>Total</th>
                     </tr>
@@ -1068,13 +1077,13 @@ export default function ModuleEventos(){
                         <React.Fragment key={k}>
                           <th className="text-right pb-2 font-normal border-l">OH pzs</th>
                           <th className="text-right pb-2 font-normal">Monto $</th>
-                          {k==='total' && <th className="text-right pb-2 font-normal">vs AA</th>}
+                          <th className="text-right pb-2 font-normal">vs AA</th>
                         </React.Fragment>
                       ))}
                     </tr>
                   </thead>
                   <tbody>
-                    {tree?.map(sec=>{
+                    {tree?.filter(sec=>sec.total.monto>0||sec.total.oh>0).map(sec=>{
                       const key=sec.seccion;
                       const isOpen=expanded.has(key);
                       return (
@@ -1087,18 +1096,18 @@ export default function ModuleEventos(){
                               <React.Fragment key={k}>
                                 <td className="text-right border-l">{fmt(sec[k].ohA)}</td>
                                 <td className="text-right">{fmtM(sec[k].montoA)}</td>
-                                {k==='total' && <td className="text-right">{sec[k].montoAant>0?<DeltaBadge value={(sec[k].montoA-sec[k].montoAant)/sec[k].montoAant*100}/>:<span className="text-gray-400">Sin AA</span>}</td>}
+                                <td className="text-right">{sec[k].montoAant>0?<DeltaBadge value={(sec[k].montoA-sec[k].montoAant)/sec[k].montoAant*100}/>:<span className="text-gray-400">Sin AA</span>}</td>
                               </React.Fragment>
                             ))}
                           </tr>
-                          {isOpen && sec.subs.map(sub=>(
+                          {isOpen && sec.subs.filter(sub=>sub.total.monto>0||sub.total.oh>0).map(sub=>(
                             <tr key={sub.nombre} className={`border-t ${t.border} ${t.textMuted}`}>
                               <td className="py-1.5 pl-6">{sub.nombre}</td>
                               {['regular','descuento','depreciado','total'].map(k=>(
                                 <React.Fragment key={k}>
                                   <td className="text-right border-l">{fmt(sub[k].ohA)}</td>
                                   <td className="text-right">{fmtM(sub[k].montoA)}</td>
-                                  {k==='total' && <td className="text-right">{sub[k].montoAant>0?<DeltaBadge value={(sub[k].montoA-sub[k].montoAant)/sub[k].montoAant*100}/>:<span className="text-gray-400">Sin AA</span>}</td>}
+                                  <td className="text-right">{sub[k].montoAant>0?<DeltaBadge value={(sub[k].montoA-sub[k].montoAant)/sub[k].montoAant*100}/>:<span className="text-gray-400">Sin AA</span>}</td>
                                 </React.Fragment>
                               ))}
                             </tr>
@@ -1114,7 +1123,7 @@ export default function ModuleEventos(){
                         <React.Fragment key={k}>
                           <td className="text-right border-l">{fmt(calc.grand[k].ohA)}</td>
                           <td className="text-right">{fmtM(calc.grand[k].montoA)}</td>
-                          {k==='total' && <td className="text-right">{calc.grand[k].montoAant>0?<DeltaBadge value={(calc.grand[k].montoA-calc.grand[k].montoAant)/calc.grand[k].montoAant*100}/>:<span className="text-gray-400">Sin AA</span>}</td>}
+                          <td className="text-right">{calc.grand[k].montoAant>0?<DeltaBadge value={(calc.grand[k].montoA-calc.grand[k].montoAant)/calc.grand[k].montoAant*100}/>:<span className="text-gray-400">Sin AA</span>}</td>
                         </React.Fragment>
                       ))}
                     </tr>
