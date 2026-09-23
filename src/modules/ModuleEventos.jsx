@@ -119,10 +119,38 @@ const parseSnapshotXLSX = async file => {
   }
   return {rows:out,error:null,salesRows};
 };
-// Ventas del evento — SKU-level, FECHA + VENTA_U + VENTA_$ + (MG% o UTILIDAD_$)
+// Ventas del evento — CSV. Primero intenta las columnas exactas de la pestaña "Vtas_Evento" del xlsx
+// (mismo nombre, sin importar orden/acentos) para traer subcanal/estatus/norma/goa/marca igual que el xlsx;
+// si no calzan, cae al formato genérico simple (SKU, VENTA_$, ...).
+const stripAcc=s=>String(s||'').normalize('NFD').replace(/[̀-ͯ]/g,'');
+const normHeader=h=>stripAcc(h).toUpperCase().trim().replace(/[^A-Z0-9]+/g,'_').replace(/^_+|_+$/g,'');
 const parseSalesCSV = text => {
   const sep=text.includes('\t')?'\t':text.includes(';')?';':',';
   const rows=text.split('\n').map(r=>parseCSVRow(r,sep)); if(rows.length<2) return {rows:[],error:null};
+  const Hn=rows[0].map(normHeader);
+  const vidx=(...names)=>{ for(const n of names){ const i=Hn.indexOf(n); if(i>=0) return i; } return -1; };
+  const iSku=vidx('ARTICULO'), iVtas=vidx('VTAS');
+  if(iSku>=0 && iVtas>=0){
+    const iFecha=vidx('DIA_PERIODO','FECHA'), iSeccion=vidx('N_SECCION','SECCION'), iSubcanal=vidx('SUBCANAL'),
+      iGoa=vidx('N_GOA','GOA','GRUPO_ARTICULOS'), iModelo=vidx('MODELO_PROVEEDOR','MODELO'), iMarca=vidx('MARCA'),
+      iEstatus=vidx('N_ESTATUS'), iNorma=vidx('NORMA_DE_APROVISIONAMIENTO'),
+      iVentaU=vidx('VTAS_U'), iGM=vidx('GM'), iDescuento=vidx('TOTAL_DESCUENTOS');
+    const out2=[];
+    for(let i=1;i<rows.length;i++){ const r=rows[i]; if(!r||r.every(c=>!c)) continue;
+      const sku=(r[iSku]||'').trim(); if(!sku) continue;
+      out2.push({ fecha:iFecha>=0?parseDate(r[iFecha]):null, sku,
+        modelo:iModelo>=0?(r[iModelo]||'').trim().toUpperCase():'',
+        marca:iMarca>=0?(r[iMarca]||'').trim().toUpperCase():'',
+        goa:iGoa>=0?(r[iGoa]||'').trim().toUpperCase():'',
+        seccion:iSeccion>=0?(r[iSeccion]||'').trim().toUpperCase():'', centro:'',
+        subcanal:(iSubcanal>=0?(r[iSubcanal]||'').trim().toUpperCase():'')||'SIN DATO',
+        estatus:iEstatus>=0?(r[iEstatus]||'').trim().toUpperCase():'',
+        norma:iNorma>=0?(r[iNorma]||'').trim().toUpperCase():'',
+        ventaU:iVentaU>=0?num(r[iVentaU]):0, ventaP:num(r[iVtas])*1000,
+        utilidad:iGM>=0?num(r[iGM]):0, totalDescuento:iDescuento>=0?num(r[iDescuento])*1000:0 });
+    }
+    return {rows:out2,error:null};
+  }
   const H=rows[0].map(h=>h.toUpperCase().trim().replace(/\s+/g,'_'));
   const idx=(...ns)=>ns.map(n=>H.findIndex(h=>h===n||h.includes(n))).find(i=>i>=0)??-1;
   const I={fecha:idx('FECHA','DATE','DIA'),goa:idx('GOA','FAMILIA'),sku:idx('SKU','ARTICULO','MATERIAL'),
@@ -216,6 +244,13 @@ export default function ModuleEventos(){
   const DiaTTip=({active,payload,label})=>{ if(!active||!payload?.length) return null;
     return <div className={`p-3 rounded-xl border text-xs shadow-xl ${t.card}`}><p className={`font-bold mb-1 ${t.textMain}`}>{label}</p>
       {payload.map((p,i)=><p key={i} style={{color:p.color}}>{p.name}: {p.dataKey==='margenPct'?fmtP(p.value):fmtM(p.value)}</p>)}</div>; };
+  const ModeloTTip=({active,payload,label})=>{ if(!active||!payload?.length) return null;
+    const d=payload[0].payload;
+    return <div className={`p-3 rounded-xl border text-xs shadow-xl ${t.card}`}><p className={`font-bold mb-1 ${t.textMain}`}>{label}</p>
+      {d.seccion && <p className={t.textMuted}>Sección: {d.seccion}</p>}
+      {d.marca && <p className={t.textMuted}>Marca: {d.marca}</p>}
+      {d.goa && <p className={t.textMuted}>GOA: {d.goa}</p>}
+      {payload.map((p,i)=><p key={i} style={{color:p.color}}>{p.name}: {fmtM(p.value)}</p>)}</div>; };
 
   // ── Event master ──
   const [events,setEvents]=useState(()=>{ try{ return JSON.parse(localStorage.getItem('gop_eventos')||'[]'); }catch{ return []; } });
@@ -231,6 +266,7 @@ export default function ModuleEventos(){
   const FILTRO_LABEL={seccion:'Sección',marca:'Marca',goa:'GOA',norma:'Norma',estatus:'Estatus',subcanal:'Subcanal'};
   const [filtros,setFiltros]=useState({seccion:[],marca:[],goa:[],norma:[],estatus:[],subcanal:[]});
   const [filtroAbierto,setFiltroAbierto]=useState(null);
+  const [filtroQuery,setFiltroQuery]=useState('');
   const toggleFiltroValor=(dim,val)=>setFiltros(f=>{ const s=f[dim].includes(val)?f[dim].filter(v=>v!==val):[...f[dim],val]; return {...f,[dim]:s}; });
   const limpiarFiltro=dim=>setFiltros(f=>({...f,[dim]:[]}));
   const limpiarFiltros=()=>setFiltros({seccion:[],marca:[],goa:[],norma:[],estatus:[],subcanal:[]});
@@ -428,9 +464,12 @@ export default function ModuleEventos(){
       .filter(c=>c.ventaP>0).sort((a,b)=>b.ventaP-a.ventaP);
     // Top 10 por modelo (agrega SKU → modelo)
     const modMap={};
-    detail.forEach(r=>{ if(r.ventaP<=0) return; const k=r.modelo||r.sku; if(!modMap[k]) modMap[k]={modelo:k,ventaP:0,ventaU:0}; modMap[k].ventaP+=r.ventaP; modMap[k].ventaU+=r.ventaU; });
-    const topModelo=Object.values(modMap).sort((a,b)=>b.ventaP-a.ventaP).slice(0,10);
-    const bottom10=[...detail].filter(r=>r.ohInicio>0).sort((a,b)=>a.ventaP-b.ventaP).slice(0,10);
+    detail.forEach(r=>{ const k=r.modelo||r.sku;
+      if(!modMap[k]) modMap[k]={modelo:k,marca:r.marca,goa:r.goa,seccion:r.seccion,ventaP:0,ventaU:0,ohInicio:0};
+      modMap[k].ventaP+=r.ventaP; modMap[k].ventaU+=r.ventaU; modMap[k].ohInicio+=r.ohInicio; });
+    const modArr=Object.values(modMap).map(m=>({...m, stPct: m.ohInicio>0?Math.min(100,m.ventaU/m.ohInicio*100):null}));
+    const topModelo=modArr.filter(m=>m.ventaP>0).sort((a,b)=>b.ventaP-a.ventaP).slice(0,10);
+    const bottom10=modArr.filter(m=>m.ohInicio>0).sort((a,b)=>a.ventaP-b.ventaP).slice(0,10);
     // Por día (combo venta+margen), subcanal, estatus, norma — desde ventas filtradas
     const porDiaMap={};
     salesF.forEach(r=>{
@@ -448,6 +487,7 @@ export default function ModuleEventos(){
     const porSubcanal=groupSum('subcanal');
     const porEstatus=groupSum('estatus');
     const porNorma=groupSum('norma');
+    const porGoa=groupSum('goa').slice(0,12);
     // Deltas vs LY
     const deltaVentaP = active.lyVentaP ? (total.ventaP-active.lyVentaP)/active.lyVentaP*100 : null;
     const deltaMargen = active.lyMargenPct!=null && total.margenPct!=null ? total.margenPct-active.lyMargenPct : null;
@@ -484,7 +524,7 @@ export default function ModuleEventos(){
 
     return { total, regular, descuento, depreciado, categorias, topModelo, bottom10, sinSnapshot, fMin, fMax,
       deltaVentaP, deltaMargen, deltaST, nSkuSnap:joined.nSkuSnap, nSkuVenta:joined.nSkuVenta,
-      grand, treeMarca, treeGoa, porDia, porSubcanal, porEstatus, porNorma, opciones };
+      grand, treeMarca, treeGoa, porDia, porSubcanal, porEstatus, porNorma, porGoa, opciones };
   },[active,joined,salesRows,filtros]);
 
   const toggleExpand=key=>setExpanded(s=>{ const n=new Set(s); n.has(key)?n.delete(key):n.add(key); return n; });
@@ -709,16 +749,23 @@ export default function ModuleEventos(){
                 const opts=calc.opciones[dim]||[];
                 if(opts.length===0) return null;
                 const n=filtros[dim].length;
+                const optsF = filtroQuery.trim() ? opts.filter(v=>v.toUpperCase().includes(filtroQuery.trim().toUpperCase())) : opts;
                 return (
                   <div key={dim} className="relative">
-                    <button onClick={()=>setFiltroAbierto(o=>o===dim?null:dim)}
+                    <button onClick={()=>{ setFiltroAbierto(o=>o===dim?null:dim); setFiltroQuery(''); }}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold border ${n>0?t.badge:t.btnGhost}`}>
                       {FILTRO_LABEL[dim]}{n>0?` (${n})`:''} <Icons.ChevronDown size={11}/>
                     </button>
                     {filtroAbierto===dim && (
-                      <div className={`absolute z-20 mt-1 w-56 max-h-64 overflow-y-auto p-2 rounded-lg border shadow-xl ${t.card}`}>
+                      <div className={`absolute z-20 mt-1 w-56 max-h-72 overflow-y-auto p-2 rounded-lg border shadow-xl ${t.card}`}>
+                        {opts.length>6 && (
+                          <input autoFocus value={filtroQuery} onChange={e=>setFiltroQuery(e.target.value)} placeholder="Buscar..."
+                            onClick={e=>e.stopPropagation()}
+                            className={`w-full mb-1.5 px-2 py-1 rounded-md border text-[11px] ${t.input}`}/>
+                        )}
                         {n>0 && <button onClick={()=>limpiarFiltro(dim)} className={`text-[10px] font-bold mb-1 ${t.textMuted} hover:underline`}>Limpiar</button>}
-                        {opts.map(val=>(
+                        {optsF.length===0 && <p className={`text-[10px] py-1 ${t.textMuted}`}>Sin resultados</p>}
+                        {optsF.map(val=>(
                           <label key={val} className={`flex items-center gap-2 py-1 text-[11px] cursor-pointer ${t.textMain}`}>
                             <input type="checkbox" checked={filtros[dim].includes(val)} onChange={()=>toggleFiltroValor(dim,val)}/>
                             <span className="truncate">{val}</span>
@@ -813,7 +860,7 @@ export default function ModuleEventos(){
                           <CartesianGrid strokeDasharray="3 3" stroke={gridC} horizontal={false}/>
                           <XAxis type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
                           <YAxis type="category" dataKey="modelo" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={80}/>
-                          <Tooltip content={<TTip/>} cursor={{fill:cursorFill}}/>
+                          <Tooltip content={<ModeloTTip/>} cursor={{fill:cursorFill}}/>
                           <Bar dataKey="ventaP" name="Venta $" fill="url(#gradRegularH)" radius={[0,6,6,0]} maxBarSize={22}/>
                         </BarChart>
                       </ResponsiveContainer>
@@ -884,20 +931,36 @@ export default function ModuleEventos(){
                       </ResponsiveContainer>
                     </div>
                   )}
+                  {/* Grupo de Artículo (GOA) */}
+                  {calc.porGoa.length>0 && (
+                    <div className={`p-4 rounded-xl border overflow-x-auto lg:col-span-2 ${t.card}`}>
+                      <p className={`text-xs font-black mb-3 ${t.textMain}`}>Venta por Grupo de Artículo (GOA)</p>
+                      <ResponsiveContainer width="100%" height={Math.max(200,calc.porGoa.length*28)}>
+                        <BarChart data={calc.porGoa} layout="vertical" margin={{left:10}} barCategoryGap="25%">
+                          <CartesianGrid strokeDasharray="3 3" stroke={gridC} horizontal={false}/>
+                          <XAxis type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
+                          <YAxis type="category" dataKey="name" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={120}/>
+                          <Tooltip content={<TTip/>} cursor={{fill:cursorFill}}/>
+                          <Bar dataKey="ventaP" name="Venta $" fill="url(#gradRegularH)" radius={[0,6,6,0]} maxBarSize={20}/>
+                        </BarChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
                 </div>
 
-                {/* Bottom 10 SKU */}
+                {/* Bottom 10 Modelo */}
                 <div className={`p-4 rounded-xl border overflow-x-auto ${t.card}`}>
-                  <p className={`text-xs font-black mb-3 ${t.textMain}`}>Bottom 10 SKU · Venta $ (con inventario inicial)</p>
+                  <p className={`text-xs font-black mb-3 ${t.textMain}`}>Bottom 10 Modelo · Venta $ (con inventario inicial)</p>
                   <table className="w-full text-xs">
-                    <thead><tr className={t.textMuted}><th className="text-left pb-2">SKU</th><th className="text-left pb-2">Clasif.</th>
+                    <thead><tr className={t.textMuted}><th className="text-left pb-2">Modelo</th><th className="text-left pb-2">Marca</th><th className="text-left pb-2">GOA</th>
                       <th className="text-right pb-2">Venta $</th><th className="text-right pb-2">Venta U</th><th className="text-right pb-2">ST%</th></tr></thead>
                     <tbody>
-                      {calc.bottom10.length===0 ? (<tr><td colSpan={5} className={`py-3 text-center ${t.textMuted}`}>Sin datos</td></tr>) :
+                      {calc.bottom10.length===0 ? (<tr><td colSpan={6} className={`py-3 text-center ${t.textMuted}`}>Sin datos</td></tr>) :
                       calc.bottom10.map(r=>(
-                        <tr key={r.sku} className={`border-t ${t.border} ${t.textMain}`}>
-                          <td className="py-1.5">{r.sku}<div className={`text-[9px] ${t.textMuted}`}>{r.modelo||r.marca}</div></td>
-                          <td><ClasifBadge clasif={r.clasif} t={t}/></td>
+                        <tr key={r.modelo} className={`border-t ${t.border} ${t.textMain}`}>
+                          <td className="py-1.5">{r.modelo}</td>
+                          <td className={t.textMuted}>{r.marca}</td>
+                          <td className={t.textMuted}>{r.goa}</td>
                           <td className="text-right">{fmtM(r.ventaP)}</td><td className="text-right">{fmt(r.ventaU)}</td><td className="text-right">{fmtP(r.stPct)}</td>
                         </tr>
                       ))}
