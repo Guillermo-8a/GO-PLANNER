@@ -72,8 +72,8 @@ const parseSnapshotXLSX = async file => {
   const rows = XLSX.utils.sheet_to_json(wb.Sheets[sheetName],{header:1,defval:'',raw:true});
   if(rows.length<2) return {rows:[],error:null};
   // Columnas fijas por posición (duplican nombre "Artículo" en el layout, no se puede indexar por header):
-  // 0 Rebaja | 6 Sección | 7 Grupo artículos(GOA) | 9 Marca | 13 Modelo Proveedor | 14 Artículo(SKU) | 15 Artículo(desc) | 17 Precio Venta Act | 18 OH_
-  // Col 0 "Rebaja" ya trae la clasificación: Regular = sin descuento; Depreciado/MS = artículo rebajado (trae letra).
+  // 0 Rebaja | 6 Sección | 7 Grupo artículos(GOA) | 9 Marca | 13 Modelo Proveedor | 14 Artículo(SKU) | 15 Artículo(desc) | 17 Precio Venta Act | 18 OH_ | 20 OH aant | 21 Monto aant (en miles)
+  // Col 0 "Rebaja": Regular = sin letra; Depreciado = liquidación permanente; MS = letra temporal (regresa a precio).
   const out=[];
   for(let i=1;i<rows.length;i++){ const r=rows[i]; if(!r||r.every(c=>c===''||c==null)) continue;
     const sku=String(r[14]||'').trim(); if(!sku) continue;
@@ -82,7 +82,8 @@ const parseSnapshotXLSX = async file => {
     out.push({ sku, nsku:String(r[15]||'').trim(), modelo:String(r[13]||'').trim().toUpperCase(),
       marca:(String(r[9]||'').trim().toUpperCase())||'SIN MARCA', goa:String(r[7]||'').trim().toUpperCase(),
       seccion:(String(r[6]||'').trim().toUpperCase())||'GENERAL', centro:'',
-      oh:num(r[18]), precio:num(r[17]), letraDesc });
+      oh:num(r[18]), precio:num(r[17]), letraDesc,
+      ohAant:num(r[20]), montoAant:num(r[21])*1000 });
   }
   // Ventas del evento, si el mismo archivo trae la pestaña "Vtas_Evento" (export SAP diario por SKU)
   // Columnas: 0 Día/Periodo(DD.MM.YYYY) | 2 N_Seccion | 4 Artículo(SKU) | 9 Vtas.U | 10 Vtas.$ (en miles) | 11 GM (margen $ real) | 12 Total Descuentos (en miles)
@@ -293,6 +294,16 @@ export default function ModuleEventos(){
     };
     reader.readAsText(file,'ISO-8859-1');
   };
+  const clearSnapshot=()=>{
+    if(!window.confirm('¿Eliminar el snapshot cargado de este evento?')) return;
+    setSnapRows([]); idbDel(`snap_${activeId}`).catch(()=>{});
+    if(snapRef.current) snapRef.current.value='';
+  };
+  const clearSales=()=>{
+    if(!window.confirm('¿Eliminar las ventas cargadas de este evento?')) return;
+    setSalesRows([]); idbDel(`sales_${activeId}`).catch(()=>{});
+    if(salesRef.current) salesRef.current.value='';
+  };
 
   // ── Cálculos ──
   const calc=useMemo(()=>{
@@ -301,8 +312,9 @@ export default function ModuleEventos(){
     const snapBySku={};
     snapRows.forEach(r=>{
       const k=r.sku;
-      if(!snapBySku[k]) snapBySku[k]={sku:k,nsku:r.nsku,modelo:r.modelo,marca:r.marca,goa:r.goa,seccion:r.seccion,oh:0,precio:0,letraDesc:r.letraDesc};
+      if(!snapBySku[k]) snapBySku[k]={sku:k,nsku:r.nsku,modelo:r.modelo,marca:r.marca,goa:r.goa,seccion:r.seccion,oh:0,precio:0,letraDesc:r.letraDesc,ohAant:0,montoAant:0};
       snapBySku[k].oh+=r.oh;
+      snapBySku[k].ohAant+=r.ohAant||0; snapBySku[k].montoAant+=r.montoAant||0;
       if(r.precio>snapBySku[k].precio) snapBySku[k].precio=r.precio;
       if(r.letraDesc && !snapBySku[k].letraDesc) snapBySku[k].letraDesc=r.letraDesc;
     });
@@ -321,12 +333,15 @@ export default function ModuleEventos(){
       const s=snapBySku[sku], v=salesBySku[sku]||{ventaU:0,ventaP:0,utilidad:0};
       const ohInicio=s?.oh||0, precio=s?.precio||0;
       const realizado = v.ventaU>0 ? v.ventaP/v.ventaU : null;
-      // 3 vías: depreciado = ya traía letra en el snapshot; descuento = sin letra pero se vendió
-      // por debajo del precio de lista (rebaja aplicada durante el evento, sin letra formal);
+      // 3 vías: depreciado = ya está en liquidación (o pronto a estarlo) — permanente;
+      // descuento = letra temporal (MS) que regresa a precio lista después del evento,
+      // o sin letra pero se vendió por debajo del precio de lista durante el evento;
       // regular = sin letra y sin evidencia de descuento.
+      const tag=(s?.letraDesc||'').trim().toUpperCase();
       let clasif;
       if(!s) clasif='sin_snapshot';
-      else if(s.letraDesc) clasif='depreciado';
+      else if(tag==='MS') clasif='descuento';
+      else if(tag) clasif='depreciado';
       else if(realizado!=null && precio>0 && realizado < precio*0.99) clasif='descuento';
       else clasif='regular';
       if(clasif==='sin_snapshot') sinSnapshot++;
@@ -334,6 +349,7 @@ export default function ModuleEventos(){
       detail.push({ sku, marca:v.marca||s?.marca||'', goa:v.goa||s?.goa||'', seccion:v.seccion||s?.seccion||'GENERAL',
         modelo:v.modelo||s?.modelo||s?.nsku||'', clasif, ohInicio, precio, remanente,
         montoInicio: ohInicio*precio, montoRemanente:(remanente||0)*precio,
+        ohAant:s?.ohAant||0, montoAant:s?.montoAant||0,
         ventaU:v.ventaU, ventaP:v.ventaP, utilidad:v.utilidad,
         stPct: ohInicio>0 ? Math.min(100,(v.ventaU/ohInicio)*100) : null });
     });
@@ -366,10 +382,12 @@ export default function ModuleEventos(){
       ['regular','descuento','depreciado'].forEach(k=>{
         const rs=rows.filter(r=>r.clasif===k);
         out[k]={ oh:rs.reduce((s,r)=>s+r.ohInicio,0), ohA:rs.reduce((s,r)=>s+(r.remanente||0),0),
-          monto:rs.reduce((s,r)=>s+r.montoInicio,0), montoA:rs.reduce((s,r)=>s+r.montoRemanente,0) };
+          monto:rs.reduce((s,r)=>s+r.montoInicio,0), montoA:rs.reduce((s,r)=>s+r.montoRemanente,0),
+          montoAant:rs.reduce((s,r)=>s+(r.montoAant||0),0) };
       });
       out.total={ oh:rows.reduce((s,r)=>s+r.ohInicio,0), ohA:rows.reduce((s,r)=>s+(r.remanente||0),0),
-        monto:rows.reduce((s,r)=>s+r.montoInicio,0), montoA:rows.reduce((s,r)=>s+r.montoRemanente,0) };
+        monto:rows.reduce((s,r)=>s+r.montoInicio,0), montoA:rows.reduce((s,r)=>s+r.montoRemanente,0),
+        montoAant:rows.reduce((s,r)=>s+(r.montoAant||0),0) };
       return out;
     };
     const grand=sumByClasif(invRows);
@@ -571,13 +589,19 @@ export default function ModuleEventos(){
         {/* Carga de datos */}
         <div className={`p-4 rounded-xl border flex flex-wrap items-center gap-3 no-print ${t.card}`}>
           <input ref={snapRef} type="file" accept=".xlsx,.xls,.csv,.txt" className="hidden" onChange={uploadSnapshot}/>
-          <button onClick={()=>snapRef.current?.click()} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border ${t.btnGhost}`}>
-            <Icons.Upload size={13}/> Snapshot arranque (xlsx/csv) {snapRows.length>0 && `(${calc?.nSkuSnap} SKU)`}
-          </button>
+          <div className="flex items-center gap-1">
+            <button onClick={()=>snapRef.current?.click()} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border ${t.btnGhost}`}>
+              <Icons.Upload size={13}/> Snapshot arranque (xlsx/csv) {snapRows.length>0 && `(${calc?.nSkuSnap} SKU)`}
+            </button>
+            {snapRows.length>0 && <button onClick={clearSnapshot} title="Eliminar snapshot" className={`p-2 rounded-lg border ${t.btnGhost} opacity-60 hover:opacity-100`}><Icons.Trash2 size={13}/></button>}
+          </div>
           <input ref={salesRef} type="file" accept=".csv,.txt" className="hidden" onChange={uploadSales}/>
-          <button onClick={()=>salesRef.current?.click()} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border ${t.btnGhost}`}>
-            <Icons.Upload size={13}/> CSV Ventas del evento (opcional) {salesRows.length>0 && `(${calc?.nSkuVenta} SKU)`}
-          </button>
+          <div className="flex items-center gap-1">
+            <button onClick={()=>salesRef.current?.click()} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border ${t.btnGhost}`}>
+              <Icons.Upload size={13}/> CSV Ventas del evento (opcional) {salesRows.length>0 && `(${calc?.nSkuVenta} SKU)`}
+            </button>
+            {salesRows.length>0 && <button onClick={clearSales} title="Eliminar ventas" className={`p-2 rounded-lg border ${t.btnGhost} opacity-60 hover:opacity-100`}><Icons.Trash2 size={13}/></button>}
+          </div>
           {snapRows.length>0 && <span className={`text-[10px] px-2 py-1 rounded-full border ${t.badgeAmber}`}>Snapshot inmutable — reemplazar pide confirmación</span>}
           <span className={`text-[10px] ${t.textMuted}`}>Si el xlsx trae la pestaña "Vtas_Evento", las ventas se cargan solas — el CSV ya no es necesario.</span>
           {calc?.sinSnapshot>0 && <span className={`text-[10px] px-2 py-1 rounded-full border ${t.badgeRed}`}>{calc.sinSnapshot} SKU con venta sin snapshot inicial (no cuentan en remanente/ST)</span>}
@@ -753,13 +777,14 @@ export default function ModuleEventos(){
                       {['regular','descuento','depreciado'].map(k=>(
                         <th key={k} className="text-center pb-1 border-l" colSpan={2} style={{color:CLASIF_COLOR[k]}}>{CLASIF_LABEL[k]}</th>
                       ))}
-                      <th className="text-center pb-1 border-l" colSpan={2}>Total</th>
+                      <th className="text-center pb-1 border-l" colSpan={3}>Total</th>
                     </tr>
                     <tr className={t.textMuted}>
                       {['regular','descuento','depreciado','total'].map(k=>(
                         <React.Fragment key={k}>
                           <th className="text-right pb-2 font-normal border-l">OH pzs</th>
                           <th className="text-right pb-2 font-normal">Monto $</th>
+                          {k==='total' && <th className="text-right pb-2 font-normal">vs AA</th>}
                         </React.Fragment>
                       ))}
                     </tr>
@@ -778,6 +803,7 @@ export default function ModuleEventos(){
                               <React.Fragment key={k}>
                                 <td className="text-right border-l">{fmt(sec[k].ohA)}</td>
                                 <td className="text-right">{fmtM(sec[k].montoA)}</td>
+                                {k==='total' && <td className="text-right">{sec[k].montoAant>0?<DeltaBadge value={(sec[k].montoA-sec[k].montoAant)/sec[k].montoAant*100}/>:<span className="text-gray-400">Sin AA</span>}</td>}
                               </React.Fragment>
                             ))}
                           </tr>
@@ -788,6 +814,7 @@ export default function ModuleEventos(){
                                 <React.Fragment key={k}>
                                   <td className="text-right border-l">{fmt(sub[k].ohA)}</td>
                                   <td className="text-right">{fmtM(sub[k].montoA)}</td>
+                                  {k==='total' && <td className="text-right">{sub[k].montoAant>0?<DeltaBadge value={(sub[k].montoA-sub[k].montoAant)/sub[k].montoAant*100}/>:<span className="text-gray-400">Sin AA</span>}</td>}
                                 </React.Fragment>
                               ))}
                             </tr>
@@ -803,12 +830,13 @@ export default function ModuleEventos(){
                         <React.Fragment key={k}>
                           <td className="text-right border-l">{fmt(calc.grand[k].ohA)}</td>
                           <td className="text-right">{fmtM(calc.grand[k].montoA)}</td>
+                          {k==='total' && <td className="text-right">{calc.grand[k].montoAant>0?<DeltaBadge value={(calc.grand[k].montoA-calc.grand[k].montoAant)/calc.grand[k].montoAant*100}/>:<span className="text-gray-400">Sin AA</span>}</td>}
                         </React.Fragment>
                       ))}
                     </tr>
                   </tfoot>
                 </table>
-                <p className={`text-[10px] mt-3 ${t.textMuted}`}>Click en una sección para desplegar por {groupBy==='marca'?'marca':'GOA'}. "Depreciado" = traía letra de descuento en el snapshot. "Descuento" = sin letra, pero se vendió por debajo del precio de lista durante el evento.</p>
+                <p className={`text-[10px] mt-3 ${t.textMuted}`}>Click en una sección para desplegar por {groupBy==='marca'?'marca':'GOA'}. "Depreciado" = ya está en liquidación o pronto a estarlo (permanente). "Descuento" = letra temporal (MS) que regresa a su precio después del evento, o venta por debajo de lista sin letra formal.</p>
               </div>
             )}
           </>
