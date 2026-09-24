@@ -187,7 +187,7 @@ export default function App() {
   // --- MOTOR DE TEMAS ---
   const themes = {
     dark: {
-      appBg: "bg-black text-gray-100", header: "bg-zinc-950 border-purple-900/50 shadow-md",
+      appBg: "bg-transparent text-[#EDEBF2]", header: "bg-zinc-950 border-purple-900/50 shadow-md",
       logoIcon: "bg-purple-600 text-white", logoAccent: "text-yellow-400",
       btnMenu: "bg-zinc-900 text-gray-300 hover:text-white hover:bg-zinc-800 border border-zinc-800",
       menuBg: "bg-zinc-900 border border-zinc-700 shadow-xl", menuItem: "hover:bg-zinc-800 text-gray-200 border-zinc-800",

@@ -192,7 +192,7 @@ export default function Forecast() {
   // ── Temas ──────────────────────────────────────────────────────────────
   const themes = {
     dark: {
-      appBg: 'bg-black text-gray-100',
+      appBg: 'bg-transparent text-[#EDEBF2]',
       card: 'bg-zinc-900 border-zinc-800 shadow-sm',
       cardInner: 'bg-zinc-950 border-zinc-800',
       textMain: 'text-white', textMuted: 'text-gray-400',

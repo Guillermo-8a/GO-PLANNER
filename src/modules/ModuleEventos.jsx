@@ -506,9 +506,13 @@ export default function ModuleEventos(){
     });
     const rollup = rows => { const ventaP=rows.reduce((s,r)=>s+r.ventaP,0), ventaU=rows.reduce((s,r)=>s+r.ventaU,0),
       utilidad=rows.reduce((s,r)=>s+r.utilidad,0), ohInicio=rows.reduce((s,r)=>s+r.ohInicio,0),
-      remanente=rows.reduce((s,r)=>s+(r.remanente||0),0), montoRemanente=rows.reduce((s,r)=>s+(r.montoRemanente||0),0);
+      remanente=rows.reduce((s,r)=>s+(r.remanente||0),0), montoRemanente=rows.reduce((s,r)=>s+(r.montoRemanente||0),0),
+      montoInicio=rows.reduce((s,r)=>s+(r.montoInicio||0),0);
+      const montoDesplazado=montoInicio-montoRemanente;
       return { ventaP, ventaU, utilidad, margenPct: ventaP>0?utilidad/ventaP*100:null,
-        ohInicio, remanente, montoRemanente, stPct: ohInicio>0?Math.min(100,ventaU/ohInicio*100):null }; };
+        ohInicio, remanente, montoRemanente, montoInicio, montoDesplazado,
+        pctDesplazado: montoInicio>0?Math.min(100,montoDesplazado/montoInicio*100):null,
+        stPct: ohInicio>0?Math.min(100,ventaU/ohInicio*100):null }; };
     const total=rollup(detail);
     const regular=rollup(detail.filter(r=>r.clasif==='regular'));
     const descuento=rollup(detail.filter(r=>r.clasif==='descuento'));
@@ -896,6 +900,7 @@ export default function ModuleEventos(){
                       {calc.hasLY && <th className="text-right pb-2">vs AA</th>}
                       <th className="text-right pb-2">Venta U</th><th className="text-right pb-2">Margen %</th>
                       <th className="text-right pb-2">Sell-through</th><th className="text-right pb-2">Remanente U</th><th className="text-right pb-2">Remanente $</th>
+                      <th className="text-right pb-2">Desplazado $</th><th className="text-right pb-2">Desplazado %</th>
                     </tr></thead>
                     <tbody>
                       {[['regular',calc.regular],['descuento',calc.descuento],['depreciado',calc.depreciado],['total',calc.total]].map(([key,r])=>(
@@ -907,6 +912,7 @@ export default function ModuleEventos(){
                           <td className="text-right">{fmtP(r.margenPct)}{calc.hasLY && <div><DeltaBadge value={r.vsAA_mg}/></div>}</td>
                           <td className="text-right">{fmtP(r.stPct)}</td><td className="text-right">{fmt(r.remanente)}</td>
                           <td className="text-right">{fmtM(r.montoRemanente)}</td>
+                          <td className="text-right">{fmtM(r.montoDesplazado)}</td><td className="text-right">{fmtP(r.pctDesplazado)}</td>
                         </tr>
                       ))}
                     </tbody>
@@ -983,7 +989,7 @@ export default function ModuleEventos(){
                   {/* Desempeño por día */}
                   {calc.porDia.length>0 && (
                     <div className={`p-4 rounded-xl border overflow-x-auto lg:col-span-2 ${t.card}`}>
-                      <p className={`text-xs font-black mb-3 ${t.textMain}`}>Desempeño por día — venta por clasificación y margen %{calc.hasLY?' (línea punteada = AA)':''}</p>
+                      <p className={`text-xs font-black mb-3 ${t.textMain}`}>Desempeño por día — {snapRows.length>0?'venta por clasificación y margen %':'venta total y margen %'}{calc.hasLY?' (línea punteada = AA)':''}</p>
                       <ResponsiveContainer width="100%" height={280}>
                         <ComposedChart data={calc.porDia} margin={{top:10}} barCategoryGap="20%">
                           <CartesianGrid strokeDasharray="3 3" stroke={gridC} vertical={false}/>
@@ -992,9 +998,13 @@ export default function ModuleEventos(){
                           <YAxis yAxisId="der" orientation="right" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>v.toFixed(0)+'%'}/>
                           <Tooltip content={<DiaTTip/>} cursor={{fill:cursorFill}}/>
                           <Legend wrapperStyle={{fontSize:10,color:txtC}}/>
-                          <Bar yAxisId="izq" dataKey="regular" stackId="v" name="Regular" fill="url(#gradRegularV)"/>
-                          <Bar yAxisId="izq" dataKey="descuento" stackId="v" name="Descuento" fill="url(#gradDescuentoV)"/>
-                          <Bar yAxisId="izq" dataKey="depreciado" stackId="v" name="Depreciado" fill="url(#gradDepreciadoV)" radius={[6,6,0,0]}/>
+                          {snapRows.length>0 ? (<>
+                            <Bar yAxisId="izq" dataKey="regular" stackId="v" name="Regular" fill="url(#gradRegularV)"/>
+                            <Bar yAxisId="izq" dataKey="descuento" stackId="v" name="Descuento" fill="url(#gradDescuentoV)"/>
+                            <Bar yAxisId="izq" dataKey="depreciado" stackId="v" name="Depreciado" fill="url(#gradDepreciadoV)" radius={[6,6,0,0]}/>
+                          </>) : (
+                            <Bar yAxisId="izq" dataKey="ventaP" name="Venta $ Total" fill="url(#gradRegularV)" radius={[6,6,0,0]}/>
+                          )}
                           <Line yAxisId="der" type="monotone" dataKey="margenPct" name="Margen %" stroke={lineC} strokeWidth={2} dot={false}/>
                           {calc.hasLY && <Line yAxisId="izq" type="monotone" dataKey="ventaPLY" name="Venta $ AA" stroke={txtC} strokeWidth={1.5} strokeDasharray="4 3" dot={false}/>}
                         </ComposedChart>

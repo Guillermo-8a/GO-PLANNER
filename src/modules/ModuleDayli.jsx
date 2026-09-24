@@ -328,6 +328,10 @@ export default function ModuleDaily(){
   const [scatterLevel,setScatterLevel]=useState(0);
 
   // Persistencia — config chica en localStorage, dataset completo en IndexedDB (sin límite de tamaño)
+  // `hydrated` evita que los efectos de guardado (abajo) corran ANTES de que termine de cargar lo
+  // guardado: sin esto, el guardado inicial (con allData/invData aún en []) competía en una carrera
+  // contra la lectura async de IndexedDB y, si ganaba, borraba el dataset guardado en cada refresh.
+  const [hydrated,setHydrated]=useState(false);
   useEffect(()=>{ try{ const s=localStorage.getItem('gop_daily_v3'); if(s){ const d=JSON.parse(s);
     if(d.promoEntries) setPromoEntries(d.promoEntries);
     if(d.manualPromo) setManualPromo(d.manualPromo);
@@ -342,15 +346,15 @@ export default function ModuleDaily(){
     (async()=>{ try{
       const a=await dbGet('allData'); if(Array.isArray(a)&&a.length) setAllData(a.map(r=>({...r,fecha:r.fecha?new Date(r.fecha):null})));
       const i=await dbGet('invData'); if(Array.isArray(i)&&i.length) setInvData(i);
-    }catch{} })();
+    }catch{} finally{ setHydrated(true); } })();
   },[]);
-  useEffect(()=>{ try{
+  useEffect(()=>{ if(!hydrated) return; try{
     const cfg={promoEntries,manualPromo,defaultUplift,moneyK,usarPromosFijas,bonifMes,bonifAcum,dateFrom,dateTo,fCanal,fDiv,fSec,fMarca,fNorma,fPago,fGoa};
     localStorage.setItem('gop_daily_v3',JSON.stringify(cfg));
   }catch{} },
-    [promoEntries,manualPromo,defaultUplift,moneyK,usarPromosFijas,bonifMes,bonifAcum,dateFrom,dateTo,fCanal,fDiv,fSec,fMarca,fNorma,fPago,fGoa]);
-  useEffect(()=>{ dbSet('allData',allData).catch(()=>{}); },[allData]);
-  useEffect(()=>{ dbSet('invData',invData).catch(()=>{}); },[invData]);
+    [hydrated,promoEntries,manualPromo,defaultUplift,moneyK,usarPromosFijas,bonifMes,bonifAcum,dateFrom,dateTo,fCanal,fDiv,fSec,fMarca,fNorma,fPago,fGoa]);
+  useEffect(()=>{ if(!hydrated) return; dbSet('allData',allData).catch(()=>{}); },[hydrated,allData]);
+  useEffect(()=>{ if(!hydrated) return; dbSet('invData',invData).catch(()=>{}); },[hydrated,invData]);
 
   const decodeBuf=buf=>{ let txt=new TextDecoder('utf-8',{fatal:false}).decode(buf);
     if(txt.includes('\uFFFD')) txt=new TextDecoder('windows-1252').decode(buf); return txt; };
@@ -551,13 +555,19 @@ export default function ModuleDaily(){
       if(d!=null&&d<0&&tT!==lT) warnings.push(`Día ${n}: caída de ${Math.abs(d).toFixed(0)}% pero comparas ${tT.toUpperCase()} (TY) vs ${lT.toUpperCase()} (LY)`);
     } return {data,warnings}; },[tyData,lyData,lastDateTY,tyYear,lyYear]);
 
-  const cmpPromo=useMemo(()=>{ const sd=(rows)=>{ let sum=0,days=new Set();
-      rows.forEach(r=>{ if(r.fecha&&isPromoDate(isoOf(r.fecha))){ sum+=r.ventaP; days.add(r.fecha.toDateString()); }}); return {sum,n:days.size}; };
-    const ty=sd(tyData),ly=sd(lyData);
+  // Los días de promo (manual/CSV) normalmente se marcan solo en el calendario TY: si se checa la fecha
+  // exacta del año anterior, nunca hay match y "Venta Promo LY" sale $0. Se compara por mismo mes/día
+  // (la fecha LY "espejo" en tyYear), que sí cae dentro de lo marcado — las promos fijas siguen
+  // resolviendo su propia ventana en LY porque isPromoDate ya las calcula por año.
+  const cmpPromo=useMemo(()=>{ const mdOf=iso=>iso.slice(5);
+    const isPromoLY=iso=>isPromoDate(iso)||isPromoDate(`${tyYear}-${mdOf(iso)}`);
+    const sd=(rows,checker)=>{ let sum=0,days=new Set();
+      rows.forEach(r=>{ if(r.fecha&&checker(isoOf(r.fecha))){ sum+=r.ventaP; days.add(r.fecha.toDateString()); }}); return {sum,n:days.size}; };
+    const ty=sd(tyData,isPromoDate),ly=sd(lyData,isPromoLY);
     const perDay={};
     tyData.forEach(r=>{ if(r.fecha&&isPromoDate(isoOf(r.fecha))){ const k=isoOf(r.fecha); perDay[k]=perDay[k]||{label:`${r.fecha.getDate()}/${r.fecha.getMonth()+1}`,ty:0,ly:0}; perDay[k].ty+=r.ventaP; }});
     return { tySum:ty.sum,tyN:ty.n,lySum:ly.sum,lyN:ly.n,delta:delta(ty.sum,ly.sum),
-      avgTY:ty.n>0?ty.sum/ty.n:0,avgLY:ly.n>0?ly.sum/ly.n:0,perDay:Object.values(perDay).sort((a,b)=>b.ty-a.ty) }; },[tyData,lyData,isPromoDate]);
+      avgTY:ty.n>0?ty.sum/ty.n:0,avgLY:ly.n>0?ly.sum/ly.n:0,perDay:Object.values(perDay).sort((a,b)=>b.ty-a.ty) }; },[tyData,lyData,isPromoDate,tyYear]);
 
   const cmpHoliday=useMemo(()=>{ const tyH=holidaysForYear(tyYear),lyH=holidaysForYear(lyYear);
     return tyH.map(h=>{
@@ -614,6 +624,7 @@ export default function ModuleDaily(){
 
   // ── Chart config ──
   const gridC=isDark?'#27272a':'#f0f0f0',axisC=isDark?'#52525b':'#d1d5db',txtC=isDark?'#a1a1aa':'#6b7280';
+  const cursorFill=isDark?'rgba(139,92,246,0.14)':'rgba(139,92,246,0.08)'; // glass violeta, igual que Eventos
   const TTip=({active,payload,label})=>{ if(!active||!payload?.length) return null;
     return <div className={`p-3 rounded-xl border text-xs shadow-xl ${t.card}`}><p className={`font-bold mb-1 ${t.textMain}`}>{label}</p>
       {payload.map((p,i)=><p key={i} style={{color:p.color}}>{p.name}: {fmtM(p.value)}</p>)}</div>; };
@@ -830,7 +841,7 @@ export default function ModuleDaily(){
                   <LineChart data={serieWeekAligned}><CartesianGrid strokeDasharray="3 3" stroke={gridC}/>
                     <XAxis dataKey="fecha" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>v?.slice(5)}/>
                     <YAxis tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
-                    <Tooltip content={({active,payload,label})=>{ if(!active||!payload?.length) return null; const d=payload[0]?.payload;
+                    <Tooltip cursor={{stroke:cursorFill,strokeWidth:2}} content={({active,payload,label})=>{ if(!active||!payload?.length) return null; const d=payload[0]?.payload;
                       return <div className={`p-3 rounded-xl border text-xs shadow-xl ${t.card}`}>
                         <p className={`font-bold mb-1 ${t.textMain}`}>{label} · {d?.dow}</p>
                         <p style={{color:'#8b5cf6'}}>TY: {fmtM(d?.ty)}</p>
@@ -848,7 +859,7 @@ export default function ModuleDaily(){
                   <BarChart data={cmpWeekday}><CartesianGrid strokeDasharray="3 3" stroke={gridC}/>
                     <XAxis dataKey="label" tick={{fontSize:10,fill:txtC}} stroke={axisC}/>
                     <YAxis tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
-                    <Tooltip content={<TTip/>}/><Legend wrapperStyle={{fontSize:10}}/>
+                    <Tooltip cursor={{fill:cursorFill}} content={<TTip/>}/><Legend wrapperStyle={{fontSize:10}}/>
                     <Bar dataKey="ly" name={`LY ${lyYear}`} fill={isDark?'#71717a':'#94a3b8'} radius={[4,4,0,0]}/>
                     <Bar dataKey="ty" name={`TY ${tyYear}`} fill="#8b5cf6" radius={[4,4,0,0]}/>
                   </BarChart>
@@ -862,7 +873,7 @@ export default function ModuleDaily(){
                 <LineChart data={cmpDayMonth.data}><CartesianGrid strokeDasharray="3 3" stroke={gridC}/>
                   <XAxis dataKey="label" tick={{fontSize:9,fill:txtC}} stroke={axisC}/>
                   <YAxis tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
-                  <Tooltip content={<TTip/>}/><Legend wrapperStyle={{fontSize:10}}/>
+                  <Tooltip cursor={{stroke:cursorFill,strokeWidth:2}} content={<TTip/>}/><Legend wrapperStyle={{fontSize:10}}/>
                   <Line type="monotone" dataKey="ly" name={`LY ${lyYear}`} stroke={axisC} dot={false} strokeWidth={1.5} strokeDasharray="4 2"/>
                   <Line type="monotone" dataKey="ty" name={`TY ${tyYear}`} stroke="#8b5cf6" dot={{r:2}} strokeWidth={2}/>
                 </LineChart>
@@ -891,7 +902,7 @@ export default function ModuleDaily(){
                   <BarChart data={cmpPromo.perDay}><CartesianGrid strokeDasharray="3 3" stroke={gridC}/>
                     <XAxis dataKey="label" tick={{fontSize:9,fill:txtC}} stroke={axisC}/>
                     <YAxis tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
-                    <Tooltip content={<TTip/>}/><Bar dataKey="ty" name="Venta promo" fill="#8b5cf6" radius={[4,4,0,0]}/>
+                    <Tooltip cursor={{fill:cursorFill}} content={<TTip/>}/><Bar dataKey="ty" name="Venta promo" fill="#8b5cf6" radius={[4,4,0,0]}/>
                   </BarChart>
                 </ResponsiveContainer>)}
             </>)}
@@ -905,7 +916,7 @@ export default function ModuleDaily(){
                   <BarChart data={cmpHoliday} margin={{bottom:40}}><CartesianGrid strokeDasharray="3 3" stroke={gridC}/>
                     <XAxis dataKey="label" tick={{fontSize:9,fill:txtC}} stroke={axisC} angle={-25} textAnchor="end" height={60} interval={0}/>
                     <YAxis tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
-                    <Tooltip content={<TTip/>}/><Legend wrapperStyle={{fontSize:10}}/>
+                    <Tooltip cursor={{fill:cursorFill}} content={<TTip/>}/><Legend wrapperStyle={{fontSize:10}}/>
                     <Bar dataKey="ly" name={`LY ${lyYear}`} fill={isDark?'#71717a':'#94a3b8'} radius={[4,4,0,0]}/>
                     <Bar dataKey="ty" name={`TY ${tyYear}`} fill="#f59e0b" radius={[4,4,0,0]}/>
                   </BarChart>
@@ -931,7 +942,7 @@ export default function ModuleDaily(){
                 <LineChart data={serieDiaria}><CartesianGrid strokeDasharray="3 3" stroke={gridC}/>
                   <XAxis dataKey="fecha" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>v?.slice(5)}/>
                   <YAxis tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
-                  <Tooltip content={({active,payload,label})=>{ if(!active||!payload?.length) return null; const d=payload[0]?.payload;
+                  <Tooltip cursor={{stroke:cursorFill,strokeWidth:2}} content={({active,payload,label})=>{ if(!active||!payload?.length) return null; const d=payload[0]?.payload;
                     return <div className={`p-3 rounded-xl border text-xs shadow-xl ${t.card}`}>
                       <p className={`font-bold mb-1 ${t.textMain}`}>{label}</p>
                       <p style={{color:'#8b5cf6'}}>TY: {fmtM(d?.ty)}</p>
@@ -1206,7 +1217,7 @@ export default function ModuleDaily(){
                         <CartesianGrid strokeDasharray="3 3" stroke={gridC}/>
                         <XAxis dataKey="x" name="Venta $" type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'} label={{value:'Venta $',position:'insideBottom',offset:-10,fontSize:10,fill:txtC}}/>
                         <YAxis dataKey="y" name="OH+OO" type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>fmt(v)} label={{value:'OH+OO',angle:-90,position:'insideLeft',fontSize:10,fill:txtC}}/>
-                        <Tooltip content={({active,payload})=>{ if(!active||!payload?.length) return null; const d=payload[0]?.payload;
+                        <Tooltip cursor={{strokeDasharray:'3 3',stroke:cursorFill}} content={({active,payload})=>{ if(!active||!payload?.length) return null; const d=payload[0]?.payload;
                           return <div className={`p-3 rounded-xl border text-xs shadow-xl ${t.card}`}><p className={`font-bold mb-1 ${t.textMain}`}>{d?.name}</p><p className="text-violet-400">Venta: {fmtM(d?.x)}</p><p className="text-purple-400">OH+OO: {fmt(d?.y)}</p></div>; }}/>
                         <Scatter data={scatterData} fill="#8b5cf6" fillOpacity={0.75}/>
                         {scatterReg&&(()=>{ const xs=scatterData.map(d=>d.x); const xn=minOf(xs),xx=maxOf(xs);
