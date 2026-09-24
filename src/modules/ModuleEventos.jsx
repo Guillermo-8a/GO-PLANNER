@@ -1039,33 +1039,37 @@ export default function ModuleEventos(){
 
                 {/* Dashboard de venta del evento — ligado a los filtros */}
                 <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                  {/* Top 10 Modelo */}
-                  {calc.topModelo.length>0 && (
+                  {/* Grupo de Artículo (GOA) */}
+                  {calc.porGoa.length>0 && (
                     <div className={`p-4 rounded-xl border overflow-x-auto ${t.card}`}>
-                      <p className={`text-xs font-black mb-3 ${t.textMain}`}>Top 10 Modelo · Venta $</p>
-                      <ResponsiveContainer width="100%" height={320}>
-                        <BarChart data={calc.topModelo} layout="vertical" margin={{left:10}} barCategoryGap="28%">
+                      <p className={`text-xs font-black mb-3 ${t.textMain}`}>Venta por Grupo de Artículo (GOA){calc.hasInvIniData?' (con Inv. Inicial $)':''}</p>
+                      <ResponsiveContainer width="100%" height={Math.max(200,calc.porGoa.length*28)}>
+                        <BarChart data={calc.porGoa} layout="vertical" margin={{left:10}} barCategoryGap="25%">
                           <CartesianGrid strokeDasharray="3 3" stroke={gridC} horizontal={false}/>
                           <XAxis type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
-                          <YAxis type="category" dataKey="modelo" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={80}/>
-                          <Tooltip content={<ModeloTTip/>} cursor={{fill:cursorFill}}/>
-                          <Bar dataKey="ventaP" name="Venta $" fill="url(#gradRegularH)" radius={[0,6,6,0]} maxBarSize={22}/>
+                          <YAxis type="category" dataKey="name" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={120}/>
+                          <Tooltip content={<TTip/>} cursor={{fill:cursorFill}}/>
+                          {calc.hasInvIniData && <Legend wrapperStyle={{fontSize:10,color:txtC}}/>}
+                          <Bar dataKey="ventaP" name="Venta $" fill="url(#gradRegularH)" radius={[0,6,6,0]} maxBarSize={20}/>
+                          {calc.hasInvIniData && <Bar dataKey="invIni" name="Inv. Inicial $" fill="#f59e0b" radius={[0,6,6,0]} maxBarSize={20}/>}
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
                   )}
-                  {/* Venta por Subcanal */}
-                  {calc.porSubcanal.length>0 && (
-                    <div className={`p-4 rounded-xl border ${t.card}`}>
-                      <p className={`text-xs font-black mb-3 ${t.textMain}`}>Venta por Subcanal</p>
-                      <ResponsiveContainer width="100%" height={320}>
-                        <PieChart>
-                          <Pie data={calc.porSubcanal} dataKey="ventaP" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={100} paddingAngle={2}>
-                            {calc.porSubcanal.map((r,i)=><Cell key={i} fill={VIOLET_SHADES[i%VIOLET_SHADES.length]}/>)}
-                          </Pie>
-                          <Tooltip content={<TTip/>}/>
-                          <Legend wrapperStyle={{fontSize:10,color:txtC}}/>
-                        </PieChart>
+                  {/* Marca */}
+                  {calc.porMarca.length>0 && (
+                    <div className={`p-4 rounded-xl border overflow-x-auto ${t.card}`}>
+                      <p className={`text-xs font-black mb-3 ${t.textMain}`}>Venta por Marca{calc.hasInvIniData?' (con Inv. Inicial $)':''}</p>
+                      <ResponsiveContainer width="100%" height={Math.max(160,calc.porMarca.length*32)}>
+                        <BarChart data={calc.porMarca} layout="vertical" margin={{left:10}} barCategoryGap="30%">
+                          <CartesianGrid strokeDasharray="3 3" stroke={gridC} horizontal={false}/>
+                          <XAxis type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
+                          <YAxis type="category" dataKey="name" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={120}/>
+                          <Tooltip content={<TTip/>} cursor={{fill:cursorFill}}/>
+                          {calc.hasInvIniData && <Legend wrapperStyle={{fontSize:10,color:txtC}}/>}
+                          <Bar dataKey="ventaP" name="Venta $" fill="url(#gradRegularH)" radius={[0,6,6,0]} maxBarSize={22}/>
+                          {calc.hasInvIniData && <Bar dataKey="invIni" name="Inv. Inicial $" fill="#f59e0b" radius={[0,6,6,0]} maxBarSize={22}/>}
+                        </BarChart>
                       </ResponsiveContainer>
                     </div>
                   )}
@@ -1111,6 +1115,21 @@ export default function ModuleEventos(){
                       </ResponsiveContainer>
                     </div>
                   )}
+                  {/* Venta por Subcanal */}
+                  {calc.porSubcanal.length>0 && (
+                    <div className={`p-4 rounded-xl border ${t.card}`}>
+                      <p className={`text-xs font-black mb-3 ${t.textMain}`}>Venta por Subcanal</p>
+                      <ResponsiveContainer width="100%" height={320}>
+                        <PieChart>
+                          <Pie data={calc.porSubcanal} dataKey="ventaP" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={100} paddingAngle={2}>
+                            {calc.porSubcanal.map((r,i)=><Cell key={i} fill={VIOLET_SHADES[i%VIOLET_SHADES.length]}/>)}
+                          </Pie>
+                          <Tooltip content={<TTip/>}/>
+                          <Legend wrapperStyle={{fontSize:10,color:txtC}}/>
+                        </PieChart>
+                      </ResponsiveContainer>
+                    </div>
+                  )}
                   {/* N_Estatus */}
                   {calc.porEstatus.length>0 && (
                     <div className={`p-4 rounded-xl border overflow-x-auto ${t.card}`}>
@@ -1126,65 +1145,45 @@ export default function ModuleEventos(){
                       </ResponsiveContainer>
                     </div>
                   )}
-                  {/* Marca */}
-                  {calc.porMarca.length>0 && (
+                  {/* Top 10 Modelo */}
+                  {calc.topModelo.length>0 && (
                     <div className={`p-4 rounded-xl border overflow-x-auto ${t.card}`}>
-                      <p className={`text-xs font-black mb-3 ${t.textMain}`}>Venta por Marca{calc.hasInvIniData?' (con Inv. Inicial $)':''}</p>
-                      <ResponsiveContainer width="100%" height={Math.max(160,calc.porMarca.length*32)}>
-                        <BarChart data={calc.porMarca} layout="vertical" margin={{left:10}} barCategoryGap="30%">
+                      <p className={`text-xs font-black mb-3 ${t.textMain}`}>Top 10 Modelo · Venta $</p>
+                      <ResponsiveContainer width="100%" height={320}>
+                        <BarChart data={calc.topModelo} layout="vertical" margin={{left:10}} barCategoryGap="28%">
                           <CartesianGrid strokeDasharray="3 3" stroke={gridC} horizontal={false}/>
                           <XAxis type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
-                          <YAxis type="category" dataKey="name" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={120}/>
-                          <Tooltip content={<TTip/>} cursor={{fill:cursorFill}}/>
-                          {calc.hasInvIniData && <Legend wrapperStyle={{fontSize:10,color:txtC}}/>}
+                          <YAxis type="category" dataKey="modelo" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={80}/>
+                          <Tooltip content={<ModeloTTip/>} cursor={{fill:cursorFill}}/>
                           <Bar dataKey="ventaP" name="Venta $" fill="url(#gradRegularH)" radius={[0,6,6,0]} maxBarSize={22}/>
-                          {calc.hasInvIniData && <Bar dataKey="invIni" name="Inv. Inicial $" fill="#f59e0b" radius={[0,6,6,0]} maxBarSize={22}/>}
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
                   )}
-                  {/* Grupo de Artículo (GOA) */}
-                  {calc.porGoa.length>0 && (
-                    <div className={`p-4 rounded-xl border overflow-x-auto lg:col-span-2 ${t.card}`}>
-                      <p className={`text-xs font-black mb-3 ${t.textMain}`}>Venta por Grupo de Artículo (GOA){calc.hasInvIniData?' (con Inv. Inicial $)':''}</p>
-                      <ResponsiveContainer width="100%" height={Math.max(200,calc.porGoa.length*28)}>
-                        <BarChart data={calc.porGoa} layout="vertical" margin={{left:10}} barCategoryGap="25%">
-                          <CartesianGrid strokeDasharray="3 3" stroke={gridC} horizontal={false}/>
-                          <XAxis type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
-                          <YAxis type="category" dataKey="name" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={120}/>
-                          <Tooltip content={<TTip/>} cursor={{fill:cursorFill}}/>
-                          {calc.hasInvIniData && <Legend wrapperStyle={{fontSize:10,color:txtC}}/>}
-                          <Bar dataKey="ventaP" name="Venta $" fill="url(#gradRegularH)" radius={[0,6,6,0]} maxBarSize={20}/>
-                          {calc.hasInvIniData && <Bar dataKey="invIni" name="Inv. Inicial $" fill="#f59e0b" radius={[0,6,6,0]} maxBarSize={20}/>}
-                        </BarChart>
-                      </ResponsiveContainer>
-                    </div>
-                  )}
-                </div>
-
-                {/* Bottom 10 Modelo */}
-                <div className={`p-4 rounded-xl border overflow-x-auto ${t.card}`}>
-                  <p className={`text-xs font-black mb-3 ${t.textMain}`}>Bottom 10 Modelo · Venta $ (con inventario inicial y remanente)</p>
-                  <table className="w-full text-xs">
-                    <thead><tr className={t.textMuted}><th className="text-left pb-2">Modelo</th><th className="text-left pb-2">Marca</th><th className="text-left pb-2">GOA</th>
-                      <th className="text-right pb-2">Venta $</th>{calc.hasLY && <th className="text-right pb-2">vs AA</th>}
-                      <th className="text-right pb-2">Venta U</th><th className="text-right pb-2">ST%</th>
-                      <th className="text-right pb-2">Remanente U</th><th className="text-right pb-2">Remanente $</th></tr></thead>
-                    <tbody>
-                      {calc.bottom10.length===0 ? (<tr><td colSpan={9} className={`py-3 text-center ${t.textMuted}`}>Sin datos</td></tr>) :
-                      calc.bottom10.map(r=>(
-                        <tr key={r.modelo} className={`border-t ${t.border} ${t.textMain}`}>
-                          <td className="py-1.5">{r.modelo}</td>
-                          <td className={t.textMuted}>{r.marca}</td>
-                          <td className={t.textMuted}>{r.goa}</td>
-                          <td className="text-right">{fmtM(r.ventaP)}</td>
-                          {calc.hasLY && <td className="text-right"><DeltaBadge value={r.vsAA}/></td>}
-                          <td className="text-right">{fmt(r.ventaU)}</td><td className="text-right">{fmtP(r.stPct)}</td>
-                          <td className="text-right">{fmt(r.remanente)}</td><td className="text-right">{fmtM(r.montoRemanente)}</td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
+                  {/* Bottom 10 Modelo */}
+                  <div className={`p-4 rounded-xl border overflow-x-auto ${t.card}`}>
+                    <p className={`text-xs font-black mb-3 ${t.textMain}`}>Bottom 10 Modelo · Venta $ (con inventario inicial y remanente)</p>
+                    <table className="w-full text-xs">
+                      <thead><tr className={t.textMuted}><th className="text-left pb-2">Modelo</th><th className="text-left pb-2">Marca</th><th className="text-left pb-2">GOA</th>
+                        <th className="text-right pb-2">Venta $</th>{calc.hasLY && <th className="text-right pb-2">vs AA</th>}
+                        <th className="text-right pb-2">Venta U</th><th className="text-right pb-2">ST%</th>
+                        <th className="text-right pb-2">Remanente U</th><th className="text-right pb-2">Remanente $</th></tr></thead>
+                      <tbody>
+                        {calc.bottom10.length===0 ? (<tr><td colSpan={9} className={`py-3 text-center ${t.textMuted}`}>Sin datos</td></tr>) :
+                        calc.bottom10.map(r=>(
+                          <tr key={r.modelo} className={`border-t ${t.border} ${t.textMain}`}>
+                            <td className="py-1.5">{r.modelo}</td>
+                            <td className={t.textMuted}>{r.marca}</td>
+                            <td className={t.textMuted}>{r.goa}</td>
+                            <td className="text-right">{fmtM(r.ventaP)}</td>
+                            {calc.hasLY && <td className="text-right"><DeltaBadge value={r.vsAA}/></td>}
+                            <td className="text-right">{fmt(r.ventaU)}</td><td className="text-right">{fmtP(r.stPct)}</td>
+                            <td className="text-right">{fmt(r.remanente)}</td><td className="text-right">{fmtM(r.montoRemanente)}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
                 </div>
               </>
             )}
