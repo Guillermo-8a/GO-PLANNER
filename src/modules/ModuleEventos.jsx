@@ -410,9 +410,13 @@ export default function ModuleEventos(){
     // Se agrupa por (GOA, Marca) y se toma la fila con fecha más antigua que traiga el dato, no el máximo
     // (evita mezclar/duplicar niveles de distintos días). INV INI/INV INI AA son $ escalados ×1000 como
     // Vtas.$/Descuentos; OH/OH AA son unidades y no se escalan.
+    // OJO: las celdas en blanco llegan aquí ya convertidas a 0 (no null/undefined), así que el filtro de
+    // "trae dato" tiene que ser por valor realmente distinto de cero, no por null — si no, la fila "más
+    // antigua" que se agarra por SKU/GOA+Marca casi siempre es una de las miles de filas en blanco (=0),
+    // no la única fila real con el inventario, y todo sale en $0.
     const invIniByGoaMarca={};
     salesRows.forEach(r=>{
-      if(r.invIni==null&&r.oh==null&&r.invIniAA==null&&r.ohAA==null) return;
+      if(!r.invIni&&!r.oh&&!r.invIniAA&&!r.ohAA) return;
       const k=`${r.goa}|${r.marca}`;
       const e=invIniByGoaMarca[k];
       if(!e || (r.fecha && (!e.fecha || r.fecha<e.fecha))){
