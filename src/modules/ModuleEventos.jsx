@@ -404,27 +404,30 @@ export default function ModuleEventos(){
     const anoAnterior=years.length>1?years[1]:(anoActual?anoActual-1:null);
     const hasLY=anoAnterior!=null && years.includes(anoAnterior);
     // Inventario inicial desde las columnas del propio archivo de ventas (INV INI/OH/INV INI AA/OH AA).
-    // OJO: este dato NO viene a nivel SKU — es un total por GOA+Marca repetido/parcial en las filas de venta
-    // (a diferencia del snapshot formal por xlsx, que sí es por SKU y alimenta la clasificación Regular/
-    // Descuento/Depreciado — esa sigue intacta, este bloque es independiente y no la toca).
-    // Se agrupa por (GOA, Marca) y se toma la fila con fecha más antigua que traiga el dato, no el máximo
-    // (evita mezclar/duplicar niveles de distintos días). INV INI/INV INI AA son $ escalados ×1000 como
-    // Vtas.$/Descuentos; OH/OH AA son unidades y no se escalan.
-    // OJO: las celdas en blanco llegan aquí ya convertidas a 0 (no null/undefined), así que el filtro de
+    // OJO: este dato NO viene a nivel SKU — es un total por Sección+GOA+Marca repetido/parcial en las filas
+    // de venta (a diferencia del snapshot formal por xlsx, que sí es por SKU y alimenta la clasificación
+    // Regular/Descuento/Depreciado — esa sigue intacta, este bloque es independiente y no la toca).
+    // OJO 2: el nombre de GOA se repite entre Secciones (p.ej. "BOTA", "SANDALIA", "CHANCLA" existen igual
+    // en Zapatos Hombre/Mujer/Niño/Niña) — agrupar solo por (GOA, Marca) mezclaba/perdía inventario de
+    // distintas Secciones bajo la misma llave. Se agrupa por (Sección, GOA, Marca).
+    // Se toma la fila con fecha más antigua que traiga el dato, no el máximo (evita mezclar niveles de
+    // distintos días). INV INI/INV INI AA son $ escalados ×1000 como Vtas.$/Descuentos; OH/OH AA son
+    // unidades y no se escalan.
+    // OJO 3: las celdas en blanco llegan aquí ya convertidas a 0 (no null/undefined), así que el filtro de
     // "trae dato" tiene que ser por valor realmente distinto de cero, no por null — si no, la fila "más
-    // antigua" que se agarra por SKU/GOA+Marca casi siempre es una de las miles de filas en blanco (=0),
-    // no la única fila real con el inventario, y todo sale en $0.
-    const invIniByGoaMarca={};
+    // antigua" que se agarra casi siempre es una de las miles de filas en blanco (=0), no la única fila
+    // real con el inventario, y todo sale en $0.
+    const invIniBySeccionGoaMarca={};
     salesRows.forEach(r=>{
       if(!r.invIni&&!r.oh&&!r.invIniAA&&!r.ohAA) return;
-      const k=`${r.goa}|${r.marca}`;
-      const e=invIniByGoaMarca[k];
+      const k=`${r.seccion}|${r.goa}|${r.marca}`;
+      const e=invIniBySeccionGoaMarca[k];
       if(!e || (r.fecha && (!e.fecha || r.fecha<e.fecha))){
-        invIniByGoaMarca[k]={marca:r.marca,goa:r.goa,fecha:r.fecha||null,
+        invIniBySeccionGoaMarca[k]={seccion:r.seccion,marca:r.marca,goa:r.goa,fecha:r.fecha||null,
           oh:r.oh||0, invIni:(r.invIni||0)*1000, ohAA:r.ohAA||0, invIniAA:(r.invIniAA||0)*1000};
       }
     });
-    const hasInvIniData=Object.keys(invIniByGoaMarca).length>0;
+    const hasInvIniData=Object.keys(invIniBySeccionGoaMarca).length>0;
     const hasRealSnapshot=snapRows.length>0;
     const hasSnapshot=hasRealSnapshot||hasInvIniData; // gate de visibilidad de la tab Desglose
     // El snapshot (OH y Montos) puede traer 2 bloques apilados por año (columna "Año"). Si existe, el snapshot
@@ -485,9 +488,6 @@ export default function ModuleEventos(){
       if(!a.seccion&&r.seccion) a.seccion=r.seccion; if(!a.marca&&r.marca) a.marca=r.marca;
       if(!a.goa&&r.goa) a.goa=r.goa; if(!a.norma&&r.norma) a.norma=r.norma; if(!a.estatus&&r.estatus) a.estatus=r.estatus;
     });
-    // GOA → Sección (para poder cruzar el filtro de Sección con invIniByGoaMarca, que no trae Sección propia).
-    const goaSeccion={};
-    salesRows.forEach(r=>{ if(r.goa&&r.seccion&&!goaSeccion[r.goa]) goaSeccion[r.goa]=r.seccion; });
     const uniq=arr=>[...new Set(arr.filter(Boolean))].sort();
     const opciones={
       seccion: uniq([...Object.values(snapBySku).map(s=>s.seccion),...salesRows.map(r=>r.seccion)]),
@@ -499,14 +499,14 @@ export default function ModuleEventos(){
       clasif: uniq(Object.values(clasifBySku)),
     };
     return { snapBySku, clasifBySku, clasifBySkuLY, opciones, anoActual, anoAnterior, hasLY, salesAttrBySku,
-      hasSnapshot, hasRealSnapshot, hasInvIniData, invIniByGoaMarca, goaSeccion,
+      hasSnapshot, hasRealSnapshot, hasInvIniData, invIniBySeccionGoaMarca,
       nSkuSnap:Object.keys(snapBySku).length, nSkuVenta:Object.keys(salesBySkuFull).length };
   },[snapRows,salesRows]);
 
   // ── Cálculos filtrados — rápido, solo agrupa lo ya unido ──
   const calc=useMemo(()=>{
     if(!active) return null;
-    const {snapBySku,clasifBySku,clasifBySkuLY,opciones,salesAttrBySku,hasSnapshot,hasRealSnapshot,hasInvIniData,invIniByGoaMarca,goaSeccion}=joined;
+    const {snapBySku,clasifBySku,clasifBySkuLY,opciones,salesAttrBySku,hasSnapshot,hasRealSnapshot,hasInvIniData,invIniBySeccionGoaMarca}=joined;
     const passSnap=sku=>{
       const s=snapBySku[sku], a=salesAttrBySku[sku];
       const v=f=>filtros[f].length===0 || filtros[f].includes(s?.[f]||a?.[f]||'');
@@ -664,11 +664,11 @@ export default function ModuleEventos(){
     const treeMarca=buildTree('marca');
     const treeGoa=buildTree('goa');
 
-    // ── Inventario inicial TY vs AA por GOA/Marca (desde columnas INV INI/OH del propio archivo de ventas) ──
-    // Este dato viene a nivel GOA+Marca, no por SKU/Subcanal/Estatus/Norma, así que solo se puede cruzar con
-    // Sección (vía GOA→Sección), Marca y GOA de los filtros — hasta donde el dato alcanza.
-    const invIniRows=Object.values(invIniByGoaMarca).filter(r=>
-      (filtros.seccion.length===0||filtros.seccion.includes(goaSeccion[r.goa]||'')) &&
+    // ── Inventario inicial TY vs AA por Sección/GOA/Marca (desde columnas INV INI/OH del propio archivo) ──
+    // Este dato viene a nivel Sección+GOA+Marca, no por SKU/Subcanal/Estatus/Norma, así que solo se puede
+    // cruzar con Sección, Marca y GOA de los filtros — hasta donde el dato alcanza.
+    const invIniRows=Object.values(invIniBySeccionGoaMarca).filter(r=>
+      (filtros.seccion.length===0||filtros.seccion.includes(r.seccion)) &&
       (filtros.marca.length===0||filtros.marca.includes(r.marca)) &&
       (filtros.goa.length===0||filtros.goa.includes(r.goa)));
     const invIniGroup=key=>{ const m={};
