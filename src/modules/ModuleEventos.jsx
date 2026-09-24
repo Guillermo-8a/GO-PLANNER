@@ -105,13 +105,17 @@ const parseSnapshotXLSX = async file => {
   const salesSheetName = wb.SheetNames.find(n=>n.trim()==='Vtas_Evento');
   if(salesSheetName){
     const vrows = XLSX.utils.sheet_to_json(wb.Sheets[salesSheetName],{header:1,defval:'',raw:true});
-    const norm=s=>String(s||'').trim();
+    const norm=s=>String(s||'').trim().replace(/\s+/g,' ');
     const vhead=(vrows[0]||[]).map(norm);
     const vidx=(...names)=>{ for(const n of names){ const i=vhead.indexOf(norm(n)); if(i>=0) return i; } return -1; };
     const iFecha=vidx('Día/Periodo'), iSeccion=vidx('N_Seccion'), iSubcanal=vidx('Subcanal'),
       iGoa=vidx('N_GOA'), iModelo=vidx('Modelo Proveedor'), iSku=vidx('Artículo'), iMarca=vidx('Marca'),
       iEstatus=vidx('N_Estatus'), iNorma=vidx('Norma de Aprovisionamiento'),
-      iVentaU=vidx('Vtas. U'), iVentaP=vidx('Vtas. $'), iGM=vidx('GM'), iDescuento=vidx('Total Descuentos');
+      iVentaU=vidx('Vtas. U'), iVentaP=vidx('Vtas. $'), iGM=vidx('GM'), iDescuento=vidx('Total Descuentos'),
+      // Inventario inicial por SKU: TY = INV INI ($) + OH (U); AA = INV INI AA ($) + OH AA (U).
+      // Cambian fila a fila (no son constantes por SKU) y vienen en crudo aquí; el escalado ×1000 de los $
+      // y la elección de "qué fila usar" (la de fecha más antigua) se resuelven en el useMemo `joined`.
+      iInvIni=vidx('INV INI'), iOh=vidx('OH'), iInvIniAA=vidx('INV INI AA'), iOhAA=vidx('OH AA');
     salesRows = iSku<0 ? [] : (()=>{ const out2=[];
       for(let i=1;i<vrows.length;i++){ const r=vrows[i]; if(!r||r.every(c=>c===''||c==null)) continue;
         const sku=String(r[iSku]||'').trim(); if(!sku) continue;
@@ -124,7 +128,9 @@ const parseSnapshotXLSX = async file => {
           estatus:iEstatus>=0?String(r[iEstatus]||'').trim().toUpperCase():'',
           norma:iNorma>=0?String(r[iNorma]||'').trim().toUpperCase():'',
           ventaU:iVentaU>=0?(Number(r[iVentaU])||0):0, ventaP:iVentaP>=0?(Number(r[iVentaP])||0)*1000:0,
-          utilidad:iGM>=0?(Number(r[iGM])||0):0, totalDescuento:iDescuento>=0?(Number(r[iDescuento])||0)*1000:0 });
+          utilidad:iGM>=0?(Number(r[iGM])||0):0, totalDescuento:iDescuento>=0?(Number(r[iDescuento])||0)*1000:0,
+          invIni:iInvIni>=0?(Number(r[iInvIni])||0):null, oh:iOh>=0?(Number(r[iOh])||0):null,
+          invIniAA:iInvIniAA>=0?(Number(r[iInvIniAA])||0):null, ohAA:iOhAA>=0?(Number(r[iOhAA])||0):null });
       }
       return out2; })();
   }
@@ -145,7 +151,10 @@ const parseSalesCSV = text => {
     const iFecha=vidx('DIA_PERIODO','FECHA'), iSeccion=vidx('N_SECCION','SECCION'), iSubcanal=vidx('SUBCANAL'),
       iGoa=vidx('N_GOA','GOA','GRUPO_ARTICULOS'), iModelo=vidx('MODELO_PROVEEDOR','MODELO'), iMarca=vidx('MARCA'),
       iEstatus=vidx('N_ESTATUS'), iNorma=vidx('NORMA_DE_APROVISIONAMIENTO'),
-      iVentaU=vidx('VTAS_U'), iGM=vidx('GM'), iDescuento=vidx('TOTAL_DESCUENTOS');
+      iVentaU=vidx('VTAS_U'), iGM=vidx('GM'), iDescuento=vidx('TOTAL_DESCUENTOS'),
+      // Inventario inicial por SKU: TY = INV_INI ($) + OH (U); AA = INV_INI_AA ($) + OH_AA (U). Crudo aquí,
+      // igual que en el xlsx (ver comentario arriba): escalado y selección de fila se hacen en `joined`.
+      iInvIni=vidx('INV_INI'), iOh=vidx('OH'), iInvIniAA=vidx('INV_INI_AA'), iOhAA=vidx('OH_AA');
     const out2=[];
     for(let i=1;i<rows.length;i++){ const r=rows[i]; if(!r||r.every(c=>!c)) continue;
       const sku=(r[iSku]||'').trim(); if(!sku) continue;
@@ -158,7 +167,9 @@ const parseSalesCSV = text => {
         estatus:iEstatus>=0?(r[iEstatus]||'').trim().toUpperCase():'',
         norma:iNorma>=0?(r[iNorma]||'').trim().toUpperCase():'',
         ventaU:iVentaU>=0?num(r[iVentaU]):0, ventaP:num(r[iVtas])*1000,
-        utilidad:iGM>=0?num(r[iGM]):0, totalDescuento:iDescuento>=0?num(r[iDescuento])*1000:0 });
+        utilidad:iGM>=0?num(r[iGM]):0, totalDescuento:iDescuento>=0?num(r[iDescuento])*1000:0,
+        invIni:iInvIni>=0?num(r[iInvIni]):null, oh:iOh>=0?num(r[iOh]):null,
+        invIniAA:iInvIniAA>=0?num(r[iInvIniAA]):null, ohAA:iOhAA>=0?num(r[iOhAA]):null });
     }
     return {rows:out2,error:null};
   }
@@ -343,8 +354,6 @@ export default function ModuleEventos(){
     }).catch(()=>{});
   },[activeId]);
 
-  useEffect(()=>{ if(snapRows.length===0 && reportTab==='desglose') setReportTab('resumen'); },[snapRows.length,reportTab]);
-
   const uploadSnapshot=e=>{
     const file=e.target.files[0]; if(!file) return;
     if(snapRows.length>0 && !window.confirm('Ya existe un snapshot de arranque para este evento (inmutable por diseño). Subir uno nuevo lo REEMPLAZARÁ. ¿Continuar?')){
@@ -394,6 +403,29 @@ export default function ModuleEventos(){
     const anoActual=years[0]??null;
     const anoAnterior=years.length>1?years[1]:(anoActual?anoActual-1:null);
     const hasLY=anoAnterior!=null && years.includes(anoAnterior);
+    // Inventario inicial por SKU desde las columnas del propio archivo de ventas (INV INI/OH/INV INI AA/OH AA).
+    // Independiente del snapshot formal: NO alimenta la clasificación Regular/Descuento/Depreciado (esa necesita
+    // precio de lista + letra de rebaja, que este dato no trae — invIni/oh es costo de inventario, no precio de
+    // venta, así que usarlo para adivinar "descuento" saldría mal). Solo sirve para ver cuánto inventario $/U
+    // había al iniciar la temporada, TY vs LY, incluso en eventos que solo suben el CSV de ventas.
+    // OH/INV INI NO son constantes por SKU: cambian de fila en fila (van bajando conforme se vende), y la
+    // mayoría de las filas vienen en blanco. Para "inventario inicial" se toma la fila con fecha más antigua
+    // que traiga el dato (la primera lectura del evento), nunca el máximo (eso mezclaba niveles de distintos
+    // días y sobrestimaba el total). INV INI/INV INI AA son $ con la misma escala ×1000 que Vtas.$/Descuentos;
+    // OH/OH AA son unidades y no se escalan.
+    const invIniBySku={};
+    salesRows.forEach(r=>{
+      if(r.invIni==null&&r.oh==null&&r.invIniAA==null&&r.ohAA==null) return;
+      const k=r.sku;
+      const e=invIniBySku[k];
+      if(!e || (r.fecha && (!e.fecha || r.fecha<e.fecha))){
+        invIniBySku[k]={sku:k,modelo:r.modelo,marca:r.marca,goa:r.goa,seccion:r.seccion,fecha:r.fecha||null,
+          oh:r.oh||0, invIni:(r.invIni||0)*1000, ohAA:r.ohAA||0, invIniAA:(r.invIniAA||0)*1000};
+      }
+    });
+    const hasInvIniData=Object.keys(invIniBySku).length>0;
+    const hasRealSnapshot=snapRows.length>0;
+    const hasSnapshot=hasRealSnapshot||hasInvIniData; // gate de visibilidad de la tab Desglose
     // El snapshot (OH y Montos) puede traer 2 bloques apilados por año (columna "Año"). Si existe, el snapshot
     // "de hoy" usa solo el bloque del año actual, y hay un bloque aparte para el año anterior (misma letra/rebaja
     // que tenía ESE año). Archivos viejos sin columna "Año" se tratan como un solo bloque (comportamiento previo).
@@ -443,6 +475,15 @@ export default function ModuleEventos(){
     const clasifBySkuLY = (hasLY && hasAnoCol && Object.keys(snapBySkuLY).length>0)
       ? buildClasif(snapBySkuLY, salesBySkuFullLY)
       : clasifBySku;
+    // Atributos por SKU tomados de las propias filas de venta (Sección/Marca/GOA/Norma/Estatus ya vienen en
+    // Vtas_Evento/CSV). Sirven de respaldo para filtrar cuando no hay snapshot (o el SKU no está en él): sin esto,
+    // los filtros (salvo Subcanal, que sí lee directo de la fila) dejaban todo en $0 en eventos solo-CSV.
+    const salesAttrBySku={};
+    salesRows.forEach(r=>{ const k=r.sku; if(!salesAttrBySku[k]) salesAttrBySku[k]={seccion:'',marca:'',goa:'',norma:'',estatus:''};
+      const a=salesAttrBySku[k];
+      if(!a.seccion&&r.seccion) a.seccion=r.seccion; if(!a.marca&&r.marca) a.marca=r.marca;
+      if(!a.goa&&r.goa) a.goa=r.goa; if(!a.norma&&r.norma) a.norma=r.norma; if(!a.estatus&&r.estatus) a.estatus=r.estatus;
+    });
     const uniq=arr=>[...new Set(arr.filter(Boolean))].sort();
     const opciones={
       seccion: uniq([...Object.values(snapBySku).map(s=>s.seccion),...salesRows.map(r=>r.seccion)]),
@@ -453,17 +494,18 @@ export default function ModuleEventos(){
       subcanal: uniq(salesRows.map(r=>r.subcanal)),
       clasif: uniq(Object.values(clasifBySku)),
     };
-    return { snapBySku, clasifBySku, clasifBySkuLY, opciones, anoActual, anoAnterior, hasLY,
+    return { snapBySku, clasifBySku, clasifBySkuLY, opciones, anoActual, anoAnterior, hasLY, salesAttrBySku,
+      hasSnapshot, hasRealSnapshot, hasInvIniData, invIniBySku,
       nSkuSnap:Object.keys(snapBySku).length, nSkuVenta:Object.keys(salesBySkuFull).length };
   },[snapRows,salesRows]);
 
   // ── Cálculos filtrados — rápido, solo agrupa lo ya unido ──
   const calc=useMemo(()=>{
     if(!active) return null;
-    const {snapBySku,clasifBySku,clasifBySkuLY,opciones}=joined;
+    const {snapBySku,clasifBySku,clasifBySkuLY,opciones,salesAttrBySku,hasSnapshot,hasRealSnapshot,hasInvIniData,invIniBySku}=joined;
     const passSnap=sku=>{
-      const s=snapBySku[sku];
-      const v=f=>filtros[f].length===0 || filtros[f].includes(s?.[f]||'');
+      const s=snapBySku[sku], a=salesAttrBySku[sku];
+      const v=f=>filtros[f].length===0 || filtros[f].includes(s?.[f]||a?.[f]||'');
       const passClasif=filtros.clasif.length===0 || filtros.clasif.includes(clasifBySku[sku]||'sin_snapshot');
       return v('seccion')&&v('marca')&&v('goa')&&v('norma')&&v('estatus')&&passClasif;
     };
@@ -573,7 +615,7 @@ export default function ModuleEventos(){
         .sort((a,b)=>b.ventaP-a.ventaP); };
     const porSubcanal=groupCombined('subcanal');
     const porEstatus=groupCombined('estatus');
-    const porNorma=groupCombined('norma');
+    const porMarca=groupCombined('marca').slice(0,12);
     const porGoa=groupCombined('goa').slice(0,12);
     // Deltas vs LY — usa la data del propio archivo si trae año anterior; si no, cae a los campos manuales del evento
     const deltaVentaP = hasLY ? total.vsAA : (active.lyVentaP ? (total.ventaP-active.lyVentaP)/active.lyVentaP*100 : null);
@@ -610,11 +652,26 @@ export default function ModuleEventos(){
     const treeMarca=buildTree('marca');
     const treeGoa=buildTree('goa');
 
+    // ── Inventario inicial TY vs AA por GOA/Marca (desde columnas INV INI/OH del propio archivo de ventas) ──
+    // Respeta los mismos filtros (passSnap) que el resto del módulo. No depende de clasificación.
+    const invIniRows=Object.values(invIniBySku).filter(r=>passSnap(r.sku));
+    const invIniGroup=key=>{ const m={};
+      invIniRows.forEach(r=>{ const k=r[key]||'SIN DATO'; if(!m[k]) m[k]={name:k,oh:0,invIni:0,ohAA:0,invIniAA:0};
+        m[k].oh+=r.oh; m[k].invIni+=r.invIni; m[k].ohAA+=r.ohAA; m[k].invIniAA+=r.invIniAA; });
+      return Object.values(m).map(g=>({...g, vsAA:pctVs(g.invIni,g.invIniAA), vsAA_u:pctVs(g.oh,g.ohAA)}))
+        .filter(g=>g.oh>0||g.invIni>0||g.ohAA>0||g.invIniAA>0).sort((a,b)=>b.invIni-a.invIni); };
+    const invIniPorGoa=invIniGroup('goa'), invIniPorMarca=invIniGroup('marca');
+    const invIniTotal=invIniRows.reduce((acc,r)=>{ acc.oh+=r.oh; acc.invIni+=r.invIni; acc.ohAA+=r.ohAA; acc.invIniAA+=r.invIniAA; return acc; },{oh:0,invIni:0,ohAA:0,invIniAA:0});
+    invIniTotal.vsAA=pctVs(invIniTotal.invIni,invIniTotal.invIniAA); invIniTotal.vsAA_u=pctVs(invIniTotal.oh,invIniTotal.ohAA);
+
     return { total, regular, descuento, depreciado, categorias, topModelo, bottom10, sinSnapshot, fMin, fMax,
       deltaVentaP, deltaMargen, deltaST, nSkuSnap:joined.nSkuSnap, nSkuVenta:joined.nSkuVenta,
-      grand, treeMarca, treeGoa, porDia, porSubcanal, porEstatus, porNorma, porGoa, opciones,
-      hasLY, anoActual, anoAnterior };
+      grand, treeMarca, treeGoa, porDia, porSubcanal, porEstatus, porMarca, porGoa, opciones,
+      hasLY, anoActual, anoAnterior, hasSnapshot, hasRealSnapshot, hasInvIniData, invIniPorGoa, invIniPorMarca, invIniTotal };
   },[active,joined,salesRows,filtros]);
+
+  // Si no hay snapshot (ni real ni sintético desde inv. inicial del CSV/Vtas_Evento) y estaban en Desglose, regresa a Resumen.
+  useEffect(()=>{ if(!calc?.hasSnapshot && reportTab==='desglose') setReportTab('resumen'); },[calc?.hasSnapshot,reportTab]);
 
   const toggleExpand=key=>setExpanded(s=>{ const n=new Set(s); n.has(key)?n.delete(key):n.add(key); return n; });
   const tree = groupBy==='marca' ? calc?.treeMarca : calc?.treeGoa;
@@ -825,7 +882,7 @@ export default function ModuleEventos(){
           <>
             {/* Tabs */}
             <div className="flex gap-2 no-print">
-              {[['resumen','Resumen Ejecutivo'],...(snapRows.length>0?[['desglose','Regular · Descuento · Depreciado']]:[])].map(([k,lbl])=>(
+              {[['resumen','Resumen Ejecutivo'],...(calc?.hasSnapshot?[['desglose',calc.hasRealSnapshot?'Regular · Descuento · Depreciado':'Inventario Inicial']]:[])].map(([k,lbl])=>(
                 <button key={k} onClick={()=>setReportTab(k)}
                   className={`px-4 py-2 rounded-lg text-xs font-bold border transition-all ${reportTab===k?t.btnPrimary:t.btnGhost}`}>{lbl}</button>
               ))}
@@ -890,8 +947,8 @@ export default function ModuleEventos(){
                   <KpiCard label="Remanente U" value={fmt(calc.total.remanente)} t={t} isDark={isDark}/>
                 </div>
 
-                {/* Regular / Descuento / Depreciado — solo si hay snapshot (sin él, la clasificación no existe) */}
-                {snapRows.length>0 && (
+                {/* Regular / Descuento / Depreciado — solo con snapshot REAL (sin él, la clasificación no es confiable) */}
+                {calc.hasRealSnapshot && (
                 <div className={`p-4 rounded-xl border overflow-x-auto ${t.card}`}>
                   <p className={`text-xs font-black mb-3 ${t.textMain}`}>Regular · Descuento · Depreciado</p>
                   <table className="w-full text-xs">
@@ -989,7 +1046,7 @@ export default function ModuleEventos(){
                   {/* Desempeño por día */}
                   {calc.porDia.length>0 && (
                     <div className={`p-4 rounded-xl border overflow-x-auto lg:col-span-2 ${t.card}`}>
-                      <p className={`text-xs font-black mb-3 ${t.textMain}`}>Desempeño por día — {snapRows.length>0?'venta por clasificación y margen %':'venta total y margen %'}{calc.hasLY?' (línea punteada = AA)':''}</p>
+                      <p className={`text-xs font-black mb-3 ${t.textMain}`}>Desempeño por día — {calc.hasRealSnapshot?'venta por clasificación y margen %':'venta total y margen %'}{calc.hasLY?' (línea punteada = AA)':''}</p>
                       <ResponsiveContainer width="100%" height={280}>
                         <ComposedChart data={calc.porDia} margin={{top:10}} barCategoryGap="20%">
                           <CartesianGrid strokeDasharray="3 3" stroke={gridC} vertical={false}/>
@@ -998,7 +1055,7 @@ export default function ModuleEventos(){
                           <YAxis yAxisId="der" orientation="right" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>v.toFixed(0)+'%'}/>
                           <Tooltip content={<DiaTTip/>} cursor={{fill:cursorFill}}/>
                           <Legend wrapperStyle={{fontSize:10,color:txtC}}/>
-                          {snapRows.length>0 ? (<>
+                          {calc.hasRealSnapshot ? (<>
                             <Bar yAxisId="izq" dataKey="regular" stackId="v" name="Regular" fill="url(#gradRegularV)"/>
                             <Bar yAxisId="izq" dataKey="descuento" stackId="v" name="Descuento" fill="url(#gradDescuentoV)"/>
                             <Bar yAxisId="izq" dataKey="depreciado" stackId="v" name="Depreciado" fill="url(#gradDepreciadoV)" radius={[6,6,0,0]}/>
@@ -1026,12 +1083,12 @@ export default function ModuleEventos(){
                       </ResponsiveContainer>
                     </div>
                   )}
-                  {/* Norma de Aprovisionamiento */}
-                  {calc.porNorma.length>0 && (
+                  {/* Marca */}
+                  {calc.porMarca.length>0 && (
                     <div className={`p-4 rounded-xl border overflow-x-auto ${t.card}`}>
-                      <p className={`text-xs font-black mb-3 ${t.textMain}`}>Venta por Norma de Aprovisionamiento</p>
-                      <ResponsiveContainer width="100%" height={Math.max(160,calc.porNorma.length*32)}>
-                        <BarChart data={calc.porNorma} layout="vertical" margin={{left:10}} barCategoryGap="30%">
+                      <p className={`text-xs font-black mb-3 ${t.textMain}`}>Venta por Marca</p>
+                      <ResponsiveContainer width="100%" height={Math.max(160,calc.porMarca.length*32)}>
+                        <BarChart data={calc.porMarca} layout="vertical" margin={{left:10}} barCategoryGap="30%">
                           <CartesianGrid strokeDasharray="3 3" stroke={gridC} horizontal={false}/>
                           <XAxis type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
                           <YAxis type="category" dataKey="name" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={120}/>
@@ -1087,6 +1144,7 @@ export default function ModuleEventos(){
 
             {reportTab==='desglose' && calc && (
               <div className={`p-4 rounded-xl border overflow-x-auto ${t.card}`}>
+                {calc.hasRealSnapshot ? (<>
                 <div className="flex items-center justify-between mb-3 no-print">
                   <p className={`text-xs font-black ${t.textMain}`}>Valor de inventario por clasificación — antes (snapshot) vs actual</p>
                   <div className="flex gap-1">
@@ -1179,6 +1237,44 @@ export default function ModuleEventos(){
                   </tfoot>
                 </table>
                 <p className={`text-[10px] mt-3 ${t.textMuted}`}>Click en una sección para desplegar por {groupBy==='marca'?'marca':'GOA'}. "Depreciado" = ya está en liquidación o pronto a estarlo (permanente). "Descuento" = letra temporal (MS) que regresa a su precio después del evento, o venta por debajo de lista sin letra formal.</p>
+                </>) : (<>
+                {/* Sin snapshot formal (sólo CSV/Vtas_Evento con columnas INV INI/OH): no hay letra de rebaja para
+                    clasificar Regular/Descuento/Depreciado, pero sí inventario inicial $/U por SKU (TY vs AA) */}
+                <div className="flex items-center justify-between mb-3 no-print">
+                  <p className={`text-xs font-black ${t.textMain}`}>Inventario inicial (TY vs AA) — desde columnas INV INI / OH del archivo de ventas</p>
+                  <div className="flex gap-1">
+                    {[['marca','Marca'],['goa','GOA']].map(([k,lbl])=>(
+                      <button key={k} onClick={()=>setGroupBy(k)} className={`px-3 py-1 rounded-lg text-[10px] font-bold border ${groupBy===k?t.btnPrimary:t.btnGhost}`}>{lbl}</button>
+                    ))}
+                  </div>
+                </div>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+                  <KpiCard label="Inv. Inicial $" value={fmtM(calc.invIniTotal.invIni)} delta={calc.invIniTotal.vsAA} t={t} isDark={isDark}/>
+                  <KpiCard label="Inv. Inicial U" value={fmt(calc.invIniTotal.oh)} delta={calc.invIniTotal.vsAA_u} t={t} isDark={isDark}/>
+                  <KpiCard label="Inv. Inicial $ AA" value={fmtM(calc.invIniTotal.invIniAA)} t={t} isDark={isDark}/>
+                  <KpiCard label="Inv. Inicial U AA" value={fmt(calc.invIniTotal.ohAA)} t={t} isDark={isDark}/>
+                </div>
+                <table className="w-full text-xs">
+                  <thead><tr className={t.textMuted}>
+                    <th className="text-left pb-2">{groupBy==='marca'?'Marca':'GOA'}</th>
+                    <th className="text-right pb-2">Inv. Inicial $</th><th className="text-right pb-2">vs AA</th>
+                    <th className="text-right pb-2">Inv. Inicial U</th><th className="text-right pb-2">vs AA</th>
+                  </tr></thead>
+                  <tbody>
+                    {(groupBy==='marca'?calc.invIniPorMarca:calc.invIniPorGoa).map(r=>(
+                      <tr key={r.name} className={`border-t ${t.border} ${t.textMain}`}>
+                        <td className="py-2">{r.name}</td>
+                        <td className="text-right">{fmtM(r.invIni)}</td><td className="text-right"><DeltaBadge value={r.vsAA}/></td>
+                        <td className="text-right">{fmt(r.oh)}</td><td className="text-right"><DeltaBadge value={r.vsAA_u}/></td>
+                      </tr>
+                    ))}
+                    {(groupBy==='marca'?calc.invIniPorMarca:calc.invIniPorGoa).length===0 && (
+                      <tr><td colSpan={5} className={`py-6 text-center ${t.textMuted}`}>Sin datos</td></tr>
+                    )}
+                  </tbody>
+                </table>
+                <p className={`text-[10px] mt-3 ${t.textMuted}`}>Sin snapshot ("OH y Montos") no hay letra de rebaja para separar Regular/Descuento/Depreciado — sube el snapshot para ese desglose. Este inventario inicial sale de las columnas agregadas al archivo de ventas.</p>
+                </>)}
               </div>
             )}
           </>
