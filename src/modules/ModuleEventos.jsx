@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ComposedChart, Line, PieChart, Pie, Legend } from 'recharts';
+import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ComposedChart, Line, PieChart, Pie, Legend, ReferenceLine } from 'recharts';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import * as XLSX from 'xlsx';
@@ -481,6 +481,9 @@ export default function ModuleEventos(){
       if(!a.seccion&&r.seccion) a.seccion=r.seccion; if(!a.marca&&r.marca) a.marca=r.marca;
       if(!a.goa&&r.goa) a.goa=r.goa; if(!a.norma&&r.norma) a.norma=r.norma; if(!a.estatus&&r.estatus) a.estatus=r.estatus;
     });
+    // GOA → Sección (para poder cruzar el filtro de Sección con invIniByGoaMarca, que no trae Sección propia).
+    const goaSeccion={};
+    salesRows.forEach(r=>{ if(r.goa&&r.seccion&&!goaSeccion[r.goa]) goaSeccion[r.goa]=r.seccion; });
     const uniq=arr=>[...new Set(arr.filter(Boolean))].sort();
     const opciones={
       seccion: uniq([...Object.values(snapBySku).map(s=>s.seccion),...salesRows.map(r=>r.seccion)]),
@@ -492,14 +495,14 @@ export default function ModuleEventos(){
       clasif: uniq(Object.values(clasifBySku)),
     };
     return { snapBySku, clasifBySku, clasifBySkuLY, opciones, anoActual, anoAnterior, hasLY, salesAttrBySku,
-      hasSnapshot, hasRealSnapshot, hasInvIniData, invIniByGoaMarca,
+      hasSnapshot, hasRealSnapshot, hasInvIniData, invIniByGoaMarca, goaSeccion,
       nSkuSnap:Object.keys(snapBySku).length, nSkuVenta:Object.keys(salesBySkuFull).length };
   },[snapRows,salesRows]);
 
   // ── Cálculos filtrados — rápido, solo agrupa lo ya unido ──
   const calc=useMemo(()=>{
     if(!active) return null;
-    const {snapBySku,clasifBySku,clasifBySkuLY,opciones,salesAttrBySku,hasSnapshot,hasRealSnapshot,hasInvIniData,invIniByGoaMarca}=joined;
+    const {snapBySku,clasifBySku,clasifBySkuLY,opciones,salesAttrBySku,hasSnapshot,hasRealSnapshot,hasInvIniData,invIniByGoaMarca,goaSeccion}=joined;
     const passSnap=sku=>{
       const s=snapBySku[sku], a=salesAttrBySku[sku];
       const v=f=>filtros[f].length===0 || filtros[f].includes(s?.[f]||a?.[f]||'');
@@ -587,7 +590,8 @@ export default function ModuleEventos(){
     const modArr=Object.values(modMap).map(m=>({...m, stPct: m.ohInicio>0?Math.min(100,m.ventaU/m.ohInicio*100):null,
       vsAA: hasLY?pctVs(m.ventaP,modMapLY[m.modelo]||0):null}));
     const topModelo=modArr.filter(m=>m.ventaP>0).sort((a,b)=>b.ventaP-a.ventaP).slice(0,10);
-    const bottom10=modArr.filter(m=>m.ohInicio>0).sort((a,b)=>a.ventaP-b.ventaP).slice(0,10);
+    // Sin snapshot real no hay OH por modelo (ohInicio siempre 0), así que ahí se ordena solo por venta.
+    const bottom10=modArr.filter(m=>hasRealSnapshot?m.ohInicio>0:m.ventaP>0).sort((a,b)=>a.ventaP-b.ventaP).slice(0,10);
     // Por día (combo venta+margen), subcanal, estatus, norma — desde ventas filtradas del año actual
     const porDiaMap={};
     salesFActual.forEach(r=>{
@@ -598,13 +602,20 @@ export default function ModuleEventos(){
       if(porDiaMap[key][c]!=null) porDiaMap[key][c]+=r.ventaP;
       porDiaMap[key].ventaP+=r.ventaP; porDiaMap[key].utilidad+=r.utilidad;
     });
+    // LY se suma por fecha real...
     const porDiaMapLY={};
     salesFLY.forEach(r=>{ if(!r.fecha) return;
-      const label=r.fecha.toISOString().slice(8,10)+'/'+r.fecha.toISOString().slice(5,7);
-      porDiaMapLY[label]=(porDiaMapLY[label]||0)+r.ventaP; });
+      const key=r.fecha.toISOString().slice(0,10);
+      porDiaMapLY[key]=(porDiaMapLY[key]||0)+r.ventaP; });
+    // ...pero se cruza contra TY por N° de día del evento (día 1 con día 1, día 2 con día 2), no por
+    // mismo DD/MM: el evento no cae en el mismo día de semana año con año, así que igualar por fecha
+    // calendario corre los picos de venta (fines de semana, etc.) un día. Se alinea por orden, no por label.
+    const lyDatesOrdenadas=Object.keys(porDiaMapLY).sort();
     const porDia=Object.values(porDiaMap).sort((a,b)=>a.fecha<b.fecha?-1:1)
-      .map(d=>{ const label=d.fecha.slice(8,10)+'/'+d.fecha.slice(5,7);
-        return {...d, label, margenPct: d.ventaP>0?d.utilidad/d.ventaP*100:null, ventaPLY: hasLY?(porDiaMapLY[label]??null):null}; });
+      .map((d,i)=>{ const label=d.fecha.slice(8,10)+'/'+d.fecha.slice(5,7);
+        const lyKey=lyDatesOrdenadas[i];
+        return {...d, label, margenPct: d.ventaP>0?d.utilidad/d.ventaP*100:null,
+          ventaPLY: hasLY?(lyKey!=null?porDiaMapLY[lyKey]:null):null}; });
     const groupSum=(key,rows)=>{ const m={}; rows.forEach(r=>{ const k=r[key]||'SIN DATO'; m[k]=(m[k]||0)+r.ventaP; }); return m; };
     const groupCombined=key=>{ const mAct=groupSum(key,salesFActual), mLY=groupSum(key,salesFLY);
       return Object.entries(mAct).filter(([,ventaP])=>ventaP!==0)
@@ -650,9 +661,12 @@ export default function ModuleEventos(){
     const treeGoa=buildTree('goa');
 
     // ── Inventario inicial TY vs AA por GOA/Marca (desde columnas INV INI/OH del propio archivo de ventas) ──
-    // Este dato viene a nivel GOA+Marca, no por SKU/Sección/Subcanal/Estatus/Norma, así que no se puede cruzar
-    // con los filtros de arriba (esos sí son por SKU). Se muestra sin filtrar.
-    const invIniRows=Object.values(invIniByGoaMarca);
+    // Este dato viene a nivel GOA+Marca, no por SKU/Subcanal/Estatus/Norma, así que solo se puede cruzar con
+    // Sección (vía GOA→Sección), Marca y GOA de los filtros — hasta donde el dato alcanza.
+    const invIniRows=Object.values(invIniByGoaMarca).filter(r=>
+      (filtros.seccion.length===0||filtros.seccion.includes(goaSeccion[r.goa]||'')) &&
+      (filtros.marca.length===0||filtros.marca.includes(r.marca)) &&
+      (filtros.goa.length===0||filtros.goa.includes(r.goa)));
     const invIniGroup=key=>{ const m={};
       invIniRows.forEach(r=>{ const k=r[key]||'SIN DATO'; if(!m[k]) m[k]={name:k,oh:0,invIni:0,ohAA:0,invIniAA:0};
         m[k].oh+=r.oh; m[k].invIni+=r.invIni; m[k].ohAA+=r.ohAA; m[k].invIniAA+=r.invIniAA; });
@@ -661,11 +675,25 @@ export default function ModuleEventos(){
     const invIniPorGoa=invIniGroup('goa'), invIniPorMarca=invIniGroup('marca');
     const invIniTotal=invIniRows.reduce((acc,r)=>{ acc.oh+=r.oh; acc.invIni+=r.invIni; acc.ohAA+=r.ohAA; acc.invIniAA+=r.invIniAA; return acc; },{oh:0,invIni:0,ohAA:0,invIniAA:0});
     invIniTotal.vsAA=pctVs(invIniTotal.invIni,invIniTotal.invIniAA); invIniTotal.vsAA_u=pctVs(invIniTotal.oh,invIniTotal.ohAA);
+    // ST% con inv. inicial cuando no hay snapshot real (a nivel Sección/GOA/Marca, lo que alcancen los filtros)
+    if(!hasRealSnapshot && hasInvIniData && invIniTotal.oh>0){
+      total.stPct=Math.min(100,total.ventaU/invIniTotal.oh*100);
+      if(hasLY && invIniTotal.ohAA>0) total.stPctAA=Math.min(100,totalLY.ventaU/invIniTotal.ohAA*100);
+    }
+    // Inv. inicial $ por Marca/GOA, para pintarlo como barra extra en esos gráficos de venta
+    const invIniByName=key=>{ const m={}; invIniRows.forEach(r=>{ const k=r[key]||'SIN DATO'; m[k]=(m[k]||0)+r.invIni; }); return m; };
+    const invIniByMarcaName=invIniByName('marca'), invIniByGoaName=invIniByName('goa');
+    const porMarcaConInv=porMarca.map(r=>({...r, invIni:invIniByMarcaName[r.name]||0}));
+    const porGoaConInv=porGoa.map(r=>({...r, invIni:invIniByGoaName[r.name]||0}));
+    // Venta diaria promedio TY vs AA (para el KPI chico del header de "Desempeño por día")
+    const nDiasTY=porDia.length, nDiasLY=new Set(salesFLY.filter(r=>r.fecha).map(r=>r.fecha.toISOString().slice(0,10))).size;
+    const avgDiaTY=nDiasTY>0?total.ventaP/nDiasTY:null, avgDiaLY=nDiasLY>0?totalLY.ventaP/nDiasLY:null;
 
     return { total, regular, descuento, depreciado, categorias, topModelo, bottom10, sinSnapshot, fMin, fMax,
       deltaVentaP, deltaMargen, deltaST, nSkuSnap:joined.nSkuSnap, nSkuVenta:joined.nSkuVenta,
-      grand, treeMarca, treeGoa, porDia, porSubcanal, porEstatus, porMarca, porGoa, opciones,
-      hasLY, anoActual, anoAnterior, hasSnapshot, hasRealSnapshot, hasInvIniData, invIniPorGoa, invIniPorMarca, invIniTotal };
+      grand, treeMarca, treeGoa, porDia, porSubcanal, porEstatus, porMarca:porMarcaConInv, porGoa:porGoaConInv, opciones,
+      hasLY, anoActual, anoAnterior, hasSnapshot, hasRealSnapshot, hasInvIniData, invIniPorGoa, invIniPorMarca, invIniTotal,
+      avgDiaTY, avgDiaLY };
   },[active,joined,salesRows,filtros]);
 
   // Si no hay snapshot (ni real ni sintético desde inv. inicial del CSV/Vtas_Evento) y estaban en Desglose, regresa a Resumen.
@@ -941,7 +969,7 @@ export default function ModuleEventos(){
                   <KpiCard label="Venta U" value={fmt(calc.total.ventaU)} t={t} isDark={isDark}/>
                   <KpiCard label="Margen %" value={fmtP(calc.total.margenPct)} delta={calc.deltaMargen} pts t={t} isDark={isDark}/>
                   <KpiCard label="Margen $" value={fmtM(calc.total.utilidad)} t={t} isDark={isDark}/>
-                  <KpiCard label="Sell-through" value={fmtP(calc.total.stPct)} delta={calc.deltaST} pts t={t} isDark={isDark}/>
+                  <KpiCard label="Sell-through" value={fmtP(calc.total.stPct)} delta={calc.total.stPctAA!=null?calc.total.stPct-calc.total.stPctAA:calc.deltaST} pts t={t} isDark={isDark}/>
                   <KpiCard label="Remanente U" value={fmt(calc.total.remanente)} t={t} isDark={isDark}/>
                 </div>
 
@@ -1044,7 +1072,21 @@ export default function ModuleEventos(){
                   {/* Desempeño por día */}
                   {calc.porDia.length>0 && (
                     <div className={`p-4 rounded-xl border overflow-x-auto lg:col-span-2 ${t.card}`}>
-                      <p className={`text-xs font-black mb-3 ${t.textMain}`}>Desempeño por día — {calc.hasRealSnapshot?'venta por clasificación y margen %':'venta total y margen %'}{calc.hasLY?' (línea punteada = AA)':''}</p>
+                      <div className="flex items-start justify-between gap-3 mb-3 flex-wrap">
+                        <p className={`text-xs font-black ${t.textMain}`}>Desempeño por día — {calc.hasRealSnapshot?'venta por clasificación y margen %':'venta total y margen %'}{calc.hasLY?' (línea punteada = AA, alineado por día de evento)':''}</p>
+                        <div className="flex gap-2">
+                          <div className={`px-2.5 py-1 rounded-lg border text-right ${t.border}`}>
+                            <p className={`text-[9px] font-bold ${t.textMuted}`}>Vta. diaria prom.</p>
+                            <p className={`text-xs font-black ${t.textMain}`}>{calc.avgDiaTY!=null?fmtM(calc.avgDiaTY):'-'}</p>
+                          </div>
+                          {calc.hasLY && (
+                            <div className={`px-2.5 py-1 rounded-lg border text-right ${t.border}`}>
+                              <p className={`text-[9px] font-bold ${t.textMuted}`}>Vta. diaria prom. AA</p>
+                              <p className={`text-xs font-black ${t.textMain}`}>{calc.avgDiaLY!=null?fmtM(calc.avgDiaLY):'-'}</p>
+                            </div>
+                          )}
+                        </div>
+                      </div>
                       <ResponsiveContainer width="100%" height={280}>
                         <ComposedChart data={calc.porDia} margin={{top:10}} barCategoryGap="20%">
                           <CartesianGrid strokeDasharray="3 3" stroke={gridC} vertical={false}/>
@@ -1062,6 +1104,9 @@ export default function ModuleEventos(){
                           )}
                           <Line yAxisId="der" type="monotone" dataKey="margenPct" name="Margen %" stroke={lineC} strokeWidth={2} dot={false}/>
                           {calc.hasLY && <Line yAxisId="izq" type="monotone" dataKey="ventaPLY" name="Venta $ AA" stroke={txtC} strokeWidth={1.5} strokeDasharray="4 3" dot={false}/>}
+                          {calc.hasInvIniData && calc.invIniTotal.invIni>0 &&
+                            <ReferenceLine yAxisId="izq" y={calc.invIniTotal.invIni} stroke="#f59e0b" strokeDasharray="5 3" strokeWidth={1.5}
+                              label={{value:'Inv. Inicial $',position:'insideTopRight',fontSize:9,fill:'#f59e0b'}}/>}
                         </ComposedChart>
                       </ResponsiveContainer>
                     </div>
@@ -1084,14 +1129,16 @@ export default function ModuleEventos(){
                   {/* Marca */}
                   {calc.porMarca.length>0 && (
                     <div className={`p-4 rounded-xl border overflow-x-auto ${t.card}`}>
-                      <p className={`text-xs font-black mb-3 ${t.textMain}`}>Venta por Marca</p>
+                      <p className={`text-xs font-black mb-3 ${t.textMain}`}>Venta por Marca{calc.hasInvIniData?' (con Inv. Inicial $)':''}</p>
                       <ResponsiveContainer width="100%" height={Math.max(160,calc.porMarca.length*32)}>
                         <BarChart data={calc.porMarca} layout="vertical" margin={{left:10}} barCategoryGap="30%">
                           <CartesianGrid strokeDasharray="3 3" stroke={gridC} horizontal={false}/>
                           <XAxis type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
                           <YAxis type="category" dataKey="name" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={120}/>
                           <Tooltip content={<TTip/>} cursor={{fill:cursorFill}}/>
+                          {calc.hasInvIniData && <Legend wrapperStyle={{fontSize:10,color:txtC}}/>}
                           <Bar dataKey="ventaP" name="Venta $" fill="url(#gradRegularH)" radius={[0,6,6,0]} maxBarSize={22}/>
+                          {calc.hasInvIniData && <Bar dataKey="invIni" name="Inv. Inicial $" fill="#f59e0b" radius={[0,6,6,0]} maxBarSize={22}/>}
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
@@ -1099,14 +1146,16 @@ export default function ModuleEventos(){
                   {/* Grupo de Artículo (GOA) */}
                   {calc.porGoa.length>0 && (
                     <div className={`p-4 rounded-xl border overflow-x-auto lg:col-span-2 ${t.card}`}>
-                      <p className={`text-xs font-black mb-3 ${t.textMain}`}>Venta por Grupo de Artículo (GOA)</p>
+                      <p className={`text-xs font-black mb-3 ${t.textMain}`}>Venta por Grupo de Artículo (GOA){calc.hasInvIniData?' (con Inv. Inicial $)':''}</p>
                       <ResponsiveContainer width="100%" height={Math.max(200,calc.porGoa.length*28)}>
                         <BarChart data={calc.porGoa} layout="vertical" margin={{left:10}} barCategoryGap="25%">
                           <CartesianGrid strokeDasharray="3 3" stroke={gridC} horizontal={false}/>
                           <XAxis type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
                           <YAxis type="category" dataKey="name" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={120}/>
                           <Tooltip content={<TTip/>} cursor={{fill:cursorFill}}/>
+                          {calc.hasInvIniData && <Legend wrapperStyle={{fontSize:10,color:txtC}}/>}
                           <Bar dataKey="ventaP" name="Venta $" fill="url(#gradRegularH)" radius={[0,6,6,0]} maxBarSize={20}/>
+                          {calc.hasInvIniData && <Bar dataKey="invIni" name="Inv. Inicial $" fill="#f59e0b" radius={[0,6,6,0]} maxBarSize={20}/>}
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
