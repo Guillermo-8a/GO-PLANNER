@@ -305,18 +305,47 @@ export default function ModuleEventos(){
     if(!node||exporting) return;
     setExporting(true);
     try{
+      // Puntos de corte "seguros": el borde superior de cada tarjeta de nivel superior, y de cada gráfica
+      // dentro del grid marcado .pdf-flatten. Cortar el PDF exactamente ahí evita partir una gráfica o
+      // tabla a la mitad entre dos páginas (antes se cortaba a una altura de página fija, sin importar
+      // qué hubiera ahí — por eso el pie de Subcanal y otras salían "a la mitad").
+      const rootTop=node.getBoundingClientRect().top;
+      const boundaries=new Set([0]);
+      const addBoundaries=el=>{ Array.from(el.children).forEach(child=>{
+        if(child.classList?.contains('no-print')) return;
+        boundaries.add(child.getBoundingClientRect().top-rootTop);
+        if(child.classList?.contains('pdf-flatten')) addBoundaries(child);
+      }); };
+      addBoundaries(node);
+      const totalHeightCss=node.scrollHeight;
+      boundaries.add(totalHeightCss);
+      const sortedBoundaries=[...boundaries].sort((a,b)=>a-b);
+
       const canvas=await html2canvas(node,{
         scale:2, backgroundColor:isDark?'#18181b':'#ffffff', useCORS:true,
         ignoreElements:el=>el.classList?.contains('no-print'),
       });
-      const imgData=canvas.toDataURL('image/png');
       const pdf=new jsPDF({orientation:'p',unit:'pt',format:'letter'});
       const pageW=pdf.internal.pageSize.getWidth(), pageH=pdf.internal.pageSize.getHeight();
-      const imgW=pageW, imgH=canvas.height*imgW/canvas.width;
-      let heightLeft=imgH, position=0;
-      pdf.addImage(imgData,'PNG',0,position,imgW,imgH);
-      heightLeft-=pageH;
-      while(heightLeft>0){ position=heightLeft-imgH; pdf.addPage(); pdf.addImage(imgData,'PNG',0,position,imgW,imgH); heightLeft-=pageH; }
+      const ptPerCssPx=pageW/node.offsetWidth; // CSS px (DOM) → pt (PDF)
+      const pxPerCssPx=canvas.width/node.offsetWidth; // CSS px (DOM) → canvas px (captura a scale:2)
+
+      let cutCss=0; // dónde va el próximo corte, en CSS px del DOM original
+      while(cutCss<totalHeightCss-0.5){
+        const targetCss=cutCss+pageH/ptPerCssPx;
+        // El límite "seguro" más grande que no exceda el target; si ninguno cae en rango, se corta a fuerza ahí.
+        const candidatos=sortedBoundaries.filter(b=>b>cutCss+1 && b<=targetCss);
+        const nextCutCss=candidatos.length?candidatos[candidatos.length-1]:Math.min(targetCss,totalHeightCss);
+        const sliceStartPx=Math.round(cutCss*pxPerCssPx), sliceEndPx=Math.round(nextCutCss*pxPerCssPx);
+        const sliceHpx=Math.max(1,sliceEndPx-sliceStartPx);
+        const slice=document.createElement('canvas');
+        slice.width=canvas.width; slice.height=sliceHpx;
+        slice.getContext('2d').drawImage(canvas,0,sliceStartPx,canvas.width,sliceHpx,0,0,canvas.width,sliceHpx);
+        const imgW=pageW, imgH=sliceHpx/pxPerCssPx*ptPerCssPx;
+        if(cutCss>0) pdf.addPage();
+        pdf.addImage(slice.toDataURL('image/png'),'PNG',0,0,imgW,imgH);
+        cutCss=nextCutCss;
+      }
       const slug=(active?.nombre||'evento').trim().replace(/\s+/g,'_').replace(/[^\w\-]/g,'');
       pdf.save(`resumen_${slug||'evento'}.pdf`);
     }catch(err){ console.error(err); alert('No se pudo generar el PDF. Revisa la consola.'); }
@@ -852,24 +881,25 @@ export default function ModuleEventos(){
         </Modal>
       )}
 
-      <svg width="0" height="0" style={{position:'absolute'}}>
-        <defs>
-          {Object.entries(CLASIF_COLOR).map(([k,hex])=>(
-            <React.Fragment key={k}>
-              <linearGradient id={`${CLASIF_GRAD[k]}V`} x1="0" y1="0" x2="0" y2="1">
-                <stop offset="0%" stopColor={hex} stopOpacity="1"/>
-                <stop offset="100%" stopColor={hex} stopOpacity="0.72"/>
-              </linearGradient>
-              <linearGradient id={`${CLASIF_GRAD[k]}H`} x1="0" y1="0" x2="1" y2="0">
-                <stop offset="0%" stopColor={hex} stopOpacity="0.72"/>
-                <stop offset="100%" stopColor={hex} stopOpacity="1"/>
-              </linearGradient>
-            </React.Fragment>
-          ))}
-        </defs>
-      </svg>
-
       <div id="eventos-print-area" className="space-y-5">
+        {/* Los gradientes van DENTRO del área que se exporta a PDF (html2canvas solo captura este nodo;
+            si el <defs> vive afuera, los url(#gradXxx) no resuelven y las barras salen invisibles). */}
+        <svg width="0" height="0" style={{position:'absolute'}}>
+          <defs>
+            {Object.entries(CLASIF_COLOR).map(([k,hex])=>(
+              <React.Fragment key={k}>
+                <linearGradient id={`${CLASIF_GRAD[k]}V`} x1="0" y1="0" x2="0" y2="1">
+                  <stop offset="0%" stopColor={hex} stopOpacity="1"/>
+                  <stop offset="100%" stopColor={hex} stopOpacity="0.72"/>
+                </linearGradient>
+                <linearGradient id={`${CLASIF_GRAD[k]}H`} x1="0" y1="0" x2="1" y2="0">
+                  <stop offset="0%" stopColor={hex} stopOpacity="0.72"/>
+                  <stop offset="100%" stopColor={hex} stopOpacity="1"/>
+                </linearGradient>
+              </React.Fragment>
+            ))}
+          </defs>
+        </svg>
         <div className={`p-5 rounded-xl border ${t.card}`}>
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div>
@@ -1042,7 +1072,7 @@ export default function ModuleEventos(){
                 )}
 
                 {/* Dashboard de venta del evento — ligado a los filtros */}
-                <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className="pdf-flatten grid grid-cols-1 lg:grid-cols-2 gap-4">
                   {/* Grupo de Artículo (GOA) */}
                   {calc.porGoa.length>0 && (
                     <div className={`p-4 rounded-xl border overflow-x-auto ${t.card}`}>
