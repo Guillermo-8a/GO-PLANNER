@@ -352,6 +352,83 @@ export default function ModuleEventos(){
     finally{ setExporting(false); }
   };
 
+  // Excel para compartir: mismas tablas que la vista (respeta filtros activos), una hoja por bloque.
+  // La librería instalada (xlsx community) no escribe gráficos nativos — son solo tablas, pero limpias y
+  // listas para que Excel les meta un gráfico en 2 clics si hace falta.
+  const handleDownloadExcel=()=>{
+    if(!calc||!active) return;
+    const wb=XLSX.utils.book_new();
+    const addSheet=(name,aoa,widths)=>{
+      const ws=XLSX.utils.aoa_to_sheet(aoa);
+      if(widths) ws['!cols']=widths.map(w=>({wch:w}));
+      XLSX.utils.book_append_sheet(wb,ws,name.slice(0,31));
+    };
+    const pct=v=>v==null?'':Math.round(v*10)/10;
+
+    // Resumen
+    const resumenAoa=[
+      [active.nombre||'Evento',active.tipo||''],
+      [`${active.fechaInicio||''} → ${active.fechaFin||''}`],
+      [],
+      ['KPI','Valor','vs AA (%)'],
+      ['Venta $',calc.total.ventaP,pct(calc.deltaVentaP)],
+      ['Venta U',calc.total.ventaU,''],
+      ['Margen %',pct(calc.total.margenPct),pct(calc.deltaMargen)],
+      ['Margen $',calc.total.utilidad,''],
+      ['Sell-through %',pct(calc.total.stPct),pct(calc.deltaST)],
+      ['Remanente U',calc.total.remanente,''],
+      [],
+      ['Breakdown por categoría (Sección)'],
+      ['Sección','Venta $','vs AA (%)','Venta U','Margen %','Sell-through %'],
+      ...calc.categorias.map(c=>[c.seccion,c.ventaP,pct(c.vsAA),c.ventaU,pct(c.margenPct),pct(c.stPct)]),
+    ];
+    addSheet('Resumen',resumenAoa,[28,16,12,12,12,14]);
+
+    // Regular / Descuento / Depreciado
+    if(calc.hasRealSnapshot){
+      const rows=[['Clasificación','Venta $','vs AA (%)','Venta U','Margen %','Sell-through %','Remanente U','Remanente $','Desplazado $','Desplazado %']];
+      [['Regular',calc.regular],['Descuento',calc.descuento],['Depreciado',calc.depreciado],['Total',calc.total]].forEach(([lbl,r])=>
+        rows.push([lbl,r.ventaP,pct(r.vsAA),r.ventaU,pct(r.margenPct),pct(r.stPct),r.remanente,r.montoRemanente,r.montoDesplazado,pct(r.pctDesplazado)]));
+      addSheet('Regular-Descuento-Deprec',rows,[16,14,12,12,12,14,14,14,14,14]);
+    }
+
+    // Por día
+    const diaRows=[calc.hasRealSnapshot
+      ?['Fecha','Regular $','Descuento $','Depreciado $','Venta $ Total','Margen %','Venta $ AA']
+      :['Fecha','Venta $ Total','Margen %','Venta $ AA']];
+    calc.porDia.forEach(d=>{ diaRows.push(calc.hasRealSnapshot
+      ?[d.label,d.regular,d.descuento,d.depreciado,d.ventaP,pct(d.margenPct),d.ventaPLY??'']
+      :[d.label,d.ventaP,pct(d.margenPct),d.ventaPLY??'']); });
+    addSheet('Por Día',diaRows,[10,14,14,14,14,12,14]);
+
+    // Por GOA / Marca (venta, con inv inicial si aplica)
+    const dimSheet=(name,rows)=>{
+      const head=calc.hasInvIniData?['Nombre','Venta $','vs AA (%)','Inv. Inicial $']:['Nombre','Venta $','vs AA (%)'];
+      const aoa=[head,...rows.map(r=>calc.hasInvIniData?[r.name,r.ventaP,pct(r.vsAA),r.invIni||0]:[r.name,r.ventaP,pct(r.vsAA)])];
+      addSheet(name,aoa,[22,14,12,16]);
+    };
+    dimSheet('Por GOA',calc.porGoa);
+    dimSheet('Por Marca',calc.porMarca);
+    addSheet('Por Subcanal',[['Subcanal','Venta $','vs AA (%)'],...calc.porSubcanal.map(r=>[r.name,r.ventaP,pct(r.vsAA)])],[22,14,12]);
+    addSheet('Por Estatus',[['Estatus','Venta $','vs AA (%)'],...calc.porEstatus.map(r=>[r.name,r.ventaP,pct(r.vsAA)])],[22,14,12]);
+
+    // Top 10 / Bottom 10 Modelo
+    const modeloHead=['Modelo','Marca','GOA','Venta $','vs AA (%)','Venta U','ST %','Remanente U','Remanente $'];
+    addSheet('Top 10 Modelo',[modeloHead,...calc.topModelo.map(r=>[r.modelo,r.marca,r.goa,r.ventaP,pct(r.vsAA),r.ventaU,pct(r.stPct),r.remanente,r.montoRemanente])],[16,16,16,12,12,10,10,12,12]);
+    addSheet('Bottom 10 Modelo',[modeloHead,...calc.bottom10.map(r=>[r.modelo,r.marca,r.goa,r.ventaP,pct(r.vsAA),r.ventaU,pct(r.stPct),r.remanente,r.montoRemanente])],[16,16,16,12,12,10,10,12,12]);
+
+    // Inventario Inicial (Sección+GOA+Marca, cuando el evento solo trae CSV de ventas)
+    if(calc.hasInvIniData){
+      const invHead=['Nombre','Inv. Inicial $','vs AA (%)','Inv. Inicial U','vs AA U (%)'];
+      const invRows=(list)=>list.map(r=>[r.name,r.invIni,pct(r.vsAA),r.oh,pct(r.vsAA_u)]);
+      addSheet('Inv. Inicial por GOA',[invHead,...invRows(calc.invIniPorGoa)],[22,16,12,14,12]);
+      addSheet('Inv. Inicial por Marca',[invHead,...invRows(calc.invIniPorMarca)],[22,16,12,14,12]);
+    }
+
+    const slug=(active?.nombre||'evento').trim().replace(/\s+/g,'_').replace(/[^\w\-]/g,'');
+    XLSX.writeFile(wb,`resumen_${slug||'evento'}.xlsx`);
+  };
+
   const createEvent=()=>{
     if(!form.nombre.trim()||!form.fechaInicio||!form.fechaFin){ alert('Nombre, fecha inicio y fecha fin son obligatorios.'); return; }
     const ev={ id:Date.now(), nombre:form.nombre.trim(), tipo:form.tipo==='Otro'?(form.tipoOtro.trim()||'Otro'):form.tipo,
@@ -843,6 +920,9 @@ export default function ModuleEventos(){
           <Icons.ChevronLeft size={14}/> Eventos
         </button>
         <div className="flex gap-2">
+          <button onClick={handleDownloadExcel} disabled={!calc} className={`flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-lg border disabled:opacity-50 ${t.btnGhost}`}>
+            <Icons.Download size={13}/> Descargar Excel
+          </button>
           <button onClick={handleDownloadPDF} disabled={exporting} className={`flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-lg border disabled:opacity-50 ${t.btnGhost}`}>
             <Icons.Download size={13}/> {exporting?'Generando PDF…':'Descargar PDF'}
           </button>
