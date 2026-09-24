@@ -403,27 +403,24 @@ export default function ModuleEventos(){
     const anoActual=years[0]??null;
     const anoAnterior=years.length>1?years[1]:(anoActual?anoActual-1:null);
     const hasLY=anoAnterior!=null && years.includes(anoAnterior);
-    // Inventario inicial por SKU desde las columnas del propio archivo de ventas (INV INI/OH/INV INI AA/OH AA).
-    // Independiente del snapshot formal: NO alimenta la clasificación Regular/Descuento/Depreciado (esa necesita
-    // precio de lista + letra de rebaja, que este dato no trae — invIni/oh es costo de inventario, no precio de
-    // venta, así que usarlo para adivinar "descuento" saldría mal). Solo sirve para ver cuánto inventario $/U
-    // había al iniciar la temporada, TY vs LY, incluso en eventos que solo suben el CSV de ventas.
-    // OH/INV INI NO son constantes por SKU: cambian de fila en fila (van bajando conforme se vende), y la
-    // mayoría de las filas vienen en blanco. Para "inventario inicial" se toma la fila con fecha más antigua
-    // que traiga el dato (la primera lectura del evento), nunca el máximo (eso mezclaba niveles de distintos
-    // días y sobrestimaba el total). INV INI/INV INI AA son $ con la misma escala ×1000 que Vtas.$/Descuentos;
-    // OH/OH AA son unidades y no se escalan.
-    const invIniBySku={};
+    // Inventario inicial desde las columnas del propio archivo de ventas (INV INI/OH/INV INI AA/OH AA).
+    // OJO: este dato NO viene a nivel SKU — es un total por GOA+Marca repetido/parcial en las filas de venta
+    // (a diferencia del snapshot formal por xlsx, que sí es por SKU y alimenta la clasificación Regular/
+    // Descuento/Depreciado — esa sigue intacta, este bloque es independiente y no la toca).
+    // Se agrupa por (GOA, Marca) y se toma la fila con fecha más antigua que traiga el dato, no el máximo
+    // (evita mezclar/duplicar niveles de distintos días). INV INI/INV INI AA son $ escalados ×1000 como
+    // Vtas.$/Descuentos; OH/OH AA son unidades y no se escalan.
+    const invIniByGoaMarca={};
     salesRows.forEach(r=>{
       if(r.invIni==null&&r.oh==null&&r.invIniAA==null&&r.ohAA==null) return;
-      const k=r.sku;
-      const e=invIniBySku[k];
+      const k=`${r.goa}|${r.marca}`;
+      const e=invIniByGoaMarca[k];
       if(!e || (r.fecha && (!e.fecha || r.fecha<e.fecha))){
-        invIniBySku[k]={sku:k,modelo:r.modelo,marca:r.marca,goa:r.goa,seccion:r.seccion,fecha:r.fecha||null,
+        invIniByGoaMarca[k]={marca:r.marca,goa:r.goa,fecha:r.fecha||null,
           oh:r.oh||0, invIni:(r.invIni||0)*1000, ohAA:r.ohAA||0, invIniAA:(r.invIniAA||0)*1000};
       }
     });
-    const hasInvIniData=Object.keys(invIniBySku).length>0;
+    const hasInvIniData=Object.keys(invIniByGoaMarca).length>0;
     const hasRealSnapshot=snapRows.length>0;
     const hasSnapshot=hasRealSnapshot||hasInvIniData; // gate de visibilidad de la tab Desglose
     // El snapshot (OH y Montos) puede traer 2 bloques apilados por año (columna "Año"). Si existe, el snapshot
@@ -495,14 +492,14 @@ export default function ModuleEventos(){
       clasif: uniq(Object.values(clasifBySku)),
     };
     return { snapBySku, clasifBySku, clasifBySkuLY, opciones, anoActual, anoAnterior, hasLY, salesAttrBySku,
-      hasSnapshot, hasRealSnapshot, hasInvIniData, invIniBySku,
+      hasSnapshot, hasRealSnapshot, hasInvIniData, invIniByGoaMarca,
       nSkuSnap:Object.keys(snapBySku).length, nSkuVenta:Object.keys(salesBySkuFull).length };
   },[snapRows,salesRows]);
 
   // ── Cálculos filtrados — rápido, solo agrupa lo ya unido ──
   const calc=useMemo(()=>{
     if(!active) return null;
-    const {snapBySku,clasifBySku,clasifBySkuLY,opciones,salesAttrBySku,hasSnapshot,hasRealSnapshot,hasInvIniData,invIniBySku}=joined;
+    const {snapBySku,clasifBySku,clasifBySkuLY,opciones,salesAttrBySku,hasSnapshot,hasRealSnapshot,hasInvIniData,invIniByGoaMarca}=joined;
     const passSnap=sku=>{
       const s=snapBySku[sku], a=salesAttrBySku[sku];
       const v=f=>filtros[f].length===0 || filtros[f].includes(s?.[f]||a?.[f]||'');
@@ -653,8 +650,9 @@ export default function ModuleEventos(){
     const treeGoa=buildTree('goa');
 
     // ── Inventario inicial TY vs AA por GOA/Marca (desde columnas INV INI/OH del propio archivo de ventas) ──
-    // Respeta los mismos filtros (passSnap) que el resto del módulo. No depende de clasificación.
-    const invIniRows=Object.values(invIniBySku).filter(r=>passSnap(r.sku));
+    // Este dato viene a nivel GOA+Marca, no por SKU/Sección/Subcanal/Estatus/Norma, así que no se puede cruzar
+    // con los filtros de arriba (esos sí son por SKU). Se muestra sin filtrar.
+    const invIniRows=Object.values(invIniByGoaMarca);
     const invIniGroup=key=>{ const m={};
       invIniRows.forEach(r=>{ const k=r[key]||'SIN DATO'; if(!m[k]) m[k]={name:k,oh:0,invIni:0,ohAA:0,invIniAA:0};
         m[k].oh+=r.oh; m[k].invIni+=r.invIni; m[k].ohAA+=r.ohAA; m[k].invIniAA+=r.invIniAA; });
