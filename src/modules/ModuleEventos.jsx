@@ -38,6 +38,9 @@ const TIPOS_EVENTO=['NM Mamás','NM Papás','BTS','MS','GVL','ATH','NM Navidad',
 const OBJETIVOS=['Liquidar depreciado','Tráfico','Margen'];
 // Paleta validada (CVD-safe, dark + light) para las 3 clasificaciones
 const CLASIF_COLOR={ regular:'#8b5cf6', descuento:'#f59e0b', depreciado:'#00bcd4', sin_snapshot:'#00bcd4' };
+// Verde esmeralda para "Venta $" en las gráficas GOA/Marca — ahí conviven con la barra "Inv. Regular"
+// (violeta, de CLASIF_COLOR), que si no se distinguen fácil a simple vista.
+const VENTA_COLOR='#10b981';
 const VIOLET_SHADES=['#8b5cf6','#a78bfa','#c4b5fd','#7c3aed','#ddd6fe','#6d28d9','#e9d5ff','#5b21b6'];
 const CLASIF_LABEL={ regular:'Regular', descuento:'Descuento', depreciado:'Depreciado', sin_snapshot:'Sin snapshot' };
 
@@ -77,23 +80,28 @@ const parseSnapshotXLSX = async file => {
   const head=(rows[0]||[]).map(s=>String(s||'').trim());
   const hidx=(...names)=>{ for(const n of names){ const i=head.indexOf(n); if(i>=0) return i; } return -1; };
   const artIdx=head.reduce((a,h,i)=>{ if(h==='Artículo') a.push(i); return a; },[]);
-  const iAno=hidx('Año'), iRebaja=hidx('Rebaja'), iSeccion=hidx('Sección'), iGoa=hidx('Grupo artículos'),
+  const iAno=hidx('Año','AÑO','Ano','ANO','Year'), iRebaja=hidx('Rebaja'), iSeccion=hidx('Sección'), iGoa=hidx('Grupo artículos'),
     iMarca=hidx('Marca'), iNorma=hidx('Norma de Aprovisionamiento'), iEstatus=hidx('Estatus del Artículo'),
     iModelo=hidx('Modelo Proveedor'), iSku=artIdx.length?artIdx[0]:-1, iDesc=artIdx.length>1?artIdx[1]:iSku,
     iPrecio=hidx('Precio De Venta Act'), iOh=hidx('OH_'), iOhAant=hidx('OH aant'), iMontoAant=hidx('Monto aant');
   // Col "Rebaja": Regular = sin letra; Depreciado = liquidación permanente; MS = letra temporal (regresa a precio).
   // Col "Año": si existe, marca a qué ejercicio pertenece cada bloque de filas (permite clasificar por año real, no por hoy).
   const out=[];
+  // La columna "Año" suele venir de una celda combinada (una sola "2026"/"2025" cubriendo visualmente todo
+  // el bloque en Excel) — sheet_to_json solo trae el valor en la fila ancla de la combinación; el resto de
+  // filas del bloque llegan en blanco. Se arrastra hacia abajo el último año visto (forward-fill) para que
+  // todo el bloque quede etiquetado, no solo su primera fila.
+  let lastAno=null;
   for(let i=1;i<rows.length;i++){ const r=rows[i]; if(!r||r.every(c=>c===''||c==null)) continue;
+    if(iAno>=0){ const anoRaw=String(r[iAno]||'').trim(); if(anoRaw){ const p=parseInt(anoRaw,10); if(!isNaN(p)) lastAno=p; } }
     const sku=iSku>=0?String(r[iSku]||'').trim():''; if(!sku) continue;
     const rebaja=iRebaja>=0?String(r[iRebaja]||'').trim():'';
     const letraDesc=(rebaja&&rebaja.toUpperCase()!=='REGULAR')?rebaja:'';
-    const anoRaw=iAno>=0?String(r[iAno]||'').trim():'';
     out.push({ sku, nsku:iDesc>=0?String(r[iDesc]||'').trim():'', modelo:iModelo>=0?String(r[iModelo]||'').trim().toUpperCase():'',
       marca:(iMarca>=0?String(r[iMarca]||'').trim().toUpperCase():'')||'SIN MARCA', goa:iGoa>=0?String(r[iGoa]||'').trim().toUpperCase():'',
       seccion:(iSeccion>=0?String(r[iSeccion]||'').trim().toUpperCase():'')||'GENERAL', centro:'',
       norma:iNorma>=0?String(r[iNorma]||'').trim().toUpperCase():'', estatus:iEstatus>=0?String(r[iEstatus]||'').trim().toUpperCase():'',
-      ano:anoRaw?(parseInt(anoRaw,10)||null):null,
+      ano:iAno>=0?lastAno:null,
       oh:num(iOh>=0?r[iOh]:0), precio:num(iPrecio>=0?r[iPrecio]:0), letraDesc,
       ohAant:num(iOhAant>=0?r[iOhAant]:0), montoAant:num(iMontoAant>=0?r[iMontoAant]:0)*1000 });
   }
@@ -1241,7 +1249,7 @@ export default function ModuleEventos(){
                           <YAxis type="category" dataKey="name" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={120}/>
                           <Tooltip content={<TTip/>} cursor={{fill:cursorFill}}/>
                           {(calc.hasRealSnapshot||calc.hasInvIniData) && <Legend wrapperStyle={{fontSize:10,color:txtC}}/>}
-                          <Bar dataKey="ventaP" name="Venta $" fill={CLASIF_COLOR.regular} radius={[0,6,6,0]} maxBarSize={20}/>
+                          <Bar dataKey="ventaP" name="Venta $" fill={VENTA_COLOR} radius={[0,6,6,0]} maxBarSize={20}/>
                           {calc.hasRealSnapshot ? (<>
                             <Bar dataKey="regular" stackId="inv" name="Inv. Regular" fill={CLASIF_COLOR.regular} maxBarSize={20}/>
                             <Bar dataKey="descuento" stackId="inv" name="Inv. Descuento" fill={CLASIF_COLOR.descuento} maxBarSize={20}/>
@@ -1262,7 +1270,7 @@ export default function ModuleEventos(){
                           <YAxis type="category" dataKey="name" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={120}/>
                           <Tooltip content={<TTip/>} cursor={{fill:cursorFill}}/>
                           {(calc.hasRealSnapshot||calc.hasInvIniData) && <Legend wrapperStyle={{fontSize:10,color:txtC}}/>}
-                          <Bar dataKey="ventaP" name="Venta $" fill={CLASIF_COLOR.regular} radius={[0,6,6,0]} maxBarSize={22}/>
+                          <Bar dataKey="ventaP" name="Venta $" fill={VENTA_COLOR} radius={[0,6,6,0]} maxBarSize={22}/>
                           {calc.hasRealSnapshot ? (<>
                             <Bar dataKey="regular" stackId="inv" name="Inv. Regular" fill={CLASIF_COLOR.regular} maxBarSize={22}/>
                             <Bar dataKey="descuento" stackId="inv" name="Inv. Descuento" fill={CLASIF_COLOR.descuento} maxBarSize={22}/>
