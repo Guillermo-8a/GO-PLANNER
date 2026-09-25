@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   TrendingUp, ShoppingCart, Map, RefreshCw,
   ArrowLeftRight, ChevronDown, Zap, BarChart3,
-  Calendar, ArrowRight, Layers, FileSpreadsheet
+  Calendar, ArrowRight, Layers, FileSpreadsheet, Tag
 } from 'lucide-react';
 import { CSV_SCHEMAS } from './csvSchemas';
 
@@ -70,11 +70,12 @@ const WORLDS = [
   },
  {
     id: 'check', tag: 'CHECK DE COORDINADORES',
-    name: 'Daily',
-    desc: 'Detalle de ventas e inventarios diarios, con una proyección diaria por venta y utilidades.',
+    name: 'Daily · Eventos',
+    desc: 'Detalle de ventas e inventarios diarios y por evento promocional, con proyección de venta y utilidades.',
     accent: '#06b6d4', glow: 'rgba(6, 182, 212, 0.15)',
     modules: [
        { label: 'Daily',    Icon: Calendar,  desc: 'Ajustes diarios de inventario, ventas y margen.' },
+       { label: 'Eventos',  Icon: Tag,       desc: 'Venta, margen, sell-through e inventario inicial de eventos promocionales (BTS, Navidad, etc.), comparado automáticamente contra el año anterior.' },
      ],
    },
  ];
@@ -281,7 +282,7 @@ function Hero({ navigate }) {
         >
           Abrir GO PLANNER <ArrowRight size={16} />
         </button>
-        <a href="#far" style={{
+        <a href="#pilares" style={{
           display: 'flex', alignItems: 'center', gap: '8px',
           background: 'rgba(255,255,255,0.04)', color: '#a1a1aa',
           border: '1px solid rgba(255,255,255,0.1)',
@@ -302,7 +303,7 @@ function Hero({ navigate }) {
         opacity: mounted ? 1 : 0,
         transition: 'all 0.8s ease 0.4s',
       }}>
-        {[{ val: '9', label: 'Módulos' }, { val: '3', label: 'Pilares' }, { val: '∞', label: 'Tiendas' }].map(s => (
+        {[{ val: '10', label: 'Módulos' }, { val: '3', label: 'Pilares' }, { val: '∞', label: 'Tiendas' }].map(s => (
           <div key={s.label} style={{ textAlign: 'center' }}>
             <p style={{ fontSize: '48px', fontWeight: 900, color: 'white', lineHeight: 1, letterSpacing: '-2px', margin: 0 }}>{s.val}</p>
             <p style={{ fontSize: '11px', color: '#52525b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px', marginTop: '6px' }}>{s.label}</p>
@@ -394,7 +395,7 @@ function WorldCard({ world, index, total }) {
 function WorldsSection() {
   const [ref, visible] = useInView(0.1);
   return (
-    <section style={{ padding: '120px 2rem', maxWidth: '1140px', margin: '0 auto' }}>
+    <section id="pilares" style={{ padding: '120px 2rem', maxWidth: '1140px', margin: '0 auto' }}>
       <div ref={ref} style={{
         textAlign: 'center', marginBottom: '72px',
         opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(30px)',

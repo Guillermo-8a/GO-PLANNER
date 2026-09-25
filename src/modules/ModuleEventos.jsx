@@ -383,7 +383,7 @@ export default function ModuleEventos(){
       ['Venta $',calc.total.ventaP,pct(calc.deltaVentaP)],
       ['Venta U',calc.total.ventaU,''],
       ['Margen %',pct(calc.total.margenPct),pct(calc.deltaMargen)],
-      ['Margen $',calc.total.utilidad,''],
+      ['Utilidad $',calc.total.utilidad,''],
       ['Sell-through %',pct(calc.total.stPct),pct(calc.deltaST)],
       ['Remanente U',calc.total.remanente,''],
       [],
@@ -614,7 +614,7 @@ export default function ModuleEventos(){
         if(tag==='MS'){ m[sku]='descuento'; return; }
         if(tag){ m[sku]='depreciado'; return; }
         const realizado = v&&v.ventaU>0 ? v.ventaP/v.ventaU : null;
-        m[sku] = (realizado!=null && s.precio>0 && realizado<s.precio*0.99) ? 'descuento' : 'regular';
+        m[sku] = (realizado!=null && s.precio>0 && realizado<s.precio*0.75) ? 'descuento' : 'regular';
       });
       return m; };
     const clasifBySku = buildClasif(snapBySku, salesBySkuFull);
@@ -657,6 +657,34 @@ export default function ModuleEventos(){
       const passClasif=filtros.clasif.length===0 || filtros.clasif.includes(clasifBySku[sku]||'sin_snapshot');
       return v('seccion')&&v('marca')&&v('goa')&&v('norma')&&v('estatus')&&passClasif;
     };
+    // Filtros dinámicos/cascada: las opciones de cada dimensión se calculan ignorando el filtro de ESA
+    // misma dimensión pero respetando todos los demás activos — así, si Sección=Zapatos Dama, el
+    // desplegable de Marca/GOA solo lista lo que existe dentro de esa Sección (y viceversa).
+    const dimsBase=['seccion','marca','goa','norma','estatus'];
+    const skuPassExcept=(sku,exceptDim)=>{
+      const s=snapBySku[sku]; if(!s) return false;
+      for(const f of dimsBase){ if(f===exceptDim) continue;
+        if(filtros[f].length>0 && !filtros[f].includes(s[f]||'')) return false; }
+      if(exceptDim!=='clasif' && filtros.clasif.length>0 && !filtros.clasif.includes(clasifBySku[sku]||'sin_snapshot')) return false;
+      return true;
+    };
+    const rowPassExcept=(r,exceptDim)=>{
+      for(const f of dimsBase){ if(f===exceptDim) continue;
+        if(filtros[f].length>0 && !filtros[f].includes(r[f]||'')) return false; }
+      if(exceptDim!=='subcanal' && filtros.subcanal.length>0 && !filtros.subcanal.includes(r.subcanal||'')) return false;
+      if(exceptDim!=='clasif' && filtros.clasif.length>0 && !filtros.clasif.includes(clasifBySku[r.sku]||'sin_snapshot')) return false;
+      return true;
+    };
+    const opcionesDinamicas={};
+    [...dimsBase,'subcanal'].forEach(d=>{
+      const set=new Set();
+      if(d!=='subcanal') Object.keys(snapBySku).forEach(sku=>{ if(skuPassExcept(sku,d)){ const val=snapBySku[sku][d]; if(val) set.add(val); } });
+      salesRows.forEach(r=>{ if(rowPassExcept(r,d)){ const val=d==='subcanal'?r.subcanal:r[d]; if(val) set.add(val); } });
+      opcionesDinamicas[d]=[...set].sort();
+    });
+    { const set=new Set();
+      Object.keys(snapBySku).forEach(sku=>{ if(skuPassExcept(sku,'clasif')) set.add(clasifBySku[sku]||'sin_snapshot'); });
+      opcionesDinamicas.clasif=[...set].sort(); }
     const salesF=salesRows.filter(r=>
       (filtros.subcanal.length===0||filtros.subcanal.includes(r.subcanal)) && passSnap(r.sku));
     // Año actual vs año anterior — detectado solo, por año de fecha (si la data trae 2 años en Vtas_Evento).
@@ -801,9 +829,9 @@ export default function ModuleEventos(){
       return Object.entries(bySeccion).map(([seccion,rows])=>{
         const subMap={};
         rows.forEach(r=>{ const sv=r[subKey]||'SIN DATO'; if(!subMap[sv]) subMap[sv]=[]; subMap[sv].push(r); });
-        const subs=Object.entries(subMap).map(([nombre,rs])=>({nombre,...sumByClasif(rs)})).sort((a,b)=>b.total.montoA-a.total.montoA);
+        const subs=Object.entries(subMap).map(([nombre,rs])=>({nombre,...sumByClasif(rs)})).sort((a,b)=>b.total.monto-a.total.monto);
         return { seccion, ...sumByClasif(rows), subs };
-      }).sort((a,b)=>b.total.montoA-a.total.montoA);
+      }).sort((a,b)=>b.total.monto-a.total.monto);
     };
     const treeMarca=buildTree('marca');
     const treeGoa=buildTree('goa');
@@ -839,7 +867,7 @@ export default function ModuleEventos(){
 
     return { total, regular, descuento, depreciado, categorias, topModelo, bottom10, sinSnapshot, fMin, fMax,
       deltaVentaP, deltaMargen, deltaST, nSkuSnap:joined.nSkuSnap, nSkuVenta:joined.nSkuVenta,
-      grand, treeMarca, treeGoa, porDia, porSubcanal, porEstatus, porMarca:porMarcaConInv, porGoa:porGoaConInv, opciones,
+      grand, treeMarca, treeGoa, porDia, porSubcanal, porEstatus, porMarca:porMarcaConInv, porGoa:porGoaConInv, opciones, opcionesDinamicas,
       hasLY, anoActual, anoAnterior, hasSnapshot, hasRealSnapshot, hasInvIniData, invIniPorGoa, invIniPorMarca, invIniTotal,
       avgDiaTY, avgDiaLY };
   },[active,joined,salesRows,filtros]);
@@ -1057,7 +1085,7 @@ export default function ModuleEventos(){
             <div className="flex flex-wrap items-center gap-2 no-print relative">
               {filtroAbierto && <div className="fixed inset-0 z-10" onClick={()=>setFiltroAbierto(null)}/>}
               {FILTRO_DIMS.map(dim=>{
-                const opts=calc.opciones[dim]||[];
+                const opts=calc.opcionesDinamicas[dim]||[];
                 if(opts.length===0) return null;
                 const n=filtros[dim].length;
                 const dimLabel=val=>dim==='clasif'?(CLASIF_LABEL[val]||val):val;
@@ -1107,7 +1135,7 @@ export default function ModuleEventos(){
                   <KpiCard label="Venta $" value={fmtM(calc.total.ventaP)} delta={calc.deltaVentaP} t={t} isDark={isDark}/>
                   <KpiCard label="Venta U" value={fmt(calc.total.ventaU)} t={t} isDark={isDark}/>
                   <KpiCard label="Margen %" value={fmtP(calc.total.margenPct)} delta={calc.deltaMargen} pts t={t} isDark={isDark}/>
-                  <KpiCard label="Margen $" value={fmtM(calc.total.utilidad)} t={t} isDark={isDark}/>
+                  <KpiCard label="Utilidad $" value={fmtM(calc.total.utilidad)} t={t} isDark={isDark}/>
                   <KpiCard label="Sell-through" value={fmtP(calc.total.stPct)} delta={calc.total.stPctAA!=null?calc.total.stPct-calc.total.stPctAA:calc.deltaST} pts t={t} isDark={isDark}/>
                   <KpiCard label="Remanente U" value={fmt(calc.total.remanente)} t={t} isDark={isDark}/>
                 </div>
@@ -1331,7 +1359,7 @@ export default function ModuleEventos(){
               <div className={`p-4 rounded-xl border overflow-x-auto ${t.card}`}>
                 {calc.hasRealSnapshot ? (<>
                 <div className="flex items-center justify-between mb-3 no-print">
-                  <p className={`text-xs font-black ${t.textMain}`}>Valor de inventario por clasificación — antes (snapshot) vs actual</p>
+                  <p className={`text-xs font-black ${t.textMain}`}>Valor de inventario por clasificación — al arranque de la promo</p>
                   <div className="flex gap-1">
                     {[['marca','Marca'],['goa','GOA']].map(([k,lbl])=>(
                       <button key={k} onClick={()=>setGroupBy(k)} className={`px-3 py-1 rounded-lg text-[10px] font-bold border ${groupBy===k?t.btnPrimary:t.btnGhost}`}>{lbl}</button>
@@ -1339,21 +1367,34 @@ export default function ModuleEventos(){
                   </div>
                 </div>
 
-                {/* Header con totales generales por clasificación */}
+                {/* Header con totales generales por clasificación — inventario AL ARRANQUE (monto/oh), no remanente */}
                 <div className="grid grid-cols-3 gap-3 mb-4">
                   {['regular','descuento','depreciado'].map(k=>(
                     <div key={k} className={`p-3 rounded-lg border ${t.cardInner}`} style={{boxShadow:`0 0 18px ${CLASIF_COLOR[k]}33`}}>
                       <p className="text-[10px] font-black uppercase flex items-center gap-1.5" style={{color:CLASIF_COLOR[k]}}>
                         <span className="w-2 h-2 rounded-full" style={{background:CLASIF_COLOR[k]}}/>{CLASIF_LABEL[k]}
                       </p>
-                      <p className={`text-sm font-black mt-1 ${t.textMain}`}>{fmtM(calc.grand[k].montoA)}</p>
-                      <p className={`text-[10px] ${t.textMuted}`}>{calc.grand.total.montoA>0?fmtP(calc.grand[k].montoA/calc.grand.total.montoA*100):'-'} del total · {fmt(calc.grand[k].ohA)} pzs</p>
+                      <p className={`text-sm font-black mt-1 ${t.textMain}`}>{fmtM(calc.grand[k].monto)}</p>
+                      <p className={`text-[10px] ${t.textMuted}`}>{calc.grand.total.monto>0?fmtP(calc.grand[k].monto/calc.grand.total.monto*100):'-'} del total · {fmt(calc.grand[k].oh)} pzs</p>
+                      <p className={`text-[10px] mt-0.5 ${t.textMuted}`}>Remanente: {fmtM(calc.grand[k].montoA)} · {fmt(calc.grand[k].ohA)} pzs</p>
                       <p className="text-[10px] mt-1 flex items-center gap-1">vs AA:{' '}
-                        {calc.grand[k].montoAant>0?<DeltaBadge value={(calc.grand[k].montoA-calc.grand[k].montoAant)/calc.grand[k].montoAant*100}/>:<span className="text-gray-400">Sin AA</span>}
+                        {calc.grand[k].montoAant>0?<DeltaBadge value={(calc.grand[k].monto-calc.grand[k].montoAant)/calc.grand[k].montoAant*100}/>:<span className="text-gray-400">Sin AA</span>}
                       </p>
                     </div>
                   ))}
                 </div>
+
+                <ResponsiveContainer width="100%" height={150}>
+                  <BarChart data={[{name:'Regular',monto:calc.grand.regular.monto},{name:'Descuento',monto:calc.grand.descuento.monto},{name:'Depreciado',monto:calc.grand.depreciado.monto}]} margin={{top:10}} barCategoryGap="35%">
+                    <CartesianGrid strokeDasharray="3 3" stroke={gridC} vertical={false}/>
+                    <XAxis dataKey="name" tick={{fontSize:10,fill:txtC}} stroke={axisC}/>
+                    <YAxis tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
+                    <Tooltip content={<TTip/>} cursor={{fill:cursorFill}}/>
+                    <Bar dataKey="monto" name="Inventario inicial $" radius={[6,6,0,0]} maxBarSize={64}>
+                      <Cell fill={CLASIF_COLOR.regular}/><Cell fill={CLASIF_COLOR.descuento}/><Cell fill={CLASIF_COLOR.depreciado}/>
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
 
                 <table className="w-full text-xs min-w-[900px]">
                   <thead>
@@ -1386,9 +1427,9 @@ export default function ModuleEventos(){
                             </td>
                             {['regular','descuento','depreciado','total'].map(k=>(
                               <React.Fragment key={k}>
-                                <td className="text-right border-l">{fmt(sec[k].ohA)}</td>
-                                <td className="text-right">{fmtM(sec[k].montoA)}</td>
-                                <td className="text-right">{sec[k].montoAant>0?<DeltaBadge value={(sec[k].montoA-sec[k].montoAant)/sec[k].montoAant*100}/>:<span className="text-gray-400">Sin AA</span>}</td>
+                                <td className="text-right border-l">{fmt(sec[k].oh)}</td>
+                                <td className="text-right">{fmtM(sec[k].monto)}</td>
+                                <td className="text-right">{sec[k].montoAant>0?<DeltaBadge value={(sec[k].monto-sec[k].montoAant)/sec[k].montoAant*100}/>:<span className="text-gray-400">Sin AA</span>}</td>
                               </React.Fragment>
                             ))}
                           </tr>
@@ -1397,9 +1438,9 @@ export default function ModuleEventos(){
                               <td className="py-1.5 pl-6">{sub.nombre}</td>
                               {['regular','descuento','depreciado','total'].map(k=>(
                                 <React.Fragment key={k}>
-                                  <td className="text-right border-l">{fmt(sub[k].ohA)}</td>
-                                  <td className="text-right">{fmtM(sub[k].montoA)}</td>
-                                  <td className="text-right">{sub[k].montoAant>0?<DeltaBadge value={(sub[k].montoA-sub[k].montoAant)/sub[k].montoAant*100}/>:<span className="text-gray-400">Sin AA</span>}</td>
+                                  <td className="text-right border-l">{fmt(sub[k].oh)}</td>
+                                  <td className="text-right">{fmtM(sub[k].monto)}</td>
+                                  <td className="text-right">{sub[k].montoAant>0?<DeltaBadge value={(sub[k].monto-sub[k].montoAant)/sub[k].montoAant*100}/>:<span className="text-gray-400">Sin AA</span>}</td>
                                 </React.Fragment>
                               ))}
                             </tr>
@@ -1413,9 +1454,9 @@ export default function ModuleEventos(){
                       <td className="py-2">Suma total</td>
                       {['regular','descuento','depreciado','total'].map(k=>(
                         <React.Fragment key={k}>
-                          <td className="text-right border-l">{fmt(calc.grand[k].ohA)}</td>
-                          <td className="text-right">{fmtM(calc.grand[k].montoA)}</td>
-                          <td className="text-right">{calc.grand[k].montoAant>0?<DeltaBadge value={(calc.grand[k].montoA-calc.grand[k].montoAant)/calc.grand[k].montoAant*100}/>:<span className="text-gray-400">Sin AA</span>}</td>
+                          <td className="text-right border-l">{fmt(calc.grand[k].oh)}</td>
+                          <td className="text-right">{fmtM(calc.grand[k].monto)}</td>
+                          <td className="text-right">{calc.grand[k].montoAant>0?<DeltaBadge value={(calc.grand[k].monto-calc.grand[k].montoAant)/calc.grand[k].montoAant*100}/>:<span className="text-gray-400">Sin AA</span>}</td>
                         </React.Fragment>
                       ))}
                     </tr>
