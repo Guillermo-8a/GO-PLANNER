@@ -37,7 +37,7 @@ const idbDel=async k=>{ const db=await idbOpen(); return new Promise((res,rej)=>
 const TIPOS_EVENTO=['NM Mamás','NM Papás','BTS','MS','GVL','ATH','NM Navidad','NM','Hot Sale','Buen Fin','Otro'];
 const OBJETIVOS=['Liquidar depreciado','Tráfico','Margen'];
 // Paleta validada (CVD-safe, dark + light) para las 3 clasificaciones
-const CLASIF_COLOR={ regular:'#8b5cf6', descuento:'#f59e0b', depreciado:'#c2410c', sin_snapshot:'#00bcd4' };
+const CLASIF_COLOR={ regular:'#8b5cf6', descuento:'#f59e0b', depreciado:'#00bcd4', sin_snapshot:'#00bcd4' };
 const VIOLET_SHADES=['#8b5cf6','#a78bfa','#c4b5fd','#7c3aed','#ddd6fe','#6d28d9','#e9d5ff','#5b21b6'];
 const CLASIF_LABEL={ regular:'Regular', descuento:'Descuento', depreciado:'Depreciado', sin_snapshot:'Sin snapshot' };
 
