@@ -819,9 +819,11 @@ export default function ModuleEventos(){
 
     // ── Desglose de inventario Regular / Descuento / Depreciado (valor $, no venta) ──
     const invRows=detail.filter(r=>r.clasif!=='sin_snapshot');
-    // AA real: reconstruido desde el propio snapshot del año anterior (columna "Año" del xlsx, snapBySkuLY),
-    // no del campo legado "Monto aant" (casi nunca viene en el export actual, por eso salía "Sin AA" aunque
-    // sí hubiera un bloque de 2025 cargado). Se agrupa igual que invRows: por clasificación/sección/sub.
+    // AA: el archivo trae el dato en columnas propias por SKU ("OH aant"/"Monto aant"), en la MISMA fila que
+    // el inventario del año corriente — no en un bloque de filas aparte por "Año" (eso es otra cosa: solo
+    // separa qué bloque de filas es del año corriente vs. histórico, no dónde vive el dato AA). r.montoAant
+    // ya llega desde ahí (vía snapBySku). Solo si esa columna no trae nada se intenta reconstruir desde el
+    // bloque histórico por "Año", como respaldo.
     const invRowsLY = (hasLY && hasAnoCol && Object.keys(snapBySkuLY).length>0)
       ? Object.values(snapBySkuLY).filter(s=>(clasifBySkuLY[s.sku]||'sin_snapshot')!=='sin_snapshot')
           .map(s=>({ sku:s.sku, clasif:clasifBySkuLY[s.sku], seccion:s.seccion||'GENERAL', marca:s.marca, goa:s.goa,
@@ -832,14 +834,15 @@ export default function ModuleEventos(){
       ['regular','descuento','depreciado'].forEach(k=>{
         const rs=rows.filter(r=>r.clasif===k);
         const rsLY=rowsLY.filter(r=>r.clasif===k);
+        const legacyAant=rs.reduce((s,r)=>s+(r.montoAant||0),0);
         out[k]={ oh:rs.reduce((s,r)=>s+r.ohInicio,0), ohA:rs.reduce((s,r)=>s+(r.remanente||0),0),
           monto:rs.reduce((s,r)=>s+r.montoInicio,0), montoA:rs.reduce((s,r)=>s+r.montoRemanente,0),
-          // Si hay AA real (snapshot del año anterior) se usa ese; si no, cae al campo legado por SKU.
-          montoAant: rsLY.length>0 ? rsLY.reduce((s,r)=>s+r.montoInicio,0) : rs.reduce((s,r)=>s+(r.montoAant||0),0) };
+          montoAant: legacyAant>0 ? legacyAant : rsLY.reduce((s,r)=>s+r.montoInicio,0) };
       });
+      const legacyAantTotal=rows.reduce((s,r)=>s+(r.montoAant||0),0);
       out.total={ oh:rows.reduce((s,r)=>s+r.ohInicio,0), ohA:rows.reduce((s,r)=>s+(r.remanente||0),0),
         monto:rows.reduce((s,r)=>s+r.montoInicio,0), montoA:rows.reduce((s,r)=>s+r.montoRemanente,0),
-        montoAant: rowsLY.length>0 ? rowsLY.reduce((s,r)=>s+r.montoInicio,0) : rows.reduce((s,r)=>s+(r.montoAant||0),0) };
+        montoAant: legacyAantTotal>0 ? legacyAantTotal : rowsLY.reduce((s,r)=>s+r.montoInicio,0) };
       return out;
     };
     const grand=sumByClasif(invRows, invRowsLY);
