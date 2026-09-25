@@ -37,7 +37,7 @@ const idbDel=async k=>{ const db=await idbOpen(); return new Promise((res,rej)=>
 const TIPOS_EVENTO=['NM Mamás','NM Papás','BTS','MS','GVL','ATH','NM Navidad','NM','Hot Sale','Buen Fin','Otro'];
 const OBJETIVOS=['Liquidar depreciado','Tráfico','Margen'];
 // Paleta validada (CVD-safe, dark + light) para las 3 clasificaciones
-const CLASIF_COLOR={ regular:'#8b5cf6', descuento:'#059669', depreciado:'#c2410c', sin_snapshot:'#dc2626' };
+const CLASIF_COLOR={ regular:'#8b5cf6', descuento:'#f59e0b', depreciado:'#c2410c', sin_snapshot:'#00bcd4' };
 const VIOLET_SHADES=['#8b5cf6','#a78bfa','#c4b5fd','#7c3aed','#ddd6fe','#6d28d9','#e9d5ff','#5b21b6'];
 const CLASIF_LABEL={ regular:'Regular', descuento:'Descuento', depreciado:'Depreciado', sin_snapshot:'Sin snapshot' };
 
@@ -195,13 +195,13 @@ const parseSalesCSV = text => {
 const DeltaBadge = ({value,pts=false}) => {
   if(value==null) return <span className="text-gray-400 text-[10px]">Sin LY</span>;
   const pos=value>=0;
-  return <span className={`text-[10px] font-black ${pos?'text-emerald-500':'text-red-500'}`}>{pos?'▲':'▼'} {Math.abs(value).toFixed(1)}{pts?' pts':'%'}</span>;
+  return <span className={`text-[10px] font-black ${pos?'text-[#f59e0b]':'text-[#00bcd4]'}`}>{pos?'▲':'▼'} {Math.abs(value).toFixed(1)}{pts?' pts':'%'}</span>;
 };
 const KpiCard = ({label,value,delta,pts,t,isDark}) => {
   const glow = (delta===undefined||delta==null)
     ? (isDark?'shadow-[0_0_22px_rgba(139,92,246,0.35)]':'shadow-[0_0_16px_rgba(139,92,246,0.18)]')
-    : delta>=0 ? (isDark?'shadow-[0_0_22px_rgba(16,185,129,0.4)]':'shadow-[0_0_16px_rgba(16,185,129,0.22)]')
-    : (isDark?'shadow-[0_0_22px_rgba(239,68,68,0.4)]':'shadow-[0_0_16px_rgba(239,68,68,0.22)]');
+    : delta>=0 ? (isDark?'shadow-[0_0_22px_rgba(245,158,11,0.4)]':'shadow-[0_0_16px_rgba(245,158,11,0.22)]')
+    : (isDark?'shadow-[0_0_22px_rgba(0,188,212,0.4)]':'shadow-[0_0_16px_rgba(0,188,212,0.22)]');
   return (
     <div className={`p-4 rounded-xl border text-center transition-shadow duration-300 ${t.cardInner} ${glow}`}>
       <p className={`text-[10px] font-bold uppercase tracking-wide ${t.textMuted}`}>{label}</p>
@@ -228,7 +228,7 @@ const Modal = ({onClose,children,isDark,wide}) => (
     <div onClick={e=>e.stopPropagation()}
       className={`relative w-full ${wide?'max-w-2xl':'max-w-lg'} max-h-[85vh] overflow-y-auto rounded-2xl border p-6 space-y-4
       shadow-[0_8px_40px_rgba(139,92,246,0.25)] backdrop-blur-2xl
-      ${isDark?'bg-zinc-900/70 border-white/10':'bg-white/75 border-white/60'}`}>
+      ${isDark?'bg-[#1e222d]/70 border-white/10':'bg-white/75 border-white/60'}`}>
       {children}
     </div>
   </div>
@@ -240,23 +240,23 @@ export default function ModuleEventos(){
   const theme=gState?.theme||'light';
   const isDark=theme==='dark';
   const themes={
-    dark:{appBg:'bg-transparent text-gray-100',card:'bg-zinc-900/80 backdrop-blur-xl border-zinc-800 shadow-sm',cardInner:'bg-zinc-950/70 backdrop-blur-xl border-zinc-800',
-      textMain:'text-white',textMuted:'text-gray-400',textAccent1:'text-violet-300',textAccent2:'text-purple-300',border:'border-zinc-800',
-      input:'bg-zinc-950 border-zinc-700 text-white focus:ring-violet-500',btnPrimary:'bg-violet-500 text-white hover:bg-violet-400 shadow-[0_0_18px_rgba(139,92,246,0.4)]',
-      btnGhost:'bg-zinc-800/80 text-gray-300 hover:text-white hover:bg-zinc-700 border-zinc-700',
+    dark:{appBg:'bg-transparent text-gray-100',card:'bg-[#1e222d]/80 backdrop-blur-xl border-[#2a2e3d] shadow-sm',cardInner:'bg-[#161922]/70 backdrop-blur-xl border-[#2a2e3d]',
+      textMain:'text-white',textMuted:'text-gray-400',textAccent1:'text-violet-300',textAccent2:'text-purple-300',border:'border-[#2a2e3d]',
+      input:'bg-[#161922] border-[#2a2e3d] text-white focus:ring-violet-500',btnPrimary:'bg-violet-500 text-white hover:bg-violet-400 shadow-[0_0_18px_rgba(139,92,246,0.4)]',
+      btnGhost:'bg-[#1e222d]/80 text-gray-300 hover:text-white hover:bg-[#2a2e3d] border-[#2a2e3d]',
       badge:'bg-violet-500/25 text-violet-300 border-violet-400/60',badgeCyan:'bg-cyan-500/20 text-cyan-300 border-cyan-400/50',
-      badgeAmber:'bg-amber-600/25 text-amber-400 border-amber-500/60',badgeRed:'bg-rose-500/25 text-rose-300 border-rose-400/60',
-      badgeEmerald:'bg-emerald-500/20 text-emerald-300 border-emerald-400/50',badgeOrange:'bg-orange-600/25 text-orange-400 border-orange-500/60'},
+      badgeAmber:'bg-amber-600/25 text-amber-400 border-amber-500/60',badgeRed:'bg-[#00bcd4]/20 text-[#5ddef4] border-[#00bcd4]/50',
+      badgeEmerald:'bg-[#f59e0b]/20 text-[#f59e0b] border-[#f59e0b]/50',badgeOrange:'bg-orange-600/25 text-orange-400 border-orange-500/60'},
     light:{appBg:'bg-transparent text-gray-800',card:'bg-white/80 backdrop-blur-xl border-gray-200 shadow-sm',cardInner:'bg-gray-50/80 backdrop-blur-xl border-gray-200',
       textMain:'text-gray-900',textMuted:'text-gray-500',textAccent1:'text-violet-600',textAccent2:'text-purple-600',border:'border-gray-200',
       input:'bg-white border-gray-300 text-gray-900 focus:ring-violet-500',btnPrimary:'bg-violet-600 text-white hover:bg-violet-700 shadow-md',
       btnGhost:'bg-gray-100/80 text-gray-600 hover:text-gray-900 hover:bg-gray-200 border-gray-200',
       badge:'bg-violet-100 text-violet-700 border-violet-300',badgeCyan:'bg-cyan-100 text-cyan-700 border-cyan-300',
-      badgeAmber:'bg-amber-100 text-amber-800 border-amber-300',badgeRed:'bg-rose-100 text-rose-700 border-rose-300',
-      badgeEmerald:'bg-emerald-100 text-emerald-700 border-emerald-300',badgeOrange:'bg-orange-100 text-orange-800 border-orange-300'},
+      badgeAmber:'bg-amber-100 text-amber-800 border-amber-300',badgeRed:'bg-[#00bcd4]/10 text-[#0e7490] border-[#00bcd4]/40',
+      badgeEmerald:'bg-[#f59e0b]/15 text-[#92400e] border-[#f59e0b]/40',badgeOrange:'bg-orange-100 text-orange-800 border-orange-300'},
   };
   const t=themes[theme]||themes.light;
-  const gridC=isDark?'#27272a':'#f0f0f0', axisC=isDark?'#52525b':'#d1d5db', txtC=isDark?'#a1a1aa':'#6b7280';
+  const gridC=isDark?'#2a2e3d':'#f0f0f0', axisC=isDark?'#52525b':'#d1d5db', txtC=isDark?'#a1a1aa':'#6b7280';
   const cursorFill=isDark?'rgba(139,92,246,0.14)':'rgba(139,92,246,0.08)'; // glass violeta, en vez del cursor gris/blanco default de recharts
   const lineC=isDark?'#f4f4f5':'#18181b';
   const TTip=({active,payload,label})=>{ if(!active||!payload?.length) return null;
@@ -642,7 +642,7 @@ export default function ModuleEventos(){
       subcanal: uniq(salesRows.map(r=>r.subcanal)),
       clasif: uniq(Object.values(clasifBySku)),
     };
-    return { snapBySku, clasifBySku, clasifBySkuLY, opciones, anoActual, anoAnterior, hasLY, salesAttrBySku,
+    return { snapBySku, snapBySkuLY, clasifBySku, clasifBySkuLY, opciones, anoActual, anoAnterior, hasLY, hasAnoCol, salesAttrBySku,
       hasSnapshot, hasRealSnapshot, hasInvIniData, invIniBySeccionGoaMarca,
       nSkuSnap:Object.keys(snapBySku).length, nSkuVenta:Object.keys(salesBySkuFull).length };
   },[snapRows,salesRows]);
@@ -650,7 +650,7 @@ export default function ModuleEventos(){
   // ── Cálculos filtrados — rápido, solo agrupa lo ya unido ──
   const calc=useMemo(()=>{
     if(!active) return null;
-    const {snapBySku,clasifBySku,clasifBySkuLY,opciones,salesAttrBySku,hasSnapshot,hasRealSnapshot,hasInvIniData,invIniBySeccionGoaMarca}=joined;
+    const {snapBySku,snapBySkuLY,clasifBySku,clasifBySkuLY,opciones,salesAttrBySku,hasSnapshot,hasRealSnapshot,hasInvIniData,invIniBySeccionGoaMarca,hasAnoCol}=joined;
     const passSnap=sku=>{
       const s=snapBySku[sku], a=salesAttrBySku[sku];
       const v=f=>filtros[f].length===0 || filtros[f].includes(s?.[f]||a?.[f]||'');
@@ -747,7 +747,9 @@ export default function ModuleEventos(){
     const depreciadoLY=rollupSimple(detailLY.filter(r=>r.clasif==='depreciado'));
     const attachVsAA=(r,rLY)=>{ r.vsAA=hasLY?pctVs(r.ventaP,rLY.ventaP):null;
       r.vsAA_u=hasLY?pctVs(r.ventaU,rLY.ventaU):null;
-      r.vsAA_mg=hasLY?pctVs(r.utilidad,rLY.utilidad):null; };
+      r.vsAA_mg=hasLY?pctVs(r.utilidad,rLY.utilidad):null;
+      r.ventaPLY=hasLY?rLY.ventaP:null;
+      r.margenPctLY=hasLY?rLY.margenPct:null; };
     attachVsAA(total,totalLY); attachVsAA(regular,regularLY); attachVsAA(descuento,descuentoLY); attachVsAA(depreciado,depreciadoLY);
     // Breakdown por categoría (sección) — venta/margen/ST, solo secciones con venta
     const catMap={};
@@ -809,28 +811,41 @@ export default function ModuleEventos(){
 
     // ── Desglose de inventario Regular / Descuento / Depreciado (valor $, no venta) ──
     const invRows=detail.filter(r=>r.clasif!=='sin_snapshot');
-    const sumByClasif = rows => {
+    // AA real: reconstruido desde el propio snapshot del año anterior (columna "Año" del xlsx, snapBySkuLY),
+    // no del campo legado "Monto aant" (casi nunca viene en el export actual, por eso salía "Sin AA" aunque
+    // sí hubiera un bloque de 2025 cargado). Se agrupa igual que invRows: por clasificación/sección/sub.
+    const invRowsLY = (hasLY && hasAnoCol && Object.keys(snapBySkuLY).length>0)
+      ? Object.values(snapBySkuLY).filter(s=>(clasifBySkuLY[s.sku]||'sin_snapshot')!=='sin_snapshot')
+          .map(s=>({ sku:s.sku, clasif:clasifBySkuLY[s.sku], seccion:s.seccion||'GENERAL', marca:s.marca, goa:s.goa,
+            montoInicio:s.oh*s.precio }))
+      : [];
+    const sumByClasif = (rows, rowsLY=[]) => {
       const out={};
       ['regular','descuento','depreciado'].forEach(k=>{
         const rs=rows.filter(r=>r.clasif===k);
+        const rsLY=rowsLY.filter(r=>r.clasif===k);
         out[k]={ oh:rs.reduce((s,r)=>s+r.ohInicio,0), ohA:rs.reduce((s,r)=>s+(r.remanente||0),0),
           monto:rs.reduce((s,r)=>s+r.montoInicio,0), montoA:rs.reduce((s,r)=>s+r.montoRemanente,0),
-          montoAant:rs.reduce((s,r)=>s+(r.montoAant||0),0) };
+          // Si hay AA real (snapshot del año anterior) se usa ese; si no, cae al campo legado por SKU.
+          montoAant: rsLY.length>0 ? rsLY.reduce((s,r)=>s+r.montoInicio,0) : rs.reduce((s,r)=>s+(r.montoAant||0),0) };
       });
       out.total={ oh:rows.reduce((s,r)=>s+r.ohInicio,0), ohA:rows.reduce((s,r)=>s+(r.remanente||0),0),
         monto:rows.reduce((s,r)=>s+r.montoInicio,0), montoA:rows.reduce((s,r)=>s+r.montoRemanente,0),
-        montoAant:rows.reduce((s,r)=>s+(r.montoAant||0),0) };
+        montoAant: rowsLY.length>0 ? rowsLY.reduce((s,r)=>s+r.montoInicio,0) : rows.reduce((s,r)=>s+(r.montoAant||0),0) };
       return out;
     };
-    const grand=sumByClasif(invRows);
+    const grand=sumByClasif(invRows, invRowsLY);
     const buildTree = subKey => {
-      const bySeccion={};
+      const bySeccion={}, bySeccionLY={};
       invRows.forEach(r=>{ const secc=r.seccion||'GENERAL'; if(!bySeccion[secc]) bySeccion[secc]=[]; bySeccion[secc].push(r); });
+      invRowsLY.forEach(r=>{ const secc=r.seccion||'GENERAL'; if(!bySeccionLY[secc]) bySeccionLY[secc]=[]; bySeccionLY[secc].push(r); });
       return Object.entries(bySeccion).map(([seccion,rows])=>{
-        const subMap={};
+        const rowsLY=bySeccionLY[seccion]||[];
+        const subMap={}, subMapLY={};
         rows.forEach(r=>{ const sv=r[subKey]||'SIN DATO'; if(!subMap[sv]) subMap[sv]=[]; subMap[sv].push(r); });
-        const subs=Object.entries(subMap).map(([nombre,rs])=>({nombre,...sumByClasif(rs)})).sort((a,b)=>b.total.monto-a.total.monto);
-        return { seccion, ...sumByClasif(rows), subs };
+        rowsLY.forEach(r=>{ const sv=r[subKey]||'SIN DATO'; if(!subMapLY[sv]) subMapLY[sv]=[]; subMapLY[sv].push(r); });
+        const subs=Object.entries(subMap).map(([nombre,rs])=>({nombre,...sumByClasif(rs,subMapLY[nombre]||[])})).sort((a,b)=>b.total.monto-a.total.monto);
+        return { seccion, ...sumByClasif(rows,rowsLY), subs };
       }).sort((a,b)=>b.total.monto-a.total.monto);
     };
     const treeMarca=buildTree('marca');
@@ -859,8 +874,15 @@ export default function ModuleEventos(){
     // Inv. inicial $ por Marca/GOA, para pintarlo como barra extra en esos gráficos de venta
     const invIniByName=key=>{ const m={}; invIniRows.forEach(r=>{ const k=r[key]||'SIN DATO'; m[k]=(m[k]||0)+r.invIni; }); return m; };
     const invIniByMarcaName=invIniByName('marca'), invIniByGoaName=invIniByName('goa');
-    const porMarcaConInv=porMarca.map(r=>({...r, invIni:invIniByMarcaName[r.name]||0}));
-    const porGoaConInv=porGoa.map(r=>({...r, invIni:invIniByGoaName[r.name]||0}));
+    // Mismo inv. inicial pero partido por Regular/Descuento/Depreciado (solo tiene sentido con snapshot real,
+    // que es lo único que trae la clasificación por letra/rebaja) — usa invRows, ya filtrado por los filtros activos.
+    const invClasifByName=key=>{ const m={}; invRows.forEach(r=>{ const k=r[key]||'SIN DATO';
+      if(!m[k]) m[k]={regular:0,descuento:0,depreciado:0}; m[k][r.clasif]+=r.montoInicio; }); return m; };
+    const invClasifByMarcaName=invClasifByName('marca'), invClasifByGoaName=invClasifByName('goa');
+    const porMarcaConInv=porMarca.map(r=>({...r, invIni:invIniByMarcaName[r.name]||0,
+      ...(invClasifByMarcaName[r.name]||{regular:0,descuento:0,depreciado:0})}));
+    const porGoaConInv=porGoa.map(r=>({...r, invIni:invIniByGoaName[r.name]||0,
+      ...(invClasifByGoaName[r.name]||{regular:0,descuento:0,depreciado:0})}));
     // Venta diaria promedio TY vs AA (para el KPI chico del header de "Desempeño por día")
     const nDiasTY=porDia.length, nDiasLY=new Set(salesFLY.filter(r=>r.fecha).map(r=>r.fecha.toISOString().slice(0,10))).size;
     const avgDiaTY=nDiasTY>0?total.ventaP/nDiasTY:null, avgDiaLY=nDiasLY>0?totalLY.ventaP/nDiasLY:null;
@@ -1147,6 +1169,7 @@ export default function ModuleEventos(){
                   <table className="w-full text-xs">
                     <thead><tr className={t.textMuted}>
                       <th className="text-left pb-2">Clasificación (al arranque)</th><th className="text-right pb-2">Venta $</th>
+                      {calc.hasLY && <th className="text-right pb-2">Venta $ AA</th>}
                       {calc.hasLY && <th className="text-right pb-2">vs AA</th>}
                       <th className="text-right pb-2">Venta U</th><th className="text-right pb-2">Margen %</th>
                       <th className="text-right pb-2">Sell-through</th><th className="text-right pb-2">Remanente U</th><th className="text-right pb-2">Remanente $</th>
@@ -1157,9 +1180,10 @@ export default function ModuleEventos(){
                         <tr key={key} className={`border-t ${t.border} ${key==='total'?'font-black':''} ${t.textMain}`}>
                           <td className="py-2">{key==='total'?'Total':<span className="inline-flex items-center gap-1.5"><span className="w-2 h-2 rounded-full" style={{background:CLASIF_COLOR[key]}}/>{CLASIF_LABEL[key]}</span>}</td>
                           <td className="text-right">{fmtM(r.ventaP)}</td>
+                          {calc.hasLY && <td className="text-right">{fmtM(r.ventaPLY)}</td>}
                           {calc.hasLY && <td className="text-right"><DeltaBadge value={r.vsAA}/></td>}
                           <td className="text-right">{fmt(r.ventaU)}{calc.hasLY && <div><DeltaBadge value={r.vsAA_u}/></div>}</td>
-                          <td className="text-right">{fmtP(r.margenPct)}{calc.hasLY && <div><DeltaBadge value={r.vsAA_mg}/></div>}</td>
+                          <td className="text-right">{fmtP(r.margenPct)}{calc.hasLY && <div><DeltaBadge value={r.margenPct!=null&&r.margenPctLY!=null?r.margenPct-r.margenPctLY:null} pts/></div>}</td>
                           <td className="text-right">{fmtP(r.stPct)}</td><td className="text-right">{fmt(r.remanente)}</td>
                           <td className="text-right">{fmtM(r.montoRemanente)}</td>
                           <td className="text-right">{fmtM(r.montoDesplazado)}</td><td className="text-right">{fmtP(r.pctDesplazado)}</td>
@@ -1209,16 +1233,20 @@ export default function ModuleEventos(){
                   {/* Grupo de Artículo (GOA) */}
                   {calc.porGoa.length>0 && (
                     <div className={`p-4 rounded-xl border overflow-x-auto ${t.card}`}>
-                      <p className={`text-xs font-black mb-3 ${t.textMain}`}>Venta por Grupo de Artículo (GOA){calc.hasInvIniData?' (con Inv. Inicial $)':''}</p>
+                      <p className={`text-xs font-black mb-3 ${t.textMain}`}>Venta por Grupo de Artículo (GOA){calc.hasRealSnapshot?' (con Inv. Inicial $ por tipo)':calc.hasInvIniData?' (con Inv. Inicial $)':''}</p>
                       <ResponsiveContainer width="100%" height={Math.max(200,calc.porGoa.length*28)}>
                         <BarChart data={calc.porGoa} layout="vertical" margin={{left:10}} barCategoryGap="25%">
                           <CartesianGrid strokeDasharray="3 3" stroke={gridC} horizontal={false}/>
                           <XAxis type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
                           <YAxis type="category" dataKey="name" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={120}/>
                           <Tooltip content={<TTip/>} cursor={{fill:cursorFill}}/>
-                          {calc.hasInvIniData && <Legend wrapperStyle={{fontSize:10,color:txtC}}/>}
+                          {(calc.hasRealSnapshot||calc.hasInvIniData) && <Legend wrapperStyle={{fontSize:10,color:txtC}}/>}
                           <Bar dataKey="ventaP" name="Venta $" fill={CLASIF_COLOR.regular} radius={[0,6,6,0]} maxBarSize={20}/>
-                          {calc.hasInvIniData && <Bar dataKey="invIni" name="Inv. Inicial $" fill="#f59e0b" radius={[0,6,6,0]} maxBarSize={20}/>}
+                          {calc.hasRealSnapshot ? (<>
+                            <Bar dataKey="regular" stackId="inv" name="Inv. Regular" fill={CLASIF_COLOR.regular} maxBarSize={20}/>
+                            <Bar dataKey="descuento" stackId="inv" name="Inv. Descuento" fill={CLASIF_COLOR.descuento} maxBarSize={20}/>
+                            <Bar dataKey="depreciado" stackId="inv" name="Inv. Depreciado" fill={CLASIF_COLOR.depreciado} radius={[0,6,6,0]} maxBarSize={20}/>
+                          </>) : calc.hasInvIniData && <Bar dataKey="invIni" name="Inv. Inicial $" fill="#f59e0b" radius={[0,6,6,0]} maxBarSize={20}/>}
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
@@ -1226,16 +1254,20 @@ export default function ModuleEventos(){
                   {/* Marca */}
                   {calc.porMarca.length>0 && (
                     <div className={`p-4 rounded-xl border overflow-x-auto ${t.card}`}>
-                      <p className={`text-xs font-black mb-3 ${t.textMain}`}>Venta por Marca{calc.hasInvIniData?' (con Inv. Inicial $)':''}</p>
+                      <p className={`text-xs font-black mb-3 ${t.textMain}`}>Venta por Marca{calc.hasRealSnapshot?' (con Inv. Inicial $ por tipo)':calc.hasInvIniData?' (con Inv. Inicial $)':''}</p>
                       <ResponsiveContainer width="100%" height={Math.max(160,calc.porMarca.length*32)}>
                         <BarChart data={calc.porMarca} layout="vertical" margin={{left:10}} barCategoryGap="30%">
                           <CartesianGrid strokeDasharray="3 3" stroke={gridC} horizontal={false}/>
                           <XAxis type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
                           <YAxis type="category" dataKey="name" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={120}/>
                           <Tooltip content={<TTip/>} cursor={{fill:cursorFill}}/>
-                          {calc.hasInvIniData && <Legend wrapperStyle={{fontSize:10,color:txtC}}/>}
+                          {(calc.hasRealSnapshot||calc.hasInvIniData) && <Legend wrapperStyle={{fontSize:10,color:txtC}}/>}
                           <Bar dataKey="ventaP" name="Venta $" fill={CLASIF_COLOR.regular} radius={[0,6,6,0]} maxBarSize={22}/>
-                          {calc.hasInvIniData && <Bar dataKey="invIni" name="Inv. Inicial $" fill="#f59e0b" radius={[0,6,6,0]} maxBarSize={22}/>}
+                          {calc.hasRealSnapshot ? (<>
+                            <Bar dataKey="regular" stackId="inv" name="Inv. Regular" fill={CLASIF_COLOR.regular} maxBarSize={22}/>
+                            <Bar dataKey="descuento" stackId="inv" name="Inv. Descuento" fill={CLASIF_COLOR.descuento} maxBarSize={22}/>
+                            <Bar dataKey="depreciado" stackId="inv" name="Inv. Depreciado" fill={CLASIF_COLOR.depreciado} radius={[0,6,6,0]} maxBarSize={22}/>
+                          </>) : calc.hasInvIniData && <Bar dataKey="invIni" name="Inv. Inicial $" fill="#f59e0b" radius={[0,6,6,0]} maxBarSize={22}/>}
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
