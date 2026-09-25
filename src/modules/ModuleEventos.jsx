@@ -39,7 +39,6 @@ const OBJETIVOS=['Liquidar depreciado','Tráfico','Margen'];
 // Paleta validada (CVD-safe, dark + light) para las 3 clasificaciones
 const CLASIF_COLOR={ regular:'#8b5cf6', descuento:'#059669', depreciado:'#c2410c', sin_snapshot:'#dc2626' };
 const VIOLET_SHADES=['#8b5cf6','#a78bfa','#c4b5fd','#7c3aed','#ddd6fe','#6d28d9','#e9d5ff','#5b21b6'];
-const CLASIF_GRAD={ regular:'gradRegular', descuento:'gradDescuento', depreciado:'gradDepreciado', sin_snapshot:'gradAlerta' };
 const CLASIF_LABEL={ regular:'Regular', descuento:'Descuento', depreciado:'Depreciado', sin_snapshot:'Sin snapshot' };
 
 // ─── PARSERS ─────────────────────────────────────────────────────────────────
@@ -305,46 +304,56 @@ export default function ModuleEventos(){
     if(!node||exporting) return;
     setExporting(true);
     try{
-      // Puntos de corte "seguros": el borde superior de cada tarjeta de nivel superior, y de cada gráfica
-      // dentro del grid marcado .pdf-flatten. Cortar el PDF exactamente ahí evita partir una gráfica o
-      // tabla a la mitad entre dos páginas (antes se cortaba a una altura de página fija, sin importar
-      // qué hubiera ahí — por eso el pie de Subcanal y otras salían "a la mitad").
-      const rootTop=node.getBoundingClientRect().top;
-      const boundaries=new Set([0]);
-      const addBoundaries=el=>{ Array.from(el.children).forEach(child=>{
-        if(child.classList?.contains('no-print')) return;
-        boundaries.add(child.getBoundingClientRect().top-rootTop);
-        if(child.classList?.contains('pdf-flatten')) addBoundaries(child);
-      }); };
-      addBoundaries(node);
-      const totalHeightCss=node.scrollHeight;
-      boundaries.add(totalHeightCss);
-      const sortedBoundaries=[...boundaries].sort((a,b)=>a-b);
+      // Se captura CADA gráfica/tabla en su propio canvas (en vez de una sola captura gigante que
+      // luego se corta a una altura de página fija) — así una tarjeta nunca queda partida a la mitad
+      // entre dos páginas, sin importar dónde caiga el borde de la página. El grid marcado
+      // .pdf-flatten se "aplana" para tratar cada una de sus tarjetas como su propia sección.
+      const collectSections=el=>{
+        let out=[];
+        Array.from(el.children).forEach(child=>{
+          if(child.classList?.contains('no-print')) return;
+          if(child.classList?.contains('pdf-flatten')) out=out.concat(collectSections(child));
+          else out.push(child);
+        });
+        return out;
+      };
+      const sections=collectSections(node);
+      if(sections.length===0) return;
 
-      const canvas=await html2canvas(node,{
-        scale:2, backgroundColor:isDark?'#18181b':'#ffffff', useCORS:true,
-        ignoreElements:el=>el.classList?.contains('no-print'),
-      });
       const pdf=new jsPDF({orientation:'p',unit:'pt',format:'letter'});
       const pageW=pdf.internal.pageSize.getWidth(), pageH=pdf.internal.pageSize.getHeight();
-      const ptPerCssPx=pageW/node.offsetWidth; // CSS px (DOM) → pt (PDF)
-      const pxPerCssPx=canvas.width/node.offsetWidth; // CSS px (DOM) → canvas px (captura a scale:2)
+      const bg=isDark?'#18181b':'#ffffff';
+      let y=0, pageHasContent=false;
 
-      let cutCss=0; // dónde va el próximo corte, en CSS px del DOM original
-      while(cutCss<totalHeightCss-0.5){
-        const targetCss=cutCss+pageH/ptPerCssPx;
-        // El límite "seguro" más grande que no exceda el target; si ninguno cae en rango, se corta a fuerza ahí.
-        const candidatos=sortedBoundaries.filter(b=>b>cutCss+1 && b<=targetCss);
-        const nextCutCss=candidatos.length?candidatos[candidatos.length-1]:Math.min(targetCss,totalHeightCss);
-        const sliceStartPx=Math.round(cutCss*pxPerCssPx), sliceEndPx=Math.round(nextCutCss*pxPerCssPx);
-        const sliceHpx=Math.max(1,sliceEndPx-sliceStartPx);
-        const slice=document.createElement('canvas');
-        slice.width=canvas.width; slice.height=sliceHpx;
-        slice.getContext('2d').drawImage(canvas,0,sliceStartPx,canvas.width,sliceHpx,0,0,canvas.width,sliceHpx);
-        const imgW=pageW, imgH=sliceHpx/pxPerCssPx*ptPerCssPx;
-        if(cutCss>0) pdf.addPage();
-        pdf.addImage(slice.toDataURL('image/png'),'PNG',0,0,imgW,imgH);
-        cutCss=nextCutCss;
+      for(const sec of sections){
+        const canvas=await html2canvas(sec,{scale:2, backgroundColor:bg, useCORS:true,
+          ignoreElements:el=>el.classList?.contains('no-print')});
+        const ptPerPx=pageW/canvas.width; // misma escala horizontal siempre (ancho completo de página)
+        const fullHpt=canvas.height*ptPerPx;
+
+        if(fullHpt<=pageH+0.5){
+          if(pageHasContent && y+fullHpt>pageH+0.5){ pdf.addPage(); y=0; pageHasContent=false; }
+          pdf.addImage(canvas.toDataURL('image/png'),'PNG',0,y,pageW,fullHpt);
+          y+=fullHpt; pageHasContent=true;
+        } else {
+          // Sección más alta que una página completa (p.ej. una tabla larga) — es la única situación
+          // donde se corta a fuerza, por altura de página, nunca a media gráfica de otra sección.
+          if(pageHasContent){ pdf.addPage(); y=0; pageHasContent=false; }
+          const pxPerPt=canvas.height/fullHpt;
+          const maxSlicePx=Math.floor(pageH*pxPerPt);
+          let cutPx=0, lastSliceHpt=0;
+          while(cutPx<canvas.height-0.5){
+            const sliceHpx=Math.min(canvas.height-cutPx, maxSlicePx);
+            const slice=document.createElement('canvas');
+            slice.width=canvas.width; slice.height=sliceHpx;
+            slice.getContext('2d').drawImage(canvas,0,cutPx,canvas.width,sliceHpx,0,0,canvas.width,sliceHpx);
+            lastSliceHpt=sliceHpx/pxPerPt;
+            pdf.addImage(slice.toDataURL('image/png'),'PNG',0,0,pageW,lastSliceHpt);
+            cutPx+=sliceHpx;
+            if(cutPx<canvas.height-0.5) pdf.addPage();
+          }
+          y=lastSliceHpt; pageHasContent=true;
+        }
       }
       const slug=(active?.nombre||'evento').trim().replace(/\s+/g,'_').replace(/[^\w\-]/g,'');
       pdf.save(`resumen_${slug||'evento'}.pdf`);
@@ -597,8 +606,8 @@ export default function ModuleEventos(){
     const uniq=arr=>[...new Set(arr.filter(Boolean))].sort();
     const opciones={
       seccion: uniq([...Object.values(snapBySku).map(s=>s.seccion),...salesRows.map(r=>r.seccion)]),
-      marca: uniq(Object.values(snapBySku).map(s=>s.marca)),
-      goa: uniq(Object.values(snapBySku).map(s=>s.goa)),
+      marca: uniq([...Object.values(snapBySku).map(s=>s.marca),...salesRows.map(r=>r.marca)]),
+      goa: uniq([...Object.values(snapBySku).map(s=>s.goa),...salesRows.map(r=>r.goa)]),
       norma: uniq([...Object.values(snapBySku).map(s=>s.norma),...salesRows.map(r=>r.norma)]),
       estatus: uniq([...Object.values(snapBySku).map(s=>s.estatus),...salesRows.map(r=>r.estatus)]),
       subcanal: uniq(salesRows.map(r=>r.subcanal)),
@@ -962,24 +971,10 @@ export default function ModuleEventos(){
       )}
 
       <div id="eventos-print-area" className="space-y-5">
-        {/* Los gradientes van DENTRO del área que se exporta a PDF (html2canvas solo captura este nodo;
-            si el <defs> vive afuera, los url(#gradXxx) no resuelven y las barras salen invisibles). */}
-        <svg width="0" height="0" style={{position:'absolute'}}>
-          <defs>
-            {Object.entries(CLASIF_COLOR).map(([k,hex])=>(
-              <React.Fragment key={k}>
-                <linearGradient id={`${CLASIF_GRAD[k]}V`} x1="0" y1="0" x2="0" y2="1">
-                  <stop offset="0%" stopColor={hex} stopOpacity="1"/>
-                  <stop offset="100%" stopColor={hex} stopOpacity="0.72"/>
-                </linearGradient>
-                <linearGradient id={`${CLASIF_GRAD[k]}H`} x1="0" y1="0" x2="1" y2="0">
-                  <stop offset="0%" stopColor={hex} stopOpacity="0.72"/>
-                  <stop offset="100%" stopColor={hex} stopOpacity="1"/>
-                </linearGradient>
-              </React.Fragment>
-            ))}
-          </defs>
-        </svg>
+        {/* Antes usábamos gradientes SVG (url(#gradXxx)) para las barras, pero html2canvas serializa cada
+            <svg> de Recharts por separado al exportar a PDF, así que un url(#id) que apunta a un <defs>
+            en OTRO <svg> (aunque esté en el mismo documento) no resuelve — las barras salían invisibles.
+            Se usan colores sólidos (CLASIF_COLOR) en su lugar, que no dependen de nada externo al <svg>. */}
         <div className={`p-5 rounded-xl border ${t.card}`}>
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div>
@@ -1121,7 +1116,7 @@ export default function ModuleEventos(){
                       <YAxis tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
                       <Tooltip content={<TTip/>} cursor={{fill:cursorFill}}/>
                       <Bar dataKey="ventaP" name="Venta $" radius={[6,6,0,0]} maxBarSize={64}>
-                        <Cell fill="url(#gradRegularV)"/><Cell fill="url(#gradDescuentoV)"/><Cell fill="url(#gradDepreciadoV)"/>
+                        <Cell fill={CLASIF_COLOR.regular}/><Cell fill={CLASIF_COLOR.descuento}/><Cell fill={CLASIF_COLOR.depreciado}/>
                       </Bar>
                     </BarChart>
                   </ResponsiveContainer>
@@ -1164,7 +1159,7 @@ export default function ModuleEventos(){
                           <YAxis type="category" dataKey="name" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={120}/>
                           <Tooltip content={<TTip/>} cursor={{fill:cursorFill}}/>
                           {calc.hasInvIniData && <Legend wrapperStyle={{fontSize:10,color:txtC}}/>}
-                          <Bar dataKey="ventaP" name="Venta $" fill="url(#gradRegularH)" radius={[0,6,6,0]} maxBarSize={20}/>
+                          <Bar dataKey="ventaP" name="Venta $" fill={CLASIF_COLOR.regular} radius={[0,6,6,0]} maxBarSize={20}/>
                           {calc.hasInvIniData && <Bar dataKey="invIni" name="Inv. Inicial $" fill="#f59e0b" radius={[0,6,6,0]} maxBarSize={20}/>}
                         </BarChart>
                       </ResponsiveContainer>
@@ -1181,7 +1176,7 @@ export default function ModuleEventos(){
                           <YAxis type="category" dataKey="name" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={120}/>
                           <Tooltip content={<TTip/>} cursor={{fill:cursorFill}}/>
                           {calc.hasInvIniData && <Legend wrapperStyle={{fontSize:10,color:txtC}}/>}
-                          <Bar dataKey="ventaP" name="Venta $" fill="url(#gradRegularH)" radius={[0,6,6,0]} maxBarSize={22}/>
+                          <Bar dataKey="ventaP" name="Venta $" fill={CLASIF_COLOR.regular} radius={[0,6,6,0]} maxBarSize={22}/>
                           {calc.hasInvIniData && <Bar dataKey="invIni" name="Inv. Inicial $" fill="#f59e0b" radius={[0,6,6,0]} maxBarSize={22}/>}
                         </BarChart>
                       </ResponsiveContainer>
@@ -1214,11 +1209,11 @@ export default function ModuleEventos(){
                           <Tooltip content={<DiaTTip/>} cursor={{fill:cursorFill}}/>
                           <Legend wrapperStyle={{fontSize:10,color:txtC}}/>
                           {calc.hasRealSnapshot ? (<>
-                            <Bar yAxisId="izq" dataKey="regular" stackId="v" name="Regular" fill="url(#gradRegularV)"/>
-                            <Bar yAxisId="izq" dataKey="descuento" stackId="v" name="Descuento" fill="url(#gradDescuentoV)"/>
-                            <Bar yAxisId="izq" dataKey="depreciado" stackId="v" name="Depreciado" fill="url(#gradDepreciadoV)" radius={[6,6,0,0]}/>
+                            <Bar yAxisId="izq" dataKey="regular" stackId="v" name="Regular" fill={CLASIF_COLOR.regular}/>
+                            <Bar yAxisId="izq" dataKey="descuento" stackId="v" name="Descuento" fill={CLASIF_COLOR.descuento}/>
+                            <Bar yAxisId="izq" dataKey="depreciado" stackId="v" name="Depreciado" fill={CLASIF_COLOR.depreciado} radius={[6,6,0,0]}/>
                           </>) : (
-                            <Bar yAxisId="izq" dataKey="ventaP" name="Venta $ Total" fill="url(#gradRegularV)" radius={[6,6,0,0]}/>
+                            <Bar yAxisId="izq" dataKey="ventaP" name="Venta $ Total" fill={CLASIF_COLOR.regular} radius={[6,6,0,0]}/>
                           )}
                           <Line yAxisId="der" type="monotone" dataKey="margenPct" name="Margen %" stroke={lineC} strokeWidth={2} dot={false}/>
                           {calc.hasLY && <Line yAxisId="izq" type="monotone" dataKey="ventaPLY" name="Venta $ AA" stroke={txtC} strokeWidth={1.5} strokeDasharray="4 3" dot={false}/>}
@@ -1254,7 +1249,7 @@ export default function ModuleEventos(){
                           <XAxis type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
                           <YAxis type="category" dataKey="name" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={120}/>
                           <Tooltip content={<TTip/>} cursor={{fill:cursorFill}}/>
-                          <Bar dataKey="ventaP" name="Venta $" fill="url(#gradRegularH)" radius={[0,6,6,0]} maxBarSize={22}/>
+                          <Bar dataKey="ventaP" name="Venta $" fill={CLASIF_COLOR.regular} radius={[0,6,6,0]} maxBarSize={22}/>
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
@@ -1269,7 +1264,7 @@ export default function ModuleEventos(){
                           <XAxis type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
                           <YAxis type="category" dataKey="modelo" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={80}/>
                           <Tooltip content={<ModeloTTip/>} cursor={{fill:cursorFill}}/>
-                          <Bar dataKey="ventaP" name="Venta $" fill="url(#gradRegularH)" radius={[0,6,6,0]} maxBarSize={22}/>
+                          <Bar dataKey="ventaP" name="Venta $" fill={CLASIF_COLOR.regular} radius={[0,6,6,0]} maxBarSize={22}/>
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
