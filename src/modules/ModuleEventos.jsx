@@ -505,6 +505,35 @@ export default function ModuleEventos(){
     setSnapRows([]); idbDel(`snap_${activeId}`).catch(()=>{});
     if(snapRef.current) snapRef.current.value='';
   };
+  // Recupera el CSV de ventas desde lo que ya está parseado en memoria/IndexedDB (por si se perdió el
+  // archivo original) — usa los mismos encabezados que Vtas_Evento para que se pueda re-subir tal cual
+  // a este mismo módulo. Se codifica en ISO-8859-1 (igual que uploadSales lee el archivo) para que los
+  // acentos no se rompan al volver a cargarlo.
+  const handleDownloadSalesCSV=()=>{
+    if(!salesRows.length) return;
+    const pad2=n=>String(n).padStart(2,'0');
+    const fmtFecha=d=>d?`${pad2(d.getDate())}.${pad2(d.getMonth()+1)}.${d.getFullYear()}`:'';
+    const val=v=>v==null?'':v;
+    const esc=v=>{ const s=String(val(v)); return /[",\n]/.test(s)?'"'+s.replace(/"/g,'""')+'"':s; };
+    const headers=['Día/Periodo','Sección','N_Seccion','Subcanal','Grupo Artículos','N_GOA','Modelo Proveedor',
+      'Artículo','N_Articulo','Marca','Estatus del Artículo','N_Estatus','Norma de Aprovisionamiento',
+      'Vtas. U','Vtas. $ ','GM ','Total Descuentos','Costo MSI ','INV INI  AA','OH AA','INV INI','OH'];
+    const lines=[headers.join(',')];
+    salesRows.forEach(r=>{
+      lines.push([fmtFecha(r.fecha),'',r.seccion,r.subcanal,'',r.goa,r.modelo,r.sku,'',r.marca,'',r.estatus,
+        r.norma,val(r.ventaU),val(r.ventaP/1000),val(r.utilidad),val(r.totalDescuento/1000),'',
+        val(r.invIniAA),val(r.ohAA),val(r.invIni),val(r.oh)].map(esc).join(','));
+    });
+    const text=lines.join('\n');
+    const bytes=new Uint8Array(text.length);
+    for(let i=0;i<text.length;i++) bytes[i]=text.charCodeAt(i)&0xFF;
+    const blob=new Blob([bytes],{type:'text/csv'});
+    const url=URL.createObjectURL(blob);
+    const a=document.createElement('a');
+    const slug=(active?.nombre||'evento').trim().replace(/\s+/g,'_').replace(/[^\w\-]/g,'');
+    a.href=url; a.download=`ventas_${slug||'evento'}_recuperado.csv`; a.click();
+    URL.revokeObjectURL(url);
+  };
   const clearSales=()=>{
     if(!window.confirm('¿Eliminar las ventas cargadas de este evento?')) return;
     setSalesRows([]); idbDel(`sales_${activeId}`).catch(()=>{});
@@ -1000,6 +1029,7 @@ export default function ModuleEventos(){
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold border ${t.btnGhost}`}>
                 <Icons.Upload size={12}/> {salesRows.length>0 ? `Ventas (${joined.nSkuVenta})` : 'Ventas'}
               </button>
+              {salesRows.length>0 && <button onClick={handleDownloadSalesCSV} title="Descargar el CSV de ventas cargado (por si se perdió el archivo original)" className={`p-1.5 rounded-lg border ${t.btnGhost} opacity-60 hover:opacity-100`}><Icons.Download size={12}/></button>}
               {salesRows.length>0 && <button onClick={clearSales} title="Eliminar ventas" className={`p-1.5 rounded-lg border ${t.btnGhost} opacity-60 hover:opacity-100`}><Icons.Trash2 size={12}/></button>}
             </div>
           </div>
