@@ -19,10 +19,11 @@ import ModuleDispersion from "./modules/ModuleDispersion" ;
 import ModuleChequera from "./modules/ModuleChequera" ;
 import ModuleDayli from "./modules/ModuleDayli" ;
 import ModuleEventos from "./modules/ModuleEventos" ;
+import ModuleSuplementarios from "./modules/ModuleSuplementarios" ;
 
 import {
   Layers, Bell, Sun, Moon, ShoppingCart, Map, LayoutDashboard,
-  HelpCircle, Wallet, Zap, Search, Mail, Circle, Tag,} from 'lucide-react';
+  HelpCircle, Wallet, Zap, Search, Mail, Circle, Tag, PieChart,} from 'lucide-react';
 
 // ─── Paletas de tema ──────────────────────────────────────────────────────────
 export const THEMES = {
@@ -106,6 +107,7 @@ const NAV_ITEMS = [
   { id: 'distribucion', label: 'Distribución',   Icon: Map,             desc: 'Surtido a tiendas',     dataKey: 'distributionData' },
   { id: 'resurtido',    label: 'Resurtido',       Icon: RefreshCw,       desc: 'Reposición continua',   dataKey: 'replenishmentData' },
   { id: 'planning',    label: 'Planning',       Icon: TrendingUp,       desc: 'Planeación compuesta',   dataKey: null },
+  { id: 'suplementarios', label: 'Suplementarios', Icon: PieChart, desc: 'OTB por marca/proveedor', dataKey: null },
   { id: 'dayli',    label: 'Dayli',       Icon: Map,       desc: 'Ajustes diarios',   dataKey: null },
   { id: 'dispersion',    label: 'Dispersión',       Icon: BarChart2,       desc: 'Revisión inventarios',   dataKey: 'dispersionData' },
   { id: 'chequera', label: 'Chequera', Icon: Wallet, desc: 'Control de compras', dataKey: null },
@@ -121,6 +123,7 @@ const LOCAL_DATA_KEYS = {
   chequera:  ['chequera_externa', 'chequera_propia'],
   dayli:     ['gop_daily_v3'],
   planning:  ['gop_forecast_setup'],
+  suplementarios: ['gop_suplementarios'],
 };
 function moduleHasData(m, global) {
   return m.dataKey ? !!global[m.dataKey] : hasLocalData(m.id);
@@ -146,7 +149,7 @@ const PIPELINE_STEPS = [
 
 // ─── Mundos (agrupación del sidebar y del dashboard) ──────────────────────────
 const NAV_GROUPS = [
-  { id: 'financial',  label: 'Financial',        Icon: Calculator,   color: '#B39DDB', items: ['planning'] },
+  { id: 'financial',  label: 'Financial',        Icon: Calculator,   color: '#B39DDB', items: ['planning', 'suplementarios'] },
   { id: 'demand',     label: 'Demand Planner',   Icon: TrendingUp,   color: '#E0BB3E', items: ['assortment', 'forecast', 'distribucion', 'resurtido'] },
   { id: 'inventory',  label: 'Inventory Control',Icon: Boxes,        color: '#8A73AD', items: ['dispersion', 'traslados', 'chequera', 'eventos'] },
   { id: 'checkcoo',   label: 'Check Coo',        Icon: CircleCheck,  color: '#9A9CA3', items: ['dayli'] },
@@ -474,6 +477,7 @@ function Shell() {
       case 'chequera': return <ModuleChequera />;  
       case 'planning': return <ModulePlanning {...moduleProps} />;    
       case 'eventos': return <ModuleEventos />;
+      case 'suplementarios': return <ModuleSuplementarios {...moduleProps} />;
       default:             return <Dashboard {...moduleProps} />;
     }
   };
