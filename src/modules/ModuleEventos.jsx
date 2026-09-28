@@ -599,6 +599,7 @@ export default function ModuleEventos(){
       return m; };
     const snapBySku = buildSnapBySku(snapRowsActual);
     const snapBySkuLY = hasLY ? buildSnapBySku(snapRowsLY) : {};
+    const snapAantBySku = buildSnapBySku(snapRows);
     const salesBySkuFull={};
     salesRows.forEach(r=>{
       const k=r.sku;
@@ -650,7 +651,7 @@ export default function ModuleEventos(){
       subcanal: uniq(salesRows.map(r=>r.subcanal)),
       clasif: uniq(Object.values(clasifBySku)),
     };
-    return { snapBySku, snapBySkuLY, clasifBySku, clasifBySkuLY, opciones, anoActual, anoAnterior, hasLY, hasAnoCol, salesAttrBySku,
+    return { snapBySku, snapBySkuLY, snapAantBySku, clasifBySku, clasifBySkuLY, opciones, anoActual, anoAnterior, hasLY, hasAnoCol, salesAttrBySku,
       hasSnapshot, hasRealSnapshot, hasInvIniData, invIniBySeccionGoaMarca,
       nSkuSnap:Object.keys(snapBySku).length, nSkuVenta:Object.keys(salesBySkuFull).length };
   },[snapRows,salesRows]);
@@ -658,7 +659,7 @@ export default function ModuleEventos(){
   // ── Cálculos filtrados — rápido, solo agrupa lo ya unido ──
   const calc=useMemo(()=>{
     if(!active) return null;
-    const {snapBySku,snapBySkuLY,clasifBySku,clasifBySkuLY,opciones,salesAttrBySku,hasSnapshot,hasRealSnapshot,hasInvIniData,invIniBySeccionGoaMarca,hasAnoCol}=joined;
+    const {snapBySku,snapBySkuLY,snapAantBySku,clasifBySku,clasifBySkuLY,opciones,salesAttrBySku,hasSnapshot,hasRealSnapshot,hasInvIniData,invIniBySeccionGoaMarca,hasAnoCol}=joined;
     const passSnap=sku=>{
       const s=snapBySku[sku], a=salesAttrBySku[sku];
       const v=f=>filtros[f].length===0 || filtros[f].includes(s?.[f]||a?.[f]||'');
@@ -726,7 +727,7 @@ export default function ModuleEventos(){
       detail.push({ sku, marca:v.marca||s?.marca||'', goa:v.goa||s?.goa||'', seccion:v.seccion||s?.seccion||'GENERAL',
         modelo:v.modelo||s?.modelo||s?.nsku||'', clasif, ohInicio, precio, remanente,
         montoInicio: ohInicio*precio, montoRemanente:(remanente||0)*precio,
-        ohAant:s?.ohAant||0, montoAant:s?.montoAant||0,
+        ohAant:snapAantBySku[sku]?.ohAant||0, montoAant:snapAantBySku[sku]?.montoAant||0,
         ventaU:v.ventaU, ventaP:v.ventaP, utilidad:v.utilidad,
         stPct: ohInicio>0 ? Math.min(100,(v.ventaU/ohInicio)*100) : null });
     });
