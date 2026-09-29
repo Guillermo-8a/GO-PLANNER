@@ -7,69 +7,72 @@ import {
 } from 'lucide-react';
 import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid,
-  Tooltip, ResponsiveContainer,
+  Tooltip, ResponsiveContainer, ReferenceArea,
 } from 'recharts';
 import { useGlobal } from '../context/GlobalContext';
 
-// ─── Motores Matemáticos (sin cambios) ───────────────────────────────────────
-
+// ─── Motores ──────────────────────────────────────────────────────────────────
+// Cada motor regresa `fit` (pronóstico one-step-ahead: fit[i] usa SOLO datos < i, sin fuga)
+// y `future` (h periodos). Antes Holt/HW calculaban el ajuste después de ver el dato → accuracy inflado.
 const engines = {
-  'SES': (data, p, horizon) => {
-    const res = Array(data.length).fill(null);
-    if (data.length === 0) return { history: res, future: [] };
-    const alpha = p.sesAlpha || 0.3;
-    let level = data[0];
-    res[0] = level;
-    for (let i = 1; i < data.length; i++) {
-      level = alpha * (data[i - 1] || 0) + (1 - alpha) * level;
-      res[i] = level;
-    }
-    const finalFcst = alpha * (data[data.length - 1] || 0) + (1 - alpha) * level;
-    return { history: res, future: Array(horizon).fill(finalFcst) };
+  'SES': {
+    minTrain: () => 3,
+    grid: () => [0.1, 0.2, 0.3, 0.4, 0.5, 0.6, 0.7, 0.8, 0.9].map((alpha) => ({ alpha })),
+    run: (d, p, h) => {
+      let lv = d[0]; const fit = [null];
+      for (let i = 1; i < d.length; i++) { fit.push(lv); lv = p.alpha * d[i] + (1 - p.alpha) * lv; }
+      return { fit, future: Array(h).fill(lv) };
+    },
   },
-  'Holt': (data, p, horizon) => {
-    const res = Array(data.length).fill(null);
-    if (data.length < 2) return engines['SES'](data, p, horizon);
-    const alpha = p.holtAlpha || 0.3, beta = p.holtBeta || 0.1;
-    let level = data[0], trend = data[1] - data[0];
-    res[0] = level;
-    for (let i = 1; i < data.length; i++) {
-      const prevL = level;
-      level = alpha * data[i] + (1 - alpha) * (level + trend);
-      trend = beta * (level - prevL) + (1 - beta) * trend;
-      res[i] = level + trend;
-    }
-    return { history: res, future: Array.from({ length: horizon }, (_, h) => level + (h + 1) * trend) };
+  'Holt': {
+    minTrain: () => 4,
+    grid: () => [0.1, 0.2, 0.3, 0.5, 0.7, 0.9].flatMap((alpha) => [0.01, 0.05, 0.1, 0.2, 0.3].map((beta) => ({ alpha, beta }))),
+    run: (d, p, h) => {
+      let lv = d[1], tr = d[1] - d[0]; const fit = [null, null];
+      for (let i = 2; i < d.length; i++) {
+        fit.push(lv + tr);
+        const pl = lv; lv = p.alpha * d[i] + (1 - p.alpha) * (lv + tr); tr = p.beta * (lv - pl) + (1 - p.beta) * tr;
+      }
+      return { fit, future: Array.from({ length: h }, (_, j) => lv + (j + 1) * tr) };
+    },
   },
-  'Holt-Winters': (data, p, horizon) => {
-    const res = Array(data.length).fill(null);
-    const L = p.hwPeriod || 12;
-    if (data.length < L * 2) return engines['Holt'](data, p, horizon);
-    const alpha = p.hwAlpha || 0.2, beta = p.hwBeta || 0.1, gamma = p.hwGamma || 0.3;
-    let level = data.slice(0, L).reduce((a, b) => a + b, 0) / L;
-    let trend = (data.slice(L, 2 * L).reduce((a, b) => a + b, 0) / L - level) / L;
-    let seasonals = data.slice(0, L).map(v => v / (level || 1));
-    res[0] = level * seasonals[0];
-    for (let i = 0; i < data.length; i++) {
-      const prevL = level;
-      const obs = data[i];
-      level = alpha * (obs / (seasonals[i % L] || 1)) + (1 - alpha) * (level + trend);
-      trend = beta * (level - prevL) + (1 - beta) * trend;
-      seasonals[i % L] = gamma * (obs / (level || 1)) + (1 - gamma) * seasonals[i % L];
-      res[i] = (level + trend) * (seasonals[i % L] || 1);
-    }
-    const future = Array.from({ length: horizon }, (_, h) => {
-      const m = data.length + h;
-      return (level + (h + 1) * trend) * (seasonals[m % L] || 1);
-    });
-    return { history: res, future };
+  'Holt-Winters': {
+    minTrain: (L) => L + 3,
+    grid: () => [0.1, 0.2, 0.4, 0.6].flatMap((alpha) => [0.01, 0.05, 0.15].flatMap((beta) => [0.05, 0.1, 0.2, 0.4].map((gamma) => ({ alpha, beta, gamma })))),
+    run: (d, p, h, L) => {
+      // Multiplicativo. Inicio con el primer ciclo: nivel = promedio, índices = dato / nivel, tendencia 0
+      let lv = d.slice(0, L).reduce((a, b) => a + b, 0) / L || 1, tr = 0;
+      const si = d.slice(0, L).map((v) => (lv ? v / lv : 1) || 1);
+      const fit = Array(L).fill(null);
+      for (let i = L; i < d.length; i++) {
+        const s = si[i % L];
+        fit.push((lv + tr) * s);
+        const pl = lv;
+        lv = p.alpha * (d[i] / s) + (1 - p.alpha) * (lv + tr);
+        tr = p.beta * (lv - pl) + (1 - p.beta) * tr;
+        si[i % L] = p.gamma * (lv ? d[i] / lv : s) + (1 - p.gamma) * s;
+      }
+      return { fit, future: Array.from({ length: h }, (_, j) => (lv + (j + 1) * tr) * si[(d.length + j) % L]) };
+    },
+  },
+  'Estacional': {
+    // Mismo periodo del ciclo anterior × tendencia de los últimos 3 periodos vs sus equivalentes del ciclo anterior
+    minTrain: (L) => L + 3,
+    grid: () => [{}],
+    run: (d, p, h, L) => {
+      const g = (i) => { const a = d[i - 1] + d[i - 2] + d[i - 3], b = d[i - 1 - L] + d[i - 2 - L] + d[i - 3 - L]; return b ? a / b : 1; };
+      const fit = d.map((_, i) => (i >= L + 3 ? d[i - L] * g(i) : null));
+      const n = d.length, gf = n >= L + 3 ? g(n) : 1, ext = [...d];
+      for (let j = 0; j < h; j++) ext.push(ext[n + j - L] * (j < L ? gf : 1));
+      return { fit, future: ext.slice(n) };
+    },
   },
 };
 
 const getMetrics = (actual, forecast) => {
   let sumAbsErr = 0, sumActual = 0, sumErr = 0, count = 0;
   actual.forEach((v, i) => {
-    if (forecast[i] !== null) {
+    if (forecast[i] != null) {
       const err = forecast[i] - v;
       sumErr += err; sumAbsErr += Math.abs(err); sumActual += v; count++;
     }
@@ -78,6 +81,34 @@ const getMetrics = (actual, forecast) => {
   const wmape = (sumAbsErr / sumActual) * 100;
   return { wmape, accuracy: Math.max(0, 100 - wmape), bias: (sumErr / sumActual) * 100 };
 };
+
+const PARAM_LABEL = { alpha: 'α', beta: 'β', gamma: 'γ' };
+const cycleOf = (b) => b.params?.hwPeriod || (b.unit === 'Semanas' ? 52 : 12);
+
+// Evalúa todos los motores con backtest: entrena sin los últimos `hold` periodos, pronostica esos
+// periodos y mide accuracy (100 − WMAPE). En modo auto busca los mejores parámetros de cada motor.
+// El ganador se re-entrena con toda la historia para el pronóstico final.
+function evaluateBrand(b) {
+  const data = (b.data || []).map((v) => +v || 0), n = data.length, L = cycleOf(b), H = b.horizon || 12;
+  if (n < 4) return { results: [], winner: null, hold: 0, L };
+  const hold = Math.min(L, Math.max(3, Math.round(n * 0.2)), n - 3);
+  const train = data.slice(0, n - hold), test = data.slice(n - hold);
+  const manual = b.params?.auto === false;
+  const results = Object.entries(engines).map(([name, e]) => {
+    if (train.length < e.minTrain(L)) return { name, disabled: `Requiere ${e.minTrain(L) + hold}+ periodos (tienes ${n})` };
+    const grid = manual ? [{ alpha: b.params.alpha ?? 0.3, beta: b.params.beta ?? 0.1, gamma: b.params.gamma ?? 0.2 }] : e.grid();
+    let best = null;
+    grid.forEach((p) => {
+      const bt = e.run(train, p, hold, L).future.map((v) => Math.max(0, v));
+      const m = getMetrics(test, bt);
+      if (!best || m.wmape < best.wmape || (m.wmape === best.wmape && Math.abs(m.bias) < Math.abs(best.bias))) best = { ...m, params: p, backtest: bt };
+    });
+    const full = e.run(data, best.params, H, L);
+    return { name, ...best, fit: full.fit, future: full.future.map((v) => Math.max(0, v)) };
+  });
+  const ok = results.filter((r) => !r.disabled).sort((x, y) => y.accuracy - x.accuracy || Math.abs(x.bias) - Math.abs(y.bias));
+  return { results: [...ok, ...results.filter((r) => r.disabled)], winner: ok[0] || null, hold, L };
+}
 
 // ─── Componente principal ─────────────────────────────────────────────────────
 
@@ -114,41 +145,35 @@ export default function App() {
     brands.find(b => b.id === selectedBrandId) || null,
   [brands, selectedBrandId]);
 
-  const allResults = useMemo(() => {
-    if (!currentBrand?.data) return [];
-    return Object.keys(engines).map(name => {
-      const { history, future } = engines[name](currentBrand.data, currentBrand.params, currentBrand.horizon || 12);
-      const metrics = getMetrics(currentBrand.data, history);
-      return { name, forecast: history, future, ...metrics };
-    }).sort((a, b) => b.accuracy - a.accuracy);
-  }, [currentBrand]);
-
-  const winner = allResults[0] || { name: 'N/A', accuracy: 0, bias: 0, wmape: 0, future: [] };
+  // Se recalcula solo al cambiar datos/parámetros: ya no hace falta oprimir nada
+  const evals = useMemo(() => Object.fromEntries(brands.map((b) => [b.id, evaluateBrand(b)])), [brands]);
+  const ev = (currentBrand && evals[currentBrand.id]) || { results: [], winner: null, hold: 0, L: 12 };
+  const allResults = ev.results;
+  const winner = ev.winner || { name: 'N/A', accuracy: 0, bias: 0, wmape: 0, future: [], fit: [], backtest: [], params: {} };
+  const second = allResults.filter((r) => !r.disabled)[1];
 
   const chartData = useMemo(() => {
     if (!currentBrand?.data) return [];
+    const p = currentBrand.unit === 'Meses' ? 'M' : 'S', n = currentBrand.data.length;
     const hist = currentBrand.data.map((val, i) => ({
-      period: `${currentBrand.unit === 'Meses' ? 'M' : 'S'}${i + 1}`,
+      period: `${p}${i + 1}`,
       Real: val,
-      ...allResults.reduce((acc, curr) => ({
-        ...acc,
-        [curr.name]: curr.forecast[i] ? parseFloat(curr.forecast[i].toFixed(1)) : null,
-      }), {}),
+      Ajuste: winner.fit?.[i] != null ? +winner.fit[i].toFixed(1) : null,
+      Backtest: i >= n - ev.hold && winner.backtest?.length ? +winner.backtest[i - (n - ev.hold)].toFixed(1) : null,
     }));
     let accSum = 0;
     const future = (winner.future || []).map((val, i) => {
       accSum += val;
-      return { period: `F${i + 1}`, Forecast: parseFloat(val.toFixed(1)), Acumulado: parseFloat(accSum.toFixed(1)) };
+      return { period: `F${i + 1}`, Forecast: +val.toFixed(1), Acumulado: +accSum.toFixed(1) };
     });
     return [...hist, ...future];
-  }, [currentBrand, allResults, winner]);
+  }, [currentBrand, winner, ev.hold]);
 
-  const suggestions = useMemo(() => {
-    if (winner.name === 'SES')          return { a: 'SES ganador. Sugerido Alpha 0.1-0.3.', b: 'No aplica.', p: 'No aplica.' };
-    if (winner.name === 'Holt')         return { a: 'Holt ganador. Sugerido Alpha 0.3.', b: 'Beta 0.1 sugerido.', p: 'No aplica.' };
-    if (winner.name === 'Holt-Winters') return { a: 'Estacionalidad detectada. Alpha 0.2.', b: 'Beta 0.05 sugerido.', p: 'Ajusta al ciclo real.' };
-    return { a: 'Ajusta aprendizaje.', b: 'Ajusta tendencia.', p: 'Ajusta ciclo.' };
-  }, [winner.name]);
+  const unitTxt = currentBrand?.unit === 'Semanas' ? 'semanas' : 'meses';
+  const why = !ev.winner ? 'Se necesitan al menos 4 periodos para evaluar modelos.'
+    : `${winner.name} gana: acierta ${winner.accuracy.toFixed(1)}% al pronosticar los últimos ${ev.hold} ${unitTxt} sin haberlos visto`
+      + (second ? `, ${(winner.accuracy - second.accuracy).toFixed(1)} pts arriba de ${second.name}` : '')
+      + (Math.abs(winner.bias) > 5 ? `. Ojo: tiende a ${winner.bias > 0 ? 'sobre' : 'sub'}-pronosticar ${Math.abs(winner.bias).toFixed(1)}%.` : '.');
 
   // ── Handlers (sin cambios de lógica) ─────────────────────────────────────
   const parseNumbers = (str) => {
@@ -168,18 +193,11 @@ export default function App() {
     setBrands(prev => prev.map(b => b.id === selectedBrandId ? { ...b, ...updates } : b));
   };
 
-  const autoCalibrate = () => {
-    if (!currentBrand) return;
-    const best = winner.name;
-    let rec = {};
-    if (best === 'SES')          rec = { sesAlpha: 0.25 };
-    else if (best === 'Holt')    rec = { holtAlpha: 0.3, holtBeta: 0.1 };
-    else if (best === 'Holt-Winters') rec = { hwAlpha: 0.2, hwBeta: 0.05, hwGamma: 0.2, hwPeriod: currentBrand.unit === 'Meses' ? 12 : 4 };
-    updateCurrentBrand({ params: { ...currentBrand.params, ...rec } });
-  };
+  const setManualParam = (k, v) => updateCurrentBrand({ params: { ...winner.params, ...currentBrand.params, auto: false, [k]: v } });
+  const backToAuto = () => updateCurrentBrand({ params: { ...currentBrand.params, auto: true } });
 
   const copyToClipboard = () => {
-    const text = chartData.map(d => `${d.period}\t${d.Real || '-'}\t${d.Forecast || d[winner.name] || '-'}`).join('\n');
+    const text = chartData.map(d => `${d.period}\t${d.Real ?? '-'}\t${d.Forecast ?? d.Ajuste ?? '-'}`).join('\n');
     navigator.clipboard.writeText(text).catch(() => {
       const el = document.createElement('textarea'); el.value = text;
       document.body.appendChild(el); el.select(); document.execCommand('copy'); document.body.removeChild(el);
@@ -234,7 +252,7 @@ export default function App() {
         if (!name || data.length === 0) return null;
         return {
           id: Date.now() + idx, name, data, unit: 'Meses', horizon: 12,
-          params: { sesAlpha: 0.3, holtAlpha: 0.3, holtBeta: 0.1, hwAlpha: 0.2, hwBeta: 0.1, hwGamma: 0.3, hwPeriod: 12 },
+          params: { auto: true },
         };
       }).filter(Boolean);
       if (newBrands.length > 0) { setBrands(newBrands); setSelectedBrandId(newBrands[0].id); }
@@ -243,7 +261,7 @@ export default function App() {
     e.target.value = '';
   };
 
-  const newBrandDefaults = { sesAlpha: 0.3, holtAlpha: 0.3, holtBeta: 0.1, hwAlpha: 0.2, hwBeta: 0.1, hwGamma: 0.3, hwPeriod: 12 };
+  const newBrandDefaults = { auto: true };
 
   // ── Render ────────────────────────────────────────────────────────────────
   return (
@@ -306,7 +324,10 @@ export default function App() {
               >
                 <div className="flex-1 min-w-0 text-left">
                   <p className={`font-bold text-sm truncate ${selectedBrandId === brand.id ? 'text-zinc-900 dark:text-white' : 'text-zinc-600 dark:text-zinc-400'}`}>{brand.name}</p>
-                  <p className="text-[10px] text-zinc-600 font-bold uppercase mt-0.5">{brand.unit}</p>
+                  {(() => { const w = evals[brand.id]?.winner; return (
+                    <p className="text-[10px] font-bold uppercase mt-0.5 text-zinc-500">
+                      {w ? <>{w.name} · <span className={w.accuracy >= 85 ? 'text-emerald-500' : w.accuracy >= 70 ? 'text-yellow-500' : 'text-rose-500'}>{w.accuracy.toFixed(0)}%</span></> : brand.unit}
+                    </p>); })()}
                 </div>
                 <div className={`flex gap-1 ${selectedBrandId === brand.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'} transition-opacity`}>
                   <button
@@ -421,7 +442,7 @@ export default function App() {
                       <div className="flex items-center gap-3 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 px-5 py-1.5 rounded-full shadow-inner">
                         <span className="text-[9px] font-black text-yellow-500 uppercase tracking-widest">Horizonte Fcst:</span>
                         <input type="range" min="1" max="24" step="1" value={currentBrand.horizon || 12} onChange={e => updateCurrentBrand({ horizon: parseInt(e.target.value) })} className="w-24 h-1 bg-zinc-200 dark:bg-zinc-800 rounded-full appearance-none cursor-pointer accent-yellow-500" />
-                        <span className="text-xs font-bold text-white w-4 text-center">{currentBrand.horizon || 12}</span>
+                        <span className="text-xs font-bold text-zinc-900 dark:text-white w-4 text-center">{currentBrand.horizon || 12}</span>
                       </div>
                     </div>
                   </div>
@@ -440,7 +461,7 @@ export default function App() {
                     { l: 'Accuracy Score', v: winner.accuracy.toFixed(1) + '%', c: 'text-violet-400', bg: 'bg-violet-400/5' },
                     { l: 'Bias (Sesgo)',   v: winner.bias.toFixed(1) + '%',     c: Math.abs(winner.bias) > 5 ? 'text-rose-400' : 'text-emerald-400', bg: 'bg-zinc-50 dark:bg-zinc-900' },
                     { l: 'Error (WMAPE)', v: winner.wmape.toFixed(1) + '%',     c: 'text-zinc-900 dark:text-zinc-200', bg: 'bg-zinc-50 dark:bg-zinc-900' },
-                    { l: 'Data Points',   v: currentBrand.data?.length || 0,    c: 'text-zinc-500', bg: 'bg-zinc-50 dark:bg-zinc-900' },
+                    { l: 'Backtest',      v: `${ev.hold} / ${currentBrand.data?.length || 0}`, c: 'text-zinc-500', bg: 'bg-zinc-50 dark:bg-zinc-900' },
                   ].map((m, i) => (
                     <div key={i} className={`${m.bg} p-6 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-lg hover:scale-[1.02] transition-all text-center`}>
                       <p className="text-[10px] font-black text-zinc-600 uppercase mb-2 tracking-widest">{m.l}</p>
@@ -449,12 +470,45 @@ export default function App() {
                   ))}
                 </div>
 
+                {/* Por qué gana + comparativo de modelos */}
+                <div className="bg-white dark:bg-zinc-950 p-6 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-lg">
+                  <p className="text-sm font-bold text-zinc-800 dark:text-zinc-200 mb-4">💡 {why}</p>
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-xs">
+                      <thead>
+                        <tr className="text-[10px] font-black uppercase tracking-widest text-zinc-500 border-b border-zinc-200 dark:border-zinc-800">
+                          <th className="text-left py-2">Modelo</th><th className="text-right">Accuracy</th><th className="text-right">WMAPE</th><th className="text-right">Bias</th>
+                          <th className="text-left pl-6">Parámetros {currentBrand.params?.auto === false ? '(manual)' : '(optimizados)'}</th><th className="text-right">Total fcst</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {allResults.map((r, i) => (
+                          <tr key={r.name} className={`border-b border-zinc-100 dark:border-zinc-900 ${r.disabled ? 'opacity-50' : ''}`}>
+                            <td className="py-2 font-bold text-zinc-900 dark:text-white">{i === 0 && !r.disabled && <Trophy size={12} className="inline mr-1 text-yellow-500" />}{r.name}</td>
+                            {r.disabled ? (
+                              <td colSpan={5} className="text-right italic text-zinc-500">{r.disabled}</td>
+                            ) : (<>
+                              <td className={`text-right font-black ${r.accuracy >= 85 ? 'text-emerald-500' : r.accuracy >= 70 ? 'text-yellow-500' : 'text-rose-500'}`}>{r.accuracy.toFixed(1)}%</td>
+                              <td className="text-right">{r.wmape.toFixed(1)}%</td>
+                              <td className={`text-right ${Math.abs(r.bias) > 5 ? 'text-rose-500' : ''}`}>{r.bias > 0 ? '+' : ''}{r.bias.toFixed(1)}%</td>
+                              <td className="pl-6 font-mono text-zinc-500">{Object.entries(r.params || {}).filter(([k]) => PARAM_LABEL[k]).map(([k, v]) => `${PARAM_LABEL[k]} ${v}`).join(' · ') || '—'}</td>
+                              <td className="text-right">{Math.round(r.future.reduce((a, b) => a + b, 0)).toLocaleString('es-MX')}</td>
+                            </>)}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                  <p className="text-[10px] text-zinc-500 mt-3">Backtest: cada modelo se entrena sin los últimos {ev.hold} {unitTxt} y se compara su pronóstico contra lo real. Gana el mayor accuracy (empate → menor sesgo) y se re-entrena con toda la historia.</p>
+                </div>
+
                 {/* Gráfica */}
                 <div className="bg-white dark:bg-zinc-950 p-8 rounded-[48px] border border-zinc-200 dark:border-zinc-800 shadow-2xl h-[500px] overflow-hidden relative">
                   <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-6 px-4">
                     <div className="flex gap-6">
                       <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-zinc-400 dark:bg-zinc-700" /> Real</span>
-                      <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-violet-600" /> Modelo</span>
+                      <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-violet-600" /> Ajuste</span>
+                      <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-emerald-500" /> Backtest</span>
                       <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-yellow-500" /> Forecast</span>
                     </div>
                     <span className="text-yellow-500/40 italic">--- Proyección Acumulada (Eje Secundario)</span>
@@ -467,7 +521,9 @@ export default function App() {
                       <YAxis yAxisId="right" orientation="right" axisLine={false} tickLine={false} tick={{ fill: '#a1a1aa', fontSize: 9 }} />
                       <Tooltip contentStyle={{ backgroundColor: '#09090b', borderRadius: '24px', border: '1px solid #27272a' }} />
                       <Bar dataKey="Real" fill="#27272a" radius={[4, 4, 0, 0]} barSize={20} opacity={0.4} />
-                      {winner.name !== 'N/A' && <Line type="monotone" dataKey={winner.name} stroke="#8b5cf6" strokeWidth={3} dot={{ r: 3, fill: '#000', strokeWidth: 2, stroke: '#8b5cf6' }} />}
+                      {ev.hold > 0 && chartData.length > ev.hold && <ReferenceArea x1={chartData[currentBrand.data.length - ev.hold]?.period} x2={chartData[currentBrand.data.length - 1]?.period} fill="#10b981" fillOpacity={0.06} />}
+                      {winner.name !== 'N/A' && <Line type="monotone" dataKey="Ajuste" stroke="#8b5cf6" strokeWidth={3} connectNulls dot={{ r: 3, fill: '#000', strokeWidth: 2, stroke: '#8b5cf6' }} />}
+                      <Line type="monotone" dataKey="Backtest" stroke="#10b981" strokeWidth={3} strokeDasharray="4 3" dot={{ r: 3 }} />
                       <Line type="monotone" dataKey="Forecast" stroke="#fbbf24" strokeWidth={4} strokeDasharray="10 5" dot={{ r: 5, fill: '#000', strokeWidth: 3, stroke: '#fbbf24' }} />
                       <Line yAxisId="right" type="stepAfter" dataKey="Acumulado" stroke="#fbbf24" strokeWidth={2} strokeDasharray="3 3" dot={false} opacity={0.3} />
                     </ComposedChart>
@@ -505,34 +561,38 @@ export default function App() {
                 <div className="bg-white dark:bg-zinc-950 rounded-[48px] p-10 border border-zinc-200 dark:border-zinc-900 shadow-inner text-left">
                   <div className="flex items-center justify-between mb-10">
                     <div className="flex items-center gap-4"><Settings2 size={18} className="text-violet-500" /><h3 className="text-sm font-black uppercase tracking-[0.3em] text-zinc-700 dark:text-zinc-400">Analítica Profunda por SKU</h3></div>
-                    <button onClick={autoCalibrate} className="bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500 hover:text-black border border-yellow-500/20 px-6 py-3 rounded-xl text-[10px] font-black transition-all flex items-center gap-2 shadow-sm uppercase tracking-widest">
-                      <Zap size={12} className="fill-current" /> AUTO-CALIBRAR MODELO
-                    </button>
+                    {currentBrand.params?.auto === false ? (
+                      <button onClick={backToAuto} className="bg-yellow-500/10 text-yellow-500 hover:bg-yellow-500 hover:text-black border border-yellow-500/20 px-6 py-3 rounded-xl text-[10px] font-black transition-all flex items-center gap-2 shadow-sm uppercase tracking-widest">
+                        <Zap size={12} className="fill-current" /> Volver a automático
+                      </button>
+                    ) : (
+                      <span className="text-[10px] font-black uppercase tracking-widest text-emerald-500 flex items-center gap-2"><Zap size={12} className="fill-current" /> Auto · parámetros optimizados por backtest</span>
+                    )}
                   </div>
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-12">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-10">
                     {[
-                      { label: 'Aprendizaje (Alpha)', val: currentBrand.params?.sesAlpha || 0.3,  min: 0.05, max: 0.95, step: 0.05, tip: suggestions.a, key: 'alpha' },
-                      { label: 'Sensibilidad (Beta)',  val: currentBrand.params?.holtBeta || 0.1,  min: 0.05, max: 0.95, step: 0.05, tip: suggestions.b, key: 'beta' },
-                      { label: 'Ciclo Estacional',     val: currentBrand.params?.hwPeriod || 12,  min: 2,    max: 24,   step: 1,    tip: suggestions.p, key: 'period' },
-                    ].map(param => (
-                      <div key={param.key} className="space-y-4 text-left">
-                        <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-zinc-500 leading-none">
-                          {param.label} <span className="text-violet-400 font-bold text-sm">{param.val}</span>
+                      { label: 'Aprendizaje (α)',  k: 'alpha', min: 0.05, max: 0.95, step: 0.05, tip: 'Peso de lo más reciente en el nivel.' },
+                      { label: 'Tendencia (β)',    k: 'beta',  min: 0.01, max: 0.5,  step: 0.01, tip: 'Qué tan rápido se ajusta la tendencia (Holt/HW).' },
+                      { label: 'Estacional (γ)',   k: 'gamma', min: 0.05, max: 0.9,  step: 0.05, tip: 'Qué tan rápido se actualizan los índices (HW).' },
+                      { label: 'Ciclo estacional', k: 'hwPeriod', min: 2, max: 52, step: 1, tip: '12 meses / 52 semanas. Aplica a HW y Estacional.' },
+                    ].map((pr) => {
+                      const val = pr.k === 'hwPeriod' ? ev.L : (currentBrand.params?.auto === false ? currentBrand.params?.[pr.k] : winner.params?.[pr.k]) ?? '—';
+                      return (
+                        <div key={pr.k} className="space-y-4 text-left">
+                          <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-zinc-500 leading-none">
+                            {pr.label} <span className="text-violet-400 font-bold text-sm">{val}</span>
+                          </div>
+                          <input
+                            type="range" min={pr.min} max={pr.max} step={pr.step} value={typeof val === 'number' ? val : pr.min}
+                            onChange={(e) => { const v = +e.target.value; pr.k === 'hwPeriod' ? updateCurrentBrand({ params: { ...currentBrand.params, hwPeriod: v } }) : setManualParam(pr.k, v); }}
+                            className="w-full h-1.5 bg-zinc-200 dark:bg-zinc-900 rounded-full appearance-none cursor-pointer"
+                          />
+                          <p className="text-[9px] text-zinc-600 italic border-l border-zinc-300 dark:border-zinc-800 pl-3 leading-relaxed">💡 {pr.tip}</p>
                         </div>
-                        <input
-                          type="range" min={param.min} max={param.max} step={param.step} value={param.val}
-                          onChange={e => {
-                            const v = param.step === 1 ? parseInt(e.target.value) : parseFloat(e.target.value);
-                            if (param.key === 'alpha') updateCurrentBrand({ params: { ...currentBrand.params, sesAlpha: v, holtAlpha: v, hwAlpha: v } });
-                            if (param.key === 'beta')  updateCurrentBrand({ params: { ...currentBrand.params, holtBeta: v, hwBeta: v } });
-                            if (param.key === 'period')updateCurrentBrand({ params: { ...currentBrand.params, hwPeriod: v } });
-                          }}
-                          className="w-full h-1.5 bg-zinc-200 dark:bg-zinc-900 rounded-full appearance-none cursor-pointer"
-                        />
-                        <p className="text-[9px] text-zinc-600 italic border-l border-zinc-300 dark:border-zinc-800 pl-3 leading-relaxed">💡 {param.tip}</p>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
+                  <p className="text-[10px] text-zinc-500 mt-6">Mover α, β o γ pasa a modo manual: esos valores se aplican a todos los modelos y se vuelve a elegir el ganador.</p>
                 </div>
               </>
             )}
