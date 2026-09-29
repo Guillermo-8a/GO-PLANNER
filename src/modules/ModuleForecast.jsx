@@ -9,7 +9,7 @@ import {
   ComposedChart, Bar, Line, XAxis, YAxis, CartesianGrid,
   Tooltip, ResponsiveContainer, ReferenceArea,
 } from 'recharts';
-import { useGlobal } from '../context/GlobalContext';
+import { useGlobal, useDispatch, globalActions } from '../context/GlobalContext';
 import { engines, getMetrics } from '../utils/fcstEngine';
 
 const PARAM_LABEL = { alpha: 'α', beta: 'β', gamma: 'γ' };
@@ -53,6 +53,7 @@ export default function App() {
   const [assortmentForm, setAssortmentForm] = useState({ name: '', start: 1, end: 6, budget: 0, historyPzs: 0 });
 
   const gState = useGlobal();
+  const dispatch = useDispatch();
   const isDark = (gState?.theme || 'light') === 'dark';
 
   // ── Persistencia localStorage ─────────────────────────────────────────────
@@ -164,7 +165,12 @@ export default function App() {
       const el = document.createElement('textarea'); el.value = jsonContent;
       document.body.appendChild(el); el.select(); document.execCommand('copy'); document.body.removeChild(el);
     });
-    alert('Data JSON de participación vinculada correctamente para Assortment.');
+    // Publicar también al contexto: antes solo se copiaba al portapapeles y "Cargar desde Forecast" en Assortment
+    // nunca encontraba datos. Se reemplaza la marca/GOA con el mismo nombre y se conservan las demás.
+    const prevBrands = gState?.forecastData?.brands || [];
+    const nb = exportData.forecastData.brands[0];
+    if (dispatch) globalActions.publishForecast(dispatch, { brands: [...prevBrands.filter(b => String(b.name).toUpperCase() !== String(nb.name).toUpperCase()), nb] });
+    alert('Participación enviada a Assortment (usa "Cargar desde Forecast" en la pestaña 3). También quedó copiada como JSON.');
     setIsAssortmentModalOpen(false);
   };
 

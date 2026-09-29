@@ -883,7 +883,7 @@ export default function App() {
     const storeDemands = {}; let totalPieces = 0; const goaNameUpper = (goa.name || '').toUpperCase();
     
     (stores || []).forEach(store => {
-      let storeClusterForGoa = (store.clusters || {})[goa.name] || (store.clusters || {})[goaNameUpper] || activeClusters[activeClusters.length - 1]; 
+      let storeClusterForGoa = (store.clusters || {})[goa.name] || (store.clusters || {})[goaNameUpper]; 
       const runs = (rule.corridas || {})[storeClusterForGoa] || 0;
       const totalPerStore = runs * totalPzsPerRun;
       if (totalPerStore > 0) { storeDemands[store.id] = { clusterUsed: storeClusterForGoa, runs, totalPieces: totalPerStore }; totalPieces += totalPerStore; }
@@ -1176,11 +1176,11 @@ export default function App() {
     const rule = (calcRules || []).find(r => r.id === Number(ruleId));
     if (!curve || !rule) return 0;
 
-    const totalPzsPerRun = (curve.weights || '').split(',').map(w => Number(w.trim())).reduce((a, b) => a + b, 0);
+    const totalPzsPerRun = (curve.weights || '').split(',').map(w => Number(w.trim())).filter(n => !isNaN(n)).reduce((a, b) => a + b, 0);
     const goaNameUpper = String(goaName).toUpperCase();
     let pzs = 0;
     (stores || []).forEach(store => {
-      let c = (store.clusters || {})[goaName] || (store.clusters || {})[goaNameUpper] || activeClusters[activeClusters.length - 1];
+      let c = (store.clusters || {})[goaName] || (store.clusters || {})[goaNameUpper];
       const runs = (rule.corridas || {})[c] || 0;
       pzs += (runs * totalPzsPerRun);
     });
@@ -1201,7 +1201,7 @@ export default function App() {
        const opPzs = getPiecesForOneModel(goa.name, op.curveId, op.ruleId);
        const opVars = Number(op.variants) || 1;
        usedPzs += opPzs * (Number(op.models)||0) * opVars;
-       usedBudget += opPzs * (Number(op.models)||0) * opVars * (Number(op.pvp)||0);
+       usedBudget += opPzs * (Number(op.models)||0) * opVars * resolvePvpForPlan(op, goa); // PVP default del GOA/bucket si el plan no trae (antes contaba $0)
     });
 
     // Si el plan tiene bucket asignado, el budget restante es del bucket (no del GOA total)
@@ -1215,10 +1215,19 @@ export default function App() {
       usedBudgetForCalc = otherPlans.filter(op => Number(op.bucketId) === planBucketId).reduce((s, op) => {
         const opPzs = getPiecesForOneModel(goa.name, op.curveId, op.ruleId);
         const opVars = Number(op.variants) || 1;
-        return s + opPzs * (Number(op.models)||0) * opVars * (Number(op.pvp)||0);
+        return s + opPzs * (Number(op.models)||0) * opVars * resolvePvpForPlan(op, goa);
       }, 0);
     }
     
+    // OTB mensual: si el plan tiene mes, el presupuesto disponible es el % de ese mes (months[] del GOA) y solo
+    // descuenta planes del mismo mes. Antes el primer plan resuelto podía consumir el OTB de los 6 meses.
+    const planMonth = plan.monthOffset !== '' && plan.monthOffset != null ? Number(plan.monthOffset) : null;
+    if (planMonth != null && Array.isArray(goa.months) && goa.months[planMonth] != null) {
+      goaBudgetForCalc = goaBudgetForCalc * (Number(goa.months[planMonth]) || 0) / 100;
+      usedBudgetForCalc = otherPlans
+        .filter(op => Number(op.monthOffset) === planMonth && op.monthOffset !== '' && (!planBucket || Number(op.bucketId) === planBucketId))
+        .reduce((s, op) => s + getPiecesForOneModel(goa.name, op.curveId, op.ruleId) * (Number(op.models)||0) * (Number(op.variants) || 1) * resolvePvpForPlan(op, goa), 0);
+    }
     const remainingPzs = Math.max(0, (goa.historyPzs || 0) - usedPzs);
     const remainingBudget = Math.max(0, goaBudgetForCalc - usedBudgetForCalc);
     
@@ -1321,7 +1330,7 @@ export default function App() {
           const pzsPerOption = getPiecesForOneModel(g.name, plan.curveId, plan.ruleId);
           const models = Number(plan.models) || 0;
           const variants = Number(plan.variants) || 1;
-          const pvp = Number(plan.pvp) || 0;
+          const pvp = resolvePvpForPlan(plan, g);
           boughtPzs += (pzsPerOption * models * variants);
           spentValue += (pzsPerOption * models * variants * pvp);
         });
@@ -1341,7 +1350,7 @@ export default function App() {
       (activeClusters || []).forEach(c => matrix[c] = { stores: 0, ruleRunsAvg: 0, pzs: 0, totalStoreInstances: 0 });
 
       (stores || []).forEach(store => {
-        const c = (store.clusters || {})[g.name] || (store.clusters || {})[String(g.name || '').toUpperCase()] || activeClusters[activeClusters.length - 1];
+        const c = (store.clusters || {})[g.name] || (store.clusters || {})[String(g.name || '').toUpperCase()];
         if(matrix[c]) matrix[c].stores += 1;
       });
 
@@ -1358,7 +1367,7 @@ export default function App() {
           if(rule && curve && models > 0) {
             const totalCombos = models * variants;
             totalModelsAffected += totalCombos;
-            const totalPzsPerRun = (curve.weights || '').split(',').map(w => Number(w.trim())).reduce((a, b) => a + b, 0);
+            const totalPzsPerRun = (curve.weights || '').split(',').map(w => Number(w.trim())).filter(n => !isNaN(n)).reduce((a, b) => a + b, 0);
             
             (activeClusters || []).forEach(c => {
                const runs = (rule.corridas || {})[c] || 0;
@@ -1449,7 +1458,9 @@ export default function App() {
         (suggestedPlans || []).forEach(plan => {
           const goa = (goas || []).find(g => g.id === plan.goaId);
           if (goa) {
-            const c = (store.clusters || {})[goa.name] || (store.clusters || {})[String(goa.name || '').toUpperCase()] || activeClusters[activeClusters.length - 1];
+            // Solo tiendas con clúster en el GOA (= con venta de ese GOA). Antes las tiendas sin historia caían al
+            // último clúster y se les compraba igual.
+            const c = (store.clusters || {})[goa.name] || (store.clusters || {})[String(goa.name || '').toUpperCase()];
             const rule = (calcRules || []).find(r => r.id === Number(plan.ruleId));
             const curve = (sizeCurves || []).find(cv => cv.id === Number(plan.curveId));
             if (rule && curve) {
@@ -1458,7 +1469,7 @@ export default function App() {
               const variants = Number(plan.variants) || 1;
               const pzsInStore = runs * pzsPerRun;
               storeTotalPzs += pzsInStore * (Number(plan.models) || 0) * variants;
-              storeTotalValue += pzsInStore * (Number(plan.models) || 0) * variants * (Number(plan.pvp) || 0);
+              storeTotalValue += pzsInStore * (Number(plan.models) || 0) * variants * resolvePvpForPlan(plan, goa);
             }
           }
         });
@@ -1518,7 +1529,7 @@ export default function App() {
       const monthLabel = plan.monthLabel || (plan.monthOffset !== null && plan.monthOffset !== undefined && plan.monthOffset !== '' ? getMonthLabel(plan.monthOffset) : '');
 
       stores.forEach(store => {
-        const c = store.clusters[goa.name] || store.clusters[goa.name.toUpperCase()] || activeClusters[activeClusters.length - 1];
+        const c = store.clusters[goa.name] || store.clusters[goa.name.toUpperCase()];
         const runs = rule.corridas[c] || 0;
         if(runs <= 0) return;
 
@@ -3111,7 +3122,7 @@ export default function App() {
                            const weights = curve.weights.split(',').map(w => Number(w.trim()));
 
                            stores.forEach(store => {
-                             const c = store.clusters[goa.name] || store.clusters[goa.name.toUpperCase()] || activeClusters[activeClusters.length - 1];
+                             const c = store.clusters[goa.name] || store.clusters[goa.name.toUpperCase()];
                              const runs = rule.corridas[c] || 0;
                              if(runs > 0) {
                                sizes.forEach((talla, tIdx) => {
