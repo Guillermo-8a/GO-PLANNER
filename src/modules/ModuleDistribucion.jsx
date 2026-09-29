@@ -1133,6 +1133,7 @@ useEffect(() => {
 
   const processDistribution = () => {
     const results = [];
+    const resultIdx = new Map(); // centro|sku → fila de results
     const warnings = []; 
     setOverstockAlerts([]);
     if (typeof window !== 'undefined') {
@@ -1679,6 +1680,13 @@ useEffect(() => {
     // Ventas mensuales priorizando tendencia 3M (si > 0) sobre 12M.
     // Si seasonalMode[goa] === 'forward2m', devuelve el promedio mensual ESPERADO
     // para los próximos 2 meses según la curva estacional retail Mx.
+    // Ritmo 3M llevado a la estacionalidad de los próximos 2 meses (antes plano: en Oct→Nov/Dic se quedaba corto)
+    const estShift = (() => {
+      let a = 0, b = 0; const m0 = new Date().getMonth();
+      for (let i = 0; i < 2; i++) a += seasonalFactor(m0 + i);
+      for (let i = 1; i <= 3; i++) b += seasonalFactor(m0 - i);
+      return b > 0 ? (a / 2) / (b / 3) : 1;
+    })();
     const monthlySales = (storeObj, goaName, talla = null) => {
       const mode = seasonalMode[goaName] || 'historic';
       // Determinar venta anual base
@@ -1689,13 +1697,13 @@ useEffect(() => {
         // si trend3M existe y modo es histórico, usar ese ritmo
         if (mode === 'historic') {
           const v3m = storeObj.goaSizeTrend3M?.[key] || 0;
-          if (v3m > 0) return v3m / 3;
+          if (v3m > 0) return (v3m / 3) * estShift;
         }
       } else {
         annualBase = storeObj.goaSales?.[goaName] || 0;
         if (mode === 'historic') {
           const v3m = storeObj.goaTrend3M?.[goaName] || 0;
-          if (v3m > 0) return v3m / 3;
+          if (v3m > 0) return (v3m / 3) * estShift;
         }
       }
 
@@ -1720,8 +1728,9 @@ useEffect(() => {
       dynamicSkuOH[centerCode][item.sku] = (dynamicSkuOH[centerCode][item.sku] || 0) + qty;
 
       const storeObj = eligibleStores.find(s => s.centerCode === centerCode);
-      // Merge si ya existe la combinación centro+sku
-      const existing = results.find(r => r.centro === centerCode && r.sku === item.sku);
+      // Merge si ya existe la combinación centro+sku (índice en vez de buscar en todo results cada vez)
+      const rk = `${centerCode}|${item.sku}`;
+      const existing = resultIdx.get(rk);
       if (existing) {
         existing.qty += qty;
         return;
@@ -1737,6 +1746,7 @@ useEffect(() => {
         sku: item.sku, modelo: item.modelo, goa: goaName,
         marca: item.marca, color: item.color, talla: item.talla, qty: qty
       });
+      resultIdx.set(rk, results[results.length - 1]);
     };
 
     // ====================================================================
