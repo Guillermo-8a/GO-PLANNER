@@ -21,10 +21,11 @@ import ModuleChequera from "./modules/ModuleChequera" ;
 import ModuleDayli from "./modules/ModuleDayli" ;
 import ModuleEventos from "./modules/ModuleEventos" ;
 import ModuleSuplementarios from "./modules/ModuleSuplementarios" ;
+import ModuleAllocation from "./modules/ModuleAllocation" ;
 
 import {
   Layers, Bell, Sun, Moon, ShoppingCart, Map, LayoutDashboard,
-  HelpCircle, Wallet, Zap, Search, Mail, Circle, Tag, PieChart,} from 'lucide-react';
+  HelpCircle, Wallet, Zap, Search, Mail, Circle, Tag, PieChart, ListChecks,} from 'lucide-react';
 
 // ─── Paletas de tema ──────────────────────────────────────────────────────────
 export const THEMES = {
@@ -114,6 +115,7 @@ const NAV_ITEMS = [
   { id: 'chequera', label: 'Chequera', Icon: Wallet, desc: 'Control de compras', dataKey: null },
   { id: 'traslados', label: 'Traslados', Icon: ArrowLeftRight, desc: 'Transferencias entre centros', dataKey: null },
   { id: 'eventos', label: 'Eventos', Icon: Tag, desc: 'Eventos promocionales', dataKey: null },
+  { id: 'allocation', label: 'Allocation', Icon: ListChecks, desc: 'Revisión parametrización y OC', dataKey: null },
 ];
 
 // Módulos que no guardan su data en el estado global (dataKey: null) sino en
@@ -125,6 +127,7 @@ const LOCAL_DATA_KEYS = {
   dayli:     ['gop_daily_v3'],
   planning:  ['gop_forecast_setup'],
   suplementarios: ['gop_suplementarios'],
+  allocation: ['gop_allocation_files'],
 };
 function moduleHasData(m, global) {
   return m.dataKey ? !!global[m.dataKey] : hasLocalData(m.id);
@@ -153,7 +156,7 @@ const NAV_GROUPS = [
   { id: 'financial',  label: 'Financial',        Icon: Calculator,   color: '#B39DDB', items: ['planning', 'suplementarios'] },
   { id: 'demand',     label: 'Demand Planner',   Icon: TrendingUp,   color: '#E0BB3E', items: ['assortment', 'forecast', 'distribucion', 'resurtido'] },
   { id: 'inventory',  label: 'Inventory Control',Icon: Boxes,        color: '#8A73AD', items: ['dispersion', 'traslados', 'chequera', 'eventos'] },
-  { id: 'checkcoo',   label: 'Check Coo',        Icon: CircleCheck,  color: '#9A9CA3', items: ['dayli'] },
+  { id: 'checkcoo',   label: 'Check Coo',        Icon: CircleCheck,  color: '#9A9CA3', items: ['dayli', 'allocation'] },
 ];
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
@@ -480,6 +483,7 @@ function Shell() {
       case 'planning': return <ModulePlanning {...moduleProps} />;    
       case 'eventos': return <ModuleEventos />;
       case 'suplementarios': return <ModuleSuplementarios {...moduleProps} />;
+      case 'allocation': return <ModuleAllocation {...moduleProps} />;
       default:             return <Dashboard {...moduleProps} />;
     }
   };
