@@ -1785,7 +1785,7 @@ useEffect(() => {
         if (hasTallas && items.length > 1) {
           // CORRIDA: cada talla tiene proporciones según qty del lote.
           // Calcular GCD para reducir a corrida mínima (ej. 10,20,30,20,10 → 1,2,3,2,1)
-          const qtys = items.map(it => parseInt(it.qty));
+          const qtys = items.map(it => parseInt(it.qty) || 0);
           const gcd = (a, b) => b === 0 ? a : gcd(b, a % b);
           const totalGcd = qtys.reduce((g, q) => gcd(g, q));
           const corrida = qtys.map(q => q / totalGcd);
@@ -1814,7 +1814,9 @@ useEffect(() => {
             sobrantes--;
             i++;
           }
-          // Residuo (piezas que no completan corrida) → descartar (no se rompe corrida)
+          // Residuo (piezas que no completan corrida): no se rompe la corrida, pero se avisa (antes se perdían sin aviso)
+          const residuo = totalPzs - corridasDisponibles * piezasPorCorrida;
+          if (residuo > 0) warnings.push(`[${sample.modelo}/${goaName}]: ${residuo} pzs no completan corrida y quedaron sin asignar.`);
         } else {
           // SIN TALLAS o talla única: round-robin de 1 pza por vuelta
           items.forEach(it => {
