@@ -206,7 +206,19 @@ function kpis(d, ms) {
 }
 
 // ─── UI helpers ───────────────────────────────────────────────────────────────
-function NumCell({ value, onCommit, onPasteGrid, className = '', placeholder = '' }) {
+// Navegación tipo Excel: Enter/Shift+Enter baja/sube, flechas se mueven entre celdas (←/→ solo si la celda
+// está completa seleccionada o el cursor está en la orilla). Al entrar a una celda se selecciona todo.
+const moveFocus = (el, dr, dc) => {
+  const g = el.dataset.grid; let r = +el.dataset.r, c = +el.dataset.c;
+  for (let i = 0; i < 20; i++) {
+    r += dr; c += dc;
+    const next = document.querySelector(`input[data-grid="${g}"][data-r="${r}"][data-c="${c}"]`);
+    if (next) { next.focus(); return true; }
+  }
+  return false;
+};
+
+function NumCell({ value, onCommit, onPasteGrid, className = '', placeholder = '', grid, r, c }) {
   const [v, setV] = useState(value ?? '');
   useEffect(() => { setV(value ?? ''); }, [value]);
   const commit = () => { if (String(v) !== String(value ?? '')) onCommit(v === '' ? '' : num(v)); };
@@ -219,7 +231,19 @@ function NumCell({ value, onCommit, onPasteGrid, className = '', placeholder = '
     <input
       value={v} placeholder={placeholder} onPaste={onPaste}
       onChange={(e) => setV(e.target.value)} onBlur={commit}
-      onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
+      data-grid={grid} data-r={r} data-c={c}
+      onFocus={(e) => e.currentTarget.select()}
+      onKeyDown={(e) => {
+        if (e.altKey || e.metaKey || e.ctrlKey) return;
+        const el = e.currentTarget, all = el.selectionStart === 0 && el.selectionEnd === el.value.length;
+        const mv = (dr, dc) => { if (grid && moveFocus(el, dr, dc)) e.preventDefault(); };
+        if (e.key === 'Enter') { e.preventDefault(); if (!grid || !moveFocus(el, e.shiftKey ? -1 : 1, 0)) el.blur(); }
+        else if (e.key === 'ArrowDown') mv(1, 0);
+        else if (e.key === 'ArrowUp') mv(-1, 0);
+        else if (e.key === 'ArrowRight' && (all || el.selectionStart === el.value.length)) mv(0, 1);
+        else if (e.key === 'ArrowLeft' && (all || el.selectionEnd === 0)) mv(0, -1);
+        else if (e.key === 'Escape') { setV(value ?? ''); el.blur(); }
+      }}
       className={`w-full min-w-[72px] px-1.5 py-1 text-right text-xs rounded border focus:outline-none focus:ring-1 ${className}`}
     />
   );
@@ -243,6 +267,17 @@ function usePersisted() {
 export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, navDesc }) {
   const [st, setSt] = usePersisted();
   const [tab, setTab] = useState('otb');
+  // Alt/Option + ↑/↓ cambia de pestaña
+  useEffect(() => {
+    const TABS = ['otb', 'bajada', 'analisis'];
+    const h = (e) => {
+      if (!e.altKey || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return;
+      e.preventDefault();
+      setTab((cur) => TABS[(TABS.indexOf(cur) + (e.key === 'ArrowDown' ? 1 : TABS.length - 1)) % TABS.length]);
+    };
+    window.addEventListener('keydown', h);
+    return () => window.removeEventListener('keydown', h);
+  }, []);
   const [metric, setMetric] = useState('vta');
   const [ent, setEnt] = useState('__total');
   const [msg, setMsg] = useState(null);
@@ -420,7 +455,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
                   <td className={`px-2 py-1 text-xs font-bold whitespace-nowrap ${t.text}`}>{m.label}{m.stock && <span className={`ml-1 text-[9px] ${t.textMuted}`}>(inicial)</span>}</td>
                   {rng(13).map((k) => (
                     <td key={k} className="px-0.5 py-0.5">
-                      {k < nCols(m.key) && <NumCell value={arr[k] || ''} onCommit={(v) => setOtb(m.key, k, v)} onPasteGrid={(g) => pasteOtb(ri, k, g)} className={t.inputY} />}
+                      {k < nCols(m.key) && <NumCell value={arr[k] || ''} onCommit={(v) => setOtb(m.key, k, v)} onPasteGrid={(g) => pasteOtb(ri, k, g)} grid="otb" r={ri} c={k} className={t.inputY} />}
                     </td>
                   ))}
                   <td className={`${td} font-bold ${t.text}`} title={m.stock ? 'Promedio de 13 inventarios' : ''}>{fmt(tot)}</td>
@@ -444,7 +479,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
           </tbody>
         </table>
         <p className={`mt-2 text-[10px] ${t.textMuted}`}>
-          Pega bloques desde Excel (Cmd+V) sobre la primera celda. Inventario = inv inicial de cada mes a precio de venta; Cierre = inv final de Dic.
+          Pega bloques desde Excel (Cmd+V) sobre la primera celda · Enter/flechas para moverte · Esc cancela · Alt/Option+↑↓ cambia de pestaña. Inventario = inv inicial de cada mes a precio de venta; Cierre = inv final de Dic.
           ST = Vta / (Vta + Inv fin) · MOS = Inv fin / Vta prom mensual · Rotación acum. = Σ Vta Ene→mes / promedio inv ini Ene→mes siguiente (total: 12 ventas / 13 inventarios) · CMSI = costo de meses sin intereses.
         </p>
       </div>
@@ -520,8 +555,8 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
                       <td className={`${td} ${t.textMuted}`} title={f.scores?.map((x) => `${x.name}: ${x.acc == null ? '—' : x.acc.toFixed(1) + '%'}`).join('\n')}>
                         {f.model}{f.acc != null && <span className={f.acc >= 85 ? good : f.acc >= 70 ? warn : bad}> · {f.acc.toFixed(0)}%</span>}
                       </td>); })()}
-                    <td className="px-0.5 py-0.5 w-20"><NumCell value={c.share ?? ''} placeholder="base" onCommit={(v) => setCfg(r.name, 'share', v)} onPasteGrid={paste(0)} className={t.input} /></td>
-                    <td className="px-0.5 py-0.5 w-20"><NumCell value={c.adj ?? ''} placeholder="0" onCommit={(v) => setCfg(r.name, 'adj', v)} onPasteGrid={paste(1)} className={t.input} /></td>
+                    <td className="px-0.5 py-0.5 w-20"><NumCell value={c.share ?? ''} placeholder="base" onCommit={(v) => setCfg(r.name, 'share', v)} onPasteGrid={paste(0)} grid="baj" r={ri} c={0} className={t.input} /></td>
+                    <td className="px-0.5 py-0.5 w-20"><NumCell value={c.adj ?? ''} placeholder="0" onCommit={(v) => setCfg(r.name, 'adj', v)} onPasteGrid={paste(1)} grid="baj" r={ri} c={1} className={t.input} /></td>
                     <td className={`${td} font-bold ${t.text}`}>{pct(r.share)}</td>
                     <td className={`${td} font-bold ${t.text}`}>{fmt(tot(r.plan))}</td>
                     <td className={`${td} ${g == null ? t.textMuted : g >= 0 ? good : bad}`}>{pct(g)}</td>
@@ -531,7 +566,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
                     </>}
                     {KC.map((k) => (
                       <td key={k} className="px-0.5 py-0.5">
-                        <NumCell value={Math.round(r.plan[k])} onCommit={(v) => setLock(r.name, k, v)} onPasteGrid={paste(k + 2)} className={lk[k] != null ? t.inputY : t.input} />
+                        <NumCell value={Math.round(r.plan[k])} onCommit={(v) => setLock(r.name, k, v)} onPasteGrid={paste(k + 2)} grid="baj" r={ri} c={k + 2} className={lk[k] != null ? t.inputY : t.input} />
                       </td>
                     ))}
                   </tr>
