@@ -1537,11 +1537,11 @@ export default function Forecast() {
       const invPromedio = rotAplicada > 0 ? ventaPlanFinal / rotAplicada : 0;
       // Compra resultante = Venta + ΔInventario (asumimos inv inicial ≈ inv promedio para simplificar en este tab)
       // En Tab 5 se hará el cálculo completo con stock inicial.
-      const compra = ventaPlanFinal; // simplificación inicial
+      const compra = ventaPlanFinal + mkdMonto + msiMonto; // inventario estable: repone venta + mkd + msi (en Tab 5 se hace con inv inicial)
 
       // Mg base histórico (en Tab 5 se aplicará bonificación apertura)
       const mgHist = mgHistPromedio[`${r.centro}|${r.goa}`] || 0;
-      const utilidad = ventaPlanFinal * mgHist - mkdMonto;
+      const utilidad = ventaPlanFinal * mgHist; // igual que Tab 5 y bloque maestro (antes restaba el mkd otra vez)
 
       return {
         ...r,
@@ -1555,6 +1555,24 @@ export default function Forecast() {
   }, [resumenCruces, getCrecAplicado, crecCentro, crecGoa, mkdPctGoa, msiPct,
       rotacionHistPromedio, rotOverrides, mgHistPromedio]);
 
+  // Venta mensual por cruce = escenario activo × crecimiento de Tab 3 + overrides de Tab 4.
+  // Una sola fuente para el bloque maestro, la matriz (Tab 4) y el plan por tienda (Tab 5): antes el bloque maestro
+  // y la matriz ignoraban el crecimiento de Tab 3, y Tab 5 ignoraba lo capturado en Tab 4.
+  const ventaMensualCruce = useMemo(() => {
+    const out = {};
+    planCruceCompleto.forEach(r => {
+      const cruce = forecastL1.mapa[`${r.centro}|${r.goa}`];
+      if (!cruce?.planEsc) return;
+      const planEsc = cruce.planEsc[escenarioActivo === 'editable' ? 'modelo' : escenarioActivo];
+      const tot = planEsc.reduce((a, m) => a + m.valor, 0);
+      const f = r.tieneOverrideCrec && tot > 0 && r.ventaPlanFinal > 0 ? r.ventaPlanFinal / tot : 1;
+      const sugerido = planEsc.map(m => m.valor * f);
+      const valor = planEsc.map((m, i) => { const o = t4Overrides[`${r.centro}|${r.goa}|${m.mes}`]; return o !== undefined ? o : sugerido[i]; });
+      out[`${r.centro}|${r.goa}`] = { sugerido, valor };
+    });
+    return out;
+  }, [planCruceCompleto, forecastL1, escenarioActivo, t4Overrides]);
+
   // ══════════════════════════════════════════════════════════════════════
   // BLOQUE MAESTRO EXCEL (Tab 3) — cascada contable mensual
   // ══════════════════════════════════════════════════════════════════════
@@ -1565,12 +1583,7 @@ export default function Forecast() {
     const sugMg  = Array(12).fill(0);  // suma ponderada mg×venta por mes (histórico)
     const sugVtaMg = Array(12).fill(0); // venta histórica por mes (para ponderar mg)
 
-    planCruceCompleto.forEach(r => {
-      const cruce = forecastL1.mapa[`${r.centro}|${r.goa}`];
-      if (!cruce || cruce.insuficiente) return;
-      const planEsc = cruce.planEsc[escenarioActivo === 'editable' ? 'modelo' : escenarioActivo];
-      planEsc.forEach((m, i) => sugVta[i] += m.valor);
-    });
+    Object.values(ventaMensualCruce).forEach(v => v.valor.forEach((x, i) => { sugVta[i] += x; }));
 
     // Markdown y Mg% mensual desde el HISTÓRICO (estacionalidad real)
     // Promediamos el patrón mensual de markdown/venta y mg/venta de años cerrados
@@ -1694,7 +1707,7 @@ export default function Forecast() {
       });
     }
     return { filas, sugVta, factorEstacional, mkdPctMes, mgPctMesHist, rotAnualUsada, invBase, promVenta12, ventaAnual };
-  }, [otbMaster, planCruceCompleto, forecastL1, escenarioActivo, msiPct, historico, anioActual]);
+  }, [otbMaster, planCruceCompleto, ventaMensualCruce, msiPct, historico, anioActual]);
 
   // ══════════════════════════════════════════════════════════════════════
   // ROTACIÓN — históricos por año + sugerencia inteligente
@@ -1745,18 +1758,16 @@ export default function Forecast() {
   // ══════════════════════════════════════════════════════════════════════
   const t4DataAgrupada = useMemo(() => {
     const cruces = planCruceCompleto.map(r => {
-      const cruceL1 = forecastL1.mapa[`${r.centro}|${r.goa}`];
-      if (!cruceL1?.planEsc) return null;
-      const planEsc = cruceL1.planEsc[escenarioActivo === 'editable' ? 'modelo' : escenarioActivo];
-      const meses = planEsc.map((m) => {
-        const k = `${r.centro}|${r.goa}|${m.mes}`;
-        const override = t4Overrides[k];
+      const vm = ventaMensualCruce[`${r.centro}|${r.goa}`];
+      if (!vm) return null;
+      const meses = vm.valor.map((valor, i) => {
+        const k = `${r.centro}|${r.goa}|${i + 1}`;
         return {
-          mes: m.mes,
-          valor: override !== undefined ? override : m.valor,
-          sugerido: m.valor,
+          mes: i + 1,
+          valor,
+          sugerido: vm.sugerido[i],
           isLocked: t4Locks.has(k),
-          isOverride: override !== undefined,
+          isOverride: t4Overrides[k] !== undefined,
         };
       });
       return {
@@ -1780,7 +1791,7 @@ export default function Forecast() {
       map[id].total += c.total;
     });
     return Object.values(map).sort((a,b) => b.total - a.total);
-  }, [planCruceCompleto, forecastL1, escenarioActivo, t4Agrupacion, t4Overrides, t4Locks]);
+  }, [planCruceCompleto, ventaMensualCruce, t4Agrupacion, t4Overrides, t4Locks]);
 
   // Rebalanceo Tab 4
   const rebalancearTab4 = (grupoId) => {
@@ -1822,22 +1833,12 @@ export default function Forecast() {
       const cruceL1 = forecastL1.mapa[`${r.centro}|${r.goa}`];
       if (!cruceL1?.planEsc) return null;
 
-      const planMensualVenta = cruceL1.planEsc[escenarioActivo === 'editable' ? 'modelo' : escenarioActivo];
-
-      // Aplicar override de crecimiento
-      const totalPlanBase = planMensualVenta.reduce((s,m) => s + m.valor, 0);
-      const factorAjuste = r.tieneOverrideCrec && totalPlanBase > 0 && r.ventaPlanFinal > 0
-        ? r.ventaPlanFinal / totalPlanBase
-        : 1;
-
-      const ventaMensualAjustada = planMensualVenta.map(m => m.valor * factorAjuste);
+      // Venta mensual con crecimiento de Tab 3 y overrides de Tab 4
+      const ventaMensualAjustada = ventaMensualCruce[`${r.centro}|${r.goa}`]?.valor || Array(12).fill(0);
       const ventaTotal = ventaMensualAjustada.reduce((s,v) => s+v, 0);
 
-      // Markdown anual prorrateado por estacionalidad
-      const mkdAnual = r.mkdMonto || 0;
-      const mkdMensual = ventaMensualAjustada.map(v =>
-        ventaTotal > 0 ? mkdAnual * (v / ventaTotal) : 0
-      );
+      // Markdown = % del GOA × venta del mes
+      const mkdMensual = ventaMensualAjustada.map(v => v * (r.mkdPct || 0));
 
       // MSI mensual = venta × % MSI global
       const msiMensual = ventaMensualAjustada.map(v => v * msiPct);
@@ -2053,7 +2054,7 @@ export default function Forecast() {
     });
 
     return [...base, ...crucesApertura];
-  }, [planCruceCompleto, forecastL1, escenarioActivo, msiPct, mgObjetivoCentro,
+  }, [planCruceCompleto, forecastL1, ventaMensualCruce, escenarioActivo, msiPct, mgObjetivoCentro,
       pctBonifApertura, centros, aperturas, historico, otbMasterCalc,
       matrizGoaCentro, ventaObjetivoApertura, estacionalidadPorGoa]);
 
@@ -2157,13 +2158,19 @@ export default function Forecast() {
     const planTotalAnual = planMensualTotal.reduce((s,v) => s+v, 0);
     const compraTotalAnual = compraMensualTotal.reduce((s,v) => s+v, 0);
 
-    // Repartir por canal: peso anual (mix) distribuido por la estacionalidad PROPIA del canal
-    const canales = ['fisico', 'digital', 'kiosko'].map(c => {
-      const totalCanal = planTotalAnual * mixAplicado[c];
-      const compraCanal = compraTotalAnual * mixAplicado[c];
-      const estac = estacionalidadCanal[c];
-      const mensual = estac.map(f => totalCanal * f);          // venta mensual con su ciclicidad
-      const compraMensual = estac.map(f => compraCanal * f);   // compra mensual con su ciclicidad
+    // Repartir por canal: se parte de mix × estacionalidad propia del canal y se ajusta (IPF) para que cada
+    // canal respete su mix anual Y la suma de canales en cada mes cuadre con el plan de ese mes. Antes la suma
+    // mensual de canales no daba el plan del mes y la compra se repartía con la curva de venta.
+    const keys = ['fisico', 'digital', 'kiosko'];
+    const M = keys.map(c => estacionalidadCanal[c].map(f => planTotalAnual * mixAplicado[c] * f));
+    const rowT = keys.map(c => planTotalAnual * mixAplicado[c]);
+    for (let it = 0; it < 40; it++) {
+      M.forEach((row, r) => { const t = row.reduce((a, b) => a + b, 0); if (t > 0) row.forEach((_, i) => { row[i] *= rowT[r] / t; }); });
+      for (let i = 0; i < 12; i++) { const t = M.reduce((a, row) => a + row[i], 0); if (t > 0) M.forEach(row => { row[i] *= planMensualTotal[i] / t; }); }
+    }
+    const canales = keys.map((c, r) => {
+      const mensual = M[r];
+      const compraMensual = mensual.map((v, i) => planMensualTotal[i] > 0 ? compraMensualTotal[i] * v / planMensualTotal[i] : 0);
       return {
         canal: c,
         label: c === 'fisico' ? 'Físico (Piso)' : c === 'digital' ? 'Digital' : 'Kiosko',
@@ -2173,8 +2180,8 @@ export default function Forecast() {
         usaEstacReal: usaEstacReal[c],
         mensual,
         compraMensual,
-        total: totalCanal,
-        compraTotal: compraCanal,
+        total: mensual.reduce((a, b) => a + b, 0),
+        compraTotal: compraMensual.reduce((a, b) => a + b, 0),
       };
     });
 
