@@ -48,7 +48,7 @@ const WORLDS = [
   },
   {
     id: 'demanda', tag: 'PLANEACIÓN DE LA DEMANDA',
-    name: 'Assortment · Forecasting · Distribución · Resurtido · Eventos',
+    name: 'Assortment · Forecasting · Distribución · Resurtido',
     desc: 'Conecta la estrategia con la ejecución diaria. Vista unificada que une forecast, OTB y distribución. Proyecta demanda, define el surtido óptimo. |y mantiene el inventario saludable.',
     accent: '#f59e0b', glow: 'rgba(245,158,11,0.15)',
     modules: [
@@ -56,7 +56,6 @@ const WORLDS = [
       { label: 'Assortment', Icon: ShoppingCart, desc: 'Presupuesto de compra, buckets por marca y OTB mensual.' },
       { label: 'Resurtido',      Icon: RefreshCw,    desc: 'Reposición continua basada en cobertura y fill rate.' },
       { label: 'Distribución', Icon: Map,            desc: 'Surtido inicial por cluster, curva de tallas y chequera.' },
-      { label: 'Eventos',  Icon: Tag,       desc: 'Venta, margen, sell-through e inventario inicial de eventos promocionales (BTS, Navidad, etc.), comparado automáticamente contra el año anterior.' },
     ],
    }, 
   {
@@ -72,11 +71,12 @@ const WORLDS = [
   },
  {
     id: 'check', tag: 'CHECK DE COORDINADORES',
-    name: 'Daily · Allocation',
-    desc: 'Detalle de ventas e inventarios diarios con proyección de venta y utilidades. Revisión de parametrizaciones y OC antes de que salga la mercancía.',
+    name: 'Daily · Eventos · Allocation',
+    desc: 'Detalle de ventas e inventarios diarios y por evento promocional, con proyección de venta y utilidades. Revisión de parametrizaciones y OC antes de que salga la mercancía.',
     accent: '#06b6d4', glow: 'rgba(6, 182, 212, 0.15)',
     modules: [
        { label: 'Daily',    Icon: Calendar,  desc: 'Ajustes diarios de inventario, ventas y margen.' },
+       { label: 'Eventos',  Icon: Tag,       desc: 'Venta, margen, sell-through e inventario inicial de eventos promocionales (BTS, Navidad, etc.), comparado automáticamente contra el año anterior.' },
        { label: 'Allocation', Icon: ListChecks, desc: 'Reportero de parametrizaciones ZO9_DM (matriz de marca, clima, AP8, WOS, compra vs mínimos, curvas, clusters) y de OC (mínimos, destalle, picos, concentración). Dice qué está mal, dónde y a qué cambiarlo, y baja el CSV corregido para volver a parametrizar.' },
      ],
    },
