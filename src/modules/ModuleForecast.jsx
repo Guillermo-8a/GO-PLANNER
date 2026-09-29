@@ -268,7 +268,7 @@ export default function App() {
     <div className={`${isDark ? 'dark' : ''} min-h-screen p-4 md:p-6 font-sans text-zinc-700 dark:text-slate-300 animate-fade-in`}>
 
       {/* HEADER MÓDULO */}
-      <div className="bg-white dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 rounded-2xl shadow-sm p-5 mb-6 flex items-center justify-between flex-wrap gap-4">
+      <div className="bg-white border border-zinc-200 rounded-2xl shadow-sm p-5 mb-6 flex items-center justify-between flex-wrap gap-4 dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)]">
         <div className="flex items-center gap-3">
           <span className="p-2 rounded-xl bg-violet-100 dark:bg-violet-500/20">
             <TrendingUp size={22} className="text-violet-500" />
@@ -380,14 +380,14 @@ export default function App() {
                   </h2>
                   <p className="text-zinc-600 dark:text-zinc-400 text-sm mb-10 leading-relaxed px-6 font-bold uppercase tracking-widest opacity-60">Estación de planeación predictiva avanzada</p>
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-left">
-                    <div className="bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl hover:border-violet-500/50 transition-all shadow-inner">
+                    <div className="bg-zinc-50 border border-zinc-200 p-6 rounded-3xl hover:border-violet-500/50 transition-all shadow-inner dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 duration-300 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)]">
                       <h4 className="text-violet-400 font-bold text-xs uppercase mb-3 flex items-center gap-2"><FileSpreadsheet size={14} /> Estructura del CSV</h4>
                       <p className="text-[11px] text-zinc-600 dark:text-zinc-500 leading-relaxed">
                         Columna A: Nombre de Marca.<br />Columna B+: Valores numéricos históricos.<br /><br />
                         <code className="text-violet-700 dark:text-violet-300 block bg-zinc-100 dark:bg-black p-2 rounded mt-1 font-mono text-[10px] border border-zinc-200 dark:border-zinc-800 uppercase">Marca X, 1200, 1000, 1500...</code>
                       </p>
                     </div>
-                    <div className="bg-zinc-50 dark:bg-zinc-900/50 border border-zinc-200 dark:border-zinc-800 p-6 rounded-3xl hover:border-yellow-500/50 transition-all shadow-inner">
+                    <div className="bg-zinc-50 border border-zinc-200 p-6 rounded-3xl hover:border-yellow-500/50 transition-all shadow-inner dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)]">
                       <h4 className="text-yellow-500 font-bold text-xs uppercase mb-3 flex items-center gap-2"><Zap size={14} /> Pegado de Excel</h4>
                       <p className="text-[11px] text-zinc-600 dark:text-zinc-500 leading-relaxed">
                         Copia datos directamente. El motor procesará espacios y omitirá comas de formato.<br /><br />
@@ -401,7 +401,7 @@ export default function App() {
 
             {/* EDITOR */}
             {isEditing && (
-              <div className="bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-700 p-8 rounded-[32px] shadow-2xl mb-8 text-left">
+              <div className="bg-zinc-50 border border-zinc-200 dark:border-zinc-700 p-8 rounded-[32px] shadow-2xl mb-8 text-left dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)]">
                 <div className="flex justify-between items-center mb-8">
                   <h3 className="font-black text-xl text-zinc-900 dark:text-white uppercase flex items-center gap-3"><Edit3 size={18} className="text-violet-500" /> Gestionar Datos</h3>
                   <button onClick={() => setIsEditing(null)} className="text-zinc-500 hover:text-zinc-900 dark:hover:text-white transition-colors"><X size={18} /></button>
@@ -439,14 +439,14 @@ export default function App() {
                       <span className="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-900 px-4 py-2 rounded-full border border-zinc-200 dark:border-zinc-800 text-xs font-bold uppercase tracking-widest text-zinc-600 dark:text-zinc-500 shadow-sm">
                         <Calendar size={12} className="text-violet-500" /> Plan por {currentBrand.unit}
                       </span>
-                      <div className="flex items-center gap-3 bg-white dark:bg-zinc-950 border border-zinc-200 dark:border-zinc-800 px-5 py-1.5 rounded-full shadow-inner">
+                      <div className="flex items-center gap-3 bg-white border border-zinc-200 px-5 py-1.5 rounded-full shadow-inner dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)]">
                         <span className="text-[9px] font-black text-yellow-500 uppercase tracking-widest">Horizonte Fcst:</span>
                         <input type="range" min="1" max="24" step="1" value={currentBrand.horizon || 12} onChange={e => updateCurrentBrand({ horizon: parseInt(e.target.value) })} className="w-24 h-1 bg-zinc-200 dark:bg-zinc-800 rounded-full appearance-none cursor-pointer accent-yellow-500" />
                         <span className="text-xs font-bold text-zinc-900 dark:text-white w-4 text-center">{currentBrand.horizon || 12}</span>
                       </div>
                     </div>
                   </div>
-                  <div className="bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 px-8 py-5 rounded-[32px] flex items-center gap-5 shadow-2xl hover:border-yellow-500/30 transition-all">
+                  <div className="bg-zinc-50 border border-zinc-200 px-8 py-5 rounded-[32px] flex items-center gap-5 shadow-2xl hover:border-yellow-500/30 transition-all dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)]">
                     <div className="bg-yellow-500 p-3 rounded-2xl text-black shadow-lg shadow-yellow-500/20 animate-pulse"><Trophy size={20} /></div>
                     <div className="text-left">
                       <p className="text-[10px] font-black text-zinc-500 uppercase mb-0.5 leading-none tracking-widest">Mejor Ajuste</p>
@@ -471,7 +471,7 @@ export default function App() {
                 </div>
 
                 {/* Por qué gana + comparativo de modelos */}
-                <div className="bg-white dark:bg-zinc-950 p-6 rounded-[32px] border border-zinc-200 dark:border-zinc-800 shadow-lg">
+                <div className="bg-white p-6 rounded-[32px] border border-zinc-200 shadow-lg dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)]">
                   <p className="text-sm font-bold text-zinc-800 dark:text-zinc-200 mb-4">💡 {why}</p>
                   <div className="overflow-x-auto">
                     <table className="w-full text-xs">
@@ -503,7 +503,7 @@ export default function App() {
                 </div>
 
                 {/* Gráfica */}
-                <div className="bg-white dark:bg-zinc-950 p-8 rounded-[48px] border border-zinc-200 dark:border-zinc-800 shadow-2xl h-[500px] overflow-hidden relative">
+                <div className="bg-white p-8 rounded-[48px] border border-zinc-200 shadow-2xl h-[500px] overflow-hidden relative dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)]">
                   <div className="flex justify-between text-[10px] font-black uppercase tracking-widest text-zinc-500 mb-6 px-4">
                     <div className="flex gap-6">
                       <span className="flex items-center gap-2"><div className="w-3 h-3 rounded-full bg-zinc-400 dark:bg-zinc-700" /> Real</span>
@@ -531,7 +531,7 @@ export default function App() {
                 </div>
 
                 {/* Export Pipeline */}
-                <div className="bg-zinc-50 dark:bg-zinc-900 border border-zinc-200 dark:border-zinc-800 p-8 rounded-[40px] flex flex-col md:flex-row items-center justify-between gap-8 shadow-2xl text-left">
+                <div className="bg-zinc-50 border border-zinc-200 p-8 rounded-[40px] flex flex-col md:flex-row items-center justify-between gap-8 shadow-2xl text-left dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)]">
                   <div className="flex items-center gap-6">
                     <div className="bg-zinc-900 dark:bg-white text-white dark:text-black p-4 rounded-3xl shadow-xl shadow-black/5"><FileSpreadsheet size={20} /></div>
                     <div className="text-left">
@@ -558,7 +558,7 @@ export default function App() {
                 </div>
 
                 {/* Parámetros */}
-                <div className="bg-white dark:bg-zinc-950 rounded-[48px] p-10 border border-zinc-200 dark:border-zinc-900 shadow-inner text-left">
+                <div className="bg-white rounded-[48px] p-10 border border-zinc-200 shadow-inner text-left dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)]">
                   <div className="flex items-center justify-between mb-10">
                     <div className="flex items-center gap-4"><Settings2 size={18} className="text-violet-500" /><h3 className="text-sm font-black uppercase tracking-[0.3em] text-zinc-700 dark:text-zinc-400">Analítica Profunda por SKU</h3></div>
                     {currentBrand.params?.auto === false ? (

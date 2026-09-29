@@ -195,8 +195,8 @@ export default function Forecast() {
   const themes = {
     dark: {
       appBg: 'bg-transparent text-[#EDEBF2]',
-      card: 'bg-zinc-900 border-zinc-800 shadow-sm',
-      cardInner: 'bg-zinc-950 border-zinc-800',
+      card: 'bg-white/[0.045] backdrop-blur-xl border-white/10 shadow-lg shadow-black/40 transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)]',
+      cardInner: 'bg-white/5 border-white/10',
       textMain: 'text-white', textMuted: 'text-gray-400',
       textAccent1: 'text-orange-400', textAccent2: 'text-teal-400',
       border: 'border-zinc-800',

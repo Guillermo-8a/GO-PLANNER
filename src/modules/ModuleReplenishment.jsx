@@ -746,7 +746,7 @@ export default function App() {
     const MiniBarChart = ({ title, dataList, colorClass }) => {
         const maxVal = Math.max(...dataList.map(d => d.value), 1);
         return (
-            <div className="bg-white dark:bg-[#141414] border border-gray-200 dark:border-[#262626] rounded-xl p-4 flex flex-col h-64 shadow-sm dark:shadow-none transition-colors">
+            <div className="bg-white border border-gray-200 dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] rounded-xl p-4 flex flex-col h-64 shadow-sm dark:shadow-none transition-colors">
                 <h3 className="text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold mb-4">{title}</h3>
                 <div className="flex-1 overflow-y-auto custom-scrollbar pr-2 space-y-4">
                     {dataList.length === 0 ? (
@@ -773,7 +773,7 @@ export default function App() {
         <div className="min-h-screen w-full p-4 md:p-6 transition-colors duration-300 text-gray-900 dark:text-gray-200">
 
             {/* HEADER */}
-            <header className="mb-6 p-5 rounded-2xl border bg-white dark:bg-zinc-900/80 border-gray-200 dark:border-zinc-800 shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-colors">
+            <header className="mb-6 p-5 rounded-2xl border bg-white border-gray-200 dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-colors">
                 <div className="flex items-center gap-3">
                     <span className="p-2 rounded-xl bg-purple-100 dark:bg-purple-500/20">
                         <RefreshCw size={22} className="text-purple-600 dark:text-purple-400" />
@@ -811,7 +811,7 @@ export default function App() {
 
             {/* INSTRUCTIONS */}
             {data.length === 0 && !isSyncing && (
-                <div className="bg-white dark:bg-[#141414] border border-gray-200 dark:border-[#262626] shadow-sm dark:shadow-none rounded-xl p-8 text-center max-w-4xl mx-auto mt-10 transition-colors">
+                <div className="bg-white border border-gray-200 dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] shadow-sm dark:shadow-none rounded-xl p-8 text-center max-w-4xl mx-auto mt-10 transition-colors">
                     <Database className="w-16 h-16 text-purple-500 mx-auto mb-4 opacity-50" />
                     <h2 className="text-xl font-bold text-gray-900 dark:text-white mb-2">Conecta tu Base de Datos para empezar</h2>
                     <p className="text-gray-500 dark:text-gray-400 text-sm mb-6">Elige el método que prefieras para cargar tu información:</p>
@@ -842,7 +842,7 @@ export default function App() {
             {data.length > 0 && (
                 <>
                     {/* CONFIGURACIÓN DEL ALGORITMO */}
-                    <div className="flex flex-wrap items-center gap-4 bg-white dark:bg-[#141414] border border-gray-200 dark:border-[#262626] rounded-xl p-3 mb-4 shadow-sm dark:shadow-none transition-colors">
+                    <div className="flex flex-wrap items-center gap-4 bg-white border border-gray-200 dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] rounded-xl p-3 mb-4 shadow-sm dark:shadow-none transition-colors">
                         <div className="flex items-center gap-2 bg-gray-100 dark:bg-[#1a1a1a] px-3 py-1.5 rounded-lg border border-gray-200 dark:border-[#333]">
                             <Settings className="text-purple-600 dark:text-purple-500 w-4 h-4" />
                             <span className="text-xs font-semibold text-gray-800 dark:text-white uppercase tracking-wide">Configuración</span>
@@ -868,7 +868,7 @@ export default function App() {
                     </div>
 
                     {/* FILTERS */}
-                    <div className="flex flex-wrap gap-3 mb-6 bg-white dark:bg-[#141414] border border-gray-200 dark:border-[#262626] shadow-sm dark:shadow-none rounded-xl p-4 transition-colors">
+                    <div className="flex flex-wrap gap-3 mb-6 bg-white border border-gray-200 dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] shadow-sm dark:shadow-none rounded-xl p-4 transition-colors">
                         <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
                             <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1"><Filter className="w-3 h-3"/> Centro</label>
                             <select value={filterCentro} onChange={(e) => { setFilterCentro(e.target.value); setFilterSeccion(''); setFilterMarca(''); setFilterGoa(''); setFilterModelo(''); setFilterNorma(''); setFilterSku(''); }} className="bg-gray-50 dark:bg-[#0a0a0a] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
@@ -935,28 +935,28 @@ export default function App() {
 
                     {/* KPIS */}
                     <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
-                        <div className="bg-white dark:bg-[#141414] border border-gray-200 dark:border-[#262626] shadow-sm dark:shadow-none rounded-xl p-4 flex items-center gap-4 transition-colors">
+                        <div className="bg-white border border-gray-200 dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] shadow-sm dark:shadow-none rounded-xl p-4 flex items-center gap-4 transition-colors">
                             <div className="bg-gray-100 dark:bg-gray-800 p-2.5 rounded-lg hidden sm:block"><BarChart2 className="w-5 h-5 text-gray-500 dark:text-gray-300" /></div>
                             <div>
                                 <p className="text-[10px] md:text-xs text-gray-500 uppercase font-semibold">Pronóstico (P{periodStart}-P{periodEnd})</p>
                                 <p className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white mt-0.5">{kpis.forecast.toLocaleString()} <span className="text-xs font-normal text-gray-400 dark:text-gray-500">PZS</span></p>
                             </div>
                         </div>
-                        <div className="bg-white dark:bg-[#141414] border border-gray-200 dark:border-[#262626] shadow-sm dark:shadow-none rounded-xl p-4 flex items-center gap-4 transition-colors">
+                        <div className="bg-white border border-gray-200 dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] shadow-sm dark:shadow-none rounded-xl p-4 flex items-center gap-4 transition-colors">
                             <div className="bg-yellow-50 dark:bg-yellow-500/10 p-2.5 rounded-lg border border-yellow-200 dark:border-yellow-500/20 hidden sm:block"><Box className="w-5 h-5 text-yellow-600 dark:text-yellow-500" /></div>
                             <div>
                                 <p className="text-[10px] md:text-xs text-gray-500 uppercase font-semibold">Inventario (OH)</p>
                                 <p className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white mt-0.5">{kpis.oh.toLocaleString()} <span className="text-xs font-normal text-gray-400 dark:text-gray-500">PZS</span></p>
                             </div>
                         </div>
-                        <div className="bg-white dark:bg-[#141414] border border-gray-200 dark:border-[#262626] shadow-sm dark:shadow-none rounded-xl p-4 flex items-center gap-4 transition-colors">
+                        <div className="bg-white border border-gray-200 dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] shadow-sm dark:shadow-none rounded-xl p-4 flex items-center gap-4 transition-colors">
                             <div className="bg-purple-50 dark:bg-purple-500/10 p-2.5 rounded-lg border border-purple-200 dark:border-purple-500/20 hidden sm:block"><Package className="w-5 h-5 text-purple-600 dark:text-purple-500" /></div>
                             <div>
                                 <p className="text-[10px] md:text-xs text-gray-500 uppercase font-semibold">En Tránsito (OO)</p>
                                 <p className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white mt-0.5">{kpis.oo.toLocaleString()} <span className="text-xs font-normal text-gray-400 dark:text-gray-500">PZS</span></p>
                             </div>
                         </div>
-                        <div className="bg-white dark:bg-[#141414] border border-gray-200 dark:border-[#262626] shadow-sm dark:shadow-none rounded-xl p-4 flex items-center gap-4 relative overflow-hidden transition-colors">
+                        <div className="bg-white border border-gray-200 dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] shadow-sm dark:shadow-none rounded-xl p-4 flex items-center gap-4 relative overflow-hidden transition-colors">
                             <div className="absolute top-0 right-0 w-12 h-12 bg-purple-100 dark:bg-purple-600/10 rounded-bl-full"></div>
                             <div className="bg-purple-600 p-2.5 rounded-lg shadow-md dark:shadow-[0_0_15px_rgba(147,51,234,0.3)] hidden sm:block"><ShoppingCart className="w-5 h-5 text-white" /></div>
                             <div>
@@ -968,7 +968,7 @@ export default function App() {
 
                     <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mb-6">
                         {/* TABLA DETALLE */}
-                        <div className="xl:col-span-2 bg-white dark:bg-[#141414] border border-gray-200 dark:border-[#262626] shadow-sm dark:shadow-none rounded-xl overflow-hidden flex flex-col h-[750px] transition-colors">
+                        <div className="xl:col-span-2 bg-white border border-gray-200 dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] shadow-sm dark:shadow-none rounded-xl overflow-hidden flex flex-col h-[750px] transition-colors">
                             <div className="p-3 border-b border-gray-200 dark:border-[#262626] bg-gray-50 dark:bg-[#1a1a1a] flex justify-between items-center flex-wrap gap-2 transition-colors">
                                 <div className="flex items-center gap-3">
                                     <h2 className="font-semibold text-gray-900 dark:text-white text-sm">Detalle de Combinación (Centro-SKU)</h2>
@@ -1083,7 +1083,7 @@ export default function App() {
                         </div>
 
                         {/* PANEL DE GRÁFICAS DE ITEM SELECCIONADO O GLOBAL */}
-                        <div className="bg-white dark:bg-[#141414] border border-gray-200 dark:border-[#262626] shadow-sm dark:shadow-none rounded-xl p-4 flex flex-col h-[750px] transition-colors">
+                        <div className="bg-white border border-gray-200 dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] shadow-sm dark:shadow-none rounded-xl p-4 flex flex-col h-[750px] transition-colors">
                             {activeItem ? (
                                 <div className="flex-1 flex flex-col h-full overflow-y-auto custom-scrollbar pr-2">
                                     <div className="mb-4 bg-gray-50 dark:bg-[#0a0a0a] p-3 rounded-lg border border-gray-200 dark:border-[#262626] flex justify-between items-center shrink-0 transition-colors">
@@ -1314,7 +1314,7 @@ export default function App() {
                     {/* TARJETAS DE INSIGHTS */}
                     <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-6 transition-colors">
                         {/* Tarjeta 1: Stockouts */}
-                        <div className="bg-white dark:bg-[#141414] border border-gray-200 dark:border-[#262626] shadow-sm dark:shadow-none rounded-xl p-5 flex flex-col justify-center transition-colors">
+                        <div className="bg-white border border-gray-200 dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] shadow-sm dark:shadow-none rounded-xl p-5 flex flex-col justify-center transition-colors">
                             <h3 className="text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold mb-3 flex items-center gap-1.5"><Box className="w-4 h-4 text-red-500" /> Stockouts (Combinaciones en 0)</h3>
                             <div className="flex items-end gap-6">
                                 <div>
@@ -1330,7 +1330,7 @@ export default function App() {
                         </div>
 
                         {/* Tarjeta 2: Mejor Desempeño */}
-                        <div className="bg-white dark:bg-[#141414] border border-gray-200 dark:border-[#262626] shadow-sm dark:shadow-none rounded-xl p-5 flex flex-col justify-center transition-colors">
+                        <div className="bg-white border border-gray-200 dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] shadow-sm dark:shadow-none rounded-xl p-5 flex flex-col justify-center transition-colors">
                             <h3 className="text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold mb-2 flex items-center gap-1.5"><TrendingUp className="w-4 h-4 text-purple-500" /> Mejor Desempeño</h3>
                             <p className="text-[11px] text-gray-500 dark:text-gray-400 mb-1">Recomendación apostarle a:</p>
                             <p className="text-sm font-bold text-gray-900 dark:text-white truncate" title={insights.bestSku}>
@@ -1339,7 +1339,7 @@ export default function App() {
                         </div>
 
                         {/* Tarjeta 3: Ranking de Tallas */}
-                        <div className="bg-white dark:bg-[#141414] border border-gray-200 dark:border-[#262626] shadow-sm dark:shadow-none rounded-xl p-5 flex flex-col justify-center transition-colors">
+                        <div className="bg-white border border-gray-200 dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] shadow-sm dark:shadow-none rounded-xl p-5 flex flex-col justify-center transition-colors">
                             <h3 className="text-xs text-gray-500 dark:text-gray-400 uppercase font-semibold mb-2 flex items-center gap-1.5"><BarChart2 className="w-4 h-4 text-blue-500" /> Ranking de Tallas (Fcst)</h3>
                             <div className="flex flex-col gap-2.5 mt-2 w-full">
                                 {insights.topSizes.length > 0 ? insights.topSizes.map((t, i) => (
@@ -1356,7 +1356,7 @@ export default function App() {
                     </div>
 
                     {/* NUEVA TABLA: RESUMEN POR SKU / PERIODO */}
-                    <div className="bg-white dark:bg-[#141414] border border-gray-200 dark:border-[#262626] shadow-sm dark:shadow-none rounded-xl overflow-hidden flex flex-col h-[400px] mb-6 transition-colors">
+                    <div className="bg-white border border-gray-200 dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] shadow-sm dark:shadow-none rounded-xl overflow-hidden flex flex-col h-[400px] mb-6 transition-colors">
                         <div className="p-3 border-b border-gray-200 dark:border-[#262626] bg-gray-50 dark:bg-[#1a1a1a] flex justify-between items-center flex-wrap gap-2 transition-colors">
                             <div className="flex items-center gap-3">
                                 <Table className="w-4 h-4 text-purple-600 dark:text-purple-500" />

@@ -249,7 +249,7 @@ export default function ModuleEventos(){
   const theme=gState?.theme||'light';
   const isDark=theme==='dark';
   const themes={
-    dark:{appBg:'bg-transparent text-gray-100',card:'bg-[#1e222d]/80 backdrop-blur-xl border-[#2a2e3d] shadow-sm',cardInner:'bg-[#161922]/70 backdrop-blur-xl border-[#2a2e3d]',
+    dark:{appBg:'bg-transparent text-gray-100',card:'bg-white/[0.045] backdrop-blur-xl border-white/10 shadow-lg shadow-black/40 transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)]',cardInner:'bg-white/5 border-white/10',
       textMain:'text-white',textMuted:'text-gray-400',textAccent1:'text-violet-300',textAccent2:'text-purple-300',border:'border-[#2a2e3d]',
       input:'bg-[#161922] border-[#2a2e3d] text-white focus:ring-violet-500',btnPrimary:'bg-violet-500 text-white hover:bg-violet-400 shadow-[0_0_18px_rgba(139,92,246,0.4)]',
       btnGhost:'bg-[#1e222d]/80 text-gray-300 hover:text-white hover:bg-[#2a2e3d] border-[#2a2e3d]',

@@ -140,10 +140,7 @@ function NavBar({ navigate }) {
       transition: 'all 0.4s ease',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-        <img src="/logo.png" alt="GO PLANNER" style={{ width: '34px', height: '34px', objectFit: 'contain' }} />
-        <span style={{ fontWeight: 900, fontSize: '16px', letterSpacing: '-0.5px', color: 'white' }}>
-          GO <span style={{ color: '#8b5cf6' }}>PLANNER</span>
-        </span>
+        <img src="/logo.png" alt="GO PLANNER" style={{ width: 'clamp(90px, 10vw, 130px)', height: 'auto', margin: '-30px 0', filter: 'drop-shadow(0 0 30px rgba(139,92,246,0.35))' }} />
       </div>
       <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
         {['PILARES', 'FORMATOS', 'PREGUNTAS'].map(w => (
@@ -220,13 +217,6 @@ function Hero({ navigate }) {
           Sistema de planeación comercial · SBB
         </span>
       </div>
-
-      {/* Logo oficial */}
-      <img src="/logo.png" alt="GO PLANNER" style={{
-        width: 'clamp(90px, 10vw, 130px)', marginBottom: '20px',
-        filter: 'drop-shadow(0 0 30px rgba(139,92,246,0.35))',
-        opacity: mounted ? 1 : 0, transform: mounted ? 'scale(1)' : 'scale(0.9)', transition: 'all 0.8s ease 0.05s',
-      }} />
 
       {/* Título */}
       <div style={{

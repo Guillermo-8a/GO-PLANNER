@@ -89,9 +89,19 @@ export const CSV_SCHEMAS = [
     module: 'Dayli',
     formats: [
       {
-        title: 'Ventas TY + LY combinado',
-        desc: 'Un solo archivo con este año y el pasado. Trae venta, costo, margen, inventario y tendencia por sección/canal/división — el listado exacto de encabezados todavía no está documentado en el propio módulo, así que si quieres el detalle línea por línea dime y lo sacamos del parser.',
-        columns: [],
+        title: 'Ventas diarias TY + LY',
+        desc: 'Un solo archivo con este año y el pasado (el año sale de FECHA). Acepta coma, punto y coma o tabulador. SECCION puede venir como número si agregas #SECCION con el nombre.',
+        columns: ['DIVISION', 'SECCION', '#SECCION', 'GOA', 'MARCA', 'NORMA', 'CANAL', 'TIPO_PAGO', 'FECHA*', 'VENTA_PESOS*', 'VENTA_U', 'MG', 'UTILIDAD', 'MARKDOWN'],
+      },
+      {
+        title: 'Inventario',
+        desc: 'Foto de inventario por ubicación. Si no hay TIPO_UBICACION se deduce: S- = logístico, BODEGA/BDG = bodega, PLAN/P- = plan, lo demás tienda.',
+        columns: ['DIVISION', 'SECCION', '#SECCION', 'GOA', 'MARCA', 'NORMA', 'UBICACION', 'TIPO_UBICACION', 'OH', 'OO', 'COSTO_VENDIDO', 'UTILIDAD_VENDIDA', 'COMPRADO', 'NACIONAL', 'IMPORTACION', 'VENTA'],
+      },
+      {
+        title: 'Calendario de promociones',
+        desc: 'Una fila por promo. Usa FECHA_FIN o DIAS para rangos; sin SECCION/MARCA aplica a todo. UPLIFT = % extra de venta esperado (20 = +20%).',
+        columns: ['NOMBRE', 'FECHA_INICIO*', 'FECHA_FIN', 'DIAS', 'SECCION', 'MARCA', 'UPLIFT'],
       },
     ],
   },
@@ -99,9 +109,9 @@ export const CSV_SCHEMAS = [
     module: 'Dispersión',
     formats: [
       {
-        title: 'Cualquier CSV con encabezados',
-        desc: 'No hay columnas fijas: subes tu CSV y dentro de la app eliges qué columna es Tienda, Venta, Promedio, etc. Solo necesita traer una fila de encabezados.',
-        columns: [],
+        title: 'Venta vs inventario por tienda (mensual)',
+        desc: 'Una fila por tienda × mes × jerarquía. Acepta variaciones de nombre (VTAS, VENTAS, PROM_INV, INV_INICIAL…).',
+        columns: ['AÑO', 'MES', 'DIRECCION', 'DIVISION', 'SECCION', 'NORMA', 'GRUPO_ARTICULOS', 'PROVEEDOR', 'MARCA', 'CENTRO', 'TIENDA', 'VTAS_PESOS', 'PROM_INVENTARIO', 'INVENTARIO_INICIAL', 'INVENTARIO_FINAL', 'INVENTARIO_IDEAL'],
       },
     ],
   },

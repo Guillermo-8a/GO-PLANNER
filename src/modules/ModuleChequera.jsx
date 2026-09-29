@@ -311,7 +311,7 @@ export default function ModuleChequera() {
 
   return (
     <div className="p-4 md:p-6">
-      <div className="p-5 rounded-2xl border bg-white dark:bg-zinc-900/80 border-neutral-200 dark:border-neutral-800 shadow-sm mb-6 flex items-center justify-between gap-4 flex-wrap">
+      <div className="p-5 rounded-2xl border bg-white border-neutral-200 dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] shadow-sm mb-6 flex items-center justify-between gap-4 flex-wrap">
         <div className="flex items-center gap-3">
           <span className="p-2 rounded-xl bg-violet-100 dark:bg-violet-500/20">
             <Wallet size={22} className="text-violet-600 dark:text-violet-400" />
