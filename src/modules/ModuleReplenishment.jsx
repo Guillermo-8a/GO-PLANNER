@@ -4,6 +4,7 @@ import {
   Search, Calendar, Filter, CheckCircle2, AlertCircle, Upload, Download,
   Settings, FileText, Table
 } from 'lucide-react';
+import { bestForecast } from '../utils/fcstEngine';
 
 // Números de CSV: "1,234.5" → 1234.5 (antes Number('1,234') daba NaN → 0)
 const toNum = (v) => parseFloat(String(v ?? '').replace(/[^0-9.-]+/g, '')) || 0;
@@ -71,9 +72,10 @@ export default function App() {
     const [periodEnd, setPeriodEnd] = useState(currentMonth + 2);
 
     // VARIABLES DE ALGORITMO
-    const [calcMode, setCalcMode] = useState('TD'); 
+    const [calcMode, setCalcMode] = useState('TDM'); 
     const [maxGrowth, setMaxGrowth] = useState(50);
     const [maxDecline, setMaxDecline] = useState(30);
+    const [safetyPer, setSafetyPer] = useState(0.5); // stock de seguridad en periodos de venta pronosticada
     
     const [selectedItem, setSelectedItem] = useState(null);
     const [isSyncing, setIsSyncing] = useState(false);
@@ -247,6 +249,7 @@ export default function App() {
                 if (d.calcMode)     setCalcMode(d.calcMode);
                 if (d.maxGrowth)    setMaxGrowth(d.maxGrowth);
                 if (d.maxDecline)   setMaxDecline(d.maxDecline);
+                if (d.safetyPer != null) setSafetyPer(d.safetyPer);
                 if (d.periodStart)  setPeriodStart(d.periodStart);
                 if (d.periodEnd)    setPeriodEnd(d.periodEnd);
                 if (d.data?.length) setData(d.data);
@@ -264,13 +267,13 @@ export default function App() {
         if (!data.length) return; // No guardar estado vacío
         try {
             localStorage.setItem('gop_resurtido', JSON.stringify({
-                sheetUrl, calcMode, maxGrowth, maxDecline,
+                sheetUrl, calcMode, maxGrowth, maxDecline, safetyPer,
                 periodStart, periodEnd, data,
                 filterCentro, filterSeccion, filterMarca,
                 filterGoa, filterModelo, filterNorma,
             }));
         } catch {}
-    }, [sheetUrl, calcMode, maxGrowth, maxDecline, periodStart, periodEnd, data,
+    }, [sheetUrl, calcMode, maxGrowth, maxDecline, safetyPer, periodStart, periodEnd, data,
         filterCentro, filterSeccion, filterMarca, filterGoa, filterModelo, filterNorma]);
     // ─────────────────────────────────────────────────────────────────
 
@@ -314,6 +317,31 @@ export default function App() {
         return out;
     }, [periodStart, periodEnd, nPer]);
 
+    // Top-Down con modelo: pronóstico por GOA con el mejor motor (SES/Holt/Holt-Winters/Estacional, backtest)
+    // sobre la serie LY + meses cerrados de este año. Se hace a nivel GOA porque la serie SKU×tienda es muy rala.
+    const goaFcst = useMemo(() => {
+        if (calcMode !== 'TDM' || !data.length) return {};
+        const curM = new Date().getMonth() + 1;
+        // Periodo en curso (incompleto): mensual = mes actual; semanal = siguiente al último con venta de este año
+        let cur = curM;
+        if (nPer > 12) { cur = 1; data.forEach(r => r.monthlySales.forEach(m => { if (m.y2 > 0 && m.period + 1 > cur) cur = m.period + 1; })); }
+        const agg = {};
+        data.forEach(r => {
+            if (!agg[r.goa]) agg[r.goa] = { y1: Array(nPer + 1).fill(0), y2: Array(nPer + 1).fill(0) };
+            r.monthlySales.forEach(m => { agg[r.goa].y1[m.period] += m.y1; agg[r.goa].y2[m.period] += m.y2; });
+        });
+        const absOf = w => (w.wrapped ? nPer : 0) + w.p;
+        const H = Math.max(1, ...windowPeriods.map(w => absOf(w) - cur + 1));
+        const out = {};
+        Object.entries(agg).forEach(([goa, a]) => {
+            const serie = [...a.y1.slice(1), ...a.y2.slice(1, cur)];
+            const f = bestForecast(serie, H, nPer);
+            const perPeriod = windowPeriods.map(w => { const k = absOf(w) - cur; return k >= 0 ? f.future[k] || 0 : a.y2[w.p]; });
+            out[goa] = { total: perPeriod.reduce((x, y) => x + y, 0), model: f.model, acc: f.accuracy };
+        });
+        return out;
+    }, [calcMode, data, nPer, windowPeriods]);
+
     const computedData = useMemo(() => {
         if (!data || data.length === 0) return [];
         const currentMonthNow = new Date().getMonth() + 1;
@@ -350,7 +378,7 @@ export default function App() {
         const sortedCentros = Object.entries(centroSalesMap).sort((a, b) => b[1] - a[1]).map(e => e[0]);
         const top15Centros = new Set(sortedCentros.slice(0, 15));
 
-        if (calcMode === 'TD') {
+        if (calcMode === 'TD' || calcMode === 'TDM') {
             data.forEach(row => {
                 const base = winOf(row).base;
 
@@ -380,6 +408,8 @@ export default function App() {
                 gcAgg[gcKey].baseSales += base;
             });
 
+            const goaKeyOf = g => g.__goa;
+            Object.entries(goaAgg).forEach(([k, g]) => { g.__goa = k; });
             Object.values(goaAgg).forEach(g => {
                 if (g.sumY1_recent > 0) {
                     g.rawTrend = ((g.sumY2_recent - g.sumY1_recent) / g.sumY1_recent) * 100;
@@ -390,6 +420,11 @@ export default function App() {
                 }
                 g.cappedTrend = Math.min(Math.max(g.rawTrend, -maxDecline), maxGrowth);
                 g.forecast = g.baseSales * (1 + (g.cappedTrend / 100));
+                if (calcMode === 'TDM' && goaFcst[goaKeyOf(g)]) {
+                    const m = goaFcst[goaKeyOf(g)];
+                    g.forecast = m.total; g.model = m.model; g.acc = m.acc;
+                    g.rawTrend = g.cappedTrend = g.baseSales > 0 ? (m.total / g.baseSales - 1) * 100 : 0;
+                }
             });
         }
 
@@ -415,7 +450,7 @@ export default function App() {
             let cappedTrend = 0;
             let forecast = 0;
 
-            if (calcMode === 'TD') {
+            if (calcMode === 'TD' || calcMode === 'TDM') {
                 const g = goaAgg[row.goa];
                 const gc = gcAgg[`${row.goa}|${row.centro}`];
 
@@ -441,7 +476,9 @@ export default function App() {
             
             const isTop15 = top15Centros.has(row.centro);
             const minStockRule = isTop15 ? 2 : 1;
-            const targetTotalInventory = Math.max(forecast, minStockRule);
+            // Stock de seguridad = N periodos de la venta pronosticada promedio de la ventana
+            const safety = Math.ceil((forecast / Math.max(1, windowPeriods.length)) * safetyPer);
+            const targetTotalInventory = Math.max(forecast + safety, minStockRule);
             const toBuy = Math.max(0, targetTotalInventory - totalInventory);
             
             const coverage = forecast > 0 ? (totalInventory / forecast) * 100 : (totalInventory > 0 ? 999 : 0);
@@ -450,7 +487,7 @@ export default function App() {
 
             const periodsWithFcst = relevantPeriods.map(p => {
                 let pBase = 0;
-                if (calcMode === 'RA' || calcMode === 'TD') {
+                if (calcMode === 'RA' || calcMode === 'TD' || calcMode === 'TDM') {
                     pBase = p.b;
                 } else {
                     pBase = activeYears > 0 ? ((sumY1_base > 0 ? p.y1 : 0) + (sumY2_base > 0 ? p.y2 : 0)) / activeYears : 0;
@@ -475,7 +512,7 @@ export default function App() {
                 relevantPeriods: periodsWithFcst
             };
         });
-    }, [data, windowPeriods, nPer, calcMode, maxGrowth, maxDecline]);
+    }, [data, windowPeriods, nPer, calcMode, maxGrowth, maxDecline, safetyPer, goaFcst]);
 
     // LISTAS DE OPCIONES PARA FILTROS
     const optionsCentros = useMemo(() => [...new Set(computedData.map(d => d.centro))].sort(), [computedData]);
@@ -868,6 +905,7 @@ export default function App() {
                         <div className="flex items-center gap-2 border-r border-gray-200 dark:border-[#333] pr-4">
                             <label className="text-xs text-gray-500 dark:text-gray-400">Método:</label>
                             <select value={calcMode} onChange={e => setCalcMode(e.target.value)} className="bg-gray-50 dark:bg-[#1c1720] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs font-bold rounded-lg px-2 py-1 outline-none focus:border-purple-500 transition-colors">
+                                <option value="TDM">Top-Down con modelo (mejor accuracy)</option>
                                 <option value="TD">Top-Down (GOA ➔ Centro ➔ SKU)</option>
                                 <option value="RA">Resurtido Automático (RA)</option>
                                 <option value="CU">Compra Única (Promedio + Tend. 3M)</option>
@@ -882,6 +920,20 @@ export default function App() {
                             <label className="text-xs text-gray-500 dark:text-gray-400">Tope Decremento (-%):</label>
                             <input type="number" value={maxDecline} onChange={e => setMaxDecline(Number(e.target.value))} className="bg-gray-50 dark:bg-white/5 border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs font-bold rounded-lg w-16 px-2 py-1 outline-none focus:border-purple-500 text-center transition-colors" />
                         </div>
+                        <div className="flex items-center gap-2" title="Colchón extra sobre el pronóstico, en periodos de venta promedio (0.5 = medio mes)">
+                            <label className="text-xs text-gray-500 dark:text-gray-400">Stock seguridad (periodos):</label>
+                            <input type="number" step="0.25" min="0" value={safetyPer} onChange={e => setSafetyPer(Math.max(0, Number(e.target.value)))} className="bg-gray-50 dark:bg-white/5 border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs font-bold rounded-lg w-16 px-2 py-1 outline-none focus:border-purple-500 text-center transition-colors" />
+                        </div>
+                        {calcMode === 'TDM' && Object.keys(goaFcst).length > 0 && (
+                            <div className="w-full flex flex-wrap gap-2 pt-2 border-t border-gray-200 dark:border-white/10">
+                                <span className="text-[10px] uppercase font-bold text-gray-500">Modelo por GOA:</span>
+                                {Object.entries(goaFcst).sort((a, b) => b[1].total - a[1].total).slice(0, 12).map(([g, m]) => (
+                                    <span key={g} className="text-[10px] px-2 py-0.5 rounded-full border border-gray-200 dark:border-white/10 text-gray-700 dark:text-gray-300">
+                                        {g}: <b>{m.model}</b>{m.acc != null && <span className={m.acc >= 85 ? 'text-emerald-500' : m.acc >= 70 ? 'text-yellow-500' : 'text-rose-500'}> · {m.acc.toFixed(0)}%</span>}
+                                    </span>
+                                ))}
+                            </div>
+                        )}
                     </div>
 
                     {/* FILTERS */}
