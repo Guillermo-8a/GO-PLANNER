@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   TrendingUp, ShoppingCart, Map, RefreshCw,
   ArrowLeftRight, ChevronDown, Zap, BarChart3,
-  Calendar, ArrowRight, Layers, FileSpreadsheet, Tag
+  Calendar, ArrowRight, Layers, FileSpreadsheet, Tag, Download
 } from 'lucide-react';
 import { CSV_SCHEMAS } from './csvSchemas';
 
@@ -140,19 +140,13 @@ function NavBar({ navigate }) {
       transition: 'all 0.4s ease',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-        <div style={{
-          background: 'linear-gradient(135deg, #7c3aed, #5b21b6)',
-          padding: '7px', borderRadius: '12px', display: 'flex',
-          boxShadow: '0 0 20px rgba(124,58,237,0.4)',
-        }}>
-          <Layers size={16} color="white" />
-        </div>
+        <img src="/logo.png" alt="GO PLANNER" style={{ width: '34px', height: '34px', objectFit: 'contain' }} />
         <span style={{ fontWeight: 900, fontSize: '16px', letterSpacing: '-0.5px', color: 'white' }}>
           GO <span style={{ color: '#8b5cf6' }}>PLANNER</span>
         </span>
       </div>
       <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-        {['PLANES', 'DEMANDA', 'INVENTARIOS', 'COOR' ].map(w => (
+        {['PILARES', 'FORMATOS', 'PREGUNTAS'].map(w => (
           <a key={w} href={`#${w.toLowerCase()}`} style={{
             fontSize: '12px', fontWeight: 600, color: '#71717a',
             textDecoration: 'none', transition: 'color 0.2s',
@@ -226,6 +220,13 @@ function Hero({ navigate }) {
           Sistema de planeación comercial · SBB
         </span>
       </div>
+
+      {/* Logo oficial */}
+      <img src="/logo.png" alt="GO PLANNER" style={{
+        width: 'clamp(90px, 10vw, 130px)', marginBottom: '20px',
+        filter: 'drop-shadow(0 0 30px rgba(139,92,246,0.35))',
+        opacity: mounted ? 1 : 0, transform: mounted ? 'scale(1)' : 'scale(0.9)', transition: 'all 0.8s ease 0.05s',
+      }} />
 
       {/* Título */}
       <div style={{
@@ -421,12 +422,33 @@ function WorldsSection() {
 }
 
 // ── Formatos CSV ──────────────────────────────────────────────────────────────
+// Encabezados de plantilla a partir de las columnas descritas: quita "*" y "(…)";
+// "A / B / C (opcionales)" → varias columnas, "A / B" → la primera; descripciones entre paréntesis se omiten.
+const templateRows = (f) => {
+  if (f.template) return f.template;
+  const head = f.columns.flatMap((c) => {
+    if (c.trim().startsWith('(')) return [];
+    const multi = /\(opcionales\)/i.test(c);
+    const parts = c.replace(/\(.*?\)/g, '').replace(/\*/g, '').split('/').map((x) => x.trim()).filter(Boolean);
+    return multi ? parts : parts.slice(0, 1);
+  });
+  return head.length ? [head] : null;
+};
+const downloadTemplate = (mod, f) => {
+  const rows = templateRows(f);
+  const csv = '\uFEFF' + rows.map((r) => r.map((v) => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : v)).join(',')).join('\n');
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+  a.download = `Plantilla_${mod}_${f.title}.csv`.replace(/[^\w.\-áéíóúñÁÉÍÓÚÑ]+/g, '_');
+  a.click();
+};
+
 function CSVFormatsSection() {
   const [openModule, setOpenModule] = useState(null);
   const [ref, visible] = useInView(0.1);
 
   return (
-    <section style={{ padding: '80px 2rem', maxWidth: '900px', margin: '0 auto' }}>
+    <section id="formatos" style={{ padding: '80px 2rem', maxWidth: '900px', margin: '0 auto', scrollMarginTop: '70px' }}>
       <div ref={ref} style={{
         textAlign: 'center', marginBottom: '50px',
         opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(30px)',
@@ -474,7 +496,18 @@ function CSVFormatsSection() {
                 }}>
                   {mod.formats.map((f, fi) => (
                     <div key={fi}>
-                      <p style={{ fontSize: '13px', fontWeight: 700, color: '#c4b5fd', margin: '0 0 6px' }}>{f.title}</p>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', margin: '0 0 6px' }}>
+                        <p style={{ fontSize: '13px', fontWeight: 700, color: '#c4b5fd', margin: 0 }}>{f.title}</p>
+                        {templateRows(f) && (
+                          <button onClick={() => downloadTemplate(mod.module, f)} style={{
+                            display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0,
+                            background: 'rgba(139,92,246,0.12)', border: '1px solid rgba(139,92,246,0.35)', color: '#c4b5fd',
+                            borderRadius: '8px', padding: '5px 10px', fontSize: '11px', fontWeight: 700, cursor: 'pointer',
+                          }}>
+                            <Download size={12} /> Plantilla
+                          </button>
+                        )}
+                      </div>
                       <p style={{ fontSize: '12.5px', color: '#a1a1aa', lineHeight: 1.6, margin: '0 0 10px' }}>{f.desc}</p>
                       {f.columns.length > 0 && (
                         <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
@@ -505,7 +538,7 @@ function FAQSection() {
   const [ref, visible] = useInView(0.1);
 
   return (
-    <section style={{ padding: '80px 2rem 140px', maxWidth: '740px', margin: '0 auto' }}>
+    <section id="preguntas" style={{ padding: '80px 2rem 140px', maxWidth: '740px', margin: '0 auto', scrollMarginTop: '70px' }}>
       <div ref={ref} style={{
         textAlign: 'center', marginBottom: '60px',
         opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(30px)',

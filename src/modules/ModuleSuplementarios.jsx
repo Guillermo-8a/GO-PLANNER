@@ -5,7 +5,7 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
 import * as XLSX from 'xlsx';
 import { ResponsiveContainer, ComposedChart, LineChart, Bar, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend, ReferenceLine } from 'recharts';
-import { Upload, Download, Lock, RotateCcw, Check, AlertCircle, FileSpreadsheet, Trash2, Copy } from 'lucide-react';
+import { Upload, Download, Lock, RotateCcw, Check, AlertCircle, Trash2, Copy } from 'lucide-react';
 import ModuleHeader from '../components/ModuleHeader';
 
 const LS_KEY = 'gop_suplementarios';
@@ -97,17 +97,6 @@ async function parseExcel(file) {
     });
   });
   return out;
-}
-
-function downloadTemplate(dim) {
-  const aoa = [['Tipo', dim, 'Ratio', ...MONTHS, 'Cierre']];
-  const row = (tipo, e, m) => [tipo, e, m.label.toUpperCase(), ...zeros(12), m.key === 'inv' ? 0 : ''];
-  METRICS.forEach((m) => aoa.push(row('OTB', '', m)));
-  ['MARCA A', 'MARCA B'].forEach((e) => METRICS.forEach((m) => aoa.push(row('HIST', e, m))));
-  ['MARCA A', 'MARCA B'].forEach((e) => METRICS.forEach((m) => aoa.push(row('REAL', e, m))));
-  const wb = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Suplementarios');
-  XLSX.writeFile(wb, 'Plantilla_Suplementarios.xlsx');
 }
 
 // ─── Forecast IS ──────────────────────────────────────────────────────────────
@@ -404,6 +393,9 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
   const th = `px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-right whitespace-nowrap ${t.tableHead}`;
   const td = 'px-2 py-1 text-xs text-right whitespace-nowrap tabular-nums';
   const good = t.success, bad = t.danger, warn = t.warning;
+  // <select> nativo: en Windows las opciones salen blancas y el borde negro si no se fuerzan
+  const selStyle = isDark ? { colorScheme: 'dark', backgroundColor: '#241e29', borderColor: 'rgba(255,255,255,0.15)', color: '#EDEBF2' } : { colorScheme: 'light' };
+  const selCls = `px-2 py-1.5 text-xs rounded-lg border focus:outline-none focus:ring-1 focus:ring-[#8A73AD] ${isDark ? '[&>option]:bg-[#1c1720] [&>option]:text-[#EDEBF2]' : t.input}`;
 
   const headerRight = (
     <>
@@ -412,7 +404,6 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
           <button key={d} onClick={() => setSt((s) => ({ ...s, dim: d }))} className={`px-3 py-1 text-xs rounded-md ${dim === d ? t.toggleActive : t.textMuted}`}>{d}</button>
         ))}
       </div>
-      <button onClick={() => downloadTemplate(dim)} className={`flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg ${t.btnGhost}`}><FileSpreadsheet size={14} />Plantilla</button>
       <button onClick={() => fileRef.current?.click()} className={`flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg font-bold ${t.btn}`}><Upload size={14} />Cargar Excel</button>
       <button onClick={exportPlan} disabled={!entities.length} className={`flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg ${t.btnGhost} disabled:opacity-40`}><Download size={14} />Exportar</button>
       <button onClick={clearAll} className={`p-2 rounded-lg border ${t.btnDanger}`} title="Borrar todo"><Trash2 size={14} /></button>
@@ -512,7 +503,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
         </div>
         {baseMode === 'is' && (
           <label className={`flex items-center gap-1.5 text-xs ${t.textMuted}`}>Real hasta
-            <select value={corte} onChange={(e) => setSt((s) => ({ ...s, corte: +e.target.value }))} className={`px-2 py-1 text-xs rounded-lg border ${t.input}`}>
+            <select value={corte} onChange={(e) => setSt((s) => ({ ...s, corte: +e.target.value }))} style={selStyle} className={selCls}>
               {rng(13).map((k) => <option key={k} value={k}>{k ? MONTHS[k - 1] : '—'}</option>)}
             </select>
           </label>
@@ -627,7 +618,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
     <div className="space-y-4">
       <div className="flex items-center gap-2">
         <span className={`text-xs ${t.textMuted}`}>{dim}:</span>
-        <select value={ent} onChange={(e) => setEnt(e.target.value)} style={{ colorScheme: isDark ? 'dark' : 'light' }} className={`px-2 py-1.5 text-xs rounded-lg border ${t.input} ${isDark ? '[&>option]:bg-[#1c1720] [&>option]:text-[#EDEBF2]' : ''}`}>
+        <select value={ent} onChange={(e) => setEnt(e.target.value)} style={selStyle} className={selCls}>
           <option value="__total">Total OTB</option>
           {entities.map((e) => <option key={e.name} value={e.name}>{e.name}</option>)}
         </select>

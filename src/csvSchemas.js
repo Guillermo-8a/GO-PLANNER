@@ -11,6 +11,22 @@ export const CSV_SCHEMAS = [
         title: 'Histórico de marcas',
         desc: 'Sin fila de encabezado. Cada línea es una marca: primera columna el nombre, el resto valores mensuales separados por coma.',
         columns: [],
+        template: [['MARCA A', 1200, 1000, 1500, 1300], ['MARCA B', 800, 750, 900, 950]],
+      },
+    ],
+  },
+  {
+    module: 'Suplementarios',
+    formats: [
+      {
+        title: 'OTB + histórico por marca / proveedor',
+        desc: 'Una fila por Tipo × Marca × Ratio (acepta .csv o .xlsx). Tipo: OTB (sin marca), HIST (año anterior) o REAL (año en curso, para base IS). Ratio: VENTA, MKDS, CMSI, COMPRA, UTILIDAD, INVENTARIO (inv inicial de cada mes; Cierre = inv final de Dic). La columna Marca también puede llamarse Proveedor.',
+        columns: ['Tipo', 'Marca', 'Ratio', 'Ene … Dic', 'Cierre'],
+        template: [
+          ['Tipo', 'Marca', 'Ratio', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic', 'Cierre'],
+          ...['VENTA', 'MKDS', 'CMSI', 'COMPRA', 'UTILIDAD', 'INVENTARIO'].map((r) => ['OTB', '', r, ...Array(12).fill(0), r === 'INVENTARIO' ? 0 : '']),
+          ...['HIST', 'REAL'].flatMap((tp) => ['VENTA', 'MKDS', 'CMSI', 'COMPRA', 'UTILIDAD', 'INVENTARIO'].map((r) => [tp, 'MARCA A', r, ...Array(12).fill(0), r === 'INVENTARIO' ? 0 : ''])),
+        ],
       },
     ],
   },
