@@ -14,7 +14,7 @@ const MONTHS_FULL = ['ENERO', 'FEBRERO', 'MARZO', 'ABRIL', 'MAYO', 'JUNIO', 'JUL
 const METRICS = [
   { key: 'vta', label: 'Venta' },
   { key: 'mkd', label: 'Mkds' },
-  { key: 'cmsi', label: 'CMSI' },
+  { key: 'cmsi', label: 'CMSI' }, // costo de meses sin intereses
   { key: 'compra', label: 'Compra' },
   { key: 'utilidad', label: 'Utilidad' },
   { key: 'inv', label: 'Inventario', stock: true },
@@ -27,7 +27,7 @@ const PERIODS = [
 const RATIO_ALIAS = {
   vta: ['VTA', 'VENTA', 'VENTAS', 'SALES'],
   mkd: ['MKD', 'MKDS', 'REBAJA', 'REBAJAS', 'MARKDOWN', 'MARKDOWNS'],
-  cmsi: ['CMSI', 'COSTO', 'COSTO VTA', 'COSTO DE VENTA', 'COGS'],
+  cmsi: ['CMSI', 'COSTO MSI', 'MSI'],
   compra: ['COMPRA', 'COMPRAS', 'RECIBOS'],
   utilidad: ['UTILIDAD', 'UB', 'UTILIDAD BRUTA'],
   inv: ['INV', 'INVENTARIO', 'INV FINAL', 'INVENTARIO FINAL', 'EOH'],
@@ -144,10 +144,10 @@ function kpis(d, ms) {
   const invAvg = s('inv') / ms.length, invFin = +d.inv?.[ms[ms.length - 1]] || 0;
   return {
     vta, mkd, cmsi, compra, ut, invAvg, invFin,
-    margen: vta ? ut / vta : null, mkdPct: vta ? mkd / vta : null,
-    st: cmsi + invFin ? cmsi / (cmsi + invFin) : null,
-    mos: cmsi ? invFin / (cmsi / ms.length) : null,
-    rot: invAvg ? (cmsi / invAvg) * (12 / ms.length) : null,
+    margen: vta ? ut / vta : null, mkdPct: vta ? mkd / vta : null, cmsiPct: vta ? cmsi / vta : null,
+    st: vta + invFin ? vta / (vta + invFin) : null,
+    mos: vta ? invFin / (vta / ms.length) : null,
+    rot: invAvg ? (vta / invAvg) * (12 / ms.length) : null,
     vtaInv: invAvg ? vta / invAvg : null,
     vtaCompra: compra ? vta / compra : null,
   };
@@ -310,7 +310,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
               );
             })}
             {[
-              ['Margen %', 'margen', pct], ['Mkd %', 'mkdPct', pct], ['Sell-through', 'st', pct],
+              ['Margen %', 'margen', pct], ['Mkd %', 'mkdPct', pct], ['CMSI %', 'cmsiPct', pct], ['Sell-through', 'st', pct],
               ['MOS', 'mos', dec], ['Rotación (anualiz.)', 'rot', dec], ['Vta / Compra', 'vtaCompra', dec],
             ].map(([l, k, f]) => (
               <tr key={k} className={`border-t ${t.border}`}>
@@ -322,7 +322,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
             ))}
           </tbody>
         </table>
-        <p className={`mt-2 text-[10px] ${t.textMuted}`}>ST = CMSI / (CMSI + Inv fin) · MOS = Inv fin / CMSI promedio mensual · Rotación = CMSI / Inv promedio (anualizada). Inventario a costo.</p>
+        <p className={`mt-2 text-[10px] ${t.textMuted}`}>Inventario a precio de venta · ST = Vta / (Vta + Inv fin) · MOS = Inv fin / Vta promedio mensual · Rotación = Vta / Inv promedio (anualizada) · CMSI = costo de meses sin intereses.</p>
       </div>
     </div>
   );
@@ -415,7 +415,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
   const seas = (arr) => { const avg = sum(arr) / 12; return R12.map((k) => (avg ? arr[k] / avg : null)); };
   const seasLY = seas(sel.hist.vta || zeros()), seasPl = seas(sel.plan.vta || zeros());
   const perRows = [
-    ['Venta', 'vta', fmt, true], ['Mkd %', 'mkdPct', pct], ['Margen %', 'margen', pct], ['CMSI', 'cmsi', fmt, true],
+    ['Venta', 'vta', fmt, true], ['Mkd %', 'mkdPct', pct], ['Margen %', 'margen', pct], ['CMSI', 'cmsi', fmt, true], ['CMSI %', 'cmsiPct', pct],
     ['Compra', 'compra', fmt, true], ['Inv fin', 'invFin', fmt, true], ['Vta / Inv', 'vtaInv', dec], ['Vta / Compra', 'vtaCompra', dec],
     ['Sell-through', 'st', pct], ['MOS', 'mos', dec], ['Rotación', 'rot', dec],
   ];
@@ -506,7 +506,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
           <table className="w-full">
             <thead><tr>
               <th className={`${th} text-left`}>{dim}</th>
-              {['Vta plan', 'Crec.', 'Share vta', 'Share inv', 'Gap inv-vta', 'Margen', 'Mkd %', 'ST', 'MOS', 'Rotación', 'Vta/Compra'].map((h) => <th key={h} className={th}>{h}</th>)}
+              {['Vta plan', 'Crec.', 'Share vta', 'Share inv', 'Gap inv-vta', 'Margen', 'Mkd %', 'CMSI %', 'ST', 'MOS', 'Rotación', 'Vta/Compra'].map((h) => <th key={h} className={th}>{h}</th>)}
             </tr></thead>
             <tbody>
               {ranking.map((r) => (
@@ -519,6 +519,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
                   <td className={`${td} ${r.gap > 0.03 ? bad : r.gap < -0.03 ? warn : t.textMuted}`}>{r.gap == null ? '—' : `${(r.gap * 100).toFixed(1)} pts`}</td>
                   <td className={`${td} ${t.text}`}>{pct(r.p.margen)}</td>
                   <td className={`${td} ${t.text}`}>{pct(r.p.mkdPct)}</td>
+                  <td className={`${td} ${t.text}`}>{pct(r.p.cmsiPct)}</td>
                   <td className={`${td} ${t.text}`}>{pct(r.p.st)}</td>
                   <td className={`${td} ${tot.mos && r.p.mos > tot.mos * 1.25 ? bad : t.text}`}>{dec(r.p.mos)}</td>
                   <td className={`${td} ${t.text}`}>{dec(r.p.rot)}</td>
