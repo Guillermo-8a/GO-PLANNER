@@ -45,8 +45,8 @@ const toRatio = (s) => { const n = norm(s); return Object.keys(RATIO_ALIAS).find
 const toTipo = (s) => {
   const n = norm(s);
   if (['OTB', 'OBJ', 'OBJETIVO', 'TARGET'].includes(n)) return 'otb';
-  if (['HIST', 'HISTORICO', 'LY', 'AA'].includes(n)) return 'hist';
-  if (['REAL', 'TY', 'ACTUAL'].includes(n)) return 'ty';
+  if (['HIST', 'HISTORICO', 'TY', 'ACTUAL'].includes(n)) return 'hist';
+  if (['REAL', 'LY', 'AA', 'CIERRE'].includes(n)) return 'ty';
   if (['FCST', 'FORECAST', 'PRONOSTICO'].includes(n)) return 'fcst';
   return null;
 };
@@ -286,28 +286,32 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
   const [msg, setMsg] = useState(null);
   const fileRef = useRef(null);
   const { dim, otb, entities, cfg, locks } = st;
-  // Años respecto al plan: LLY = HIST (año cerrado) · LY = REAL hasta el corte + IS (pronóstico del resto del año)
-  const baseMode = st.baseMode || 'prom'; // 'prom' promedio LY+LLY | 'is' solo LY | 'ly' solo LLY (Hist)
-  const corte = st.corte ?? 0;            // meses con venta real (IS)
+  // Años respecto al plan: HIST del Excel = año en curso (real hasta el corte) → LY = HIST + IS (pronóstico del resto)
+  // REAL del Excel = año anterior cerrado → LLY
+  const baseMode = st.baseMode || 'prom'; // 'prom' promedio LY+LLY | 'is' solo LY | 'ly' solo LLY
+  // Corte automático: último mes con venta en HIST (se puede cambiar a mano)
+  const corteAuto = Math.max(0, ...entities.map((e) => { const v = e.hist?.vta || []; let k = 12; while (k > 0 && !(+v[k - 1])) k--; return k; }));
+  const corte = st.corte ?? corteAuto;
 
-  // LY por marca × ratio: real hasta el corte + pronóstico del mejor modelo sobre HIST + real (o FCST de Excel si viene)
+  // LY por marca × ratio: HIST hasta el corte + pronóstico del mejor modelo sobre LLY (REAL) + HIST (o FCST de Excel si viene)
   const isFc = useMemo(() => {
-    if (baseMode === 'ly') return null;
     return Object.fromEntries(METRICS.map((m) => [m.key, Object.fromEntries(entities.map((e) => {
-      const n = nCols(m.key), h = e.hist?.[m.key] || zeros(n), ty = e.ty?.[m.key], fc = e.fcst?.[m.key];
-      if (!ty) return [e.name, { arr: null, model: 'Sin real', acc: null }];
-      const real = rng(corte).map((k) => +ty[k] || 0);
+      const n = nCols(m.key), lly = e.ty?.[m.key] || zeros(n), cur = e.hist?.[m.key], fc = e.fcst?.[m.key];
+      if (!cur) return [e.name, { arr: null, model: 'Sin HIST', acc: null }];
+      const real = rng(corte).map((k) => +cur[k] || 0);
+      if (corte >= n) return [e.name, { arr: real, model: 'Año completo', acc: null }];
       if (fc) return [e.name, { arr: [...real, ...rng(n - corte).map((j) => +fc[corte + j] || 0)], model: 'FCST Excel', acc: null }];
-      const r = bestFcst(h, ty, corte, n - corte);
+      const r = bestFcst(lly, cur, corte, n - corte);
       return [e.name, { arr: [...real, ...r.future], model: r.model, acc: r.acc, scores: r.scores }];
     }))]));
-  }, [entities, baseMode, corte]);
-  const llyOf = (e, mk) => e.hist?.[mk] || zeros(nCols(mk));
+  }, [entities, corte]);
+  const llyOf = (e, mk) => e.ty?.[mk] || zeros(nCols(mk));
   const lyOf = (e, mk) => isFc?.[mk]?.[e.name]?.arr || null;
   // Base de share y estacionalidad: promedio LY y LLY; si un año está en 0 (marca nueva o de salida) usa solo el otro
   const baseOf = (e, mk) => {
     const lly = llyOf(e, mk), ly = lyOf(e, mk);
-    if (baseMode === 'ly' || !ly) return lly;
+    if (!ly) return lly;
+    if (baseMode === 'ly') return sum(lly) > 0 ? lly : ly;
     if (baseMode === 'is') return ly;
     const a = sum(ly) > 0, b = sum(lly) > 0;
     // Por mes: si un año trae 0 en ese mes (HIST incompleto, marca nueva), usa el otro
@@ -516,7 +520,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
   const manualSum = sum(Object.values(mCfg).map((c) => (c.share !== '' && c.share != null ? +c.share : 0)));
   const isInv = metric === 'inv';
   const baseLbl = baseMode === 'prom' ? 'Base' : baseMode === 'is' ? 'LY' : 'LLY';
-  const isIS = baseMode !== 'ly' && entities.some((e) => e.ty);
+  const isIS = baseMode !== 'ly' && entities.some((e) => e.hist);
   const solid = { background: isDark ? '#1c1720' : '#ffffff' };
   const hasTy = entities.some((e) => e.ty);
   const BajadaTab = (
@@ -532,7 +536,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
           ))}
         </div>
         {baseMode !== 'ly' && (
-          <label className={`flex items-center gap-1.5 text-xs ${t.textMuted}`}>Real hasta
+          <label className={`flex items-center gap-1.5 text-xs ${t.textMuted}`}>HIST (real) hasta
             <select value={corte} onChange={(e) => setSt((s) => ({ ...s, corte: +e.target.value }))} style={selStyle} className={selCls}>
               {rng(13).map((k) => <option key={k} value={k}>{k ? MONTHS[k - 1] : '—'}</option>)}
             </select>
@@ -542,7 +546,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
         <button onClick={() => clearLocks()} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg ${t.btnGhost}`}><RotateCcw size={13} />Liberar fijas</button>
       </div>
       {baseMode !== 'ly' && !hasTy && (
-        <div className={`px-3 py-2 rounded-lg border text-xs ${t.warningBg}`}>Sin venta real cargada: sube filas Tipo REAL (y opcional FCST) por {dim.toLowerCase()} para construir el LY (Real + IS). Mientras, la base usa solo LLY (HIST).</div>
+        <div className={`px-3 py-2 rounded-lg border text-xs ${t.warningBg}`}>Sin LLY: sube filas Tipo REAL (año anterior cerrado) por {dim.toLowerCase()} para promediar LY + LLY y mejorar el IS. Mientras, la base usa solo LY (HIST + IS).</div>
       )}
       {!entities.length ? (
         <div className={`${card} text-center text-sm ${t.textMuted}`}>Carga el Excel con filas HIST por {dim.toLowerCase()} para hacer la bajada.</div>
@@ -618,7 +622,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
           </table>
           <p className={`mt-2 text-[10px] ${t.textMuted}`}>
             Pega bloques desde Excel (Cmd+V) sobre la primera celda: share, estrategia o meses. Share manual vacío = share de la base ({baseLbl}). Estrategia % multiplica el share (se renormaliza a 100%). Editar/pegar un mes lo fija (amarillo); el resto se reacomoda para cuadrar el OTB mensual.
-            {' LLY = HIST · LY = real hasta el corte + IS (pronóstico del resto del año con el modelo de mejor accuracy sobre HIST + real: Estacional YTD, Holt, Holt-Winters; backtest en los últimos ≤3 meses reales; filas FCST del Excel tienen prioridad). Base LY + LLY = promedio de ambos años para share y estacionalidad; si una marca tiene un año en 0 (nueva o de salida) usa solo el otro.'}
+            {' LY = HIST (año en curso) hasta el corte + IS (pronóstico del resto del año con el modelo de mejor accuracy sobre LLY + HIST: Estacional YTD, Holt, Holt-Winters; backtest en los últimos ≤3 meses de HIST; filas FCST del Excel tienen prioridad). Base LY + LLY = promedio de ambos años para share y estacionalidad; si una marca tiene un año en 0 (nueva o de salida) usa solo el otro.'}
             {isInv && ' Rot final = Vta plan / promedio de 13 inventarios plan de la marca (verde si ≥ ${cmpLbl}).'}
           </p>
         </div>

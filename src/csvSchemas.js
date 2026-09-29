@@ -20,7 +20,7 @@ export const CSV_SCHEMAS = [
     formats: [
       {
         title: 'OTB + histórico por marca / proveedor',
-        desc: 'Una fila por Tipo × Marca × Ratio (acepta .csv o .xlsx). Tipo: OTB (sin marca), HIST (LLY: último año cerrado) o REAL (LY: año en curso hasta el corte; el resto se pronostica = IS). Ratio: VENTA, MKDS, CMSI, COMPRA, UTILIDAD, INVENTARIO (inv inicial de cada mes; Cierre = inv final de Dic). La columna Marca también puede llamarse Proveedor.',
+        desc: 'Una fila por Tipo × Marca × Ratio (acepta .csv o .xlsx). Tipo: OTB (sin marca), HIST (año en curso, real hasta el corte; el resto se pronostica = IS → LY del plan) o REAL (año anterior cerrado → LLY del plan). Ratio: VENTA, MKDS, CMSI, COMPRA, UTILIDAD, INVENTARIO (inv inicial de cada mes; Cierre = inv final de Dic). La columna Marca también puede llamarse Proveedor.',
         columns: ['Tipo', 'Marca', 'Ratio', 'Ene … Dic', 'Cierre'],
         template: [
           ['Tipo', 'Marca', 'Ratio', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic', 'Cierre'],
