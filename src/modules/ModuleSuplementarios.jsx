@@ -45,6 +45,7 @@ const toTipo = (s) => {
   const n = norm(s);
   if (['OTB', 'OBJ', 'OBJETIVO', 'TARGET'].includes(n)) return 'otb';
   if (['HIST', 'HISTORICO', 'LY', 'AA'].includes(n)) return 'hist';
+  if (['LLY', 'AAA', 'HIST2', 'HISTORICO2', 'HIST LLY'].includes(n)) return 'lly';
   if (['REAL', 'TY', 'ACTUAL'].includes(n)) return 'ty';
   if (['FCST', 'FORECAST', 'PRONOSTICO'].includes(n)) return 'fcst';
   return null;
@@ -68,7 +69,7 @@ const growth = (p, l) => (l ? p / l - 1 : null);
 // ─── Excel ────────────────────────────────────────────────────────────────────
 async function parseExcel(file) {
   const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
-  const out = { otb: {}, hist: {}, ty: {}, fcst: {}, rows: 0, state: null };
+  const out = { otb: {}, hist: {}, lly: {}, ty: {}, fcst: {}, rows: 0, state: null };
   const est = wb.Sheets._estado;
   if (est) {
     try { out.state = JSON.parse(XLSX.utils.sheet_to_json(est, { header: 1 }).map((r) => r[0] ?? '').join('')); } catch {}
@@ -101,7 +102,7 @@ async function parseExcel(file) {
 
 // ─── Forecast IS ──────────────────────────────────────────────────────────────
 // Misma lógica que ModuleForecast: varios motores, gana el de mejor accuracy (100 − WMAPE).
-// Serie = 12 meses LY + meses reales TY. Accuracy por backtest: se reservan los últimos ≤3 meses reales.
+// Serie = 12 meses LLY (si viene) + 12 meses LY + meses reales TY. Accuracy por backtest: se reservan los últimos ≤3 meses reales.
 const holt = (d, h, a = 0.3, b = 0.1) => {
   if (d.length < 2) return Array(h).fill(d[0] || 0);
   let lv = d[0], tr = d[1] - d[0];
@@ -110,29 +111,32 @@ const holt = (d, h, a = 0.3, b = 0.1) => {
 };
 const FC_ENGINES = {
   // LY del mes × tendencia (real / LY de los meses transcurridos)
-  'Estacional YTD': (ser, h, ly) => {
-    const n = ser.length - 12, base = sum(ly.slice(0, n)), r = base ? sum(ser.slice(12)) / base : 1;
+  'Estacional YTD': (ser, h, ly, off = 12) => {
+    const n = ser.length - off, base = sum(ly.slice(0, n)), r = base ? sum(ser.slice(off)) / base : 1;
     return rng(h).map((j) => (+ly[(n + j) % 12] || 0) * r);
   },
   // Nivel + tendencia sobre la serie completa
   'Holt': (ser, h) => holt(ser, h),
-  // Holt sobre la serie desestacionalizada con índices LY, re-estacionalizada
-  'Holt-Winters': (ser, h, ly) => {
-    const mu = sum(ly.slice(0, 12)) / 12, si = (m) => (mu ? (+ly[m % 12] || 0) / mu || 1 : 1);
+  // Holt sobre la serie desestacionalizada con índices de estacionalidad (promedio LY/LLY), re-estacionalizada
+  'Holt-Winters': (ser, h, ly, off, seas = ly) => {
+    const mu = sum(seas.slice(0, 12)) / 12, si = (m) => (mu ? (+seas[m % 12] || 0) / mu || 1 : 1);
     const f = holt(ser.map((v, i) => v / si(i)), h);
     return f.map((v, j) => v * si(ser.length + j));
   },
 };
-function bestFcst(ly, ty, n, h) {
-  const ser = [...rng(12).map((k) => +ly[k] || 0), ...rng(n).map((k) => +ty[k] || 0)];
+function bestFcst(ly, ty, n, h, lly) {
+  const L = rng(12).map((k) => +ly[k] || 0), LL = rng(12).map((k) => +lly?.[k] || 0);
+  const hasLLY = sum(LL) > 0, off = hasLLY ? 24 : 12;
+  const seas = hasLLY ? L.map((v, k) => (v + LL[k]) / 2) : L;
+  const ser = [...(hasLLY ? LL : []), ...L, ...rng(n).map((k) => +ty[k] || 0)];
   const hold = Math.min(3, n);
   const scores = Object.entries(FC_ENGINES).map(([name, f]) => {
     if (!hold) return { name, acc: null };
-    const pred = f(ser.slice(0, ser.length - hold), hold, ly), act = ser.slice(-hold), A = sum(act);
+    const pred = f(ser.slice(0, ser.length - hold), hold, L, off, seas), act = ser.slice(-hold), A = sum(act);
     return { name, acc: A ? Math.max(0, 100 - (sum(act.map((v, i) => Math.abs(pred[i] - v))) / A) * 100) : null };
   });
   const win = scores.reduce((b, x) => ((x.acc ?? -1) > (b.acc ?? -1) ? x : b), { name: 'Estacional YTD', acc: null });
-  return { model: win.name, acc: win.acc, scores, future: FC_ENGINES[win.name](ser, h, ly).map((v) => Math.max(v, 0)) };
+  return { model: win.name, acc: win.acc, scores, future: FC_ENGINES[win.name](ser, h, L, off, seas).map((v) => Math.max(v, 0)) };
 }
 
 // ─── Bajada (IPF) ─────────────────────────────────────────────────────────────
@@ -284,7 +288,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
       if (!ty) return [e.name, { arr: h, model: 'Sin real (LY)', acc: null }];
       const real = rng(corte).map((k) => +ty[k] || 0);
       if (fc) return [e.name, { arr: [...real, ...rng(n - corte).map((j) => +fc[corte + j] || 0)], model: 'FCST Excel', acc: null }];
-      const r = bestFcst(h, ty, corte, n - corte);
+      const r = bestFcst(h, ty, corte, n - corte, e.lly?.[m.key]);
       return [e.name, { arr: [...real, ...r.future], model: r.model, acc: r.acc, scores: r.scores }];
     }))]));
   }, [entities, baseMode, corte]);
@@ -306,10 +310,13 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
       out[e.name] = {
         plan: Object.fromEntries(METRICS.map((m) => [m.key, alloc[m.key].rows[i]?.plan || zeros(nCols(m.key))])),
         hist: Object.fromEntries(METRICS.map((m) => [m.key, alloc[m.key].rows[i]?.base || zeros(nCols(m.key))])), // base comparativa: LY o IS
+        ly: Object.fromEntries(METRICS.map((m) => [m.key, e.hist?.[m.key] || zeros(nCols(m.key))])),
+        lly: Object.fromEntries(METRICS.map((m) => [m.key, e.lly?.[m.key] || zeros(nCols(m.key))])),
       };
     });
     const histTot = Object.fromEntries(METRICS.map((m) => [m.key, rng(nCols(m.key)).map((k) => sum(alloc[m.key].rows.map((r) => +r.base[k] || 0)))]));
-    out.__total = { plan: otb, hist: histTot };
+    const totOf = (tp) => Object.fromEntries(METRICS.map((m) => [m.key, rng(nCols(m.key)).map((k) => sum(entities.map((e) => +e[tp]?.[m.key]?.[k] || 0)))]));
+    out.__total = { plan: otb, hist: histTot, ly: totOf('hist'), lly: totOf('lly') };
     return out;
   }, [alloc, entities, otb]);
 
@@ -327,12 +334,12 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
       if (!r.rows) { setMsg({ ok: false, text: 'No encontré filas válidas. Revisa encabezados Tipo / Entidad / Ratio / Ene…Dic.' }); return; }
       setSt((s) => {
         const map = Object.fromEntries(s.entities.map((x) => [x.name, x]));
-        ['hist', 'ty', 'fcst'].forEach((tp) => Object.entries(r[tp]).forEach(([name, d]) => {
+        ['hist', 'lly', 'ty', 'fcst'].forEach((tp) => Object.entries(r[tp]).forEach(([name, d]) => {
           map[name] = { ...(map[name] || { name }), [tp]: { ...(map[name]?.[tp] || {}), ...d } };
         }));
         return { ...s, otb: { ...s.otb, ...r.otb }, entities: Object.values(map) };
       });
-      setMsg({ ok: true, text: `${r.rows} filas · ${Object.keys(r.otb).length} ratios OTB · ${Object.keys(r.hist).length} HIST · ${Object.keys(r.ty).length} REAL · ${Object.keys(r.fcst).length} FCST` });
+      setMsg({ ok: true, text: `${r.rows} filas · ${Object.keys(r.otb).length} ratios OTB · ${Object.keys(r.hist).length} HIST · ${Object.keys(r.lly).length} LLY · ${Object.keys(r.ty).length} REAL · ${Object.keys(r.fcst).length} FCST` });
     } catch (err) { setMsg({ ok: false, text: `Error leyendo Excel: ${err.message}` }); }
   };
 
@@ -598,10 +605,11 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
 
   // ── Tab 3: Análisis ──
   const sel = byEnt[ent] || byEnt.__total;
-  const chartData = R12.map((k) => ({ mes: MONTHS[k], 'Vta LY': sel.hist.vta?.[k] || 0, 'Vta Plan': sel.plan.vta?.[k] || 0, 'Inv ini Plan': sel.plan.inv?.[k] || 0 }));
+  const hasLLY = sum(sel.lly?.vta || []) > 0;
+  const chartData = R12.map((k) => ({ mes: MONTHS[k], 'Vta LLY': sel.lly?.vta?.[k] || 0, 'Vta LY': sel.ly?.vta?.[k] || 0, 'Vta Plan': sel.plan.vta?.[k] || 0, 'Vta IS': sel.hist.vta?.[k] || 0, 'Inv ini Plan': sel.plan.inv?.[k] || 0 }));
   const seas = (arr) => { const avg = sum(arr.slice(0, 12)) / 12; return R12.map((k) => (avg ? arr[k] / avg : null)); };
-  const seasLY = seas(sel.hist.vta || zeros()), seasPl = seas(sel.plan.vta || zeros());
-  const seasData = R12.map((k) => ({ mes: MONTHS[k], LY: seasLY[k], Plan: seasPl[k] }));
+  const seasLLY = seas(sel.lly?.vta || zeros()), seasLY = seas(sel.ly?.vta || zeros()), seasIS = seas(sel.hist.vta || zeros()), seasPl = seas(sel.plan.vta || zeros());
+  const seasData = R12.map((k) => ({ mes: MONTHS[k], LLY: seasLLY[k], LY: seasLY[k], IS: seasIS[k], Plan: seasPl[k] }));
   const perRows = [
     ['Venta', 'vta', fmt, true], ['Mkd %', 'mkdPct', pct], ['CMSI %', 'cmsiPct', pct], ['Mg %', 'margen', pct],
     ['Compra', 'compra', fmt, true], ['ST %', 'st', pct], ['MOS', 'mos', dec], ['Rot', 'rot', dec],
@@ -625,7 +633,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
       </div>
       <div className="grid lg:grid-cols-2 gap-4">
         <div className={card}>
-          <p className={`text-xs font-bold mb-2 ${t.text}`}>Venta LY vs Plan · Inv inicial plan</p>
+          <p className={`text-xs font-bold mb-2 ${t.text}`}>Venta {hasLLY ? 'LLY · ' : ''}LY vs Plan{baseMode === 'is' ? ' · IS' : ''} · Inv inicial plan</p>
           <ResponsiveContainer width="100%" height={240}>
             <ComposedChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" stroke={isDark ? '#ffffff14' : '#e5e7eb'} />
@@ -634,8 +642,10 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
               <YAxis yAxisId="r" orientation="right" tick={{ fontSize: 10, fill: isDark ? '#948FA0' : '#6b7280' }} tickFormatter={(v) => `${Math.round(v / 1000)}k`} />
               <Tooltip formatter={(v) => fmt(v)} contentStyle={{ background: isDark ? '#1c1720' : '#fff', border: 'none', fontSize: 11 }} />
               <Legend wrapperStyle={{ fontSize: 10 }} />
+              {hasLLY && <Bar yAxisId="l" dataKey="Vta LLY" fill={isDark ? '#46424f' : '#e2e8f0'} radius={[3, 3, 0, 0]} />}
               <Bar yAxisId="l" dataKey="Vta LY" fill={isDark ? '#6b6778' : '#cbd5e1'} radius={[3, 3, 0, 0]} />
               <Bar yAxisId="l" dataKey="Vta Plan" fill={isDark ? '#8A73AD' : '#2563eb'} radius={[3, 3, 0, 0]} />
+              {baseMode === 'is' && <Line yAxisId="l" dataKey="Vta IS" stroke="#4FB0A5" strokeWidth={2} strokeDasharray="5 3" dot={{ r: 2 }} />}
               <Line yAxisId="r" dataKey="Inv ini Plan" stroke="#E0BB3E" strokeWidth={2} dot={false} />
             </ComposedChart>
           </ResponsiveContainer>
@@ -650,7 +660,9 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
               <Tooltip formatter={(v) => dec(v, 2)} contentStyle={{ background: isDark ? '#1c1720' : '#fff', border: 'none', fontSize: 11 }} />
               <Legend wrapperStyle={{ fontSize: 10 }} />
               <ReferenceLine y={1} stroke={isDark ? '#6b6778' : '#cbd5e1'} strokeDasharray="2 4" label={{ value: 'Promedio = 1', position: 'insideTopRight', fontSize: 9, fill: isDark ? '#948FA0' : '#6b7280' }} />
+              {hasLLY && <Line dataKey="LLY" stroke={isDark ? '#948FA0' : '#94a3b8'} strokeWidth={2} strokeDasharray="2 3" dot={{ r: 2 }} />}
               <Line dataKey="LY" stroke="#E0BB3E" strokeWidth={2} strokeDasharray="6 4" dot={{ r: 3 }} />
+              {baseMode === 'is' && <Line dataKey="IS" stroke="#4FB0A5" strokeWidth={2} strokeDasharray="5 3" dot={{ r: 2 }} />}
               <Line dataKey="Plan" stroke={isDark ? '#B39DDB' : '#2563eb'} strokeWidth={2} dot={{ r: 2 }} />
             </LineChart>
           </ResponsiveContainer>
