@@ -9,6 +9,7 @@ import { Link } from 'react-router-dom';
 import { useState, useRef, useEffect } from 'react';
 import { GlobalProvider, useGlobal, useDispatch, globalActions } from './context/GlobalContext';
 import AppHeader from './components/AppHeader';
+import { installExcelNav } from './utils/excelNav';
 import ModuleForecast     from './modules/ModuleForecast';
 import ModuleAssortment   from './modules/ModuleAssortment';
 import ModuleDistribucion from './modules/ModuleDistribucion';
@@ -276,6 +277,7 @@ function Shell() {
   const { theme, activeModule, alerts = [], kpis = {} } = global;
   const isDark = theme === 'dark';
   const t = THEMES[theme];
+  useEffect(() => installExcelNav(), []); // Enter/flechas tipo Excel en todas las tablas
 
   // false = colapsado (solo iconos) | true = expandido (labels visibles)
   const [sidebarExpanded, setSidebarExpanded] = useState(false);

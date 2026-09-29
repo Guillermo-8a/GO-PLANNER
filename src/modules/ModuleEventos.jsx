@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { useAltTabs } from '../utils/excelNav';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ComposedChart, Line, PieChart, Pie, Legend, ReferenceLine } from 'recharts';
 import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
@@ -908,6 +909,7 @@ export default function ModuleEventos(){
 
   // Si no hay snapshot (ni real ni sintético desde inv. inicial del CSV/Vtas_Evento) y estaban en Desglose, regresa a Resumen.
   useEffect(()=>{ if(!calc?.hasSnapshot && reportTab==='desglose') setReportTab('resumen'); },[calc?.hasSnapshot,reportTab]);
+  useAltTabs(calc?.hasSnapshot ? ['resumen', 'desglose'] : ['resumen'], setReportTab);
 
   const toggleExpand=key=>setExpanded(s=>{ const n=new Set(s); n.has(key)?n.delete(key):n.add(key); return n; });
   const tree = groupBy==='marca' ? calc?.treeMarca : calc?.treeGoa;

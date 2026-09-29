@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { useAltTabs } from '../utils/excelNav';
 import * as Icons from '../utils/icons';
 import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
@@ -141,6 +142,7 @@ export default function Traslados() {
   const isDark   = theme === 'dark';
 
   const [activeTab, setActiveTab] = useState(1); // 1=Excedente, 2=Solicitud, 3=Nivelación
+  useAltTabs([1, 2, 3], setActiveTab);
   const [mesActual, setMesActual] = useState(5); // mes del año para MOS
 
   // ── Temas ──────────────────────────────────────────────────────────────

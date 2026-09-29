@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { useAltTabs } from '../utils/excelNav';
 import * as Icons from '../utils/icons';
 import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
@@ -135,6 +136,7 @@ export default function Distribucion() {
   const [rawStoreData, setRawStoreData] = useState([]);
   const [scoreWeights, setScoreWeights] = useState({ sales: 50, margin: 50, rotation: 0 }); 
   const [stores, setStores] = useState([]);
+  useAltTabs(stores.length ? [1, 2] : [1], setActiveTab);
   const [goas, setGoas] = useState([]);
   const [storeSortBy, setStoreSortBy] = useState('score'); 
   const [storeSortOrder, setStoreSortOrder] = useState('desc');

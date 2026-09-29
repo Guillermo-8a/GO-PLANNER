@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback, startTransition } from 'react';
+import { useAltTabs } from '../utils/excelNav';
 import * as Icons from '../utils/icons';
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
@@ -188,6 +189,7 @@ export default function Forecast() {
   const isDark = theme === 'dark';
 
   const [activeTab, setActiveTab] = useState(1);
+  useAltTabs([1, 2, 3, 4, 5, 6, 7], setActiveTab);
 
   // ── Temas ──────────────────────────────────────────────────────────────
   const themes = {

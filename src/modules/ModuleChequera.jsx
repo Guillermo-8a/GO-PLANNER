@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useMemo } from 'react';
+import { useAltTabs } from '../utils/excelNav';
 import { Upload, Plus, Trash2, X, Check, Search, Image as ImageIcon, Wallet } from 'lucide-react';
 import {
   CHEQUERA_FIELDS, autoMapHeaders, parseSpreadsheet, applyMapping,
@@ -306,6 +307,7 @@ export default function ModuleChequera() {
     { key: 'propia', label: 'Marca Propia' },
     { key: 'resumen', label: 'Resumen' },
   ];
+  useAltTabs(tabs.map((x) => x.key), setTab);
 
   return (
     <div className="p-4 md:p-6">

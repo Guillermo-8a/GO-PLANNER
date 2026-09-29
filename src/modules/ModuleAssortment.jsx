@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import { useAltTabs } from '../utils/excelNav';
 import { Settings, Store, Package, Upload, ArrowUpDown, Sliders, Layers, MoreVertical, Sun, Moon, Info, Map as MapIcon, Database, ShoppingCart, BarChart3, Plus, Trash2, Save, Download, Zap, DollarSign, Target, FileSpreadsheet, Edit3, Lightbulb, CalendarDays, Compass, Activity, Wand2, RefreshCw, ClipboardList, Calculator, ChevronDown, ChevronRight, LayoutList } from 'lucide-react';
 
 // =====================================================================
@@ -66,6 +67,7 @@ export default function App() {
   const budgetFileInputRef = useRef(null);
   const forecastFileInputRef = useRef(null);
   const [activeTab, setActiveTab] = useState('data');
+  useAltTabs(['data', 'calc', 'budget', 'assortment', 'reports', 'vsreal', 'chequeras'], setActiveTab);
 
   // --- ESTADOS PARA GUARDAR SESIÓN ---
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
