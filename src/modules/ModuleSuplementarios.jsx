@@ -192,18 +192,18 @@ function allocate(otbArr, ents, cfg = {}, locks = {}) {
 }
 
 // Inventario por marca = consecuencia de los demás ratios: Inv ini Ene (bajada del OTB) y después
-// Inv[k+1] = Inv[k] + Compra[k] − Venta[k] − Mkd[k]  (a precio de venta; CMSI es costo, no mercancía).
+// Inv[k+1] = Inv[k] + Compra[k] − Venta[k] − Mkd[k] − CMSI[k]  (todo mercancía a precio de venta).
 // Si una marca queda negativa en un mes, se le pasa compra de ese mes desde marcas con compra e inventario
 // disponibles (el total del mes no cambia y ninguna compra ni inventario queda negativo). Celdas de compra fijas no se tocan.
 function rollInventory(A, entities, otb, cfgInv = {}, lkC = {}) {
   const n = entities.length;
   if (!n) return;
   const inv0 = allocate([+otb.inv?.[0] || 0], A.inv.rows.map((r) => ({ name: r.name, base: [r.base[0]] })), cfgInv, {}).rows.map((r) => r.plan[0]);
-  const C = A.compra.rows.map((r) => [...r.plan]), V = A.vta.rows.map((r) => r.plan), M = A.mkd.rows.map((r) => r.plan);
+  const C = A.compra.rows.map((r) => [...r.plan]), V = A.vta.rows.map((r) => r.plan), M = A.mkd.rows.map((r) => r.plan), Q = A.cmsi.rows.map((r) => r.plan);
   const I = rng(n).map((i) => { const a = zeros(13); a[0] = inv0[i]; return a; });
   const fixed = (i, k) => lkC[entities[i].name]?.[k] != null;
   for (let k = 0; k < 12; k++) {
-    const next = (i) => I[i][k] + C[i][k] - (+V[i][k] || 0) - (+M[i][k] || 0);
+    const next = (i) => I[i][k] + C[i][k] - (+V[i][k] || 0) - (+M[i][k] || 0) - (+Q[i][k] || 0);
     rng(n).forEach((i) => {
       let d = -next(i);
       if (d <= 0.5 || fixed(i, k)) return;
@@ -213,7 +213,7 @@ function rollInventory(A, entities, otb, cfgInv = {}, lkC = {}) {
       donors.forEach(({ j, cap: c }) => { C[j][k] -= take * c / cap; });
       C[i][k] += take;
     });
-    rng(n).forEach((i) => { I[i][k + 1] = next(i); });
+    rng(n).forEach((i) => { const v = next(i); I[i][k + 1] = Math.abs(v) < 0.5 ? 0 : v; });
   }
   const upd = (key, P) => {
     const tot = sum(P.map(sum)) || 1;
@@ -627,7 +627,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
                       <td className={`${td} ${t.textMuted}`}>{dec(rotL)}</td>
                     </>}
                     {KC.map((k) => isInv && k > 0 ? (
-                      <td key={k} className={`${td} ${r.plan[k] < -0.5 ? bad : t.text}`} title="Inv = inv anterior + compra − venta − mkd">{fmt(r.plan[k])}</td>
+                      <td key={k} className={`${td} ${r.plan[k] < -0.5 ? bad : t.text}`} title="Inv = inv anterior + compra − venta − mkd − cmsi">{fmt(r.plan[k])}</td>
                     ) : (
                       <td key={k} className="px-0.5 py-0.5">
                         <NumCell value={Math.round(r.plan[k])} onCommit={(v) => setLock(r.name, k, v)} onPasteGrid={paste(k + 2)} grid="baj" r={ri} c={k + 2} className={lk[k] != null ? t.inputY : t.input} />
@@ -662,7 +662,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
           <p className={`mt-2 text-[10px] ${t.textMuted}`}>
             Pega bloques desde Excel (Cmd+V) sobre la primera celda: share, estrategia o meses. Share manual vacío = share de la base ({baseLbl}). Estrategia % multiplica el share (se renormaliza a 100%). Editar/pegar un mes lo fija (amarillo); el resto se reacomoda para cuadrar el OTB mensual.
             {' LY = HIST (año en curso) hasta el corte + IS (pronóstico del resto del año con el modelo de mejor accuracy sobre LLY + HIST: Estacional YTD, Holt, Holt-Winters; backtest en los últimos ≤3 meses de HIST; filas FCST del Excel tienen prioridad). Base LY + LLY = promedio de ambos años para share y estacionalidad; si una marca tiene un año en 0 (nueva o de salida) usa solo el otro.'}
-            {isInv && ' Inventario: solo se captura/ajusta Ene (inv inicial); los demás meses = inv anterior + compra − venta − mkd. Si una marca quedaría en negativo se le reasigna compra de ese mes desde otras marcas (el total no cambia).'}
+            {isInv && ' Inventario: solo se captura/ajusta Ene (inv inicial); los demás meses = inv anterior + compra − venta − mkd − cmsi. Inventario en 0 es válido (marcas estacionales sin venta en esos meses). Si una marca quedaría en negativo se le reasigna compra de ese mes desde otras marcas (el total no cambia).'}
             {isInv && A.negativos && ' ⚠ Aún hay inventarios negativos: la compra total del OTB en esos meses no alcanza.'}
             {isInv && ' Rot final = Vta plan / promedio de 13 inventarios plan de la marca (verde si ≥ ${cmpLbl}).'}
           </p>
