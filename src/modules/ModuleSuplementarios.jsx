@@ -7,6 +7,7 @@ import * as XLSX from 'xlsx';
 import { ResponsiveContainer, ComposedChart, LineChart, Bar, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend, ReferenceLine } from 'recharts';
 import { Upload, Download, Lock, RotateCcw, Check, AlertCircle, Trash2, Copy } from 'lucide-react';
 import ModuleHeader from '../components/ModuleHeader';
+import { SEASONAL_CURVE_MX } from '../utils/fcstEngine';
 
 const LS_KEY = 'gop_suplementarios';
 const MONTHS = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
@@ -123,7 +124,20 @@ const FC_ENGINES = {
     return f.map((v, j) => v * si(ser.length + j));
   },
 };
-function bestFcst(ly, ty, n, h) {
+// HIST incompleto (meses en 0 al inicio o al final: marca nueva o archivo sin Oct–Dic): se completa con la curva
+// estacional MX escalada al nivel de los meses con dato (o al real TY si el HIST viene todo en 0). Solo para pronosticar.
+function fillHist(ly, ty, n) {
+  const L = rng(12).map((k) => +ly[k] || 0), C = SEASONAL_CURVE_MX;
+  const nz = L.map((v, k) => (v > 0 ? k : -1)).filter((k) => k >= 0);
+  const known = nz.length ? rng(12).filter((k) => k >= nz[0] && k <= nz[nz.length - 1]) : [];
+  if (known.length === 12) return ly;
+  const lvl = known.length ? sum(known.map((k) => L[k])) / sum(known.map((k) => C[k]))
+    : n ? sum(rng(n).map((k) => +ty[k] || 0)) / sum(rng(n).map((k) => C[k])) : 0;
+  const out = [...ly]; rng(12).forEach((k) => { if (!known.includes(k)) out[k] = lvl * C[k]; });
+  return out;
+}
+function bestFcst(ly0, ty, n, h) {
+  const ly = fillHist(ly0, ty, n);
   const ser = [...rng(12).map((k) => +ly[k] || 0), ...rng(n).map((k) => +ty[k] || 0)];
   const hold = Math.min(3, n);
   const scores = Object.entries(FC_ENGINES).map(([name, f]) => {
@@ -296,7 +310,8 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
     if (baseMode === 'ly' || !ly) return lly;
     if (baseMode === 'is') return ly;
     const a = sum(ly) > 0, b = sum(lly) > 0;
-    return a && b ? ly.map((v, k) => (v + (+lly[k] || 0)) / 2) : a ? ly : lly;
+    // Por mes: si un año trae 0 en ese mes (HIST incompleto, marca nueva), usa el otro
+    return a && b ? ly.map((v, k) => { const x = +v || 0, y = +lly[k] || 0; return x && y ? (x + y) / 2 : x || y; }) : a ? ly : lly;
   };
   // Comparativo (crecimientos, KPIs "vs LY"): LY si hay real, si no LLY
   const cmpOf = (e, mk) => (baseMode === 'ly' ? llyOf(e, mk) : lyOf(e, mk) || llyOf(e, mk));
