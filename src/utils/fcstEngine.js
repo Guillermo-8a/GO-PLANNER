@@ -92,3 +92,15 @@ export function bestForecast(series, horizon, L = 12) {
   const future = engines[w.name].run(data, w.params, horizon, L).future.map((v) => Math.max(0, v));
   return { model: w.name, accuracy: w.accuracy, bias: w.bias, future, results };
 }
+
+// Curva estacional de calzado MX (índice por mes, promedio ≈ 1). Se usa cuando la base no trae serie mensual
+// (solo venta acumulada / últimos 3 meses) y no se puede correr un modelo de series de tiempo.
+export const SEASONAL_CURVE_MX = [0.75, 0.78, 0.92, 0.95, 1.15, 1.00, 1.10, 1.18, 0.88, 0.85, 1.20, 1.74];
+const sf = (m0) => SEASONAL_CURVE_MX[((m0 % 12) + 12) % 12];
+// Factor para llevar el ritmo de los últimos `back` meses cerrados a los próximos `ahead` meses (m0 = mes actual 0-based)
+export const seasonalShift = (m0, back = 3, ahead = 3) => {
+  let a = 0, b = 0;
+  for (let i = 0; i < ahead; i++) a += sf(m0 + i);
+  for (let i = 1; i <= back; i++) b += sf(m0 - i);
+  return b > 0 ? (a / ahead) / (b / back) : 1;
+};

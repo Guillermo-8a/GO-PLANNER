@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import { seasonalShift } from '../utils/fcstEngine';
 import { useAltTabs } from '../utils/excelNav';
 import * as Icons from '../utils/icons';
 import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
@@ -143,7 +144,12 @@ export default function Traslados() {
 
   const [activeTab, setActiveTab] = useState(1); // 1=Excedente, 2=Solicitud, 3=Nivelación
   useAltTabs([1, 2, 3], setActiveTab);
-  const [mesActual, setMesActual] = useState(5); // mes del año para MOS
+  const [mesActual, setMesActual] = useState(new Date().getMonth() + 1); // mes del año para MOS
+  const [ajEstacional, setAjEstacional] = useState(true);
+  // Venta mensual proyectada = ritmo de los últimos 3 meses × estacionalidad de los próximos 3 (curva calzado MX).
+  // La base no trae serie mensual, así que no se puede correr el modelo de Forecast; esto evita pedir/mandar
+  // de más o de menos cuando viene temporada alta (Nov–Dic) o baja (Ene–Feb).
+  const estFactor = ajEstacional ? seasonalShift(mesActual - 1) : 1;
 
   // ── Temas ──────────────────────────────────────────────────────────────
   const themes = {
@@ -586,7 +592,7 @@ export default function Traslados() {
               const climaOK      = zonaValida(tipoClima, tcRec);
               const mismaZona    = d.zona === zonaOrigen;
               const zonaAdyacente = !mismaZona && adyacentesOrigen.has(d.zona || '');
-              const vtaMes       = mesActual > 0 ? (d.vta || 0) / mesActual : 0;
+              const vtaMes       = mesActual > 0 ? ((d.vta || 0) / mesActual) * estFactor : 0;
               const mos          = vtaMes > 0 ? d.oh / vtaMes : 99;
               const score = (climaOK ? 1000 : 0)
                           + (mismaZona ? 600 : zonaAdyacente ? 300 : 0)
@@ -652,7 +658,7 @@ export default function Traslados() {
       setExcLoading(false);
     }, 300);
   }, [rawData, brandMatrix, climaMatrix, goasTemporada, filterGoa, filterSku, filterMarca,
-      filterSeccion, filterTipoCentro, filterZona, letrasExcluidas, costoPorPza, mesActual,
+      filterSeccion, filterTipoCentro, filterZona, letrasExcluidas, costoPorPza, mesActual, estFactor,
       minPzsTraslado, minPesosTraslado, zonasAdyacentes]);
 
   // Datos para gráfica excedente
@@ -920,6 +926,7 @@ export default function Traslados() {
           // OH disponible total para este identificador
           const ohTotal = datos
             .filter(r => {
+              if (tipo === 'sku')    return (r.sku || '').toUpperCase() === valor; // antes un SKU en lista múltiple recibía $0
               if (tipo === 'modelo') return (r.modelo || r.goa).toUpperCase() === valor;
               if (tipo === 'goa')    return r.goa === valor;
               if (tipo === 'marca')  return r.marca === valor;
@@ -1418,7 +1425,7 @@ export default function Traslados() {
       Object.entries(porZonaClave).forEach(([zona, claves]) => {
         Object.entries(claves).forEach(([clave, { centros, meta }]) => {
           const nodos = Object.values(centros).map(n => {
-            const vtaProyMes = n.vta3m / 3; // forecast plano (ya trae fallback a vta acum)
+            const vtaProyMes = (n.vta3m / 3) * estFactor; // ritmo 3M ajustado por estacionalidad próxima
             const mos = vtaProyMes > 0 ? n.oh / vtaProyMes : (n.oh > 0 ? 99 : 0);
             return { ...n, vtaProyMes, mos };
           }).filter(n => n.oh > 0 || n.vtaProyMes > 0);
@@ -1613,7 +1620,7 @@ export default function Traslados() {
       setNivExecuted(true);
       setNivLoading(false);
     }, 400);
-  }, [rawData, nivNivel, nivZonaMode, mosObjetivoMin, mosObjetivoMax, pesoVelocidad, pesoRiesgo, pesoHistorico, mesActual, letrasExcluidas, nivMinPzs, nivMesesNuevo, nivSkusExcluir]);
+  }, [rawData, nivNivel, nivZonaMode, mosObjetivoMin, mosObjetivoMax, pesoVelocidad, pesoRiesgo, pesoHistorico, mesActual, letrasExcluidas, nivMinPzs, nivMesesNuevo, nivSkusExcluir, estFactor]);
 
   const nivChartData = useMemo(() => {
     if (!nivResult.length || !rawData.length)
@@ -1649,7 +1656,7 @@ export default function Traslados() {
     // Uplift por zona: ratio vta/oh en zona (para fcst de receptoras)
     // Simplificado: si recibe, sube su venta proyectada proporcional al inventario extra sano
     const centrosArr = Object.values(centros).map(c => {
-      const vtaProyMes = c.vta3m / 3;
+      const vtaProyMes = (c.vta3m / 3) * estFactor;
       const ohDespues  = Math.max(0, c.oh - (salidas[c.centro]||0) + (entradas[c.centro]||0));
       const recibio    = entradas[c.centro] || 0;
       // uplift B: si recibió mercancía sana, proyecta hasta +uplift según cuánto recibió vs su venta
@@ -1700,7 +1707,7 @@ export default function Traslados() {
       porZona: Object.values(porZona).sort((a,b) => b.pzs - a.pzs),
       zonaInvMos, topCentros, scatter,
     };
-  }, [nivResult, rawData, mesActual, nivGoaFiltro]);
+  }, [nivResult, rawData, mesActual, nivGoaFiltro, estFactor]);
 
   // Top problemáticos por SKU y por Modelo (agregado de nivProblematicas)
   const nivTops = useMemo(() => {
@@ -2668,6 +2675,10 @@ export default function Traslados() {
                     onChange={e => setMesActual(Number(e.target.value))}
                     className={`w-full text-xs px-3 py-2 rounded-lg border ${t.input} focus:outline-none focus:ring-1`} />
                 </div>
+                <label className={`col-span-2 flex items-center gap-2 text-[10px] ${t.textMuted}`} title="Ritmo de los últimos 3 meses × estacionalidad de los próximos 3 (curva calzado MX)">
+                  <input type="checkbox" checked={ajEstacional} onChange={e => setAjEstacional(e.target.checked)} />
+                  Ajuste estacional del fcst (×{estFactor.toFixed(2)} este mes)
+                </label>
               </div>
 
               {/* Pesos del score */}
