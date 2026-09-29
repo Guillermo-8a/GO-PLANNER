@@ -575,6 +575,8 @@ export default function Traslados() {
 
           // Score receptor: clima + zona (misma > adyacente > cualquiera) + permiso + vta + MOS
           const adyacentesOrigen = zonasAdyacentes[zonaOrigen] || new Set();
+          // Venta normalizada 0–100: antes se sumaba la venta cruda (miles de pzs) y aplastaba los pesos de zona/permiso
+          const maxVtaRec = Math.max(1, ...Object.entries(centros).filter(([c]) => c !== centroOrigen).map(([, d]) => d.vta || 0));
           const allReceptores = Object.entries(centros)
             .filter(([c]) => c !== centroOrigen)
             .map(([c, d]) => {
@@ -589,8 +591,8 @@ export default function Traslados() {
               const score = (climaOK ? 1000 : 0)
                           + (mismaZona ? 600 : zonaAdyacente ? 300 : 0)
                           + (tienePermiso ? 200 : 0)
-                          + (d.vta || 0)
-                          - mos * 10;
+                          + 100 * (d.vta || 0) / maxVtaRec
+                          - Math.min(mos, 12) * 8;
               return { centro: c, data: d, tienePermiso, climaOK, mismaZona, zonaAdyacente, score, mos };
             })
             .filter(r => r.climaOK)
@@ -1113,22 +1115,15 @@ export default function Traslados() {
           const receptorNombre = recInfo.nombre.toUpperCase().trim();
           const receptorNCentro = recInfo.nCentro?.trim() || '';
 
-          // Por talla: pzs = corridasMax × pzs de esa talla en 1 corrida
-          const asignaciones = [];
-          let corridasRealesMin = corridasMax;
-
+          // Candidatos por talla (varios surtidores, mejor venta primero, respetando mínimo a dejar)
+          const candPorTalla = {};
           corrida.forEach(talla => {
-            const pzsPedidas = corridasMax * (pzsCorrida1[talla] || 1);
-
-            // Mejor surtidor: mayor vta, que pueda dar pzsPedidas, dejar mínimo, y NO ser el receptor
-            const candidatos = Object.entries(invMut)
+            candPorTalla[talla] = Object.entries(invMut)
               .filter(([centro, mods]) => {
                 if (!mods[modeloKey]?.[talla]?.some(r => r.ohDisp > 0)) return false;
-                // Excluir si el centro ES el receptor
                 const cUp = centro.toUpperCase().trim();
                 if (receptorNCentro && cUp === receptorNCentro) return false;
                 if (cUp === receptorNombre) return false;
-                // También excluir por nCentro del row
                 const firstRow = mods[modeloKey][talla][0];
                 if (receptorNCentro && firstRow?.nCentro?.trim() === receptorNCentro) return false;
                 return true;
@@ -1138,34 +1133,36 @@ export default function Traslados() {
                 const ohTot = rows.reduce((s,r) => s + r.ohDisp, 0);
                 const vtaTot = rows.reduce((s,r) => s + (r.vta||0), 0);
                 const minGuarda = esAltoVolumen(centro) ? (minAlto||2) : (minResto||1);
-                const puedeEnviar = Math.max(0, ohTot - minGuarda);
-                return { centro, rows, ohTot, vtaTot, puedeEnviar };
+                return { centro, rows, ohTot, vtaTot, puedeEnviar: Math.max(0, ohTot - minGuarda) };
               })
               .filter(c => c.puedeEnviar > 0)
               .sort((a,b) => b.vtaTot - a.vtaTot || b.ohTot - a.ohTot);
-
-            if (!candidatos.length) return;
-            const mejor = candidatos[0];
-            const pzsEnv = Math.min(pzsPedidas, mejor.puedeEnviar);
-            if (pzsEnv <= 0) return;
-            corridasRealesMin = Math.min(corridasRealesMin, pzsEnv);
-
-            const row = mejor.rows[0];
-            asignaciones.push({
-              talla, pzsEnv,
-              sku: row.sku, nsku: row.nsku,
-              centro: mejor.centro,        // número de centro surtidor
-              nCentro: row.nCentro,        // nombre tienda surtidor
-              nombreCentro: row.nCentro,   // nombre tienda (para display)
-              zona: row.zona || '',        // zona del surtidor
-              oh: mejor.ohTot, precio: precioTalla[talla]||row.precio,
-              seccion: row.seccion, numSeccion: row.numSeccion,
-              marca: row.marca, goa: row.goa, modelo: modeloKey,
-            });
+          });
+          // Corridas completas posibles: antes cada talla salía de UN solo surtidor y si no alcanzaba se mandaban
+          // corridas rotas (tallas incompletas). Ahora se juntan varios surtidores y se recorta a corridas completas.
+          const corridasPosibles = Math.min(corridasMax, ...corrida.map(t =>
+            Math.floor(candPorTalla[t].reduce((s, c) => s + c.puedeEnviar, 0) / (pzsCorrida1[t] || 1))));
+          const asignaciones = [];
+          if (corridasPosibles > 0) corrida.forEach(talla => {
+            let falta = corridasPosibles * (pzsCorrida1[talla] || 1);
+            for (const c of candPorTalla[talla]) {
+              if (falta <= 0) break;
+              const pzsEnv = Math.min(falta, c.puedeEnviar);
+              falta -= pzsEnv;
+              const row = c.rows[0];
+              asignaciones.push({
+                talla, pzsEnv,
+                sku: row.sku, nsku: row.nsku,
+                centro: c.centro, nCentro: row.nCentro, nombreCentro: row.nCentro, zona: row.zona || '',
+                oh: c.ohTot, precio: precioTalla[talla]||row.precio,
+                seccion: row.seccion, numSeccion: row.numSeccion,
+                marca: row.marca, goa: row.goa, modelo: modeloKey,
+              });
+            }
           });
 
           if (!asignaciones.length) {
-            avisos.push(`"${item.idRaw}" → modelo ${modeloKey}: no hay centros surtidores con stock suficiente (respetando mínimo de corridas a dejar).`);
+            avisos.push(`"${item.idRaw}" → modelo ${modeloKey}: no hay stock suficiente entre los surtidores para armar ni 1 corrida completa (respetando mínimo a dejar).`);
             return;
           }
 
@@ -1192,7 +1189,7 @@ export default function Traslados() {
               ohQueda: a.oh - a.pzsEnv,
               importe: a.pzsEnv * (a.precio||0),
               precio: a.precio,
-              corridasEnv: a.pzsEnv,
+              corridasEnv: corridasPosibles,
             });
           });
 
@@ -1354,7 +1351,9 @@ export default function Traslados() {
         if (nivMesesNuevo <= 0) return false;
         if (r.mesesVida != null && r.mesesVida > 0) return r.mesesVida < nivMesesNuevo;
         if (r.fechaAlta) {
-          const d = new Date(r.fechaAlta);
+          // dd/mm/aaaa (formato MX): new Date() lo leía como mm/dd y los "nuevos" salían mal
+          const m = String(r.fechaAlta).trim().match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})/);
+          const d = m ? new Date(+(m[3].length === 2 ? '20' + m[3] : m[3]), +m[2] - 1, +m[1]) : new Date(r.fechaAlta);
           if (!isNaN(d.getTime())) {
             const meses = (Date.now() - d.getTime()) / (1000 * 60 * 60 * 24 * 30.44);
             return meses < nivMesesNuevo;

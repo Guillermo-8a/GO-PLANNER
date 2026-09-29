@@ -1013,6 +1013,16 @@ useEffect(() => {
       curvaModelo[goa][talla] = denom > 0 ? num / denom : 0;
     });
 
+    // Venta por tienda+GOA precalculada: antes se recorría toda la base por cada fila (n²) y con bases grandes
+    // el navegador se congelaba
+    const storeGoaSalesMap = {};
+    rawStoreData.forEach(r => {
+      if (!r.goa || !r.centro) return;
+      const v3 = Math.max(0, r.trend3M || 0), v12 = Math.max(0, r.sales || 0);
+      const k = `${r.centro}|${r.goa.toUpperCase()}`;
+      storeGoaSalesMap[k] = (storeGoaSalesMap[k] || 0) + (v3 > 0 ? v3 : v12 / 4);
+    });
+
     // 3) Por cada (tienda, GOA, talla): calcular fill_rate y demanda_ajustada
     rawStoreData.forEach(row => {
       if (!row.goa || !row.centro) return;
@@ -1037,15 +1047,7 @@ useEffect(() => {
       }
 
       // fill_rate por share
-      const storeKey = `${row.centro}|${goa}`;
-      let storeGoaSales = 0;
-      rawStoreData.forEach(r => {
-        if (r.centro === row.centro && r.goa.toUpperCase() === goa) {
-          const v3 = Math.max(0, r.trend3M || 0);
-          const v12 = Math.max(0, r.sales || 0);
-          storeGoaSales += (v3 > 0 ? v3 : v12 / 4);
-        }
-      });
+      const storeGoaSales = storeGoaSalesMap[`${row.centro}|${goa}`] || 0;
       const myContribTienda = ventas3m > 0 ? ventas3m : (ventas12m / 4);
       const shareTallaTienda = storeGoaSales > 0 ? myContribTienda / storeGoaSales : 0;
       const shareTallaModelo = curvaModelo[goa]?.[talla] || 0;
@@ -1953,6 +1955,12 @@ useEffect(() => {
           if (!curvaModeloTmp[g]) curvaModeloTmp[g] = {};
           curvaModeloTmp[g][t] = denom > 0 ? num / denom : 0;
         });
+        const sgMapTmp = {}; // venta tienda+GOA precalculada (antes n²)
+        rawStoreData.forEach(r => {
+          if (!r.goa || !r.centro) return;
+          const r3 = Math.max(0, r.trend3M || 0), r12 = Math.max(0, r.sales || 0), k = `${r.centro}|${r.goa.toUpperCase()}`;
+          sgMapTmp[k] = (sgMapTmp[k] || 0) + (r3 > 0 ? r3 : r12 / 4);
+        });
         rawStoreData.forEach(row => {
           if (!row.goa || !row.centro) return;
           const goa = row.goa.toUpperCase();
@@ -1967,14 +1975,7 @@ useEffect(() => {
           if (vSem <= 0) frWos = oh > 0 ? 1 : 0.5;
           else { const wos = oh / vSem; frWos = Math.max(0.2, Math.min(1, wos / 12)); }
           const myContrib = v3m > 0 ? v3m : (v12m / 4);
-          let storeGoaSales = 0;
-          rawStoreData.forEach(r => {
-            if (r.centro === row.centro && r.goa.toUpperCase() === goa) {
-              const r3 = Math.max(0, r.trend3M || 0);
-              const r12 = Math.max(0, r.sales || 0);
-              storeGoaSales += (r3 > 0 ? r3 : r12 / 4);
-            }
-          });
+          const storeGoaSales = sgMapTmp[`${row.centro}|${goa}`] || 0;
           const shareT = storeGoaSales > 0 ? myContrib / storeGoaSales : 0;
           const shareM = curvaModeloTmp[goa]?.[talla] || 0;
           const frShare = shareM > 0 ? Math.min(1, shareT / shareM) : 1;
@@ -2692,8 +2693,9 @@ useEffect(() => {
 
     let negativeOHCount = 0;
 
+    const storeByCode = new Map(stores.map(s => [s.centerCode, s]));
     const rows = filteredDistResult.map(r => {
-      const store = stores.find(s => s.centerCode === r.centro);
+      const store = storeByCode.get(r.centro);
       const goaKey = r.goa.toUpperCase();
       const tallaKey = r.talla?.toUpperCase() || 'UNICA';
       const sizeKey = `${goaKey}|${tallaKey}`;
