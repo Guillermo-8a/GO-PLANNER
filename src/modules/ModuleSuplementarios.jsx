@@ -110,6 +110,42 @@ function downloadTemplate(dim) {
   XLSX.writeFile(wb, 'Plantilla_Suplementarios.xlsx');
 }
 
+// ─── Forecast IS ──────────────────────────────────────────────────────────────
+// Misma lógica que ModuleForecast: varios motores, gana el de mejor accuracy (100 − WMAPE).
+// Serie = 12 meses LY + meses reales TY. Accuracy por backtest: se reservan los últimos ≤3 meses reales.
+const holt = (d, h, a = 0.3, b = 0.1) => {
+  if (d.length < 2) return Array(h).fill(d[0] || 0);
+  let lv = d[0], tr = d[1] - d[0];
+  for (let i = 1; i < d.length; i++) { const p = lv; lv = a * d[i] + (1 - a) * (lv + tr); tr = b * (lv - p) + (1 - b) * tr; }
+  return rng(h).map((j) => lv + (j + 1) * tr);
+};
+const FC_ENGINES = {
+  // LY del mes × tendencia (real / LY de los meses transcurridos)
+  'Estacional YTD': (ser, h, ly) => {
+    const n = ser.length - 12, base = sum(ly.slice(0, n)), r = base ? sum(ser.slice(12)) / base : 1;
+    return rng(h).map((j) => (+ly[(n + j) % 12] || 0) * r);
+  },
+  // Nivel + tendencia sobre la serie completa
+  'Holt': (ser, h) => holt(ser, h),
+  // Holt sobre la serie desestacionalizada con índices LY, re-estacionalizada
+  'Holt-Winters': (ser, h, ly) => {
+    const mu = sum(ly.slice(0, 12)) / 12, si = (m) => (mu ? (+ly[m % 12] || 0) / mu || 1 : 1);
+    const f = holt(ser.map((v, i) => v / si(i)), h);
+    return f.map((v, j) => v * si(ser.length + j));
+  },
+};
+function bestFcst(ly, ty, n, h) {
+  const ser = [...rng(12).map((k) => +ly[k] || 0), ...rng(n).map((k) => +ty[k] || 0)];
+  const hold = Math.min(3, n);
+  const scores = Object.entries(FC_ENGINES).map(([name, f]) => {
+    if (!hold) return { name, acc: null };
+    const pred = f(ser.slice(0, ser.length - hold), hold, ly), act = ser.slice(-hold), A = sum(act);
+    return { name, acc: A ? Math.max(0, 100 - (sum(act.map((v, i) => Math.abs(pred[i] - v))) / A) * 100) : null };
+  });
+  const win = scores.reduce((b, x) => ((x.acc ?? -1) > (b.acc ?? -1) ? x : b), { name: 'Estacional YTD', acc: null });
+  return { model: win.name, acc: win.acc, scores, future: FC_ENGINES[win.name](ser, h, ly).map((v) => Math.max(v, 0)) };
+}
+
 // ─── Bajada (IPF) ─────────────────────────────────────────────────────────────
 // ents: [{ name, base:[..] (LY o IS, semilla de estacionalidad y share), hist:[..] (LY) }]
 function allocate(otbArr, ents, cfg = {}, locks = {}) {
@@ -216,14 +252,19 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
   const corte = st.corte ?? 0;            // meses con venta real (IS)
 
   // Base de share/estacionalidad: LY, o IS = real TY hasta el corte + fcst (o LY × tendencia YTD) después
-  const baseOf = (e, mk) => {
-    const h = e.hist?.[mk] || zeros(nCols(mk));
-    if (baseMode !== 'is') return h;
-    const ty = e.ty?.[mk] || [], fc = e.fcst?.[mk];
-    const ly = sum(h.slice(0, corte)), act = sum(ty.slice(0, corte));
-    const tr = ly ? act / ly : 1;
-    return h.map((v, k) => (k < corte ? +ty[k] || 0 : fc ? +fc[k] || 0 : v * tr));
-  };
+  // IS por marca × ratio: real hasta el corte + pronóstico del mejor modelo (o FCST de Excel si viene)
+  const isFc = useMemo(() => {
+    if (baseMode !== 'is') return null;
+    return Object.fromEntries(METRICS.map((m) => [m.key, Object.fromEntries(entities.map((e) => {
+      const n = nCols(m.key), h = e.hist?.[m.key] || zeros(n), ty = e.ty?.[m.key], fc = e.fcst?.[m.key];
+      if (!ty) return [e.name, { arr: h, model: 'Sin real (LY)', acc: null }];
+      const real = rng(corte).map((k) => +ty[k] || 0);
+      if (fc) return [e.name, { arr: [...real, ...rng(n - corte).map((j) => +fc[corte + j] || 0)], model: 'FCST Excel', acc: null }];
+      const r = bestFcst(h, ty, corte, n - corte);
+      return [e.name, { arr: [...real, ...r.future], model: r.model, acc: r.acc, scores: r.scores }];
+    }))]));
+  }, [entities, baseMode, corte]);
+  const baseOf = (e, mk) => (isFc ? isFc[mk][e.name].arr : e.hist?.[mk] || zeros(nCols(mk)));
 
   const alloc = useMemo(
     () => Object.fromEntries(METRICS.map((m) => {
@@ -231,7 +272,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
       return [m.key, allocate(otb[m.key] || zeros(nCols(m.key)), ents, cfg[m.key], locks[m.key])];
     })),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [otb, entities, cfg, locks, baseMode, corte]
+    [otb, entities, cfg, locks, isFc]
   );
 
   // data por entidad: { plan: {metric:[..]}, hist: {metric:[..]} }
@@ -419,6 +460,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
   const manualSum = sum(Object.values(mCfg).map((c) => (c.share !== '' && c.share != null ? +c.share : 0)));
   const isInv = metric === 'inv';
   const baseLbl = baseMode === 'is' ? 'IS' : 'LY';
+  const isIS = baseMode === 'is';
   const solid = { background: isDark ? '#1c1720' : '#ffffff' };
   const hasTy = entities.some((e) => e.ty);
   const BajadaTab = (
@@ -453,7 +495,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
           <table className="w-full">
             <thead><tr>
               <th className={`${th} text-left sticky left-0 z-20`} style={solid}>{dim}</th>
-              <th className={th}>{baseLbl}</th><th className={th}>Share {baseLbl}</th><th className={th}>Share manual</th><th className={th}>Estrategia %</th>
+              <th className={th}>{baseLbl}</th><th className={th}>Share {baseLbl}</th>{isIS && <th className={th}>Modelo</th>}<th className={th}>Share manual</th><th className={th}>Estrategia %</th>
               <th className={th}>Share final</th><th className={th}>Plan</th><th className={th}>Crec. vs {baseLbl}</th>
               {isInv && <><th className={th}>Rot final</th><th className={th}>Rot {baseMode === 'is' ? 'IS' : 'AA'}</th></>}
               {KC.map((k) => <th key={k} className={th}>{MLABEL[k]}</th>)}
@@ -474,6 +516,10 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
                     </td>
                     <td className={`${td} ${t.textMuted}`}>{fmt(isInv ? r.baseTot / KC.length : r.baseTot)}</td>
                     <td className={`${td} ${t.textMuted}`}>{pct(r.baseShare)}</td>
+                    {isIS && (() => { const f = isFc[metric][r.name]; return (
+                      <td className={`${td} ${t.textMuted}`} title={f.scores?.map((x) => `${x.name}: ${x.acc == null ? '—' : x.acc.toFixed(1) + '%'}`).join('\n')}>
+                        {f.model}{f.acc != null && <span className={f.acc >= 85 ? good : f.acc >= 70 ? warn : bad}> · {f.acc.toFixed(0)}%</span>}
+                      </td>); })()}
                     <td className="px-0.5 py-0.5 w-20"><NumCell value={c.share ?? ''} placeholder="base" onCommit={(v) => setCfg(r.name, 'share', v)} onPasteGrid={paste(0)} className={t.input} /></td>
                     <td className="px-0.5 py-0.5 w-20"><NumCell value={c.adj ?? ''} placeholder="0" onCommit={(v) => setCfg(r.name, 'adj', v)} onPasteGrid={paste(1)} className={t.input} /></td>
                     <td className={`${td} font-bold ${t.text}`}>{pct(r.share)}</td>
@@ -495,7 +541,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
             <tfoot>
               <tr className={`border-t-2 ${t.border}`}>
                 <td className={`px-2 py-1 text-xs font-black sticky left-0 z-10 ${t.text}`} style={solid}>Total</td>
-                <td className={`${td} ${t.textMuted}`}>{fmt(sum(A.rows.map((r) => (isInv ? r.baseTot / KC.length : r.baseTot))))}</td><td />
+                <td className={`${td} ${t.textMuted}`}>{fmt(sum(A.rows.map((r) => (isInv ? r.baseTot / KC.length : r.baseTot))))}</td><td />{isIS && <td />}
                 <td className={`${td} ${manualSum > 100 ? bad : t.textMuted}`}>{manualSum ? `${manualSum.toFixed(1)}%` : ''}</td><td />
                 <td className={`${td} ${t.text}`}>100%</td>
                 <td className={`${td} font-black ${t.text}`}>{fmt(isInv ? sum(A.colTot) / KC.length : sum(A.colTot))}</td><td />
@@ -503,7 +549,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
                 {KC.map((k) => <td key={k} className={`${td} font-bold ${t.text}`}>{fmt(A.colTot[k])}</td>)}
               </tr>
               <tr>
-                <td className={`px-2 py-1 text-xs sticky left-0 z-10 ${t.textMuted}`} style={solid}>OTB objetivo</td><td colSpan={5} />
+                <td className={`px-2 py-1 text-xs sticky left-0 z-10 ${t.textMuted}`} style={solid}>OTB objetivo</td><td colSpan={isIS ? 6 : 5} />
                 <td className={`${td} ${t.textMuted}`}>{fmt(isInv ? sum(otbM) / KC.length : sum(otbM))}</td><td />
                 {isInv && <td colSpan={2} />}
                 {KC.map((k) => (
@@ -516,7 +562,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
           </table>
           <p className={`mt-2 text-[10px] ${t.textMuted}`}>
             Pega bloques desde Excel (Cmd+V) sobre la primera celda: share, estrategia o meses. Share manual vacío = share de la base ({baseLbl}). Estrategia % multiplica el share (se renormaliza a 100%). Editar/pegar un mes lo fija (amarillo); el resto se reacomoda para cuadrar el OTB mensual.
-            {baseMode === 'is' && ' Base IS = venta real hasta el mes de corte + FCST cargado (o LY × tendencia YTD real/LY) para el resto.'}
+            {isIS && ' Base IS = real hasta el corte + pronóstico por marca × ratio con el modelo de mejor accuracy (Estacional YTD, Holt, Holt-Winters; backtest en los últimos ≤3 meses reales). Pasa el cursor sobre el modelo para ver los 3 scores. Filas FCST del Excel tienen prioridad.'}
             {isInv && ' Rot final = Vta plan / promedio de 13 inventarios plan de la marca (verde si ≥ AA).'}
           </p>
         </div>
@@ -614,9 +660,9 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
       </div>
 
       <div className={`${card} overflow-x-auto`}>
-        <p className={`text-xs font-bold mb-2 ${t.text}`}>Trimestres y semestres · Plan (LY abajo)</p>
+        <p className={`text-xs font-bold mb-2 ${t.text}`}>Trimestres y semestres · Plan ({baseMode === 'is' ? 'IS' : 'LY'} abajo)</p>
         <table className="w-full">
-          <thead><tr><th className={`${th} text-left`}>Ratio</th>{PERIODS.map((p) => <th key={p.key} className={th}>{p.key}</th>)}</tr></thead>
+          <thead><tr><th className={`px-2 py-2 text-xs font-black uppercase text-left ${t.tableHead}`}>Ratio</th>{PERIODS.map((p) => <th key={p.key} className={`px-2 py-2 text-sm font-black uppercase text-center ${t.tableHead} ${t.text}`}>{p.key}</th>)}</tr></thead>
           <tbody>
             {perRows.map(([l, k, f, isAmt]) => (
               <tr key={k} className={t.tableRow}>
@@ -625,7 +671,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
                   const pv = kpis(sel.plan, p.m)[k], lv = kpis(sel.hist, p.m)[k];
                   const g = isAmt ? growth(pv, lv) : null;
                   return (
-                    <td key={p.key} className={td}>
+                    <td key={p.key} className={td.replace('text-right', 'text-center')}>
                       <div className={`font-bold ${t.text}`}>{f(pv)}</div>
                       <div className={`text-[10px] ${t.textMuted}`}>{f(lv)}{g != null && <span className={g >= 0 ? good : bad}> {pct(g)}</span>}</div>
                     </td>
