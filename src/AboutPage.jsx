@@ -140,7 +140,7 @@ function NavBar({ navigate }) {
       transition: 'all 0.4s ease',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-        <img src="/logo.png" alt="GO PLANNER" style={{ width: 'clamp(90px, 10vw, 130px)', height: 'auto', margin: '-30px 0', filter: 'drop-shadow(0 0 30px rgba(139,92,246,0.35))' }} />
+        <img src="/logo.png" alt="GO PLANNER" style={{ width: 'clamp(90px, 10vw, 130px)', height: 'auto', margin: '0 0 -36px -18px', filter: 'drop-shadow(0 0 30px rgba(139,92,246,0.35))' }} />
       </div>
       <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
         {['PILARES', 'FORMATOS', 'PREGUNTAS'].map(w => (
