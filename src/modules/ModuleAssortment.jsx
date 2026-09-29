@@ -800,12 +800,10 @@ export default function App() {
       const newGoas = [];
       for (let i = 1; i < rows.length; i++) {
         if (!rows[i][0]) continue;
-        const m1 = parseFloat(String(rows[i][3]).replace(/[^0-9.-]+/g, '')) || 16.6; 
-        const m2 = parseFloat(String(rows[i][4]).replace(/[^0-9.-]+/g, '')) || 16.6;
-        const m3 = parseFloat(String(rows[i][5]).replace(/[^0-9.-]+/g, '')) || 16.6; 
-        const m4 = parseFloat(String(rows[i][6]).replace(/[^0-9.-]+/g, '')) || 16.6;
-        const m5 = parseFloat(String(rows[i][7]).replace(/[^0-9.-]+/g, '')) || 16.6; 
-        const m6 = parseFloat(String(rows[i][8]).replace(/[^0-9.-]+/g, '')) || 17.0;
+        // Celda vacía → default; un 0 capturado se respeta (antes "|| 16.6" convertía 0% en 16.6%)
+        const pm = (v, d) => { const t = String(v ?? '').trim(); if (t === '') return d; const n = parseFloat(t.replace(/[^0-9.-]+/g, '')); return isNaN(n) ? d : n; };
+        const [m1, m2, m3, m4, m5] = [3, 4, 5, 6, 7].map(c => pm(rows[i][c], 16.6));
+        const m6 = pm(rows[i][8], 17.0);
 
         newGoas.push({ 
           id: Date.now() + i, name: String(rows[i][0]), 
@@ -879,7 +877,7 @@ export default function App() {
     
     if(!goa || !curve || !rule) return;
     
-    const weightsArr = (curve.weights || '').split(',').map(w => Number(w.trim()));
+    const weightsArr = (curve.weights || '').split(',').map(w => Number(w.trim())).filter(n => !isNaN(n)); // un peso mal escrito ya no deja todo en NaN
     const totalPzsPerRun = weightsArr.reduce((a, b) => a + b, 0);
 
     const storeDemands = {}; let totalPieces = 0; const goaNameUpper = (goa.name || '').toUpperCase();
@@ -936,9 +934,9 @@ export default function App() {
           modelo: r[idx('modelo')] || '',
           descripcion: r[idx('descripcion')] || '',
           bucketName: r[idx('bucket')] || '',
-          pvp: Number(r[idx('pvp')]) || 0,
-          costo: Number(r[idx('costo')]) || 0,
-          margen: Number(r[idx('margen')]) || 0,
+          pvp: parseFloat(String(r[idx('pvp')] ?? '').replace(/[^0-9.-]+/g, '')) || 0, // "$1,299" → 1299
+          costo: parseFloat(String(r[idx('costo')] ?? '').replace(/[^0-9.-]+/g, '')) || 0, // "$1,299" → 1299
+          margen: parseFloat(String(r[idx('margen')] ?? '').replace(/[^0-9.-]+/g, '')) || 0, // "$1,299" → 1299
           mesCompra: r[idx('mescompra')] || '',
           curveName: r[idx('curva')] || '',
           ruleName: r[idx('regla')] || '',

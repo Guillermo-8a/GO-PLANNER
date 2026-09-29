@@ -932,9 +932,7 @@ export default function Forecast() {
         return;
       }
 
-      // 2) Regresión lineal sobre serie real (sin imputación, mantiene la realidad)
       const serie = conDato;
-      const regresion = linearRegression(serie.map(s => ({ x: s.x, y: s.venta })));
 
       // 3) Factores estacionales BASE (con años cerrados completos)
       const porMes = {};
@@ -962,6 +960,11 @@ export default function Forecast() {
       } else {
         for (let m = 1; m <= 12; m++) factores[m] = 1;
       }
+
+      // 2) Regresión lineal sobre la serie DESESTACIONALIZADA (venta / factor del mes). Antes se ajustaba sobre la
+      //    venta cruda y luego se volvía a multiplicar por el factor: con años incompletos (el año en curso trae
+      //    solo algunos meses) la tendencia se sesgaba hacia los meses fuertes o débiles que tocaran.
+      const regresion = linearRegression(serie.map(s => ({ x: s.x, y: s.venta / (factores[s.mes] > 0 ? factores[s.mes] : 1) })));
 
       // 4) DETECCIÓN DE STOCKOUTS y MESES ATÍPICOS para escenario LIMPIO
       //    Operamos sobre años cerrados completos.
@@ -1084,7 +1087,8 @@ export default function Forecast() {
         const base = proyectarBase(anio, mes);
         const cons = proyectarConservador(anio, mes);
         const cap = cons * (1 + thresholds.capOptimista);
-        return Math.min(base, cap);
+        // Nunca por debajo del mayor entre base y conservador (antes podía quedar debajo del conservador)
+        return Math.min(Math.max(base, cons), cap);
       };
 
       // 7) Construir IS por escenario (sin overrides — eso es L2)
