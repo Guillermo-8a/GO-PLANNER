@@ -4,6 +4,7 @@ import { Settings, Store, Package, Upload, ArrowUpDown, Sliders, Layers, MoreVer
 
 // =====================================================================
 // 1. IMPORT REAL (Descomenta esta línea en tu entorno local GO PLANNER)
+import { scoreItems, assignClusters, DEFAULT_SCORE_WEIGHTS, DEFAULT_CLUSTER_STRATEGY } from '../utils/clusterScore';
 import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
 // --- MOTOR INTELIGENTE PARA LEER CSV (Ignora comas dentro de comillas) ---
@@ -61,6 +62,39 @@ function EmptyState({ icon: Icon, title, desc, rules, action, theme, t }) {
   );
 }
 
+
+// Calculadora PVP por Mg% objetivo. Mg% = (PVP sin IVA − Costo) / PVP sin IVA → PVP = Costo / (1 − Mg%).
+const PvpCalculator = ({ t }) => {
+  const [c, setC] = useState(() => { try { return JSON.parse(localStorage.getItem('assort_pvpcalc')) || null; } catch { return null; } });
+  const st = c || { costo: '', moneda: 'USD', tc: 18.5, mg: 55, iva: true, pvpProp: '' };
+  const set = (k, v) => { const n = { ...st, [k]: v }; setC(n); try { localStorage.setItem('assort_pvpcalc', JSON.stringify(n)); } catch {} };
+  const costoMx = (Number(st.costo) || 0) * (st.moneda === 'USD' ? (Number(st.tc) || 0) : 1);
+  const mg = Math.min(Number(st.mg) || 0, 99) / 100;
+  const ivaF = st.iva ? 1.16 : 1;
+  const pvpNeto = costoMx > 0 ? costoMx / (1 - mg) : 0;
+  const pvp = pvpNeto * ivaF;
+  const pvpRed = pvp > 0 ? Math.ceil((pvp + 1) / 10) * 10 - 1 : 0; // terminación 9
+  const mgOf = (p) => { const neto = (Number(p) || 0) / ivaF; return neto > 0 ? (neto - costoMx) / neto * 100 : 0; };
+  const fmt = (n) => `$${Math.round(n).toLocaleString('es-MX')}`;
+  const inp = `w-20 px-2 py-1 rounded border text-xs font-bold ${t.input}`;
+  return (
+    <div className={`flex flex-wrap items-end gap-3 px-3 py-2 rounded-lg border text-[11px] ${t.cardInner}`} title="PVP = Costo MXN ÷ (1 − Mg%) × IVA">
+      <div className={`font-black uppercase tracking-wider self-center ${t.textMain}`}>PVP por Mg%</div>
+      <label className="flex flex-col"><span className={t.textMuted}>Costo</span><input type="number" value={st.costo} onChange={e => set('costo', e.target.value)} className={inp} placeholder="30" /></label>
+      <label className="flex flex-col"><span className={t.textMuted}>Moneda</span>
+        <select value={st.moneda} onChange={e => set('moneda', e.target.value)} className={`px-2 py-1 rounded border text-xs font-bold ${t.input}`}><option>USD</option><option>MXN</option></select></label>
+      {st.moneda === 'USD' && <label className="flex flex-col"><span className={t.textMuted}>TC</span><input type="number" step="0.01" value={st.tc} onChange={e => set('tc', e.target.value)} className={inp} /></label>}
+      <label className="flex flex-col"><span className={t.textMuted}>Mg% obj.</span><input type="number" value={st.mg} onChange={e => set('mg', e.target.value)} className={inp} /></label>
+      <label className="flex items-center gap-1 self-center cursor-pointer"><input type="checkbox" checked={!!st.iva} onChange={e => set('iva', e.target.checked)} /><span className={t.textMuted}>PVP c/IVA</span></label>
+      <div className="flex flex-col"><span className={t.textMuted}>PVP exacto</span><b className={t.textMain}>{pvp ? fmt(pvp) : '—'}</b></div>
+      <div className="flex flex-col"><span className={t.textMuted}>PVP sugerido</span><b className={`text-sm ${t.textAccent2}`}>{pvpRed ? fmt(pvpRed) : '—'}</b></div>
+      <div className="flex flex-col"><span className={t.textMuted}>Mg% real</span><b className={t.textMain}>{pvpRed ? mgOf(pvpRed).toFixed(1) + '%' : '—'}</b></div>
+      <label className="flex flex-col"><span className={t.textMuted}>¿Y a PVP…?</span><input type="number" value={st.pvpProp} onChange={e => set('pvpProp', e.target.value)} className={inp} placeholder="999" /></label>
+      {Number(st.pvpProp) > 0 && costoMx > 0 && <div className="flex flex-col"><span className={t.textMuted}>Mg%</span><b className={mgOf(st.pvpProp) >= (Number(st.mg) || 0) ? 'text-emerald-400' : 'text-rose-400'}>{mgOf(st.pvpProp).toFixed(1)}%</b></div>}
+    </div>
+  );
+};
+
 export default function App() {
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const fileInputRef = useRef(null);
@@ -94,7 +128,7 @@ export default function App() {
 
   // --- ESTADO DE BASE Y CLÚSTERES ---
   const [numClusters, setNumClusters] = useState(initialState?.numClusters ?? 6);
-  const [clusterStrategy, setClusterStrategy] = useState(initialState?.clusterStrategy ?? 'valor'); 
+  const [clusterStrategy, setClusterStrategy] = useState(initialState?.clusterStrategy ?? DEFAULT_CLUSTER_STRATEGY); 
   
   const activeClusters = useMemo(() => {
     if (numClusters === 6) return ['AA', 'A', 'B', 'C', 'D', 'E'];
@@ -103,7 +137,7 @@ export default function App() {
   }, [numClusters]);
 
   const [rawStoreData, setRawStoreData] = useState(initialState?.rawStoreData ?? []);
-  const [scoreWeights, setScoreWeights] = useState(initialState?.scoreWeights ?? { sales: 50, margin: 50, rotation: 0 });
+  const [scoreWeights, setScoreWeights] = useState(initialState?.scoreWeights ?? DEFAULT_SCORE_WEIGHTS);
   const [stores, setStores] = useState(initialState?.stores ?? []);
   const [goas, setGoas] = useState(initialState?.goas ?? []);
   
@@ -145,6 +179,7 @@ export default function App() {
   const [chequeraModal, setChequeraModal] = useState({ open: false, source: 'sugerido', seccion: '', marca: '' });
   const [bucketPvpModal, setBucketPvpModal] = useState({ open: false, goaId: null });
   const [reportView, setReportView] = useState('sugerido'); 
+  const [compraMode, setCompraMode] = useState('ppto'); // tab 4: 'ppto' (resultante presupuesto) | 'preventa' (catálogo y selección)
 
   // --- AUTO-GUARDADO A LOCALSTORAGE ---
   // OJO: rawStoreData y brandMatrix se EXCLUYEN. Son grandes (miles de filas) y recargables desde CSV.
@@ -410,53 +445,10 @@ export default function App() {
         };
       });
 
-      // Normalización min–max: el margen % y la rotación suelen variar poco entre tiendas; dividir entre el máximo
-      // los dejaba todos cerca de 1 y no diferenciaban (con peso 50% el score quedaba casi plano).
-      const mm = (k) => { const v = storesInGoa.map(i => i[k]); const lo = Math.min(...v), hi = Math.max(...v); return (x) => hi > lo ? (x - lo) / (hi - lo) : (hi > 0 ? 1 : 0); };
-      const nS = mm('sales'), nM = mm('margin'), nR = mm('rotation');
-
-      storesInGoa.forEach(item => {
-        const nSales = nS(item.sales);
-        const nMargin = nM(item.margin);
-        const nRot = nR(item.rotation);
-        item.score = (nSales * weights.sales) + (nMargin * weights.margin) + (nRot * weights.rotation);
-      });
-
-      storesInGoa.sort((a, b) => b.score - a.score);
-      const total = storesInGoa.length;
-      const numClust = currentClusters.length;
-      const maxScore = storesInGoa.length > 0 ? storesInGoa[0].score : 1;
-      
-      storesInGoa.forEach((item, index) => {
-        const percentile = index / total; 
-        let clusterIndex = numClust - 1; 
-        
-        if (strategy === 'piramide') {
-          if (numClust === 6) {
-            if (percentile <= 0.05) clusterIndex = 0;
-            else if (percentile <= 0.20) clusterIndex = 1;
-            else if (percentile <= 0.45) clusterIndex = 2;
-            else if (percentile <= 0.75) clusterIndex = 3;
-            else if (percentile <= 0.90) clusterIndex = 4;
-            else clusterIndex = 5;
-          } else {
-            let assigned = false;
-            for(let i=0; i<numClust; i++) {
-              let threshold = Math.pow((i+1)/numClust, 2);
-              if (percentile <= threshold) {
-                clusterIndex = i; assigned = true; break;
-              }
-            }
-            if(!assigned) clusterIndex = numClust - 1;
-          }
-        } else if (strategy === 'lineal') {
-          clusterIndex = Math.min(Math.floor(percentile * numClust), numClust - 1);
-        } else if (strategy === 'valor') {
-          const scoreRatio = item.score / maxScore; 
-          const invertedPercentile = 1.0 - scoreRatio; 
-          clusterIndex = Math.min(Math.floor(invertedPercentile * numClust), numClust - 1);
-        }
-        
+      // Lógica compartida con Distribución (utils/clusterScore.js)
+      scoreItems(storesInGoa, weights);
+      assignClusters(storesInGoa, currentClusters, strategy).forEach(item => {
+        const clusterIndex = item.clusterIdx;
         const store = storeMap.get(item.centro);
         if(store) {
           store.clusters[goaName] = currentClusters[clusterIndex];
@@ -498,42 +490,8 @@ export default function App() {
     });
 
     // 3. CALCULAR CLÚSTER GLOBAL PARA LA TIENDA
-    const finalStores = Array.from(storeMap.values());
-    finalStores.sort((a, b) => b.score - a.score);
-    const totalS = finalStores.length;
-    const maxSScore = totalS > 0 ? finalStores[0].score : 1;
-    const numClust = currentClusters.length;
-
-    finalStores.forEach((store, index) => {
-      const percentile = index / totalS;
-      let clusterIndex = numClust - 1;
-      
-      if (strategy === 'piramide') {
-        if (numClust === 6) {
-          if (percentile <= 0.05) clusterIndex = 0;
-          else if (percentile <= 0.20) clusterIndex = 1;
-          else if (percentile <= 0.45) clusterIndex = 2;
-          else if (percentile <= 0.75) clusterIndex = 3;
-          else if (percentile <= 0.90) clusterIndex = 4;
-          else clusterIndex = 5;
-        } else {
-          let assigned = false;
-          for(let i=0; i<numClust; i++) {
-            let threshold = Math.pow((i+1)/numClust, 2);
-            if (percentile <= threshold) { clusterIndex = i; assigned = true; break; }
-          }
-          if(!assigned) clusterIndex = numClust - 1;
-        }
-      } else if (strategy === 'lineal') {
-        clusterIndex = Math.min(Math.floor(percentile * numClust), numClust - 1);
-      } else if (strategy === 'valor') {
-        const scoreRatio = store.score / maxSScore; 
-        const invertedPercentile = 1.0 - scoreRatio; 
-        clusterIndex = Math.min(Math.floor(invertedPercentile * numClust), numClust - 1);
-      }
-      
-      store.globalCluster = currentClusters[clusterIndex];
-    });
+    const finalStores = assignClusters(Array.from(storeMap.values()), currentClusters, strategy);
+    finalStores.forEach(store => { store.globalCluster = store.cluster; delete store.cluster; delete store.clusterIdx; });
 
     setStores(finalStores);
   };
@@ -1372,12 +1330,23 @@ export default function App() {
     a.download = 'Resultante_compra_por_tienda.csv'; a.click();
   };
 
+  // Distribución de la resultante (para los resúmenes de Reportes, vista "Resultante Ppto")
+  const autoPlanDist = useMemo(() => autoPlan.filter(r => !r.falta && r.pzs > 0).map(r => ({ row: r, cells: distribuirAutoPlan(r) })), [autoPlan, stores]);
+  const viewLabel = reportView === 'sugerido' ? 'Sugerido' : reportView === 'resultante' ? 'Resultante Ppto' : 'Real';
+
   const reportData = useMemo(() => {
     const isSug = reportView === 'sugerido';
+    const isRes = reportView === 'resultante';
     
     const goaMetrics = (goas || []).map(g => {
       let boughtPzs = 0; let spentValue = 0;
-      if (isSug) {
+      let resMonth = null;
+      if (isRes) {
+        resMonth = { pzs: [0,0,0,0,0,0], val: [0,0,0,0,0,0] };
+        autoPlanDist.filter(d => d.row.goa.id === g.id).forEach(d => d.cells.forEach(x => {
+          boughtPzs += x.pzs; spentValue += x.pzs * d.row.pvp; resMonth.pzs[d.row.mes] += x.pzs; resMonth.val[d.row.mes] += x.pzs * d.row.pvp;
+        }));
+      } else if (isSug) {
         const plans = (suggestedPlans || []).filter(p => p.goaId === g.id);
         plans.forEach(plan => {
           const pzsPerOption = getPiecesForOneModel(g.name, plan.curveId, plan.ruleId);
@@ -1394,7 +1363,7 @@ export default function App() {
       }
       const budget = Number(g.budget) || 0;
       const historyPzs = Number(g.historyPzs) || 0;
-      return { ...g, boughtPzs, spentValue, otb: budget - spentValue, historyDiff: boughtPzs - historyPzs };
+      return { ...g, boughtPzs, spentValue, resMonth, otb: budget - spentValue, historyDiff: boughtPzs - historyPzs };
     });
 
     const matrixByGoa = {};
@@ -1409,7 +1378,15 @@ export default function App() {
 
       let totalModelsAffected = 0;
 
-      if (isSug) {
+      if (isRes) {
+        const ds = autoPlanDist.filter(d => d.row.goa.id === g.id);
+        const inst = {};
+        ds.forEach(d => d.cells.forEach(x => { if (matrix[x.c]) { matrix[x.c].pzs += x.pzs; (inst[x.c] = inst[x.c] || new Set()).add(x.st.id); } }));
+        Object.entries(inst).forEach(([c, set]) => { matrix[c].totalStoreInstances = set.size; });
+        const rule = ds[0]?.row.rule;
+        return (matrixByGoa[g.name] = (activeClusters || []).map(c => ({ cluster: c, numStores: matrix[c] ? matrix[c].stores : 0,
+          runsPorTienda: String(rule ? ((rule.corridas || {})[c] || 0) : 0), totalPzs: matrix[c] ? matrix[c].pzs : 0 })));
+      } else if (isSug) {
         const plans = (suggestedPlans || []).filter(p => p.goaId === g.id);
         plans.forEach(plan => {
           const rule = (calcRules || []).find(r => r.id === Number(plan.ruleId));
@@ -1454,7 +1431,7 @@ export default function App() {
     });
 
     return { goaMetrics, matrixByGoa };
-  }, [purchases, stores, goas, activeClusters, reportView, suggestedPlans, calcRules, sizeCurves]);
+  }, [purchases, stores, goas, activeClusters, reportView, suggestedPlans, calcRules, sizeCurves, autoPlanDist]);
 
   // --- CÓDIGO DE AGREGACIÓN EXTERNO ---
   const storeStats = useMemo(() => {
@@ -1505,9 +1482,15 @@ export default function App() {
 
   const storeSummaryData = useMemo(() => {
     const isSug = reportView === 'sugerido';
+    const resByStore = {};
+    if (reportView === 'resultante') autoPlanDist.forEach(d => d.cells.forEach(x => {
+      const o = (resByStore[x.st.id] = resByStore[x.st.id] || { pzs: 0, val: 0 }); o.pzs += x.pzs; o.val += x.pzs * d.row.pvp;
+    }));
     return (stores || []).map(store => {
       let storeTotalPzs = 0; let storeTotalValue = 0;
-      if (isSug) {
+      if (reportView === 'resultante') {
+        storeTotalPzs = resByStore[store.id]?.pzs || 0; storeTotalValue = resByStore[store.id]?.val || 0;
+      } else if (isSug) {
         (suggestedPlans || []).forEach(plan => {
           const goa = (goas || []).find(g => g.id === plan.goaId);
           if (goa) {
@@ -1534,7 +1517,7 @@ export default function App() {
       }
       return { ...store, storeTotalPzs, storeTotalValue };
     }).sort((a, b) => (b.storeTotalPzs || 0) - (a.storeTotalPzs || 0));
-  }, [stores, suggestedPlans, purchases, goas, activeClusters, calcRules, sizeCurves, reportView]);
+  }, [stores, suggestedPlans, purchases, goas, activeClusters, calcRules, sizeCurves, reportView, autoPlanDist]);
 
   // --- GENERADOR DE CHEQUERAS (TAB 6) ---
   const generateChequera = (source = 'sugerido', level = 'detail', extras = {}) => {
@@ -1671,7 +1654,7 @@ export default function App() {
             <TabButton id="data" label="1. Tiendas y Clústeres" icon={Store} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
             <TabButton id="calc" label="2. Curvas y Reglas" icon={ClipboardList} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
             <TabButton id="budget" label="3. Forecast GO Planner" icon={Database} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
-            <TabButton id="assortment" label="4. Ejecutar Preventa" icon={Package} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
+            <TabButton id="assortment" label="4. Compra: Ppto / Preventa" icon={Package} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
             <TabButton id="reports" label="5. Reportes / Plan OTB" icon={Compass} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
             <TabButton id="vsreal" label="6. VS Compra Real" icon={Activity} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
             <TabButton id="chequeras" label="7. Generador Chequeras" icon={FileSpreadsheet} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
@@ -2113,6 +2096,20 @@ export default function App() {
               />
             ) : (
               <>
+                {/* === SELECTOR DE FLUJO + CALCULADORA PVP === */}
+                <div className={`flex flex-col xl:flex-row items-stretch xl:items-center justify-between gap-4 p-4 rounded-xl shadow-lg border ${t.card}`}>
+                  <div className={`flex p-1.5 rounded-xl border self-start ${theme==='dark'?'bg-white/[0.045] border-white/10':'bg-gray-100 border-gray-200'}`}>
+                    <button onClick={()=>setCompraMode('ppto')} className={`flex items-center px-5 py-2.5 rounded-lg text-sm transition-all ${compraMode==='ppto' ? t.toggleActive : t.toggleInactive}`}>
+                      <Calculator size={16} className="mr-2" /> Presupuesto (Resultante)
+                    </button>
+                    <button onClick={()=>setCompraMode('preventa')} className={`flex items-center px-5 py-2.5 rounded-lg text-sm transition-all ${compraMode==='preventa' ? t.toggleActive : t.toggleInactive}`}>
+                      <ClipboardList size={16} className="mr-2" /> Preventa (Catálogo)
+                    </button>
+                  </div>
+                  <PvpCalculator t={t} />
+                </div>
+
+                {compraMode === 'ppto' && (<>
                 {/* === RESULTANTE AUTOMÁTICA === */}
                 <div className={`rounded-xl border shadow-lg p-6 ${t.card}`}>
                   <div className="flex justify-between items-start mb-4 gap-4 flex-wrap">
@@ -2120,9 +2117,14 @@ export default function App() {
                       <h2 className={`text-lg font-bold flex items-center ${t.textMain}`}><Calculator className={`mr-3 ${t.textAccent1}`}/> Resultante de compra</h2>
                       <p className={`text-xs mt-1 ${t.textMuted}`}>Sale directo de tus inputs: OTB del GOA × % del mes × % del bucket ÷ PVP. Elige curva y regla por GOA (default: la primera). El reparto a tiendas usa las corridas por clúster de la regla y la curva de tallas.</p>
                     </div>
+                    <div className="flex gap-2 flex-wrap">
                     <button onClick={exportAutoPlan} disabled={!autoPlan.some(r => r.pzs > 0 && !r.falta)} className={`px-3 py-2 rounded-lg text-[11px] font-black uppercase tracking-wider transition flex items-center disabled:opacity-40 ${t.btnPrimary}`}>
                       <Download size={14} className="mr-1.5"/> Distribución por tienda
                     </button>
+                    <button onClick={() => { setReportView('resultante'); setActiveTab('reports'); }} disabled={!autoPlan.some(r => r.pzs > 0 && !r.falta)} className={`px-3 py-2 rounded-lg text-[11px] font-black uppercase tracking-wider transition flex items-center disabled:opacity-40 ${t.btnGhost}`}>
+                      <Store size={14} className="mr-1.5"/> Ver resumen por tienda
+                    </button>
+                    </div>
                   </div>
                   <div className="flex flex-wrap gap-3 mb-4">
                     {(goas || []).map(g => (
@@ -2173,6 +2175,9 @@ export default function App() {
                   </div>
                 </div>
 
+                </>)}
+
+                {compraMode === 'preventa' && (<>
                 {/* === BLOQUE CATÁLOGO DE MODELOS === */}
                 <div className={`rounded-xl border shadow-lg p-6 ${t.card}`}>
                   <div className="flex justify-between items-start mb-4">
@@ -2404,6 +2409,7 @@ export default function App() {
                     </table>
                   </div>
                 </div>
+                </>)}
               </>
             )}
           </div>
@@ -2429,6 +2435,9 @@ export default function App() {
                     <p className={`text-xs mt-1 ${t.textMuted}`}>Proyección de matrices y curvas de entrega.</p>
                   </div>
                   <div className={`flex p-1.5 rounded-xl border mt-4 sm:mt-0 ${theme==='dark'?'bg-white/[0.045] backdrop-blur-xl transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] border-white/10':'bg-gray-100 border-gray-200'}`}>
+                    <button onClick={()=>setReportView('resultante')} className={`flex items-center px-6 py-2.5 rounded-lg text-sm transition-all ${reportView==='resultante' ? t.toggleActive : t.toggleInactive}`}>
+                      <Calculator size={16} className="mr-2" /> Resultante Ppto
+                    </button>
                     <button onClick={()=>setReportView('sugerido')} className={`flex items-center px-6 py-2.5 rounded-lg text-sm transition-all ${reportView==='sugerido' ? t.toggleActive : t.toggleInactive}`}>
                       <Compass size={16} className="mr-2" /> 1. Forecast Sugerido
                     </button>
@@ -2592,17 +2601,17 @@ export default function App() {
                 <div className={`rounded-xl border shadow-lg p-6 mt-6 ${t.card}`}>
                   <h2 className={`text-lg font-bold mb-4 flex items-center ${t.textMain}`}>
                     <DollarSign className={`mr-3 ${t.textAccent2}`}/> 
-                    Resumen OTB General ({reportView === 'sugerido' ? 'Sugerido' : 'Real'})
+                    Resumen OTB General ({viewLabel})
                   </h2>
                   <div className={`overflow-x-auto rounded-xl border ${t.border}`}>
                     <table className="w-full text-left text-sm border-collapse">
                       <thead>
                         <tr className={`text-xs uppercase border-b tracking-wider ${t.tableHead}`}>
                           <th className="p-4 font-bold">GOA</th>
-                          <th className={`p-4 text-right border-l ${t.border}`}>Pzs {reportView === 'sugerido' ? 'Sugeridas' : 'Compradas'}</th>
+                          <th className={`p-4 text-right border-l ${t.border}`}>Pzs {reportView === 'preventa' ? 'Compradas' : 'Sugeridas'}</th>
                           <th className="p-4 text-right">Meta Historia</th>
                           <th className="p-4 text-right">Var. Historia</th>
-                          <th className={`p-4 text-right border-l font-bold ${t.border} ${t.textMain}`}>$ {reportView === 'sugerido' ? 'Sugerido' : 'Invertido'}</th>
+                          <th className={`p-4 text-right border-l font-bold ${t.border} ${t.textMain}`}>$ {reportView === 'preventa' ? 'Invertido' : 'Sugerido'}</th>
                           <th className={`p-4 text-right font-bold ${t.textMain}`}>Presupuesto ($)</th>
                           <th className={`p-4 text-right font-black ${t.textMain} ${theme==='dark'?'bg-purple-900/20':'bg-indigo-100'}`}>OTB Restante</th>
                         </tr>
@@ -2662,7 +2671,7 @@ export default function App() {
                         <CalendarDays className={`mr-3 ${t.textAccent1}`}/> Proyección de Entrega Mensual
                       </h2>
                       <p className={`text-xs mt-1 font-bold ${reportView==='sugerido'?t.textAccent2:t.textAccent1}`}>
-                        Piezas {reportView==='sugerido'?'sugeridas':'reales'} · Gastado y OTB restante por GOA y mes (Budget mes = Budget GOA × % Forecast).
+                        Piezas {reportView==='preventa'?'reales':'sugeridas'} · Gastado y OTB restante por GOA y mes (Budget mes = Budget GOA × % Forecast).
                       </p>
                     </div>
                   </div>
@@ -2699,10 +2708,12 @@ export default function App() {
                             {[0,1,2,3,4,5].map((o) => {
                               const w = monthsWeights[o];
                               const pctVal = Number(w?.value ?? w) || 0;
-                              const pzsCalc = useReal ? (realPzsByMonth[o] || 0) : Math.round((g.boughtPzs || 0) * (pctVal / 100));
+                              const pzsCalc = g.resMonth ? g.resMonth.pzs[o] : useReal ? (realPzsByMonth[o] || 0) : Math.round((g.boughtPzs || 0) * (pctVal / 100));
                               // Gastado $ del mes
                               let pesosCalc = 0;
-                              if (useReal) {
+                              if (g.resMonth) {
+                                pesosCalc = Math.round(g.resMonth.val[o]);
+                              } else if (useReal) {
                                 pesosCalc = goaPurchases.filter(p => p.monthOffset === o).reduce((ss, p) => ss + (p.totalRetailValue || 0), 0);
                               } else {
                                 pesosCalc = Math.round((g.spentValue || 0) * (pctVal / 100));
@@ -2730,6 +2741,7 @@ export default function App() {
                           {[0,1,2,3,4,5].map(o => {
                              const filtered = reportData.goaMetrics.filter(g => (g.boughtPzs || 0) > 0 || (g.budget || 0) > 0);
                              const sumMes = filtered.reduce((s, g) => {
+                               if (g.resMonth) return s + g.resMonth.pzs[o];
                                const goaPurchases = (purchases || []).filter(p => p.goaId === g.id && p.monthOffset !== null && p.monthOffset !== undefined);
                                const useReal = reportView === 'preventa' && goaPurchases.length > 0;
                                if (useReal) {
@@ -2739,6 +2751,7 @@ export default function App() {
                                return s + Math.round((g.boughtPzs || 0) * ((Number(w?.value ?? w) || 0) / 100));
                              }, 0);
                              const sumMesPesos = filtered.reduce((s, g) => {
+                               if (g.resMonth) return s + Math.round(g.resMonth.val[o]);
                                const goaPurchases = (purchases || []).filter(p => p.goaId === g.id && p.monthOffset !== null && p.monthOffset !== undefined);
                                const useReal = reportView === 'preventa' && goaPurchases.length > 0;
                                if (useReal) {
@@ -2770,7 +2783,7 @@ export default function App() {
                 {(buckets || []).length > 0 && (
                   <div className={`rounded-xl border shadow-lg p-6 ${t.card}`}>
                     <h2 className={`text-lg font-bold mb-1 flex items-center ${t.textMain}`}>
-                      <Layers className={`mr-3 ${t.textAccent1}`}/> Resumen por Bucket ({reportView === 'sugerido' ? 'Sugerido' : 'Real'})
+                      <Layers className={`mr-3 ${t.textAccent1}`}/> Resumen por Bucket ({viewLabel})
                     </h2>
                     <p className={`text-xs mb-5 ${t.textMuted}`}>Vista cruzada Bucket × GOA × Mes con cantidades y montos.</p>
                     <div className={`overflow-x-auto rounded-xl border ${t.border}`}>
@@ -2787,7 +2800,8 @@ export default function App() {
                           {(() => {
                             // Source: si reportView===preventa usa purchases; sino usa suggestedPlans
                             const isPreventa = reportView === 'preventa';
-                            const items = isPreventa ? (purchases || []) : (suggestedPlans || []);
+                            const isRes = reportView === 'resultante';
+                            const items = isRes ? [] : isPreventa ? (purchases || []) : (suggestedPlans || []);
                             // Agrupar por bucketId+goaId
                             const groups = {};
                             items.forEach(it => {
@@ -2809,6 +2823,12 @@ export default function App() {
                                 groups[key].byMonth[monthOff] += totalPzs;
                                 groups[key].byMonthValue[monthOff] += totalPzs * (Number(it.pvp) || 0);
                               }
+                            });
+                            if (isRes) autoPlanDist.forEach(({ row: r, cells }) => {
+                              const key = `${r.bucket?.id || 'null'}|${r.goa.id}`;
+                              if (!groups[key]) groups[key] = { bucketId: r.bucket?.id || null, goaId: r.goa.id, byMonth: {0:0,1:0,2:0,3:0,4:0,5:0}, byMonthValue: {0:0,1:0,2:0,3:0,4:0,5:0} };
+                              const pz = cells.reduce((a, x) => a + x.pzs, 0);
+                              groups[key].byMonth[r.mes] += pz; groups[key].byMonthValue[r.mes] += pz * r.pvp;
                             });
                             const rows = Object.values(groups);
                             if (rows.length === 0) return <tr><td colSpan="9" className={`p-6 text-center ${t.textMuted}`}>Sin asignaciones de Bucket × Mes en esta vista.</td></tr>;
@@ -2847,7 +2867,7 @@ export default function App() {
                   <div className={`rounded-xl border shadow-lg p-6 max-h-[600px] overflow-y-auto custom-scrollbar ${t.card}`}>
                     <h2 className={`text-lg font-bold mb-4 flex items-center ${t.textMain}`}>
                       <Store className={`mr-3 ${t.textAccent1}`}/> 
-                      Assortment por Tienda ({reportView === 'sugerido' ? 'Sugerido' : 'Real'})
+                      Assortment por Tienda ({viewLabel})
                     </h2>
                     <table className="w-full text-left text-sm border-collapse">
                       <thead className={`sticky top-0 z-10 shadow-sm border-b ${t.cardInner}`}>
@@ -2892,7 +2912,7 @@ export default function App() {
                   <div className={`rounded-xl border shadow-lg p-6 max-h-[600px] overflow-y-auto custom-scrollbar ${t.card}`}>
                     <h2 className={`text-lg font-bold mb-4 flex items-center ${t.textMain}`}>
                       <FileSpreadsheet className="mr-3 text-green-500"/> 
-                      Matriz de Distribución ({reportView === 'sugerido' ? 'Sugerida' : 'Real'})
+                      Matriz de Distribución ({viewLabel})
                     </h2>
                     
                     {Object.keys(reportData?.matrixByGoa || {}).length === 0 || Object.values(reportData?.matrixByGoa || {}).every(d => (d || []).reduce((acc, row) => acc + (row.totalPzs || 0), 0) === 0) ? (
@@ -2909,7 +2929,7 @@ export default function App() {
                         <div key={`matriz-${goaName}`} className={`mb-8 border rounded-xl overflow-hidden shadow-sm ${t.border}`}>
                           <div className={`border-b p-3 font-black text-sm uppercase tracking-widest text-center flex justify-between items-center px-5 ${t.cardInner} ${t.textMain}`}>
                             <span className="w-1/3"></span><span className="w-1/3 text-center">{goaName}</span>
-                            <span className="w-1/3 text-right"><span className={`text-[9px] px-2 py-1 rounded ${t.badgeOther}`}>{reportView==='sugerido'?'Proyectado':'Comprado'}</span></span>
+                            <span className="w-1/3 text-right"><span className={`text-[9px] px-2 py-1 rounded ${t.badgeOther}`}>{reportView==='preventa'?'Comprado':'Proyectado'}</span></span>
                           </div>
                           <table className="w-full text-center text-sm border-collapse">
                             <thead>

@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useAltTabs } from '../utils/excelNav';
 import * as Icons from '../utils/icons';
+import { scoreItems, assignClusters, DEFAULT_SCORE_WEIGHTS, DEFAULT_CLUSTER_STRATEGY } from '../utils/clusterScore';
 import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
 // ============================================================================
@@ -134,7 +135,8 @@ export default function Distribucion() {
   }, [numClusters]);
 
   const [rawStoreData, setRawStoreData] = useState([]);
-  const [scoreWeights, setScoreWeights] = useState({ sales: 50, margin: 50, rotation: 0 }); 
+  const [scoreWeights, setScoreWeights] = useState(DEFAULT_SCORE_WEIGHTS);
+  const [clusterStrategy, setClusterStrategy] = useState(DEFAULT_CLUSTER_STRATEGY);
   const [stores, setStores] = useState([]);
   useAltTabs(stores.length ? [1, 2] : [1], setActiveTab);
   const [goas, setGoas] = useState([]);
@@ -233,6 +235,7 @@ useEffect(() => {
         }
         if (d.numClusters)    setNumClusters(d.numClusters);
         if (d.scoreWeights)   setScoreWeights(d.scoreWeights);
+        if (d.clusterStrategy) setClusterStrategy(d.clusterStrategy);
         if (d.distributionResult?.length) setDistributionResult(d.distributionResult);
         if (d.packCurves)     setPackCurves(d.packCurves);
         if (d.packAllowSwap)  setPackAllowSwap(d.packAllowSwap);
@@ -254,12 +257,12 @@ useEffect(() => {
       localStorage.setItem('gop_distribucion', JSON.stringify({
         stores, goas, rawStoreData, chequera,
         brandMatrix, matrixMetadata,
-        numClusters, scoreWeights, distributionResult,
+        numClusters, scoreWeights, clusterStrategy, distributionResult,
         packCurves, packAllowSwap, packMinClusters, packCoverThreshold, mosTarget, seasonalMode, forecastMonth,
         useAdjustedDemand, alpha, idealCurves, adjustedDataCache,
       }));
     } catch {}
-  }, [stores, goas, rawStoreData, chequera, brandMatrix, matrixMetadata, numClusters, scoreWeights, distributionResult, packCurves, packAllowSwap, packMinClusters, packCoverThreshold, mosTarget, seasonalMode, forecastMonth, useAdjustedDemand, alpha, idealCurves, adjustedDataCache]);
+  }, [stores, goas, rawStoreData, chequera, brandMatrix, matrixMetadata, numClusters, scoreWeights, clusterStrategy, distributionResult, packCurves, packAllowSwap, packMinClusters, packCoverThreshold, mosTarget, seasonalMode, forecastMonth, useAdjustedDemand, alpha, idealCurves, adjustedDataCache]);
   
   const themes = {
     dark: {
@@ -293,7 +296,7 @@ useEffect(() => {
     return row.split(new RegExp(`\\${sep}(?=(?:(?:[^"]*"){2})*[^"]*$)`)).map(c => c.replace(/^"|"$/g, '').trim());
   };
 
-  const recalculateClusters = (rawData, weights, currentClusters) => {
+  const recalculateClusters = (rawData, weights, currentClusters, strategy = clusterStrategy) => {
     if(!rawData || rawData.length === 0) return;
     
     const storeMap = new Map();
@@ -332,10 +335,12 @@ useEffect(() => {
 
       const key = `${row.centro}|${row.goa}`;
       if (!storeGoaAgg[key]) {
-        storeGoaAgg[key] = { centro: row.centro, goa: row.goa, sales: 0, margin: 0, rotation: row.rotation, oh: 0, oo: 0, trend3M: 0 };
+        storeGoaAgg[key] = { centro: row.centro, goa: row.goa, sales: 0, margin: 0, rotation: 0, _mW: 0, _rSum: 0, _rN: 0, oh: 0, oo: 0, trend3M: 0 };
       }
       storeGoaAgg[key].sales += row.sales;
-      storeGoaAgg[key].margin += row.margin;
+      // Margen % ponderado por venta y rotación promedio (igual que Assortment)
+      storeGoaAgg[key]._mW += (Number(row.margin) || 0) * (Number(row.sales) || 0);
+      if (Number.isFinite(Number(row.rotation))) { storeGoaAgg[key]._rSum += Number(row.rotation); storeGoaAgg[key]._rN += 1; }
       storeGoaAgg[key].oh += row.oh;
       storeGoaAgg[key].oo += (row.oo || 0);
       storeGoaAgg[key].trend3M += (row.trend3M || 0);
@@ -348,47 +353,28 @@ useEffect(() => {
       }
     });
 
-    const maxVals = {}; 
     const dataByGoa = {};
-    
     Object.values(storeGoaAgg).forEach(agg => {
-      if (!dataByGoa[agg.goa]) { 
-          dataByGoa[agg.goa] = []; 
-          maxVals[agg.goa] = { sales: 0, margin: 0, rotation: 0 }; 
-      }
-      dataByGoa[agg.goa].push(agg);
-      if (agg.sales > maxVals[agg.goa].sales) maxVals[agg.goa].sales = agg.sales;
-      if (agg.margin > maxVals[agg.goa].margin) maxVals[agg.goa].margin = agg.margin;
-      if (agg.rotation > maxVals[agg.goa].rotation) maxVals[agg.goa].rotation = agg.rotation;
+      agg.margin = agg.sales > 0 ? agg._mW / agg.sales : 0;
+      agg.rotation = agg._rN > 0 ? agg._rSum / agg._rN : 0;
+      (dataByGoa[agg.goa] = dataByGoa[agg.goa] || []).push(agg);
     });
 
     Object.keys(dataByGoa).forEach(goaName => {
-      const storesInGoa = dataByGoa[goaName].map(item => {
-        const nSales = maxVals[goaName].sales > 0 ? item.sales / maxVals[goaName].sales : 0;
-        const nMargin = maxVals[goaName].margin > 0 ? item.margin / maxVals[goaName].margin : 0;
-        const nRot = maxVals[goaName].rotation > 0 ? item.rotation / maxVals[goaName].rotation : 0;
-        const score = (nSales * weights.sales) + (nMargin * weights.margin) + (nRot * weights.rotation);
-        return { ...item, score };
-      });
-
-      const numClust = currentClusters.length;
-      storesInGoa.forEach((item) => {
-        let normalizedScore = item.score / 100;
-        if (normalizedScore > 1) normalizedScore = 1;
-        if (normalizedScore < 0) normalizedScore = 0;
-
-        let clusterIndex = Math.floor((1 - normalizedScore) * numClust);
-        if (clusterIndex >= numClust) clusterIndex = numClust - 1;
-        
+      // Lógica compartida con Assortment (utils/clusterScore.js)
+      const storesInGoa = scoreItems(dataByGoa[goaName], weights);
+      assignClusters(storesInGoa, currentClusters, strategy).forEach((item) => {
         const store = storeMap.get(item.centro);
-        store.clusters[goaName] = currentClusters[clusterIndex];
+        store.clusters[goaName] = item.cluster;
         store.goaScores[goaName] = item.score; 
         store.goaSales[goaName] = item.sales; 
         store.goaMargin[goaName] = item.margin; 
         store.goaOH[goaName] = item.oh; 
         store.goaOO[goaName] = item.oo || 0;
         store.goaTrend3M[goaName] = item.trend3M || 0;
-        store.score = (store.score + item.score) / 2; 
+        store._scoreSum = (store._scoreSum || 0) + item.score;
+        store._scoreN = (store._scoreN || 0) + 1;
+        store.score = store._scoreSum / store._scoreN;
       });
 
       setGoas(prev => {
@@ -406,14 +392,10 @@ useEffect(() => {
       store.margin = store._salesForMargin > 0 ? store._marginWeighted / store._salesForMargin : 0;
       delete store._marginWeighted;
       delete store._salesForMargin;
-
-      let normalizedScore = store.score / 100;
-      if (normalizedScore > 1) normalizedScore = 1;
-      if (normalizedScore < 0) normalizedScore = 0;
-      let clusterIndex = Math.floor((1 - normalizedScore) * currentClusters.length);
-      if (clusterIndex >= currentClusters.length) clusterIndex = currentClusters.length - 1;
-      store.globalCluster = currentClusters[clusterIndex];
+      delete store._scoreSum; delete store._scoreN;
     });
+    // Clúster global de la tienda: mismo ranking/estrategia que por GOA (idéntico a Assortment)
+    assignClusters(Array.from(storeMap.values()), currentClusters, strategy).forEach(st => { st.globalCluster = st.cluster; delete st.cluster; delete st.clusterIdx; });
 
     // brandScores normalizados (0-100) por GOA|MARCA — solo si el CSV trajo marca
     const maxBrandSales = {}; // { [goa|marca]: maxSales }
@@ -433,8 +415,8 @@ useEffect(() => {
   };
 
   useEffect(() => {
-    if (rawStoreData.length > 0) recalculateClusters(rawStoreData, scoreWeights, activeClusters);
-  }, [scoreWeights, activeClusters]);
+    if (rawStoreData.length > 0) recalculateClusters(rawStoreData, scoreWeights, activeClusters, clusterStrategy);
+  }, [scoreWeights, activeClusters, clusterStrategy]);
 
 
   const handleStoreCSVUpload = (e) => {
@@ -499,7 +481,7 @@ useEffect(() => {
       
       setGoas([]); setStores([]); setRawStoreData(extractedRawData);
       setAdjustedDataStale(true);
-      recalculateClusters(extractedRawData, scoreWeights, activeClusters);
+      recalculateClusters(extractedRawData, scoreWeights, activeClusters, clusterStrategy);
       if(fileInputRef.current) fileInputRef.current.value = '';
     };
     reader.readAsText(file, 'ISO-8859-1'); 
@@ -3528,6 +3510,12 @@ useEffect(() => {
                 <div className={`flex items-center p-3 rounded-lg border ${theme==='dark'?'bg-black/20 border-black/30':'bg-white shadow-sm'}`}>
                   <Icons.Settings size={20} className={`mr-3 ${t.textAccent2}`} />
                   <div className="flex flex-col">
+                    <label className={`text-[10px] font-bold uppercase tracking-wider ${t.textMuted}`}>Estrategia</label>
+                    <select value={clusterStrategy} onChange={(e) => setClusterStrategy(e.target.value)} className={`mt-1 mb-3 p-1.5 rounded outline-none font-bold text-sm cursor-pointer transition-colors ${t.inputYellow}`}>
+                      <option value="piramide">Pirámide Retail (Concentrar en Top)</option>
+                      <option value="lineal">Equitativa (Partes Iguales)</option>
+                      <option value="valor">Absoluta (Por Valor del Score)</option>
+                    </select>
                     <label className={`text-[10px] font-bold uppercase tracking-wider ${t.textMuted}`}>Cantidad de Clústeres</label>
                     <select value={numClusters} onChange={(e) => setNumClusters(Number(e.target.value))} className={`mt-1 p-1.5 rounded outline-none font-bold text-sm cursor-pointer transition-colors ${t.inputYellow}`}>
                       {[3, 4, 5, 6, 7, 8, 9, 10].map(n => <option key={`opt-${n}`} value={n}>{n} Niveles ({n===6?'AA-E':'A-'+String.fromCharCode(64+n)})</option>)}
