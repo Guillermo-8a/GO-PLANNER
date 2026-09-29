@@ -191,6 +191,39 @@ function allocate(otbArr, ents, cfg = {}, locks = {}) {
   return { rows, colTot };
 }
 
+// Inventario por marca = consecuencia de los demás ratios: Inv ini Ene (bajada del OTB) y después
+// Inv[k+1] = Inv[k] + Compra[k] − Venta[k] − Mkd[k]  (a precio de venta; CMSI es costo, no mercancía).
+// Si una marca queda negativa en un mes, se le pasa compra de ese mes desde marcas con compra e inventario
+// disponibles (el total del mes no cambia y ninguna compra ni inventario queda negativo). Celdas de compra fijas no se tocan.
+function rollInventory(A, entities, otb, cfgInv = {}, lkC = {}) {
+  const n = entities.length;
+  if (!n) return;
+  const inv0 = allocate([+otb.inv?.[0] || 0], A.inv.rows.map((r) => ({ name: r.name, base: [r.base[0]] })), cfgInv, {}).rows.map((r) => r.plan[0]);
+  const C = A.compra.rows.map((r) => [...r.plan]), V = A.vta.rows.map((r) => r.plan), M = A.mkd.rows.map((r) => r.plan);
+  const I = rng(n).map((i) => { const a = zeros(13); a[0] = inv0[i]; return a; });
+  const fixed = (i, k) => lkC[entities[i].name]?.[k] != null;
+  for (let k = 0; k < 12; k++) {
+    const next = (i) => I[i][k] + C[i][k] - (+V[i][k] || 0) - (+M[i][k] || 0);
+    rng(n).forEach((i) => {
+      let d = -next(i);
+      if (d <= 0.5 || fixed(i, k)) return;
+      const donors = rng(n).filter((j) => j !== i && !fixed(j, k)).map((j) => ({ j, cap: Math.max(0, Math.min(C[j][k], next(j))) })).filter((x) => x.cap > 0);
+      const cap = sum(donors.map((x) => x.cap)); if (!cap) return;
+      const take = Math.min(d, cap);
+      donors.forEach(({ j, cap: c }) => { C[j][k] -= take * c / cap; });
+      C[i][k] += take;
+    });
+    rng(n).forEach((i) => { I[i][k + 1] = next(i); });
+  }
+  const upd = (key, P) => {
+    const tot = sum(P.map(sum)) || 1;
+    A[key].rows.forEach((r, i) => { r.plan = P[i]; r.planTot = sum(P[i]); r.share = r.planTot / tot; });
+    A[key].colTot = rng(P[0].length).map((k) => sum(P.map((p) => p[k])));
+  };
+  upd('compra', C); upd('inv', I);
+  A.inv.negativos = I.some((a) => a.some((v) => v < -0.5));
+}
+
 // Inventario = inv INICIAL por mes (+ cierre en idx 12). Para un periodo: inv fin = inv ini del mes siguiente.
 // Rotación = Σ venta del periodo / promedio de (n+1) inventarios (año: 12 ventas / 13 inventarios).
 function kpis(d, ms) {
@@ -322,10 +355,14 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
   const cmpLbl = baseMode === 'ly' ? 'LLY' : 'LY';
 
   const alloc = useMemo(
-    () => Object.fromEntries(METRICS.map((m) => {
-      const ents = entities.map((e) => ({ name: e.name, base: baseOf(e, m.key), hist: e.hist?.[m.key] || zeros(nCols(m.key)) }));
-      return [m.key, allocate(otb[m.key] || zeros(nCols(m.key)), ents, cfg[m.key], locks[m.key])];
-    })),
+    () => {
+      const A = Object.fromEntries(METRICS.map((m) => {
+        const ents = entities.map((e) => ({ name: e.name, base: baseOf(e, m.key), hist: e.hist?.[m.key] || zeros(nCols(m.key)) }));
+        return [m.key, allocate(otb[m.key] || zeros(nCols(m.key)), ents, cfg[m.key], locks[m.key])];
+      }));
+      rollInventory(A, entities, otb, cfg.inv, locks.compra);
+      return A;
+    },
     // eslint-disable-next-line react-hooks/exhaustive-deps
     [otb, entities, cfg, locks, isFc]
   );
@@ -398,7 +435,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
   const setCfg = (name, field, v) => setSt((s) => ({ ...s, cfg: { ...s.cfg, [metric]: { ...(s.cfg[metric] || {}), [name]: { ...(s.cfg[metric]?.[name] || {}), [field]: v } } } }));
   const setLock = (name, k, v) => setSt((s) => {
     const ml = { ...(s.locks[metric] || {}) }; const row = { ...(ml[name] || {}) };
-    if (v === '') delete row[k]; else row[k] = v;
+    if (v === '') delete row[k]; else row[k] = metric === 'utilidad' ? v : Math.max(0, v); // sin compras/inv/venta negativas
     ml[name] = row; return { ...s, locks: { ...s.locks, [metric]: ml } };
   });
   // Pegado en bajada: col 0 = share manual, 1 = estrategia, 2.. = meses (quedan fijos)
@@ -410,7 +447,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
       line.forEach((v, j) => {
         const c = c0 + j;
         if (c <= 1) mc[name] = { ...(mc[name] || {}), [c === 0 ? 'share' : 'adj']: v };
-        else if (c - 2 < nCols(metric) && v !== '') ml[name] = { ...(ml[name] || {}), [c - 2]: v };
+        else if (c - 2 < nCols(metric) && v !== '' && !(metric === 'inv' && c > 2)) ml[name] = { ...(ml[name] || {}), [c - 2]: metric === 'utilidad' ? v : Math.max(0, v) };
       });
     });
     return { ...s, cfg: { ...s.cfg, [metric]: mc }, locks: { ...s.locks, [metric]: ml } };
@@ -589,7 +626,9 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
                       <td className={`${td} font-bold ${rotP != null && rotL != null ? (rotP >= rotL ? good : bad) : t.text}`}>{dec(rotP)}</td>
                       <td className={`${td} ${t.textMuted}`}>{dec(rotL)}</td>
                     </>}
-                    {KC.map((k) => (
+                    {KC.map((k) => isInv && k > 0 ? (
+                      <td key={k} className={`${td} ${r.plan[k] < -0.5 ? bad : t.text}`} title="Inv = inv anterior + compra − venta − mkd">{fmt(r.plan[k])}</td>
+                    ) : (
                       <td key={k} className="px-0.5 py-0.5">
                         <NumCell value={Math.round(r.plan[k])} onCommit={(v) => setLock(r.name, k, v)} onPasteGrid={paste(k + 2)} grid="baj" r={ri} c={k + 2} className={lk[k] != null ? t.inputY : t.input} />
                       </td>
@@ -623,6 +662,8 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
           <p className={`mt-2 text-[10px] ${t.textMuted}`}>
             Pega bloques desde Excel (Cmd+V) sobre la primera celda: share, estrategia o meses. Share manual vacío = share de la base ({baseLbl}). Estrategia % multiplica el share (se renormaliza a 100%). Editar/pegar un mes lo fija (amarillo); el resto se reacomoda para cuadrar el OTB mensual.
             {' LY = HIST (año en curso) hasta el corte + IS (pronóstico del resto del año con el modelo de mejor accuracy sobre LLY + HIST: Estacional YTD, Holt, Holt-Winters; backtest en los últimos ≤3 meses de HIST; filas FCST del Excel tienen prioridad). Base LY + LLY = promedio de ambos años para share y estacionalidad; si una marca tiene un año en 0 (nueva o de salida) usa solo el otro.'}
+            {isInv && ' Inventario: solo se captura/ajusta Ene (inv inicial); los demás meses = inv anterior + compra − venta − mkd. Si una marca quedaría en negativo se le reasigna compra de ese mes desde otras marcas (el total no cambia).'}
+            {isInv && A.negativos && ' ⚠ Aún hay inventarios negativos: la compra total del OTB en esos meses no alcanza.'}
             {isInv && ' Rot final = Vta plan / promedio de 13 inventarios plan de la marca (verde si ≥ ${cmpLbl}).'}
           </p>
         </div>
