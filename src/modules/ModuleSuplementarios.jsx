@@ -440,7 +440,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
   });
   // Pegado en bajada: col 0 = share manual, 1 = estrategia, 2.. = meses (quedan fijos)
   const pasteBaj = (r0, c0, grid) => setSt((s) => {
-    const names = entities.map((e) => e.name);
+    const names = bajNames; // orden en pantalla
     const mc = { ...(s.cfg[metric] || {}) }, ml = { ...(s.locks[metric] || {}) };
     grid.forEach((line, i) => {
       const name = names[r0 + i]; if (!name) return;
@@ -550,6 +550,14 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
 
   // ── Tab 2: Bajada ──
   const A = alloc[metric];
+  // Orden de marcas en la bajada: venta LY (default), share base del ratio, plan del ratio o A–Z
+  const sortBaj = st.sortBaj || 'ly';
+  const vtaLyOf = (name) => sum(byEnt[name]?.hist.vta || []);
+  const bajRows = [...A.rows].sort((a, b) => sortBaj === 'az' ? a.name.localeCompare(b.name)
+    : sortBaj === 'base' ? (b.baseShare || 0) - (a.baseShare || 0)
+    : sortBaj === 'plan' ? b.planTot - a.planTot
+    : vtaLyOf(b.name) - vtaLyOf(a.name));
+  const bajNames = bajRows.map((r) => r.name);
   const KC = rng(nCols(metric));
   const mCfg = cfg[metric] || {}, mLocks = locks[metric] || {};
   const otbM = otb[metric] || zeros(nCols(metric));
@@ -579,6 +587,11 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
             </select>
           </label>
         )}
+        <label className={`flex items-center gap-1.5 text-xs ${t.textMuted}`}>Ordenar
+          <select value={sortBaj} onChange={(e) => setSt((s) => ({ ...s, sortBaj: e.target.value }))} style={selStyle} className={selCls}>
+            <option value="ly">Venta {cmpLbl}</option><option value="base">Share base</option><option value="plan">Plan</option><option value="az">A–Z</option>
+          </select>
+        </label>
         <button onClick={copyCfgToAll} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg ${t.btnGhost}`} title="Aplica share y estrategia de este ratio a todos"><Copy size={13} />Copiar ajustes a todos</button>
         <button onClick={() => clearLocks()} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg ${t.btnGhost}`}><RotateCcw size={13} />Liberar fijas</button>
       </div>
@@ -598,7 +611,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
               {KC.map((k) => <th key={k} className={th}>{MLABEL[k]}</th>)}
             </tr></thead>
             <tbody>
-              {A.rows.map((r, ri) => {
+              {bajRows.map((r, ri) => {
                 const c = mCfg[r.name] || {}; const lk = mLocks[r.name] || {};
                 const tot = (arr) => (isInv ? sum(arr) / arr.length : sum(arr));
                 const g = growth(tot(r.plan), tot(byEnt[r.name].hist[metric]));
@@ -684,7 +697,8 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
   ];
   const tot = kpis(otb, R12);
   const totInvShareBase = sum(entities.map((e) => kpis(byEnt[e.name].plan, R12).invAvg)) || 1;
-  const ranking = entities.map((e) => {
+  const activos = entities.filter((e) => sum(byEnt[e.name].plan.vta || []) > 0); // sin share 0 en Análisis
+  const ranking = activos.map((e) => {
     const p = kpis(byEnt[e.name].plan, R12), l = kpis(byEnt[e.name].hist, R12);
     const shV = tot.vta ? p.vta / tot.vta : null, shI = p.invAvg / totInvShareBase;
     return { name: e.name, p, l, g: growth(p.vta, l.vta), shV, shI, gap: shV != null ? shI - shV : null };
@@ -696,7 +710,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
         <span className={`text-xs ${t.textMuted}`}>{dim}:</span>
         <select value={ent} onChange={(e) => setEnt(e.target.value)} style={selStyle} className={selCls}>
           <option value="__total">Total OTB</option>
-          {entities.map((e) => <option key={e.name} value={e.name}>{e.name}</option>)}
+          {[...activos].sort((a, b) => sum(byEnt[b.name].plan.vta) - sum(byEnt[a.name].plan.vta)).map((e) => <option key={e.name} value={e.name}>{e.name}</option>)}
         </select>
       </div>
       <div className="grid lg:grid-cols-2 gap-4">
