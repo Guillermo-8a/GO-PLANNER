@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback, startTransition } from 'react';
+import { bestForecast } from '../utils/fcstEngine';
 import { useAltTabs } from '../utils/excelNav';
 import * as Icons from '../utils/icons';
 
@@ -1106,7 +1107,21 @@ export default function Forecast() {
         return arr;
       };
 
+      // Escenario MODELO: mismo motor que Forecast/Suplementarios (SES, Holt, Holt-Winters, Estacional con
+      // backtest; gana el de mejor accuracy) sobre la serie mensual real del cruce.
+      const realX = serieRaw.filter(r => !r.faltante).map(r => r.x);
+      const firstX = Math.min(...realX), lastX = Math.max(...realX);
+      const serieModelo = serieRaw.filter(r => r.x >= firstX && r.x <= lastX).sort((a, b) => a.x - b.x).map(r => r.venta);
+      const hModelo = Math.max(1, (anioPlan - baseAnio) * 12 + 11 - lastX);
+      const fm = bestForecast(serieModelo, hModelo, 12);
+      const proyectarModelo = (anio, mes) => {
+        if (!inMatriz(mes)) return 0;
+        const k = (anio - baseAnio) * 12 + (mes - 1) - lastX - 1;
+        return k >= 0 ? (fm.future[k] || 0) : proyectarBase(anio, mes);
+      };
+
       const escenarios = {
+        modelo:      buildIS(proyectarModelo),
         conservador: buildIS(proyectarConservador),
         limpio:      buildIS(proyectarLimpio),
         optimista:   buildIS(proyectarOptimista),
@@ -1115,7 +1130,7 @@ export default function Forecast() {
 
       // 8) Plan año siguiente — uno por escenario (L2 elegirá según activo)
       const planEsc = {};
-      [['conservador', proyectarConservador], ['limpio', proyectarLimpio],
+      [['modelo', proyectarModelo], ['conservador', proyectarConservador], ['limpio', proyectarLimpio],
        ['optimista', proyectarOptimista], ['base', proyectarBase]].forEach(([k, fn]) => {
         planEsc[k] = [];
         for (let mes = 1; mes <= 12; mes++) planEsc[k].push({ mes, valor: fn(anioPlan, mes) });
@@ -1129,13 +1144,14 @@ export default function Forecast() {
         conservador: tieneCompletos >= 2 ? Math.min(1, 0.5 + (1 - r2) * 0.5) : 0.3,
         optimista:   r2 > 0.3 && slope > 0 ? Math.min(1, r2 + 0.2) : Math.max(0.2, r2 * 0.6),
         limpio:      tieneCompletos >= 2 ? 0.75 : 0.4,
+        modelo:      fm.accuracy != null ? fm.accuracy / 100 : 0.3,
         editable:    1.0,
       };
 
       mapa[key] = {
         insuficiente: false,
         serie, regresion, factores, factoresLimpio, meta,
-        escenarios, planEsc, confidence,
+        escenarios, planEsc, confidence, modelo: { name: fm.model, acc: fm.accuracy },
         mesesAplicables: mesesSet.size ? Array.from(mesesSet).sort((a,b) => a-b) : null,
         totalUltAnio: serie.filter(s => s.anio === anioActual - 1).reduce((s,x) => s + x.venta, 0),
       };
@@ -1175,8 +1191,8 @@ export default function Forecast() {
     if (!r || r.insuficiente) return r;
 
     // IS según escenario: si activo es 'editable', parte de 'base'; si no, copia el escenario
-    const fuenteIS = escenarioActivo === 'editable' ? r.escenarios.base : r.escenarios[escenarioActivo];
-    const fuentePlan = escenarioActivo === 'editable' ? r.planEsc.base : r.planEsc[escenarioActivo];
+    const fuenteIS = escenarioActivo === 'editable' ? r.escenarios.modelo : r.escenarios[escenarioActivo];
+    const fuentePlan = escenarioActivo === 'editable' ? r.planEsc.modelo : r.planEsc[escenarioActivo];
 
     const inSeason = fuenteIS.map(x => {
       const overrideKey = `${centro}|${goa}|${anioActual}|${x.mes}`;
@@ -1230,8 +1246,8 @@ export default function Forecast() {
       }
 
       // Aplicar escenario activo + overrides (operación barata O(12))
-      const fuenteIS = escenarioActivo === 'editable' ? r.escenarios.base : r.escenarios[escenarioActivo];
-      const fuentePlan = escenarioActivo === 'editable' ? r.planEsc.base : r.planEsc[escenarioActivo];
+      const fuenteIS = escenarioActivo === 'editable' ? r.escenarios.modelo : r.escenarios[escenarioActivo];
+      const fuentePlan = escenarioActivo === 'editable' ? r.planEsc.modelo : r.planEsc[escenarioActivo];
 
       let totalInSeason = 0;
       fuenteIS.forEach(x => {
@@ -1552,7 +1568,7 @@ export default function Forecast() {
     planCruceCompleto.forEach(r => {
       const cruce = forecastL1.mapa[`${r.centro}|${r.goa}`];
       if (!cruce || cruce.insuficiente) return;
-      const planEsc = cruce.planEsc[escenarioActivo === 'editable' ? 'base' : escenarioActivo];
+      const planEsc = cruce.planEsc[escenarioActivo === 'editable' ? 'modelo' : escenarioActivo];
       planEsc.forEach((m, i) => sugVta[i] += m.valor);
     });
 
@@ -1665,7 +1681,8 @@ export default function Forecast() {
       const invFinal = (i < 11) ? invInicialArr[i+1] : (invFinalCierre ?? invInicial);
       const mkd = venta * (mkdPctMes[i] || 0);
       const msi = venta * msiPct;
-      const compra = venta + (invFinal - invInicial);
+      // Compra (a precio de venta) = Venta + Markdowns + Inv final − Inv inicial. Antes omitía el markdown y la compra salía corta.
+      const compra = venta + mkd + (invFinal - invInicial);
       const mgPct = mgFinal[i];
       const utilidadBruta = venta * mgPct;
 
@@ -1730,7 +1747,7 @@ export default function Forecast() {
     const cruces = planCruceCompleto.map(r => {
       const cruceL1 = forecastL1.mapa[`${r.centro}|${r.goa}`];
       if (!cruceL1?.planEsc) return null;
-      const planEsc = cruceL1.planEsc[escenarioActivo === 'editable' ? 'base' : escenarioActivo];
+      const planEsc = cruceL1.planEsc[escenarioActivo === 'editable' ? 'modelo' : escenarioActivo];
       const meses = planEsc.map((m) => {
         const k = `${r.centro}|${r.goa}|${m.mes}`;
         const override = t4Overrides[k];
@@ -1805,7 +1822,7 @@ export default function Forecast() {
       const cruceL1 = forecastL1.mapa[`${r.centro}|${r.goa}`];
       if (!cruceL1?.planEsc) return null;
 
-      const planMensualVenta = cruceL1.planEsc[escenarioActivo === 'editable' ? 'base' : escenarioActivo];
+      const planMensualVenta = cruceL1.planEsc[escenarioActivo === 'editable' ? 'modelo' : escenarioActivo];
 
       // Aplicar override de crecimiento
       const totalPlanBase = planMensualVenta.reduce((s,m) => s + m.valor, 0);
@@ -1858,7 +1875,8 @@ export default function Forecast() {
       const comprasBrutas = [];
       for (let i = 0; i < 12; i++) {
         const invFinal = invObjetivoPorMes[i];
-        const compra = ventaMensualAjustada[i] + (invFinal - invInicial);
+        // Compra = Venta + Markdown + (InvFin − InvIni). Antes sin markdown → el inventario terminaba abajo del objetivo.
+        const compra = ventaMensualAjustada[i] + (mkdMensual[i] || 0) + (invFinal - invInicial);
         comprasBrutas.push(compra);
         invInicial = invFinal;
       }
@@ -1883,7 +1901,8 @@ export default function Forecast() {
         const mkd = mkdMensual[i];
         const msi = msiMensual[i];
         const compra = comprasAjustadas[i];
-        const invFinal = invInicial - venta - mkd - msi + compra;
+        // El MSI es costo financiero, no mercancía que sale del inventario (antes se restaba y el inv se iba abajo)
+        const invFinal = invInicial - venta - mkd + compra;
 
         // Bonificación: 1.2% × compra del mes apertura, aplicada 1 mes antes
         let bonif = 0;
@@ -3116,12 +3135,13 @@ export default function Forecast() {
 
                   {/* Cards de escenarios — solo visibles si hay un cruce seleccionado */}
                   {t2Calc && !t2Calc.insuficiente && t2Calc.escenarios && (
-                    <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+                    <div className="grid grid-cols-1 md:grid-cols-5 gap-3">
                       {[
+                        { key: 'modelo',      label: 'Modelo',      desc: `${t2Calc.modelo?.name || '—'}${t2Calc.modelo?.acc != null ? ` · ${t2Calc.modelo.acc.toFixed(0)}% accuracy` : ''}`, color: 'teal', editable: false },
                         { key: 'conservador', label: 'Conservador', desc: 'Promedio ponderado 60/30/10', color: 'gray', editable: false },
                         { key: 'limpio',      label: 'Limpio',      desc: 'Sin meses promocionales',   color: 'teal', editable: false },
                         { key: 'optimista',   label: 'Optimista',   desc: `Cap +${(thresholds.capOptimista*100).toFixed(0)}% vs Conservador`, color: 'amber', editable: false },
-                        { key: 'editable',    label: 'Editable',    desc: 'Base operativa con overrides', color: 'violet', editable: true },
+                        { key: 'editable',    label: 'Editable',    desc: 'Parte del Modelo + tus overrides', color: 'violet', editable: true },
                       ].map(s => {
                         const esActivo = escenarioActivo === s.key;
                         // Total del escenario (ya viene calculado en escenarios[key], excepto editable que es inSeason)
