@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   TrendingUp, ShoppingCart, Map, RefreshCw,
   ArrowLeftRight, ChevronDown, Zap, BarChart3,
-  Calendar, ArrowRight, Layers, FileSpreadsheet, Tag, Download, ListChecks
+  Calendar, ArrowRight, Layers, FileSpreadsheet, Tag, Download, ListChecks, PieChart
 } from 'lucide-react';
 import { CSV_SCHEMAS } from './csvSchemas';
 
@@ -38,16 +38,17 @@ function useParallax(speed = 0.3) {
 const WORLDS = [
   {
     id: 'plan', tag: 'PLANES FINANCIEROS',
-    name: 'Planing',
+    name: 'Planning · Suplementarios',
     desc: 'El núcleo de la planeación, planes a nivel canal de venta | tienda | goa. ',
     accent: '#8b5cf6', glow: 'rgba(139,92,246,0.18)',
     modules: [
       { label: 'Planning', Icon: BarChart3, desc: 'Construye Mejor Estimado, Ajusta tu OTB, Alinea tu canales, y baja a nivel tienda.' },
+      { label: 'Suplementarios', Icon: PieChart, desc: 'Baja el OTB mensual (venta, mkds, CMSI, compra, utilidad, inventario) a marca o proveedor con histórico o IS, siempre cuadrando al OTB general.' },
     ],
   },
   {
     id: 'demanda', tag: 'PLANEACIÓN DE LA DEMANDA',
-    name: 'Assortment · Forecasting · Distribución · Resurtido',
+    name: 'Assortment · Forecasting · Distribución · Resurtido · Eventos',
     desc: 'Conecta la estrategia con la ejecución diaria. Vista unificada que une forecast, OTB y distribución. Proyecta demanda, define el surtido óptimo. |y mantiene el inventario saludable.',
     accent: '#f59e0b', glow: 'rgba(245,158,11,0.15)',
     modules: [
@@ -55,6 +56,7 @@ const WORLDS = [
       { label: 'Assortment', Icon: ShoppingCart, desc: 'Presupuesto de compra, buckets por marca y OTB mensual.' },
       { label: 'Resurtido',      Icon: RefreshCw,    desc: 'Reposición continua basada en cobertura y fill rate.' },
       { label: 'Distribución', Icon: Map,            desc: 'Surtido inicial por cluster, curva de tallas y chequera.' },
+      { label: 'Eventos',  Icon: Tag,       desc: 'Venta, margen, sell-through e inventario inicial de eventos promocionales (BTS, Navidad, etc.), comparado automáticamente contra el año anterior.' },
     ],
    }, 
   {
@@ -70,12 +72,11 @@ const WORLDS = [
   },
  {
     id: 'check', tag: 'CHECK DE COORDINADORES',
-    name: 'Daily · Eventos · Allocation',
-    desc: 'Detalle de ventas e inventarios diarios y por evento promocional, con proyección de venta y utilidades. Revisión de parametrizaciones y OC antes de que salga la mercancía.',
+    name: 'Daily · Allocation',
+    desc: 'Detalle de ventas e inventarios diarios con proyección de venta y utilidades. Revisión de parametrizaciones y OC antes de que salga la mercancía.',
     accent: '#06b6d4', glow: 'rgba(6, 182, 212, 0.15)',
     modules: [
        { label: 'Daily',    Icon: Calendar,  desc: 'Ajustes diarios de inventario, ventas y margen.' },
-       { label: 'Eventos',  Icon: Tag,       desc: 'Venta, margen, sell-through e inventario inicial de eventos promocionales (BTS, Navidad, etc.), comparado automáticamente contra el año anterior.' },
        { label: 'Allocation', Icon: ListChecks, desc: 'Reportero de parametrizaciones ZO9_DM (matriz de marca, clima, AP8, WOS, compra vs mínimos, curvas, clusters) y de OC (mínimos, destalle, picos, concentración). Dice qué está mal, dónde y a qué cambiarlo, y baja el CSV corregido para volver a parametrizar.' },
      ],
    },
