@@ -410,17 +410,15 @@ export default function App() {
         };
       });
 
-      let maxSales = 0, maxMargin = 0, maxRot = 0;
-      storesInGoa.forEach(item => {
-        if (item.sales > maxSales) maxSales = item.sales;
-        if (item.margin > maxMargin) maxMargin = item.margin;
-        if (item.rotation > maxRot) maxRot = item.rotation;
-      });
+      // Normalización min–max: el margen % y la rotación suelen variar poco entre tiendas; dividir entre el máximo
+      // los dejaba todos cerca de 1 y no diferenciaban (con peso 50% el score quedaba casi plano).
+      const mm = (k) => { const v = storesInGoa.map(i => i[k]); const lo = Math.min(...v), hi = Math.max(...v); return (x) => hi > lo ? (x - lo) / (hi - lo) : (hi > 0 ? 1 : 0); };
+      const nS = mm('sales'), nM = mm('margin'), nR = mm('rotation');
 
       storesInGoa.forEach(item => {
-        const nSales = maxSales > 0 ? item.sales / maxSales : 0;
-        const nMargin = maxMargin > 0 ? item.margin / maxMargin : 0;
-        const nRot = maxRot > 0 ? item.rotation / maxRot : 0;
+        const nSales = nS(item.sales);
+        const nMargin = nM(item.margin);
+        const nRot = nR(item.rotation);
         item.score = (nSales * weights.sales) + (nMargin * weights.margin) + (nRot * weights.rotation);
       });
 
@@ -1319,6 +1317,61 @@ export default function App() {
     return (stores || []).filter(s => Object.keys(s.clusters || {}).some(k => k.toUpperCase() === filterUpper));
   }, [stores, filterGoa]);
 
+  // ── RESULTANTE AUTOMÁTICA: OTB → piezas por GOA × Bucket × Mes, y reparto a tiendas ──
+  // OTB$ = presupuesto GOA × % del mes × % del bucket; Pzs = OTB$ / PVP (PVP del bucket en el GOA o default).
+  // Reparto: tiendas con clúster en el GOA, en proporción a las corridas de la regla por clúster × curva de tallas.
+  const autoPlan = useMemo(() => {
+    const rows = [];
+    const bks = (buckets || []).length ? buckets : [null];
+    (goas || []).forEach(g => {
+      const curve = (sizeCurves || []).find(c => c.id === Number(g.autoCurveId)) || (sizeCurves || [])[0];
+      const rule = (calcRules || []).find(r => r.id === Number(g.autoRuleId)) || (calcRules || [])[0];
+      const pzsModelo = curve && rule ? getPiecesForOneModel(g.name, curve.id, rule.id) : 0;
+      bks.forEach(b => {
+        for (let m = 0; m < 6; m++) {
+          const otb = (Number(g.budget) || 0) * ((Number(g.months?.[m]) || 0) / 100) * (b ? (Number(b.sharePct) || 0) / 100 : 1);
+          if (otb <= 0) continue;
+          const pvp = (b && Number(g.bucketPvps?.[b.id]) > 0) ? Number(g.bucketPvps[b.id]) : (Number(g.defaultPvp) || 0);
+          const pzs = pvp > 0 ? Math.floor(otb / pvp) : 0;
+          rows.push({ key: `${g.id}|${b?.id || ''}|${m}`, goa: g, bucket: b, mes: m, mesLabel: getMonthLabel(m), otb, pvp, pzs,
+            curve, rule, pzsModelo, modelos: pzsModelo > 0 ? pzs / pzsModelo : 0,
+            falta: !pvp ? 'PVP' : !curve ? 'Curva' : !rule ? 'Regla' : pzsModelo <= 0 ? 'Clústeres' : '' });
+        }
+      });
+    });
+    return rows;
+  }, [goas, buckets, sizeCurves, calcRules, stores, purchaseMonthBase]);
+
+  const distribuirAutoPlan = (row) => {
+    const { goa, curve, rule, pzs } = row;
+    if (!curve || !rule || pzs <= 0) return [];
+    const sizes = (curve.sizes || '').split(',').map(x => x.trim());
+    const weights = (curve.weights || '').split(',').map(w => Number(w.trim()) || 0);
+    const cells = [];
+    (stores || []).forEach(st => {
+      const c = (st.clusters || {})[goa.name] || (st.clusters || {})[String(goa.name).toUpperCase()];
+      const runs = (rule.corridas || {})[c] || 0;
+      if (runs > 0) sizes.forEach((tz, i) => { if (weights[i] > 0) cells.push({ st, c, talla: tz, w: runs * weights[i] }); });
+    });
+    const W = cells.reduce((a, x) => a + x.w, 0);
+    if (!W) return [];
+    // Mayor residuo: el total repartido cuadra exacto con las piezas del OTB
+    cells.forEach(x => { const e = pzs * x.w / W; x.pzs = Math.floor(e); x.r = e - x.pzs; });
+    let rest = pzs - cells.reduce((a, x) => a + x.pzs, 0);
+    [...cells].sort((a, b) => b.r - a.r).forEach(x => { if (rest > 0) { x.pzs++; rest--; } });
+    return cells.filter(x => x.pzs > 0);
+  };
+
+  const exportAutoPlan = () => {
+    let csv = '\uFEFFGOA,Bucket,Mes,PVP,Centro,Tienda,Cluster,Talla,Piezas,Importe\r\n';
+    autoPlan.forEach(row => distribuirAutoPlan(row).forEach(x => {
+      csv += `"${row.goa.name}","${row.bucket?.name || ''}","${row.mesLabel}",${row.pvp},"${x.st.centerCode}","${x.st.name}","${x.c}","${x.talla}",${x.pzs},${x.pzs * row.pvp}\r\n`;
+    }));
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
+    a.download = 'Resultante_compra_por_tienda.csv'; a.click();
+  };
+
   const reportData = useMemo(() => {
     const isSug = reportView === 'sugerido';
     
@@ -2060,6 +2113,66 @@ export default function App() {
               />
             ) : (
               <>
+                {/* === RESULTANTE AUTOMÁTICA === */}
+                <div className={`rounded-xl border shadow-lg p-6 ${t.card}`}>
+                  <div className="flex justify-between items-start mb-4 gap-4 flex-wrap">
+                    <div>
+                      <h2 className={`text-lg font-bold flex items-center ${t.textMain}`}><Calculator className={`mr-3 ${t.textAccent1}`}/> Resultante de compra</h2>
+                      <p className={`text-xs mt-1 ${t.textMuted}`}>Sale directo de tus inputs: OTB del GOA × % del mes × % del bucket ÷ PVP. Elige curva y regla por GOA (default: la primera). El reparto a tiendas usa las corridas por clúster de la regla y la curva de tallas.</p>
+                    </div>
+                    <button onClick={exportAutoPlan} disabled={!autoPlan.some(r => r.pzs > 0 && !r.falta)} className={`px-3 py-2 rounded-lg text-[11px] font-black uppercase tracking-wider transition flex items-center disabled:opacity-40 ${t.btnPrimary}`}>
+                      <Download size={14} className="mr-1.5"/> Distribución por tienda
+                    </button>
+                  </div>
+                  <div className="flex flex-wrap gap-3 mb-4">
+                    {(goas || []).map(g => (
+                      <div key={g.id} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-[11px] ${t.cardInner}`}>
+                        <b className={t.textMain}>{g.name}</b>
+                        <select value={g.autoCurveId || ''} onChange={e => handleUpdateGoaField(g.id, 'autoCurveId', e.target.value)} className={`px-2 py-1 rounded border text-[11px] ${t.input}`}>
+                          <option value="">Curva: {(sizeCurves || [])[0]?.name || '—'}</option>
+                          {(sizeCurves || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                        </select>
+                        <select value={g.autoRuleId || ''} onChange={e => handleUpdateGoaField(g.id, 'autoRuleId', e.target.value)} className={`px-2 py-1 rounded border text-[11px] ${t.input}`}>
+                          <option value="">Regla: {(calcRules || [])[0]?.name || '—'}</option>
+                          {(calcRules || []).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                        </select>
+                      </div>
+                    ))}
+                  </div>
+                  <div className="max-h-96 overflow-y-auto custom-scrollbar">
+                    <table className="w-full text-xs">
+                      <thead className={`sticky top-0 ${t.tableHead}`}>
+                        <tr className={`text-[10px] uppercase border-b ${t.border}`}>
+                          <th className="p-2 text-left">GOA</th><th className="p-2 text-left">Bucket</th><th className="p-2 text-left">Mes</th>
+                          <th className="p-2 text-right">OTB $</th><th className="p-2 text-right">PVP</th><th className="p-2 text-right">Piezas</th>
+                          <th className="p-2 text-right" title="Piezas ÷ piezas de 1 modelo con la regla y curva elegidas">Modelos equiv.</th><th className="p-2 text-left">Pendiente</th>
+                        </tr>
+                      </thead>
+                      <tbody className={`divide-y ${t.border}`}>
+                        {autoPlan.map(r => (
+                          <tr key={r.key} className={t.tableRow}>
+                            <td className={`p-2 font-bold ${t.textMain}`}>{r.goa.name}</td>
+                            <td className="p-2">{r.bucket?.name || '—'}</td>
+                            <td className="p-2">{r.mesLabel}</td>
+                            <td className="p-2 text-right">${Math.round(r.otb).toLocaleString('es-MX')}</td>
+                            <td className="p-2 text-right">{r.pvp ? `$${r.pvp.toLocaleString('es-MX')}` : '—'}</td>
+                            <td className={`p-2 text-right font-black ${t.textAccent2}`}>{r.pzs.toLocaleString('es-MX')}</td>
+                            <td className="p-2 text-right">{r.modelos ? r.modelos.toFixed(1) : '—'}</td>
+                            <td className={`p-2 ${r.falta ? 'text-rose-400 font-bold' : t.textMuted}`}>{r.falta ? `Falta ${r.falta}` : '✓'}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                      <tfoot className={`sticky bottom-0 ${t.tableHead}`}>
+                        <tr className="font-black">
+                          <td className="p-2" colSpan={3}>Total</td>
+                          <td className="p-2 text-right">${Math.round(autoPlan.reduce((a, r) => a + r.otb, 0)).toLocaleString('es-MX')}</td><td />
+                          <td className="p-2 text-right">{autoPlan.reduce((a, r) => a + r.pzs, 0).toLocaleString('es-MX')}</td><td colSpan={2} />
+                        </tr>
+                      </tfoot>
+                    </table>
+                  </div>
+                </div>
+
                 {/* === BLOQUE CATÁLOGO DE MODELOS === */}
                 <div className={`rounded-xl border shadow-lg p-6 ${t.card}`}>
                   <div className="flex justify-between items-start mb-4">

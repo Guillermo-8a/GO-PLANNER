@@ -1681,8 +1681,8 @@ export default function Forecast() {
       const invFinal = (i < 11) ? invInicialArr[i+1] : (invFinalCierre ?? invInicial);
       const mkd = venta * (mkdPctMes[i] || 0);
       const msi = venta * msiPct;
-      // Compra (a precio de venta) = Venta + Markdowns + Inv final − Inv inicial. Antes omitía el markdown y la compra salía corta.
-      const compra = venta + mkd + (invFinal - invInicial);
+      // Compra (a precio de venta) = Venta + Mkd + MSI + Inv final − Inv inicial (mkd y msi son mercancía a precio de venta)
+      const compra = venta + mkd + msi + (invFinal - invInicial);
       const mgPct = mgFinal[i];
       const utilidadBruta = venta * mgPct;
 
@@ -1875,8 +1875,9 @@ export default function Forecast() {
       const comprasBrutas = [];
       for (let i = 0; i < 12; i++) {
         const invFinal = invObjetivoPorMes[i];
-        // Compra = Venta + Markdown + (InvFin − InvIni). Antes sin markdown → el inventario terminaba abajo del objetivo.
-        const compra = ventaMensualAjustada[i] + (mkdMensual[i] || 0) + (invFinal - invInicial);
+        // Compra = Venta + Mkd + MSI + (InvFin − InvIni): la cascada de abajo descuenta mkd y msi del inventario,
+        // así que la compra debe reponerlos para llegar al inventario objetivo.
+        const compra = ventaMensualAjustada[i] + (mkdMensual[i] || 0) + (msiMensual[i] || 0) + (invFinal - invInicial);
         comprasBrutas.push(compra);
         invInicial = invFinal;
       }
@@ -1901,8 +1902,7 @@ export default function Forecast() {
         const mkd = mkdMensual[i];
         const msi = msiMensual[i];
         const compra = comprasAjustadas[i];
-        // El MSI es costo financiero, no mercancía que sale del inventario (antes se restaba y el inv se iba abajo)
-        const invFinal = invInicial - venta - mkd + compra;
+        const invFinal = invInicial - venta - mkd - msi + compra;
 
         // Bonificación: 1.2% × compra del mes apertura, aplicada 1 mes antes
         let bonif = 0;
