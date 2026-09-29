@@ -4,7 +4,7 @@
 // de cada entidad y SIEMPRE cuadra al OTB mensual. Celdas editadas a mano quedan fijas (lock).
 import { useState, useEffect, useRef, useMemo } from 'react';
 import * as XLSX from 'xlsx';
-import { ResponsiveContainer, ComposedChart, Bar, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend } from 'recharts';
+import { ResponsiveContainer, ComposedChart, LineChart, Bar, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend, ReferenceLine } from 'recharts';
 import { Upload, Download, Lock, RotateCcw, Check, AlertCircle, FileSpreadsheet, Trash2, Copy } from 'lucide-react';
 import ModuleHeader from '../components/ModuleHeader';
 
@@ -20,6 +20,9 @@ const METRICS = [
   { key: 'inv', label: 'Inventario', stock: true },
 ];
 const R12 = [...Array(12).keys()];
+const MLABEL = [...MONTHS, 'Cierre'];
+const nCols = (mk) => (mk === 'inv' ? 13 : 12); // inventario = inv inicial de cada mes + cierre
+const rng = (n) => [...Array(n).keys()];
 const PERIODS = [
   { key: 'Q1', m: [0, 1, 2] }, { key: 'Q2', m: [3, 4, 5] }, { key: 'Q3', m: [6, 7, 8] }, { key: 'Q4', m: [9, 10, 11] },
   { key: 'S1', m: R12.slice(0, 6) }, { key: 'S2', m: R12.slice(6) }, { key: 'Año', m: R12 },
@@ -30,27 +33,32 @@ const RATIO_ALIAS = {
   cmsi: ['CMSI', 'COSTO MSI', 'MSI'],
   compra: ['COMPRA', 'COMPRAS', 'RECIBOS'],
   utilidad: ['UTILIDAD', 'UB', 'UTILIDAD BRUTA'],
-  inv: ['INV', 'INVENTARIO', 'INV FINAL', 'INVENTARIO FINAL', 'EOH'],
+  inv: ['INV', 'INVENTARIO', 'INV INICIAL', 'INVENTARIO INICIAL', 'BOH'],
 };
 
-const zeros = () => Array(12).fill(0);
+const zeros = (n = 12) => Array(n).fill(0);
 const sum = (a) => a.reduce((s, v) => s + (+v || 0), 0);
 const norm = (s) => String(s ?? '').trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '');
-const num = (v) => (typeof v === 'number' ? v : parseFloat(String(v).replace(/[$,\s]/g, '')) || 0);
+const num = (v) => (typeof v === 'number' ? v : parseFloat(String(v).replace(/[$,\s%]/g, '')) || 0);
 const toRatio = (s) => { const n = norm(s); return Object.keys(RATIO_ALIAS).find((k) => RATIO_ALIAS[k].includes(n)) || null; };
 const toTipo = (s) => {
   const n = norm(s);
   if (['OTB', 'OBJ', 'OBJETIVO', 'TARGET'].includes(n)) return 'otb';
-  if (['HIST', 'HISTORICO', 'LY', 'AA', 'REAL'].includes(n)) return 'hist';
+  if (['HIST', 'HISTORICO', 'LY', 'AA'].includes(n)) return 'hist';
+  if (['REAL', 'TY', 'ACTUAL'].includes(n)) return 'ty';
+  if (['FCST', 'FORECAST', 'PRONOSTICO'].includes(n)) return 'fcst';
   return null;
 };
 const monthIdx = (h) => {
   const n = norm(h).replace(/\.$/, '');
+  if (['CIERRE', 'FIN', 'INV FINAL', 'CIERRE DIC'].includes(n)) return 12;
   let i = MONTHS.findIndex((m) => norm(m) === n);
   if (i < 0) i = MONTHS_FULL.findIndex((m) => m === n || (n === 'SETIEMBRE' && m === 'SEPTIEMBRE'));
   if (i < 0 && /^M?\d{1,2}$/.test(n)) { const d = parseInt(n.replace('M', ''), 10); if (d >= 1 && d <= 12) i = d - 1; }
   return i;
 };
+// Texto pegado desde Excel → matriz de números ('' = celda vacía)
+const parseGrid = (txt) => txt.replace(/\r/g, '').replace(/\n+$/, '').split('\n').map((l) => l.split('\t').map((v) => (v.trim() === '' ? '' : num(v))));
 
 const fmt = (v) => (v == null || !isFinite(v) ? '—' : Math.round(v).toLocaleString('es-MX'));
 const pct = (v, d = 1) => (v == null || !isFinite(v) ? '—' : `${(v * 100).toFixed(d)}%`);
@@ -60,7 +68,12 @@ const growth = (p, l) => (l ? p / l - 1 : null);
 // ─── Excel ────────────────────────────────────────────────────────────────────
 async function parseExcel(file) {
   const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
-  const out = { otb: {}, hist: {}, rows: 0 };
+  const out = { otb: {}, hist: {}, ty: {}, fcst: {}, rows: 0, state: null };
+  const est = wb.Sheets._estado;
+  if (est) {
+    try { out.state = JSON.parse(XLSX.utils.sheet_to_json(est, { header: 1 }).map((r) => r[0] ?? '').join('')); } catch {}
+    if (out.state) return out;
+  }
   wb.SheetNames.forEach((sn) => {
     const rows = XLSX.utils.sheet_to_json(wb.Sheets[sn], { header: 1, defval: '' });
     const hi = rows.findIndex((r) => r.some((c) => norm(c) === 'TIPO') && r.some((c) => norm(c) === 'RATIO'));
@@ -73,12 +86,12 @@ async function parseExcel(file) {
     rows.slice(hi + 1).forEach((r) => {
       const tipo = toTipo(r[cTipo]); const ratio = toRatio(r[cRatio]);
       if (!tipo || !ratio) return;
-      const arr = zeros(); mCols.forEach(({ i, m }) => { arr[m] = num(r[i]); });
+      const arr = zeros(nCols(ratio)); mCols.forEach(({ i, m }) => { if (m < arr.length) arr[m] = num(r[i]); });
       if (tipo === 'otb') out.otb[ratio] = arr;
       else {
         const ent = String(cEnt >= 0 ? r[cEnt] : '').trim();
         if (!ent) return;
-        out.hist[ent] = { ...(out.hist[ent] || {}), [ratio]: arr };
+        out[tipo][ent] = { ...(out[tipo][ent] || {}), [ratio]: arr };
       }
       out.rows++;
     });
@@ -87,39 +100,40 @@ async function parseExcel(file) {
 }
 
 function downloadTemplate(dim) {
-  const head = ['Tipo', dim, 'Ratio', ...MONTHS];
-  const aoa = [head];
-  METRICS.forEach((m) => aoa.push(['OTB', '', m.label.toUpperCase(), ...zeros()]));
-  ['MARCA A', 'MARCA B'].forEach((e) => METRICS.forEach((m) => aoa.push(['HIST', e, m.label.toUpperCase(), ...zeros()])));
+  const aoa = [['Tipo', dim, 'Ratio', ...MONTHS, 'Cierre']];
+  const row = (tipo, e, m) => [tipo, e, m.label.toUpperCase(), ...zeros(12), m.key === 'inv' ? 0 : ''];
+  METRICS.forEach((m) => aoa.push(row('OTB', '', m)));
+  ['MARCA A', 'MARCA B'].forEach((e) => METRICS.forEach((m) => aoa.push(row('HIST', e, m))));
+  ['MARCA A', 'MARCA B'].forEach((e) => METRICS.forEach((m) => aoa.push(row('REAL', e, m))));
   const wb = XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Suplementarios');
   XLSX.writeFile(wb, 'Plantilla_Suplementarios.xlsx');
 }
 
 // ─── Bajada (IPF) ─────────────────────────────────────────────────────────────
-function allocate(metric, otbArr, entities, cfg = {}, locks = {}) {
-  const n = entities.length;
-  if (!n) return { rows: [], colTot: zeros() };
-  const hist = entities.map((e) => (e.hist?.[metric] || zeros()).map((v) => Math.max(+v || 0, 0)));
-  const histTot = hist.map(sum);
-  const H = sum(histTot);
+// ents: [{ name, base:[..] (LY o IS, semilla de estacionalidad y share), hist:[..] (LY) }]
+function allocate(otbArr, ents, cfg = {}, locks = {}) {
+  const n = ents.length, K = rng(otbArr.length);
+  if (!n) return { rows: [], colTot: zeros(otbArr.length) };
+  const base = ents.map((e) => K.map((k) => Math.max(+e.base[k] || 0, 0)));
+  const baseTot = base.map(sum), B = sum(baseTot);
   const annual = sum(otbArr);
-  const base = entities.map((e, i) => {
+  const w0 = ents.map((e, i) => {
     const c = cfg[e.name] || {};
-    const share = c.share !== '' && c.share != null ? +c.share / 100 : H ? histTot[i] / H : 1 / n;
+    const share = c.share !== '' && c.share != null ? +c.share / 100 : B ? baseTot[i] / B : 1 / n;
     return Math.max(share * (1 + (+c.adj || 0) / 100), 0);
   });
-  const W = sum(base) || 1;
-  const rowT = base.map((b) => (annual * b) / W);
-  const lk = entities.map((e) => locks[e.name] || {});
+  const W = sum(w0) || 1;
+  const rowT = w0.map((b) => (annual * b) / W);
+  const lk = ents.map((e) => locks[e.name] || {});
   const isL = (i, k) => lk[i][k] != null;
-  const rowTe = rowT.map((r, i) => Math.max(r - sum(R12.map((k) => (isL(i, k) ? +lk[i][k] : 0))), 0));
-  const colTe = R12.map((k) => Math.max((+otbArr[k] || 0) - sum(entities.map((_, i) => (isL(i, k) ? +lk[i][k] : 0))), 0));
-  const M = hist.map((h, i) => R12.map((k) => (isL(i, k) ? 0 : histTot[i] > 0 ? h[k] : 1)));
+  const rowTe = rowT.map((r, i) => Math.max(r - sum(K.map((k) => (isL(i, k) ? +lk[i][k] : 0))), 0));
+  const colTe = K.map((k) => Math.max((+otbArr[k] || 0) - sum(ents.map((_, i) => (isL(i, k) ? +lk[i][k] : 0))), 0));
+  const M = base.map((h, i) => K.map((k) => (isL(i, k) ? 0 : baseTot[i] > 0 ? h[k] : 1)));
 
   for (let it = 0; it < 60; it++) {
     M.forEach((row, i) => { const s = sum(row); if (s > 0) row.forEach((_, k) => { row[k] *= rowTe[i] / s; }); });
-    R12.forEach((k) => {
+    K.forEach((k) => {
       const free = M.map((_, i) => i).filter((i) => !isL(i, k));
       const s = sum(free.map((i) => M[i][k]));
       if (s > 0) free.forEach((i) => { M[i][k] *= colTe[k] / s; });
@@ -130,37 +144,44 @@ function allocate(metric, otbArr, entities, cfg = {}, locks = {}) {
     });
   }
   const plan = M.map((row, i) => row.map((v, k) => (isL(i, k) ? +lk[i][k] : v)));
-  const rows = entities.map((e, i) => ({
-    name: e.name, hist: hist[i], histTot: histTot[i], histShare: H ? histTot[i] / H : null,
-    share: base[i] / W, target: rowT[i], plan: plan[i], planTot: sum(plan[i]),
+  const rows = ents.map((e, i) => ({
+    name: e.name, base: base[i], baseTot: baseTot[i], baseShare: B ? baseTot[i] / B : null,
+    share: w0[i] / W, target: rowT[i], plan: plan[i], planTot: sum(plan[i]),
   }));
-  const colTot = R12.map((k) => sum(plan.map((r) => r[k])));
+  const colTot = K.map((k) => sum(plan.map((r) => r[k])));
   return { rows, colTot };
 }
 
+// Inventario = inv INICIAL por mes (+ cierre en idx 12). Para un periodo: inv fin = inv ini del mes siguiente.
+// Rotación = Σ venta del periodo / promedio de (n+1) inventarios (año: 12 ventas / 13 inventarios).
 function kpis(d, ms) {
   const s = (k) => ms.reduce((a, i) => a + (+d[k]?.[i] || 0), 0);
   const vta = s('vta'), mkd = s('mkd'), cmsi = s('cmsi'), compra = s('compra'), ut = s('utilidad');
-  const invAvg = s('inv') / ms.length, invFin = +d.inv?.[ms[ms.length - 1]] || 0;
+  const pts = [...ms, ms[ms.length - 1] + 1].map((i) => +d.inv?.[i] || 0);
+  const invAvg = sum(pts) / pts.length, invIni = pts[0], invFin = pts[pts.length - 1];
   return {
-    vta, mkd, cmsi, compra, ut, invAvg, invFin,
+    vta, mkd, cmsi, compra, ut, invAvg, invIni, invFin,
     margen: vta ? ut / vta : null, mkdPct: vta ? mkd / vta : null, cmsiPct: vta ? cmsi / vta : null,
     st: vta + invFin ? vta / (vta + invFin) : null,
     mos: vta ? invFin / (vta / ms.length) : null,
-    rot: invAvg ? (vta / invAvg) * (12 / ms.length) : null,
-    vtaInv: invAvg ? vta / invAvg : null,
+    rot: invAvg ? vta / invAvg : null,
     vtaCompra: compra ? vta / compra : null,
   };
 }
 
 // ─── UI helpers ───────────────────────────────────────────────────────────────
-function NumCell({ value, onCommit, className = '', placeholder = '' }) {
+function NumCell({ value, onCommit, onPasteGrid, className = '', placeholder = '' }) {
   const [v, setV] = useState(value ?? '');
   useEffect(() => { setV(value ?? ''); }, [value]);
   const commit = () => { if (String(v) !== String(value ?? '')) onCommit(v === '' ? '' : num(v)); };
+  const onPaste = (e) => {
+    const txt = e.clipboardData.getData('text');
+    if (!onPasteGrid || !/[\t\n]/.test(txt.replace(/\n+$/, ''))) return; // valor suelto → paste normal
+    e.preventDefault(); onPasteGrid(parseGrid(txt));
+  };
   return (
     <input
-      value={v} placeholder={placeholder}
+      value={v} placeholder={placeholder} onPaste={onPaste}
       onChange={(e) => setV(e.target.value)} onBlur={commit}
       onKeyDown={(e) => { if (e.key === 'Enter') e.currentTarget.blur(); }}
       className={`w-full min-w-[72px] px-1.5 py-1 text-right text-xs rounded border focus:outline-none focus:ring-1 ${className}`}
@@ -171,7 +192,7 @@ function NumCell({ value, onCommit, className = '', placeholder = '' }) {
 function usePersisted() {
   const [st, setSt] = useState(() => {
     try { const r = localStorage.getItem(LS_KEY); if (r) return JSON.parse(r); } catch {}
-    return { dim: 'Marca', otb: Object.fromEntries(METRICS.map((m) => [m.key, zeros()])), entities: [], cfg: {}, locks: {} };
+    return { dim: 'Marca', otb: Object.fromEntries(METRICS.map((m) => [m.key, zeros(nCols(m.key))])), entities: [], cfg: {}, locks: {} };
   });
   const tm = useRef(null);
   useEffect(() => {
@@ -191,22 +212,38 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
   const [msg, setMsg] = useState(null);
   const fileRef = useRef(null);
   const { dim, otb, entities, cfg, locks } = st;
+  const baseMode = st.baseMode || 'ly';   // 'ly' | 'is'
+  const corte = st.corte ?? 0;            // meses con venta real (IS)
+
+  // Base de share/estacionalidad: LY, o IS = real TY hasta el corte + fcst (o LY × tendencia YTD) después
+  const baseOf = (e, mk) => {
+    const h = e.hist?.[mk] || zeros(nCols(mk));
+    if (baseMode !== 'is') return h;
+    const ty = e.ty?.[mk] || [], fc = e.fcst?.[mk];
+    const ly = sum(h.slice(0, corte)), act = sum(ty.slice(0, corte));
+    const tr = ly ? act / ly : 1;
+    return h.map((v, k) => (k < corte ? +ty[k] || 0 : fc ? +fc[k] || 0 : v * tr));
+  };
 
   const alloc = useMemo(
-    () => Object.fromEntries(METRICS.map((m) => [m.key, allocate(m.key, otb[m.key] || zeros(), entities, cfg[m.key], locks[m.key])])),
-    [otb, entities, cfg, locks]
+    () => Object.fromEntries(METRICS.map((m) => {
+      const ents = entities.map((e) => ({ name: e.name, base: baseOf(e, m.key), hist: e.hist?.[m.key] || zeros(nCols(m.key)) }));
+      return [m.key, allocate(otb[m.key] || zeros(nCols(m.key)), ents, cfg[m.key], locks[m.key])];
+    })),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [otb, entities, cfg, locks, baseMode, corte]
   );
 
-  // data por entidad: { plan: {metric:[12]}, hist: {metric:[12]} }
+  // data por entidad: { plan: {metric:[..]}, hist: {metric:[..]} }
   const byEnt = useMemo(() => {
     const out = {};
     entities.forEach((e, i) => {
       out[e.name] = {
-        plan: Object.fromEntries(METRICS.map((m) => [m.key, alloc[m.key].rows[i]?.plan || zeros()])),
-        hist: Object.fromEntries(METRICS.map((m) => [m.key, alloc[m.key].rows[i]?.hist || zeros()])),
+        plan: Object.fromEntries(METRICS.map((m) => [m.key, alloc[m.key].rows[i]?.plan || zeros(nCols(m.key))])),
+        hist: Object.fromEntries(METRICS.map((m) => [m.key, alloc[m.key].rows[i]?.base || zeros(nCols(m.key))])), // base comparativa: LY o IS
       };
     });
-    const histTot = Object.fromEntries(METRICS.map((m) => [m.key, R12.map((k) => sum(entities.map((e) => +e.hist?.[m.key]?.[k] || 0)))]));
+    const histTot = Object.fromEntries(METRICS.map((m) => [m.key, rng(nCols(m.key)).map((k) => sum(alloc[m.key].rows.map((r) => +r.base[k] || 0)))]));
     out.__total = { plan: otb, hist: histTot };
     return out;
   }, [alloc, entities, otb]);
@@ -216,31 +253,68 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
     if (!f) return;
     try {
       const r = await parseExcel(f);
+      if (r.state) {
+        if (!confirm('Este archivo es un plan exportado de Suplementarios. ¿Reemplazar lo que tienes cargado?')) return;
+        setSt(r.state);
+        setMsg({ ok: true, text: `Plan restaurado · ${r.state.entities?.length || 0} ${r.state.dim?.toLowerCase() || 'entidad'}es` });
+        return;
+      }
       if (!r.rows) { setMsg({ ok: false, text: 'No encontré filas válidas. Revisa encabezados Tipo / Entidad / Ratio / Ene…Dic.' }); return; }
       setSt((s) => {
         const map = Object.fromEntries(s.entities.map((x) => [x.name, x]));
-        Object.entries(r.hist).forEach(([name, h]) => { map[name] = { name, hist: { ...(map[name]?.hist || {}), ...h } }; });
+        ['hist', 'ty', 'fcst'].forEach((tp) => Object.entries(r[tp]).forEach(([name, d]) => {
+          map[name] = { ...(map[name] || { name }), [tp]: { ...(map[name]?.[tp] || {}), ...d } };
+        }));
         return { ...s, otb: { ...s.otb, ...r.otb }, entities: Object.values(map) };
       });
-      setMsg({ ok: true, text: `${r.rows} filas · ${Object.keys(r.otb).length} ratios OTB · ${Object.keys(r.hist).length} ${dim.toLowerCase()}s` });
+      setMsg({ ok: true, text: `${r.rows} filas · ${Object.keys(r.otb).length} ratios OTB · ${Object.keys(r.hist).length} HIST · ${Object.keys(r.ty).length} REAL · ${Object.keys(r.fcst).length} FCST` });
     } catch (err) { setMsg({ ok: false, text: `Error leyendo Excel: ${err.message}` }); }
   };
 
+  // Exporta plan legible + hoja _estado (JSON completo) para volver a cargarlo y seguir donde te quedaste
   const exportPlan = () => {
-    const aoa = [['Tipo', dim, 'Ratio', ...MONTHS, 'Total']];
-    METRICS.forEach((m) => aoa.push(['OTB', '', m.label.toUpperCase(), ...(otb[m.key] || zeros()).map(Math.round), Math.round(sum(otb[m.key] || []))]));
-    METRICS.forEach((m) => alloc[m.key].rows.forEach((r) => aoa.push(['PLAN', r.name, m.label.toUpperCase(), ...r.plan.map(Math.round), Math.round(r.planTot)])));
+    const aoa = [['Tipo', dim, 'Ratio', ...MLABEL, 'Total']];
+    const line = (tipo, name, m, arr) => [tipo, name, m.label.toUpperCase(), ...rng(13).map((k) => (k < arr.length ? Math.round(arr[k] || 0) : '')), Math.round(m.stock ? sum(arr) / arr.length : sum(arr))];
+    METRICS.forEach((m) => aoa.push(line('OTB', '', m, otb[m.key] || zeros(nCols(m.key)))));
+    METRICS.forEach((m) => alloc[m.key].rows.forEach((r) => aoa.push(line('PLAN', r.name, m, r.plan))));
+    const json = JSON.stringify(st), chunks = [];
+    for (let i = 0; i < json.length; i += 30000) chunks.push([json.slice(i, i + 30000)]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Plan');
+    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(chunks), '_estado');
     XLSX.writeFile(wb, `Suplementarios_${dim}.xlsx`);
   };
 
-  const setOtb = (mk, k, v) => setSt((s) => ({ ...s, otb: { ...s.otb, [mk]: (s.otb[mk] || zeros()).map((x, i) => (i === k ? +v || 0 : x)) } }));
+  const setOtb = (mk, k, v) => setSt((s) => ({ ...s, otb: { ...s.otb, [mk]: rng(nCols(mk)).map((i) => (i === k ? +v || 0 : +s.otb[mk]?.[i] || 0)) } }));
+  const pasteOtb = (r0, c0, grid) => setSt((s) => {
+    const o = { ...s.otb };
+    grid.forEach((line, i) => {
+      const m = METRICS[r0 + i]; if (!m) return;
+      const arr = rng(nCols(m.key)).map((k) => +o[m.key]?.[k] || 0);
+      line.forEach((v, j) => { const k = c0 + j; if (k < arr.length && v !== '') arr[k] = v; });
+      o[m.key] = arr;
+    });
+    return { ...s, otb: o };
+  });
   const setCfg = (name, field, v) => setSt((s) => ({ ...s, cfg: { ...s.cfg, [metric]: { ...(s.cfg[metric] || {}), [name]: { ...(s.cfg[metric]?.[name] || {}), [field]: v } } } }));
   const setLock = (name, k, v) => setSt((s) => {
     const ml = { ...(s.locks[metric] || {}) }; const row = { ...(ml[name] || {}) };
     if (v === '') delete row[k]; else row[k] = v;
     ml[name] = row; return { ...s, locks: { ...s.locks, [metric]: ml } };
+  });
+  // Pegado en bajada: col 0 = share manual, 1 = estrategia, 2.. = meses (quedan fijos)
+  const pasteBaj = (r0, c0, grid) => setSt((s) => {
+    const names = entities.map((e) => e.name);
+    const mc = { ...(s.cfg[metric] || {}) }, ml = { ...(s.locks[metric] || {}) };
+    grid.forEach((line, i) => {
+      const name = names[r0 + i]; if (!name) return;
+      line.forEach((v, j) => {
+        const c = c0 + j;
+        if (c <= 1) mc[name] = { ...(mc[name] || {}), [c === 0 ? 'share' : 'adj']: v };
+        else if (c - 2 < nCols(metric) && v !== '') ml[name] = { ...(ml[name] || {}), [c - 2]: v };
+      });
+    });
+    return { ...s, cfg: { ...s.cfg, [metric]: mc }, locks: { ...s.locks, [metric]: ml } };
   });
   const clearLocks = (name) => setSt((s) => {
     const ml = { ...(s.locks[metric] || {}) };
@@ -248,7 +322,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
     return { ...s, locks: { ...s.locks, [metric]: ml } };
   });
   const copyCfgToAll = () => setSt((s) => ({ ...s, cfg: Object.fromEntries(METRICS.map((m) => [m.key, JSON.parse(JSON.stringify(s.cfg[metric] || {}))])) }));
-  const clearAll = () => { if (confirm('¿Borrar OTB, históricos y ajustes de Suplementarios?')) setSt({ dim, otb: Object.fromEntries(METRICS.map((m) => [m.key, zeros()])), entities: [], cfg: {}, locks: {} }); };
+  const clearAll = () => { if (confirm('¿Borrar OTB, históricos y ajustes de Suplementarios?')) setSt({ dim, otb: Object.fromEntries(METRICS.map((m) => [m.key, zeros(nCols(m.key))])), entities: [], cfg: {}, locks: {} }); };
 
   const card = `rounded-2xl border p-4 ${t.card}`;
   const th = `px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-right whitespace-nowrap ${t.tableHead}`;
@@ -292,18 +366,23 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
       </div>
       <div className={`${card} overflow-x-auto`}>
         <table className="w-full">
-          <thead><tr><th className={`${th} text-left`}>Ratio</th>{MONTHS.map((m) => <th key={m} className={th}>{m}</th>)}<th className={th}>Total</th><th className={th}>LY</th><th className={th}>Crec.</th></tr></thead>
+          <thead><tr><th className={`${th} text-left`}>Ratio</th>{MLABEL.map((m) => <th key={m} className={th}>{m}</th>)}<th className={th}>Total</th><th className={th}>LY</th><th className={th}>Crec.</th></tr></thead>
           <tbody>
-            {METRICS.map((m) => {
-              const arr = otb[m.key] || zeros();
-              const tot = m.stock ? sum(arr) / 12 : sum(arr);
-              const ly = m.stock ? sum(byEnt.__total.hist[m.key]) / 12 : sum(byEnt.__total.hist[m.key]);
+            {METRICS.map((m, ri) => {
+              const arr = otb[m.key] || zeros(nCols(m.key));
+              const lyArr = byEnt.__total.hist[m.key];
+              const tot = m.stock ? sum(arr) / arr.length : sum(arr);
+              const ly = m.stock ? sum(lyArr) / lyArr.length : sum(lyArr);
               const g = growth(tot, ly);
               return (
                 <tr key={m.key} className={t.tableRow}>
-                  <td className={`px-2 py-1 text-xs font-bold ${t.text}`}>{m.label}{m.stock && <span className={`ml-1 text-[9px] ${t.textMuted}`}>(prom)</span>}</td>
-                  {R12.map((k) => <td key={k} className="px-0.5 py-0.5"><NumCell value={arr[k] || ''} onCommit={(v) => setOtb(m.key, k, v)} className={t.inputY} /></td>)}
-                  <td className={`${td} font-bold ${t.text}`}>{fmt(tot)}</td>
+                  <td className={`px-2 py-1 text-xs font-bold whitespace-nowrap ${t.text}`}>{m.label}{m.stock && <span className={`ml-1 text-[9px] ${t.textMuted}`}>(inicial)</span>}</td>
+                  {rng(13).map((k) => (
+                    <td key={k} className="px-0.5 py-0.5">
+                      {k < nCols(m.key) && <NumCell value={arr[k] || ''} onCommit={(v) => setOtb(m.key, k, v)} onPasteGrid={(g) => pasteOtb(ri, k, g)} className={t.inputY} />}
+                    </td>
+                  ))}
+                  <td className={`${td} font-bold ${t.text}`} title={m.stock ? 'Promedio de 13 inventarios' : ''}>{fmt(tot)}</td>
                   <td className={`${td} ${t.textMuted}`}>{fmt(ly)}</td>
                   <td className={`${td} ${g == null ? t.textMuted : g >= 0 ? good : bad}`}>{pct(g)}</td>
                 </tr>
@@ -311,28 +390,37 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
             })}
             {[
               ['Margen %', 'margen', pct], ['Mkd %', 'mkdPct', pct], ['CMSI %', 'cmsiPct', pct], ['Sell-through', 'st', pct],
-              ['MOS', 'mos', dec], ['Rotación (anualiz.)', 'rot', dec], ['Vta / Compra', 'vtaCompra', dec],
-            ].map(([l, k, f]) => (
+              ['MOS', 'mos', dec], ['Rotación acum.', 'rot', dec, true], ['Vta / Compra', 'vtaCompra', dec],
+            ].map(([l, k, f, ytd]) => (
               <tr key={k} className={`border-t ${t.border}`}>
-                <td className={`px-2 py-1 text-xs italic ${t.textMuted}`}>{l}</td>
-                {R12.map((i) => <td key={i} className={`${td} ${t.textMuted}`}>{f(kpis(otb, [i])[k])}</td>)}
+                <td className={`px-2 py-1 text-xs italic whitespace-nowrap ${t.textMuted}`}>{l}</td>
+                {R12.map((i) => <td key={i} className={`${td} ${t.textMuted}`}>{f(kpis(otb, ytd ? R12.slice(0, i + 1) : [i])[k])}</td>)}
+                <td />
                 <td className={`${td} font-bold ${t.text}`}>{f(totalK[k])}</td>
                 <td className={`${td} ${t.textMuted}`}>{f(lyK[k])}</td><td />
               </tr>
             ))}
           </tbody>
         </table>
-        <p className={`mt-2 text-[10px] ${t.textMuted}`}>Inventario a precio de venta · ST = Vta / (Vta + Inv fin) · MOS = Inv fin / Vta promedio mensual · Rotación = Vta / Inv promedio (anualizada) · CMSI = costo de meses sin intereses.</p>
+        <p className={`mt-2 text-[10px] ${t.textMuted}`}>
+          Pega bloques desde Excel (Cmd+V) sobre la primera celda. Inventario = inv inicial de cada mes a precio de venta; Cierre = inv final de Dic.
+          ST = Vta / (Vta + Inv fin) · MOS = Inv fin / Vta prom mensual · Rotación acum. = Σ Vta Ene→mes / promedio inv ini Ene→mes siguiente (total: 12 ventas / 13 inventarios) · CMSI = costo de meses sin intereses.
+        </p>
       </div>
     </div>
   );
 
   // ── Tab 2: Bajada ──
   const A = alloc[metric];
+  const KC = rng(nCols(metric));
   const mCfg = cfg[metric] || {}, mLocks = locks[metric] || {};
-  const otbM = otb[metric] || zeros();
-  const monthOk = R12.map((k) => Math.abs(A.colTot[k] - (+otbM[k] || 0)) < 1);
+  const otbM = otb[metric] || zeros(nCols(metric));
+  const monthOk = KC.map((k) => Math.abs(A.colTot[k] - (+otbM[k] || 0)) < 1);
   const manualSum = sum(Object.values(mCfg).map((c) => (c.share !== '' && c.share != null ? +c.share : 0)));
+  const isInv = metric === 'inv';
+  const baseLbl = baseMode === 'is' ? 'IS' : 'LY';
+  const solid = { background: isDark ? '#1c1720' : '#ffffff' };
+  const hasTy = entities.some((e) => e.ty);
   const BajadaTab = (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
@@ -340,41 +428,64 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
           <button key={m.key} onClick={() => setMetric(m.key)} className={`px-3 py-1.5 text-xs rounded-lg border ${metric === m.key ? t.toggleActive : `${t.toggle} ${t.textMuted}`}`}>{m.label}</button>
         ))}
         <div className="flex-1" />
-        <button onClick={copyCfgToAll} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg ${t.btnGhost}`} title="Aplica share y estrategia de este ratio a todos"><Copy size={13} />Copiar ajustes a todos los ratios</button>
-        <button onClick={() => clearLocks()} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg ${t.btnGhost}`}><RotateCcw size={13} />Liberar celdas fijas</button>
+        <div className={`flex items-center rounded-lg border p-0.5 ${t.toggle}`} title="Base para share y estacionalidad">
+          {[['ly', 'Base LY'], ['is', 'Base IS']].map(([k, l]) => (
+            <button key={k} onClick={() => setSt((s) => ({ ...s, baseMode: k }))} className={`px-3 py-1 text-xs rounded-md ${baseMode === k ? t.toggleActive : t.textMuted}`}>{l}</button>
+          ))}
+        </div>
+        {baseMode === 'is' && (
+          <label className={`flex items-center gap-1.5 text-xs ${t.textMuted}`}>Real hasta
+            <select value={corte} onChange={(e) => setSt((s) => ({ ...s, corte: +e.target.value }))} className={`px-2 py-1 text-xs rounded-lg border ${t.input}`}>
+              {rng(13).map((k) => <option key={k} value={k}>{k ? MONTHS[k - 1] : '—'}</option>)}
+            </select>
+          </label>
+        )}
+        <button onClick={copyCfgToAll} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg ${t.btnGhost}`} title="Aplica share y estrategia de este ratio a todos"><Copy size={13} />Copiar ajustes a todos</button>
+        <button onClick={() => clearLocks()} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg ${t.btnGhost}`}><RotateCcw size={13} />Liberar fijas</button>
       </div>
+      {baseMode === 'is' && !hasTy && (
+        <div className={`px-3 py-2 rounded-lg border text-xs ${t.warningBg}`}>Base IS sin venta real cargada: sube filas Tipo REAL (y opcional FCST) por {dim.toLowerCase()}. Mientras, usa LY.</div>
+      )}
       {!entities.length ? (
         <div className={`${card} text-center text-sm ${t.textMuted}`}>Carga el Excel con filas HIST por {dim.toLowerCase()} para hacer la bajada.</div>
       ) : (
         <div className={`${card} overflow-x-auto`}>
           <table className="w-full">
             <thead><tr>
-              <th className={`${th} text-left sticky left-0 z-10`}>{dim}</th>
-              <th className={th}>LY</th><th className={th}>Share LY</th><th className={th}>Share manual</th><th className={th}>Estrategia %</th>
-              <th className={th}>Share final</th><th className={th}>Plan</th><th className={th}>Crec.</th>
-              {MONTHS.map((m) => <th key={m} className={th}>{m}</th>)}
+              <th className={`${th} text-left sticky left-0 z-20`} style={solid}>{dim}</th>
+              <th className={th}>{baseLbl}</th><th className={th}>Share {baseLbl}</th><th className={th}>Share manual</th><th className={th}>Estrategia %</th>
+              <th className={th}>Share final</th><th className={th}>Plan</th><th className={th}>Crec. vs {baseLbl}</th>
+              {isInv && <><th className={th}>Rot final</th><th className={th}>Rot {baseMode === 'is' ? 'IS' : 'AA'}</th></>}
+              {KC.map((k) => <th key={k} className={th}>{MLABEL[k]}</th>)}
             </tr></thead>
             <tbody>
-              {A.rows.map((r) => {
+              {A.rows.map((r, ri) => {
                 const c = mCfg[r.name] || {}; const lk = mLocks[r.name] || {};
-                const g = growth(r.planTot, r.histTot);
+                const tot = (arr) => (isInv ? sum(arr) / arr.length : sum(arr));
+                const g = growth(tot(r.plan), tot(r.base));
+                const paste = (c0) => (grid) => pasteBaj(ri, c0, grid);
+                const rotP = isInv ? kpis(byEnt[r.name].plan, R12).rot : null, rotL = isInv ? kpis(byEnt[r.name].hist, R12).rot : null;
                 return (
                   <tr key={r.name} className={t.tableRow}>
-                    <td className={`px-2 py-1 text-xs font-bold whitespace-nowrap sticky left-0 ${isDark ? 'bg-[#1c1720]' : 'bg-white'} ${t.text}`}>
+                    <td className={`px-2 py-1 text-xs font-bold whitespace-nowrap sticky left-0 z-10 ${t.text}`} style={solid}>
                       <span className="flex items-center gap-1">{r.name}
                         {Object.keys(lk).length > 0 && <button onClick={() => clearLocks(r.name)} title="Liberar celdas fijas"><Lock size={11} className={warn} /></button>}
                       </span>
                     </td>
-                    <td className={`${td} ${t.textMuted}`}>{fmt(r.histTot)}</td>
-                    <td className={`${td} ${t.textMuted}`}>{pct(r.histShare)}</td>
-                    <td className="px-0.5 py-0.5 w-20"><NumCell value={c.share ?? ''} placeholder="hist" onCommit={(v) => setCfg(r.name, 'share', v)} className={t.input} /></td>
-                    <td className="px-0.5 py-0.5 w-20"><NumCell value={c.adj ?? ''} placeholder="0" onCommit={(v) => setCfg(r.name, 'adj', v)} className={t.input} /></td>
+                    <td className={`${td} ${t.textMuted}`}>{fmt(isInv ? r.baseTot / KC.length : r.baseTot)}</td>
+                    <td className={`${td} ${t.textMuted}`}>{pct(r.baseShare)}</td>
+                    <td className="px-0.5 py-0.5 w-20"><NumCell value={c.share ?? ''} placeholder="base" onCommit={(v) => setCfg(r.name, 'share', v)} onPasteGrid={paste(0)} className={t.input} /></td>
+                    <td className="px-0.5 py-0.5 w-20"><NumCell value={c.adj ?? ''} placeholder="0" onCommit={(v) => setCfg(r.name, 'adj', v)} onPasteGrid={paste(1)} className={t.input} /></td>
                     <td className={`${td} font-bold ${t.text}`}>{pct(r.share)}</td>
-                    <td className={`${td} font-bold ${t.text}`}>{fmt(r.planTot)}</td>
+                    <td className={`${td} font-bold ${t.text}`}>{fmt(tot(r.plan))}</td>
                     <td className={`${td} ${g == null ? t.textMuted : g >= 0 ? good : bad}`}>{pct(g)}</td>
-                    {R12.map((k) => (
+                    {isInv && <>
+                      <td className={`${td} font-bold ${rotP != null && rotL != null ? (rotP >= rotL ? good : bad) : t.text}`}>{dec(rotP)}</td>
+                      <td className={`${td} ${t.textMuted}`}>{dec(rotL)}</td>
+                    </>}
+                    {KC.map((k) => (
                       <td key={k} className="px-0.5 py-0.5">
-                        <NumCell value={Math.round(r.plan[k])} onCommit={(v) => setLock(r.name, k, v)} className={lk[k] != null ? t.inputY : t.input} />
+                        <NumCell value={Math.round(r.plan[k])} onCommit={(v) => setLock(r.name, k, v)} onPasteGrid={paste(k + 2)} className={lk[k] != null ? t.inputY : t.input} />
                       </td>
                     ))}
                   </tr>
@@ -383,17 +494,19 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
             </tbody>
             <tfoot>
               <tr className={`border-t-2 ${t.border}`}>
-                <td className={`px-2 py-1 text-xs font-black ${t.text}`}>Total</td>
-                <td className={`${td} ${t.textMuted}`}>{fmt(sum(A.rows.map((r) => r.histTot)))}</td><td />
+                <td className={`px-2 py-1 text-xs font-black sticky left-0 z-10 ${t.text}`} style={solid}>Total</td>
+                <td className={`${td} ${t.textMuted}`}>{fmt(sum(A.rows.map((r) => (isInv ? r.baseTot / KC.length : r.baseTot))))}</td><td />
                 <td className={`${td} ${manualSum > 100 ? bad : t.textMuted}`}>{manualSum ? `${manualSum.toFixed(1)}%` : ''}</td><td />
                 <td className={`${td} ${t.text}`}>100%</td>
-                <td className={`${td} font-black ${t.text}`}>{fmt(sum(A.colTot))}</td><td />
-                {R12.map((k) => <td key={k} className={`${td} font-bold ${t.text}`}>{fmt(A.colTot[k])}</td>)}
+                <td className={`${td} font-black ${t.text}`}>{fmt(isInv ? sum(A.colTot) / KC.length : sum(A.colTot))}</td><td />
+                {isInv && <><td className={`${td} font-bold ${t.text}`}>{dec(kpis(otb, R12).rot)}</td><td className={`${td} ${t.textMuted}`}>{dec(kpis(byEnt.__total.hist, R12).rot)}</td></>}
+                {KC.map((k) => <td key={k} className={`${td} font-bold ${t.text}`}>{fmt(A.colTot[k])}</td>)}
               </tr>
               <tr>
-                <td className={`px-2 py-1 text-xs ${t.textMuted}`}>OTB objetivo</td><td colSpan={5} />
-                <td className={`${td} ${t.textMuted}`}>{fmt(sum(otbM))}</td><td />
-                {R12.map((k) => (
+                <td className={`px-2 py-1 text-xs sticky left-0 z-10 ${t.textMuted}`} style={solid}>OTB objetivo</td><td colSpan={5} />
+                <td className={`${td} ${t.textMuted}`}>{fmt(isInv ? sum(otbM) / KC.length : sum(otbM))}</td><td />
+                {isInv && <td colSpan={2} />}
+                {KC.map((k) => (
                   <td key={k} className={`${td} ${monthOk[k] ? good : bad}`}>
                     <span className="inline-flex items-center gap-0.5">{monthOk[k] ? <Check size={11} /> : <AlertCircle size={11} />}{fmt(otbM[k])}</span>
                   </td>
@@ -402,7 +515,9 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
             </tfoot>
           </table>
           <p className={`mt-2 text-[10px] ${t.textMuted}`}>
-            Share manual vacío = share histórico. Estrategia % multiplica el share (se renormaliza a 100%). Editar un mes lo fija (amarillo); el resto se reacomoda para cuadrar el OTB mensual. Si las celdas fijas exceden el OTB del mes, el check se pone en rojo.
+            Pega bloques desde Excel (Cmd+V) sobre la primera celda: share, estrategia o meses. Share manual vacío = share de la base ({baseLbl}). Estrategia % multiplica el share (se renormaliza a 100%). Editar/pegar un mes lo fija (amarillo); el resto se reacomoda para cuadrar el OTB mensual.
+            {baseMode === 'is' && ' Base IS = venta real hasta el mes de corte + FCST cargado (o LY × tendencia YTD real/LY) para el resto.'}
+            {isInv && ' Rot final = Vta plan / promedio de 13 inventarios plan de la marca (verde si ≥ AA).'}
           </p>
         </div>
       )}
@@ -411,16 +526,16 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
 
   // ── Tab 3: Análisis ──
   const sel = byEnt[ent] || byEnt.__total;
-  const chartData = R12.map((k) => ({ mes: MONTHS[k], 'Vta LY': sel.hist.vta?.[k] || 0, 'Vta Plan': sel.plan.vta?.[k] || 0, 'Inv Plan': sel.plan.inv?.[k] || 0 }));
-  const seas = (arr) => { const avg = sum(arr) / 12; return R12.map((k) => (avg ? arr[k] / avg : null)); };
+  const chartData = R12.map((k) => ({ mes: MONTHS[k], 'Vta LY': sel.hist.vta?.[k] || 0, 'Vta Plan': sel.plan.vta?.[k] || 0, 'Inv ini Plan': sel.plan.inv?.[k] || 0 }));
+  const seas = (arr) => { const avg = sum(arr.slice(0, 12)) / 12; return R12.map((k) => (avg ? arr[k] / avg : null)); };
   const seasLY = seas(sel.hist.vta || zeros()), seasPl = seas(sel.plan.vta || zeros());
+  const seasData = R12.map((k) => ({ mes: MONTHS[k], LY: seasLY[k], Plan: seasPl[k] }));
   const perRows = [
-    ['Venta', 'vta', fmt, true], ['Mkd %', 'mkdPct', pct], ['Margen %', 'margen', pct], ['CMSI', 'cmsi', fmt, true], ['CMSI %', 'cmsiPct', pct],
-    ['Compra', 'compra', fmt, true], ['Inv fin', 'invFin', fmt, true], ['Vta / Inv', 'vtaInv', dec], ['Vta / Compra', 'vtaCompra', dec],
-    ['Sell-through', 'st', pct], ['MOS', 'mos', dec], ['Rotación', 'rot', dec],
+    ['Venta', 'vta', fmt, true], ['Mkd %', 'mkdPct', pct], ['CMSI %', 'cmsiPct', pct], ['Mg %', 'margen', pct],
+    ['Compra', 'compra', fmt, true], ['ST %', 'st', pct], ['MOS', 'mos', dec], ['Rot', 'rot', dec],
   ];
   const tot = kpis(otb, R12);
-  const totInvShareBase = sum(entities.map((e) => sum(byEnt[e.name].plan.inv) / 12)) || 1;
+  const totInvShareBase = sum(entities.map((e) => kpis(byEnt[e.name].plan, R12).invAvg)) || 1;
   const ranking = entities.map((e) => {
     const p = kpis(byEnt[e.name].plan, R12), l = kpis(byEnt[e.name].hist, R12);
     const shV = tot.vta ? p.vta / tot.vta : null, shI = p.invAvg / totInvShareBase;
@@ -438,7 +553,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
       </div>
       <div className="grid lg:grid-cols-2 gap-4">
         <div className={card}>
-          <p className={`text-xs font-bold mb-2 ${t.text}`}>Venta LY vs Plan · Inventario plan</p>
+          <p className={`text-xs font-bold mb-2 ${t.text}`}>Venta LY vs Plan · Inv inicial plan</p>
           <ResponsiveContainer width="100%" height={240}>
             <ComposedChart data={chartData}>
               <CartesianGrid strokeDasharray="3 3" stroke={isDark ? '#ffffff14' : '#e5e7eb'} />
@@ -449,31 +564,53 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
               <Legend wrapperStyle={{ fontSize: 10 }} />
               <Bar yAxisId="l" dataKey="Vta LY" fill={isDark ? '#6b6778' : '#cbd5e1'} radius={[3, 3, 0, 0]} />
               <Bar yAxisId="l" dataKey="Vta Plan" fill={isDark ? '#8A73AD' : '#2563eb'} radius={[3, 3, 0, 0]} />
-              <Line yAxisId="r" dataKey="Inv Plan" stroke="#E0BB3E" strokeWidth={2} dot={false} />
+              <Line yAxisId="r" dataKey="Inv ini Plan" stroke="#E0BB3E" strokeWidth={2} dot={false} />
             </ComposedChart>
           </ResponsiveContainer>
         </div>
-        <div className={`${card} overflow-x-auto`}>
+        <div className={card}>
           <p className={`text-xs font-bold mb-2 ${t.text}`}>Ciclicidad venta (índice mes / promedio)</p>
-          <table className="w-full">
-            <thead><tr><th className={`${th} text-left`} />{MONTHS.map((m) => <th key={m} className={th}>{m}</th>)}</tr></thead>
-            <tbody>
-              {[['LY', seasLY], ['Plan', seasPl]].map(([l, a]) => (
-                <tr key={l}>
-                  <td className={`px-2 py-1 text-xs font-bold ${t.text}`}>{l}</td>
-                  {a.map((v, k) => (
-                    <td key={k} className={`${td} ${t.text}`} style={{ background: v == null ? undefined : v >= 1 ? `rgba(16,185,129,${Math.min((v - 1) * 0.6, 0.45)})` : `rgba(239,68,68,${Math.min((1 - v) * 0.6, 0.45)})` }}>{dec(v, 2)}</td>
-                  ))}
-                </tr>
-              ))}
-              <tr>
-                <td className={`px-2 py-1 text-xs ${t.textMuted}`}>Δ</td>
-                {R12.map((k) => { const d = seasPl[k] != null && seasLY[k] != null ? seasPl[k] - seasLY[k] : null; return <td key={k} className={`${td} ${d == null ? t.textMuted : Math.abs(d) > 0.15 ? warn : t.textMuted}`}>{dec(d, 2)}</td>; })}
-              </tr>
-            </tbody>
-          </table>
-          <p className={`mt-2 text-[10px] ${t.textMuted}`}>Δ en amarillo = el plan se separa &gt;0.15 de la estacionalidad LY.</p>
+          <ResponsiveContainer width="100%" height={240}>
+            <LineChart data={seasData}>
+              <CartesianGrid strokeDasharray="3 3" stroke={isDark ? '#ffffff14' : '#e5e7eb'} />
+              <XAxis dataKey="mes" tick={{ fontSize: 10, fill: isDark ? '#948FA0' : '#6b7280' }} />
+              <YAxis tick={{ fontSize: 10, fill: isDark ? '#948FA0' : '#6b7280' }} domain={['auto', 'auto']} />
+              <Tooltip formatter={(v) => dec(v, 2)} contentStyle={{ background: isDark ? '#1c1720' : '#fff', border: 'none', fontSize: 11 }} />
+              <Legend wrapperStyle={{ fontSize: 10 }} />
+              <ReferenceLine y={1} stroke={isDark ? '#948FA0' : '#9ca3af'} strokeDasharray="4 4" />
+              <Line dataKey="LY" stroke={isDark ? '#948FA0' : '#94a3b8'} strokeWidth={2} dot={{ r: 2 }} />
+              <Line dataKey="Plan" stroke={isDark ? '#B39DDB' : '#2563eb'} strokeWidth={2} dot={{ r: 2 }} />
+            </LineChart>
+          </ResponsiveContainer>
         </div>
+      </div>
+
+      <div className={`${card} overflow-x-auto`}>
+        <p className={`text-xs font-bold mb-2 ${t.text}`}>Crecimiento por mes vs LY</p>
+        <table className="w-full">
+          <thead><tr><th className={`${th} text-left`}>Ratio</th>{MONTHS.map((m) => <th key={m} className={th}>{m}</th>)}<th className={th}>Año</th></tr></thead>
+          <tbody>
+            {[['Vta plan', sel.plan.vta], ['Vta LY', sel.hist.vta]].map(([l, a]) => (
+              <tr key={l} className={t.tableRow}>
+                <td className={`px-2 py-1 text-xs font-bold whitespace-nowrap ${t.text}`}>{l}</td>
+                {R12.map((k) => <td key={k} className={`${td} ${t.text}`}>{fmt(a?.[k])}</td>)}
+                <td className={`${td} font-bold ${t.text}`}>{fmt(sum((a || []).slice(0, 12)))}</td>
+              </tr>
+            ))}
+            {METRICS.map((m) => {
+              const p = sel.plan[m.key] || [], l = sel.hist[m.key] || [];
+              const yr = m.stock ? growth(sum(p) / (p.length || 1), sum(l) / (l.length || 1)) : growth(sum(p), sum(l));
+              const cls = (g) => (g == null ? t.textMuted : g >= 0 ? good : bad);
+              return (
+                <tr key={m.key} className={`border-t ${t.border}`}>
+                  <td className={`px-2 py-1 text-xs italic whitespace-nowrap ${t.textMuted}`}>Crec. {m.label}{m.stock ? ' ini' : ''}</td>
+                  {R12.map((k) => { const g = growth(+p[k] || 0, +l[k] || 0); return <td key={k} className={`${td} ${cls(g)}`}>{pct(g)}</td>; })}
+                  <td className={`${td} font-bold ${cls(yr)}`}>{pct(yr)}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+        </table>
       </div>
 
       <div className={`${card} overflow-x-auto`}>
