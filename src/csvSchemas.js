@@ -20,12 +20,12 @@ export const CSV_SCHEMAS = [
     formats: [
       {
         title: 'OTB + histórico por marca / proveedor',
-        desc: 'Una fila por Tipo × Marca × Ratio (acepta .csv o .xlsx). Tipo: OTB (sin marca), HIST (año anterior), LLY (hace 2 años, opcional: mejora el forecast IS y se grafica en Análisis) o REAL (año en curso, para base IS). Ratio: VENTA, MKDS, CMSI, COMPRA, UTILIDAD, INVENTARIO (inv inicial de cada mes; Cierre = inv final de Dic). La columna Marca también puede llamarse Proveedor.',
+        desc: 'Una fila por Tipo × Marca × Ratio (acepta .csv o .xlsx). Tipo: OTB (sin marca), HIST (LLY: último año cerrado) o REAL (LY: año en curso hasta el corte; el resto se pronostica = IS). Ratio: VENTA, MKDS, CMSI, COMPRA, UTILIDAD, INVENTARIO (inv inicial de cada mes; Cierre = inv final de Dic). La columna Marca también puede llamarse Proveedor.',
         columns: ['Tipo', 'Marca', 'Ratio', 'Ene … Dic', 'Cierre'],
         template: [
           ['Tipo', 'Marca', 'Ratio', 'Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic', 'Cierre'],
           ...['VENTA', 'MKDS', 'CMSI', 'COMPRA', 'UTILIDAD', 'INVENTARIO'].map((r) => ['OTB', '', r, ...Array(12).fill(0), r === 'INVENTARIO' ? 0 : '']),
-          ...['HIST', 'LLY', 'REAL'].flatMap((tp) => ['VENTA', 'MKDS', 'CMSI', 'COMPRA', 'UTILIDAD', 'INVENTARIO'].map((r) => [tp, 'MARCA A', r, ...Array(12).fill(0), r === 'INVENTARIO' ? 0 : ''])),
+          ...['HIST', 'REAL'].flatMap((tp) => ['VENTA', 'MKDS', 'CMSI', 'COMPRA', 'UTILIDAD', 'INVENTARIO'].map((r) => [tp, 'MARCA A', r, ...Array(12).fill(0), r === 'INVENTARIO' ? 0 : ''])),
         ],
       },
     ],
