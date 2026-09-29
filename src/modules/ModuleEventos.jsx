@@ -237,7 +237,7 @@ const Modal = ({onClose,children,isDark,wide}) => (
     <div onClick={e=>e.stopPropagation()}
       className={`relative w-full ${wide?'max-w-2xl':'max-w-lg'} max-h-[85vh] overflow-y-auto rounded-2xl border p-6 space-y-4
       shadow-[0_8px_40px_rgba(139,92,246,0.25)] backdrop-blur-2xl
-      ${isDark?'bg-[#1e222d]/70 border-white/10':'bg-white/75 border-white/60'}`}>
+      ${isDark?'bg-white/[0.03] border-white/10':'bg-white/75 border-white/60'}`}>
       {children}
     </div>
   </div>
@@ -251,8 +251,8 @@ export default function ModuleEventos(){
   const themes={
     dark:{appBg:'bg-transparent text-gray-100',card:'bg-white/[0.045] backdrop-blur-xl border-white/10 shadow-lg shadow-black/40 transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)]',cardInner:'bg-white/5 border-white/10',
       textMain:'text-white',textMuted:'text-gray-400',textAccent1:'text-violet-300',textAccent2:'text-purple-300',border:'border-[#2a2e3d]',
-      input:'bg-[#161922] border-[#2a2e3d] text-white focus:ring-violet-500',btnPrimary:'bg-violet-500 text-white hover:bg-violet-400 shadow-[0_0_18px_rgba(139,92,246,0.4)]',
-      btnGhost:'bg-[#1e222d]/80 text-gray-300 hover:text-white hover:bg-[#2a2e3d] border-[#2a2e3d]',
+      input:'bg-white/5 border-white/10 text-white focus:ring-violet-500',btnPrimary:'bg-violet-500 text-white hover:bg-violet-400 shadow-[0_0_18px_rgba(139,92,246,0.4)]',
+      btnGhost:'bg-white/[0.03] text-gray-300 hover:text-white hover:bg-[#2a2e3d] border-white/10',
       badge:'bg-violet-500/25 text-violet-300 border-violet-400/60',badgeCyan:'bg-cyan-500/20 text-cyan-300 border-cyan-400/50',
       badgeAmber:'bg-amber-600/25 text-amber-400 border-amber-500/60',badgeRed:'bg-[#00bcd4]/20 text-[#5ddef4] border-[#00bcd4]/50',
       badgeEmerald:'bg-[#f59e0b]/20 text-[#f59e0b] border-[#f59e0b]/50',badgeOrange:'bg-orange-600/25 text-orange-400 border-orange-500/60'},

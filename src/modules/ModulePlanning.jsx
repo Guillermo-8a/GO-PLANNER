@@ -200,7 +200,7 @@ export default function Forecast() {
       textMain: 'text-white', textMuted: 'text-gray-400',
       textAccent1: 'text-orange-400', textAccent2: 'text-teal-400',
       border: 'border-zinc-800',
-      input: 'bg-zinc-950 border-zinc-700 text-white focus:ring-orange-500',
+      input: 'bg-white/5 border-white/10 text-white focus:ring-orange-500',
       btnPrimary: 'bg-orange-500 text-black hover:bg-orange-400 shadow-[0_0_15px_rgba(249,115,22,0.2)]',
       btnSecondary: 'bg-teal-600 text-white hover:bg-teal-500',
       btnGhost: 'bg-zinc-800 text-gray-300 hover:text-white hover:bg-zinc-700',
@@ -216,7 +216,7 @@ export default function Forecast() {
       btnYellow:   'bg-amber-500 text-zinc-900 hover:bg-amber-400 shadow-[0_0_15px_rgba(245,158,11,0.25)]',
       cellPurple:  'bg-violet-500/80 border-violet-400 text-white',
       cellYellow:  'bg-amber-400/80 border-amber-300 text-zinc-900',
-      menu:        'bg-zinc-900 border-zinc-700 shadow-2xl',
+      menu:        'bg-[#1c1720] border-white/10 shadow-2xl',
       menuItem:    'hover:bg-zinc-800 text-gray-200',
     },
     light: {
@@ -2534,7 +2534,7 @@ export default function Forecast() {
                   <div className="overflow-x-auto max-h-[45vh] custom-scrollbar">
                     <table className="w-full text-left min-w-max">
                       <thead>
-                        <tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark ? 'bg-zinc-900 text-gray-400 border-b border-zinc-800' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+                        <tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark ? 'bg-[#1c1720] text-gray-400 border-b border-white/10' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
                           {[
                             { col: 'centro',  label: 'Centro' },
                             { col: 'nombre',  label: 'Nombre' },
@@ -2711,8 +2711,8 @@ export default function Forecast() {
                     <div className="overflow-x-auto max-h-[55vh] custom-scrollbar">
                       <table className="w-full text-left min-w-max">
                         <thead>
-                          <tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark ? 'bg-zinc-900 text-gray-400 border-b border-zinc-800' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
-                            <th className={`p-2 sticky left-0 ${isDark ? 'bg-zinc-900' : 'bg-gray-50'}`}>Centro</th>
+                          <tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark ? 'bg-[#1c1720] text-gray-400 border-b border-white/10' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+                            <th className={`p-2 sticky left-0 ${isDark ? 'bg-[#1c1720]' : 'bg-gray-50'}`}>Centro</th>
                             {goasMaestro.map(g => {
                               // Estado de aplicación: cuántos centros lo tienen activo
                               const allCentros = [...new Set([...centrosLista.map(c => c.centro), ...Object.keys(aperturas)])];
@@ -2750,7 +2750,7 @@ export default function Forecast() {
                               centro: id, nombre: info.nombre, tipo: 'NUEVA', vta: 0, anios: 0, tipoTda: 'NUEVA'
                             }))].map(c => (
                             <tr key={c.centro} className={`text-xs ${isDark ? 'hover:bg-zinc-800/20' : 'hover:bg-teal-50/20'}`}>
-                              <td className={`p-2 font-mono whitespace-nowrap sticky left-0 ${isDark ? 'bg-zinc-950' : 'bg-gray-50'} ${t.textMain}`}>
+                              <td className={`p-2 font-mono whitespace-nowrap sticky left-0 ${isDark ? 'bg-[#1c1720]' : 'bg-gray-50'} ${t.textMain}`}>
                                 <div className="flex flex-col">
                                   <span className="font-bold">{c.centro}</span>
                                   <span className={`text-[9px] ${t.textMuted}`}>{c.nombre}</span>
@@ -3014,7 +3014,7 @@ export default function Forecast() {
 
                   {/* Panel avanzado colapsable */}
                   {thresholdsAvanzado && (
-                    <div className={`mb-4 p-3 rounded-lg border ${isDark ? 'bg-zinc-900/50 border-zinc-800' : 'bg-white border-gray-200'}`}>
+                    <div className={`mb-4 p-3 rounded-lg border ${isDark ? 'bg-white/[0.045] backdrop-blur-xl transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] border-white/10' : 'bg-white border-gray-200'}`}>
                       <h4 className={`text-[10px] font-black uppercase tracking-widest mb-3 ${t.textMuted}`}>Configuración avanzada</h4>
 
                       <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -3272,25 +3272,25 @@ export default function Forecast() {
                     <>
                       {/* KPIs del cruce */}
                       <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                        <div className={`p-3 rounded-lg border ${isDark ? 'bg-zinc-950 border-zinc-800' : 'bg-white border-gray-200'}`}>
+                        <div className={`p-3 rounded-lg border ${isDark ? 'bg-white/[0.045] backdrop-blur-xl transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] border-white/10' : 'bg-white border-gray-200'}`}>
                           <div className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted}`}>{anioActual - 1}</div>
                           <div className={`text-base font-black ${t.textGray}`}>{fmtMXN(t2Calc.kpis.totalUltAnio)}</div>
                         </div>
-                        <div className={`p-3 rounded-lg border ${isDark ? 'bg-zinc-950 border-zinc-800' : 'bg-white border-gray-200'}`}>
+                        <div className={`p-3 rounded-lg border ${isDark ? 'bg-white/[0.045] backdrop-blur-xl transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] border-white/10' : 'bg-white border-gray-200'}`}>
                           <div className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted}`}>In Season {anioActual}</div>
                           <div className={`text-base font-black ${t.textYellow}`}>{fmtMXN(t2Calc.kpis.totalInSeason)}</div>
                           <div className={`text-[9px] font-bold ${t2Calc.kpis.crecYoY >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
                             {fmtPct(t2Calc.kpis.crecYoY)}
                           </div>
                         </div>
-                        <div className={`p-3 rounded-lg border ${isDark ? 'bg-zinc-950 border-zinc-800' : 'bg-white border-gray-200'}`}>
+                        <div className={`p-3 rounded-lg border ${isDark ? 'bg-white/[0.045] backdrop-blur-xl transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] border-white/10' : 'bg-white border-gray-200'}`}>
                           <div className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted}`}>Plan {anioPlan}</div>
                           <div className={`text-base font-black ${t.textPurple}`}>{fmtMXN(t2Calc.kpis.totalPlan)}</div>
                           <div className={`text-[9px] font-bold ${t2Calc.kpis.crecPlan >= 0 ? 'text-emerald-500' : 'text-red-500'}`}>
                             {fmtPct(t2Calc.kpis.crecPlan)}
                           </div>
                         </div>
-                        <div className={`p-3 rounded-lg border ${isDark ? 'bg-zinc-950 border-zinc-800' : 'bg-white border-gray-200'}`}>
+                        <div className={`p-3 rounded-lg border ${isDark ? 'bg-white/[0.045] backdrop-blur-xl transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] border-white/10' : 'bg-white border-gray-200'}`}>
                           <div className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted}`}>R² regresión</div>
                           <div className={`text-base font-black ${t2Calc.kpis.r2 >= 0.5 ? 'text-emerald-500' : t2Calc.kpis.r2 >= 0.2 ? t.textYellow : 'text-red-500'}`}>
                             {(t2Calc.kpis.r2 * 100).toFixed(1)}%
@@ -3300,7 +3300,7 @@ export default function Forecast() {
                       </div>
 
                       {/* Gráfico */}
-                      <div className={`p-3 rounded-lg border mb-4 ${isDark ? 'bg-zinc-950 border-zinc-800' : 'bg-white border-gray-200'}`}>
+                      <div className={`p-3 rounded-lg border mb-4 ${isDark ? 'bg-white/[0.045] backdrop-blur-xl transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] border-white/10' : 'bg-white border-gray-200'}`}>
                         <div className="flex items-center justify-between mb-2">
                           <span className={`text-[10px] font-black uppercase tracking-widest ${t.textMuted}`}>
                             Evolución mensual · histórico + proyección
@@ -3325,7 +3325,7 @@ export default function Forecast() {
                       <div className="overflow-x-auto custom-scrollbar">
                         <table className="w-full text-left min-w-max">
                           <thead>
-                            <tr className={`text-[9px] uppercase font-black tracking-widest ${isDark ? 'bg-zinc-900 text-gray-400 border-b border-zinc-800' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+                            <tr className={`text-[9px] uppercase font-black tracking-widest ${isDark ? 'bg-white/5 text-gray-400 border-b border-white/10' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
                               <th className="p-2 sticky left-0 bg-inherit">Año</th>
                               {MESES.map(m => <th key={m} className="p-2 text-right">{m}</th>)}
                               <th className="p-2 text-right">Total</th>
@@ -3341,7 +3341,7 @@ export default function Forecast() {
                               const tot = fila.reduce((s,v) => s+v, 0);
                               return (
                                 <tr key={anio} className="text-xs">
-                                  <td className={`p-2 font-mono font-bold sticky left-0 ${isDark ? 'bg-zinc-950' : 'bg-gray-50'} ${t.textGray}`}>{anio}</td>
+                                  <td className={`p-2 font-mono font-bold sticky left-0 ${isDark ? 'bg-[#1c1720]' : 'bg-gray-50'} ${t.textGray}`}>{anio}</td>
                                   {fila.map((v, i) => (
                                     <td key={i} className={`p-2 text-right font-mono ${v > 0 ? t.textMuted : 'opacity-30'}`}>
                                       {v > 0 ? fmt(v, 0) : '—'}
@@ -3354,7 +3354,7 @@ export default function Forecast() {
 
                             {/* Año actual: In Season editable */}
                             <tr className={`text-xs ${isDark ? 'bg-amber-900/10' : 'bg-amber-50/50'}`}>
-                              <td className={`p-2 font-mono font-bold sticky left-0 ${isDark ? 'bg-zinc-950' : 'bg-gray-50'} ${t.textYellow}`}>
+                              <td className={`p-2 font-mono font-bold sticky left-0 ${isDark ? 'bg-[#1c1720]' : 'bg-gray-50'} ${t.textYellow}`}>
                                 {anioActual} <span className="text-[9px] font-normal">(InS)</span>
                               </td>
                               {t2Calc.inSeason.map((x) => {
@@ -3374,7 +3374,7 @@ export default function Forecast() {
                                           className={`w-20 text-right font-mono text-xs px-1.5 py-1 rounded border ${
                                             tieneOverride
                                               ? (isDark ? 'bg-amber-500/20 border-amber-400 text-amber-200' : 'bg-amber-100 border-amber-400 text-amber-900')
-                                              : (isDark ? 'bg-zinc-900 border-zinc-700 text-violet-300' : 'bg-violet-50 border-violet-200 text-violet-700')
+                                              : (isDark ? 'bg-white/5 border-white/10 text-violet-300' : 'bg-violet-50 border-violet-200 text-violet-700')
                                           } focus:outline-none focus:ring-1 focus:ring-amber-500`}
                                           title={tieneOverride
                                             ? `Editado · sugerido era ${fmt(x.sugerido, 0)}`
@@ -3399,7 +3399,7 @@ export default function Forecast() {
 
                             {/* Año plan */}
                             <tr className={`text-xs ${isDark ? 'bg-violet-900/10' : 'bg-violet-50/50'}`}>
-                              <td className={`p-2 font-mono font-bold sticky left-0 ${isDark ? 'bg-zinc-950' : 'bg-gray-50'} ${t.textPurple}`}>
+                              <td className={`p-2 font-mono font-bold sticky left-0 ${isDark ? 'bg-[#1c1720]' : 'bg-gray-50'} ${t.textPurple}`}>
                                 {anioPlan} <span className="text-[9px] font-normal">(Plan)</span>
                               </td>
                               {t2Calc.plan.map((x) => (
@@ -3413,8 +3413,8 @@ export default function Forecast() {
                             </tr>
 
                             {/* Factores estacionales */}
-                            <tr className={`text-xs ${isDark ? 'bg-zinc-900/40' : 'bg-gray-50'}`}>
-                              <td className={`p-2 font-mono sticky left-0 ${isDark ? 'bg-zinc-950' : 'bg-gray-50'} ${t.textMuted} text-[10px]`}>Factor estac.</td>
+                            <tr className={`text-xs ${isDark ? 'bg-white/[0.03]' : 'bg-gray-50'}`}>
+                              <td className={`p-2 font-mono sticky left-0 ${isDark ? 'bg-[#1c1720]' : 'bg-gray-50'} ${t.textMuted} text-[10px]`}>Factor estac.</td>
                               {MESES.map((_, i) => {
                                 const f = t2Calc.factores[i+1] || 1;
                                 const above = f > 1.05, below = f < 0.95;
@@ -3469,7 +3469,7 @@ export default function Forecast() {
                   <div className="overflow-x-auto max-h-[50vh] custom-scrollbar">
                     <table className="w-full text-left min-w-max">
                       <thead>
-                        <tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark ? 'bg-zinc-900 text-gray-400 border-b border-zinc-800' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+                        <tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark ? 'bg-[#1c1720] text-gray-400 border-b border-white/10' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
                           <th className="p-2">Centro</th>
                           <th className="p-2">GOA</th>
                           <th className="p-2 text-right">{anioActual - 1}</th>
@@ -3597,7 +3597,7 @@ export default function Forecast() {
                   <div className="overflow-x-auto custom-scrollbar">
                     <table className="w-full text-left min-w-max text-xs">
                       <thead>
-                        <tr className={`text-[9px] uppercase font-black tracking-widest ${isDark ? 'bg-zinc-900 text-gray-400 border-b border-zinc-800' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+                        <tr className={`text-[9px] uppercase font-black tracking-widest ${isDark ? 'bg-white/5 text-gray-400 border-b border-white/10' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
                           <th className="p-2 sticky left-0 bg-inherit">Concepto</th>
                           {MESES.map(m => <th key={m} className="p-2 text-right">{m}</th>)}
                           <th className="p-2 text-right">Total</th>
@@ -3871,7 +3871,7 @@ export default function Forecast() {
                       <div className="overflow-x-auto custom-scrollbar">
                         <table className="w-full text-left min-w-max">
                           <thead>
-                            <tr className={`text-[9px] uppercase font-black tracking-widest ${isDark ? 'bg-zinc-900 text-gray-400 border-b border-zinc-800' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+                            <tr className={`text-[9px] uppercase font-black tracking-widest ${isDark ? 'bg-white/5 text-gray-400 border-b border-white/10' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
                               <th className="p-2">GOA</th>
                               <th className="p-2 text-right">Plan sugerido</th>
                               <th className="p-2 text-right">% Part. sug.</th>
@@ -3947,7 +3947,7 @@ export default function Forecast() {
                             })}
                           </tbody>
                           <tfoot>
-                            <tr className={`text-xs font-black ${isDark ? 'bg-zinc-900' : 'bg-gray-100'}`}>
+                            <tr className={`text-xs font-black ${isDark ? 'bg-white/5' : 'bg-gray-100'}`}>
                               <td className={`p-2 ${t.textMain}`}>TOTAL</td>
                               <td className={`p-2 text-right font-mono ${t.textGray}`}>{fmtMXN(planSugeridoTotal)}</td>
                               <td className={`p-2 text-right font-mono ${t.textMuted}`}>100%</td>
@@ -3982,7 +3982,7 @@ export default function Forecast() {
                       <div className="overflow-x-auto custom-scrollbar">
                         <table className="w-full text-left min-w-max">
                           <thead>
-                            <tr className={`text-[9px] uppercase font-black tracking-widest ${isDark ? 'bg-zinc-900 text-gray-400 border-b border-zinc-800' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+                            <tr className={`text-[9px] uppercase font-black tracking-widest ${isDark ? 'bg-white/5 text-gray-400 border-b border-white/10' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
                               <th className="p-2">GOA</th>
                               <th className="p-2 text-right">Plan sugerido</th>
                               <th className="p-2 text-right">In Season</th>
@@ -4066,7 +4066,7 @@ export default function Forecast() {
                       <div className="overflow-x-auto max-h-[40vh] custom-scrollbar">
                         <table className="w-full text-left min-w-max">
                           <thead>
-                            <tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark ? 'bg-zinc-900 text-gray-400 border-b border-zinc-800' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+                            <tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark ? 'bg-[#1c1720] text-gray-400 border-b border-white/10' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
                               <th className="p-2">Centro</th>
                               <th className="p-2">GOA</th>
                               <th className="p-2 text-right">In Season</th>
@@ -4166,7 +4166,7 @@ export default function Forecast() {
                       <div className="overflow-x-auto max-h-[55vh] custom-scrollbar">
                         <table className="w-full text-left min-w-max">
                           <thead>
-                            <tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark ? 'bg-zinc-900 text-gray-400 border-b border-zinc-800' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+                            <tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark ? 'bg-[#1c1720] text-gray-400 border-b border-white/10' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
                               <th className="p-2">Centro</th>
                               <th className="p-2">GOA</th>
                               <th className="p-2 text-right">Venta Plan</th>
@@ -4246,7 +4246,7 @@ export default function Forecast() {
                             <span className={`absolute right-3 top-1/2 -translate-y-1/2 ${t.textMuted}`}>%</span>
                           </div>
                         </div>
-                        <div className={`p-4 rounded-lg border ${isDark ? 'bg-zinc-950 border-zinc-800' : 'bg-white border-gray-200'} md:col-span-2`}>
+                        <div className={`p-4 rounded-lg border ${isDark ? 'bg-white/[0.045] backdrop-blur-xl transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] border-white/10' : 'bg-white border-gray-200'} md:col-span-2`}>
                           <div className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted}`}>MSI total estimado</div>
                           <div className={`text-2xl font-black ${t.textPurple}`}>
                             {fmtMXN(planCruceCompleto.reduce((s,r) => s + r.msiMonto, 0))}
@@ -4271,7 +4271,7 @@ export default function Forecast() {
                       <div className="overflow-x-auto custom-scrollbar">
                         <table className="w-full text-left min-w-max">
                           <thead>
-                            <tr className={`text-[9px] uppercase font-black tracking-widest ${isDark ? 'bg-zinc-900 text-gray-400 border-b border-zinc-800' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+                            <tr className={`text-[9px] uppercase font-black tracking-widest ${isDark ? 'bg-white/5 text-gray-400 border-b border-white/10' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
                               <th className="p-2">GOA</th>
                               <th className="p-2 text-right">Venta Plan</th>
                               <th className="p-2 text-center">% Markdown</th>
@@ -4378,7 +4378,7 @@ export default function Forecast() {
                   <div className="overflow-x-auto custom-scrollbar max-h-[70vh]">
                     <table className="w-full text-left min-w-max text-xs">
                       <thead>
-                        <tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark ? 'bg-zinc-900 text-gray-400 border-b border-zinc-800' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+                        <tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark ? 'bg-[#1c1720] text-gray-400 border-b border-white/10' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
                           <th className="p-2 sticky left-0 bg-inherit">
                             {t4Agrupacion === 'centro' ? 'Centro / GOA' : 'GOA / Centro'}
                           </th>
@@ -4571,7 +4571,7 @@ export default function Forecast() {
                     <div className="overflow-x-auto max-h-[60vh] custom-scrollbar">
                       <table className="w-full text-left min-w-max text-xs">
                         <thead>
-                          <tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark ? 'bg-zinc-900 text-gray-400 border-b border-zinc-800' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+                          <tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark ? 'bg-[#1c1720] text-gray-400 border-b border-white/10' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
                             <th className="p-2">Centro</th>
                             <th className="p-2">Tipo</th>
                             <th className="p-2 text-right">Venta</th>
@@ -4700,7 +4700,7 @@ export default function Forecast() {
                           <div className="overflow-x-auto custom-scrollbar">
                             <table className="w-full text-left min-w-max text-xs">
                               <thead>
-                                <tr className={`text-[9px] uppercase font-black tracking-widest ${isDark ? 'bg-zinc-900 text-gray-400 border-b border-zinc-800' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+                                <tr className={`text-[9px] uppercase font-black tracking-widest ${isDark ? 'bg-white/5 text-gray-400 border-b border-white/10' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
                                   <th className="p-2 sticky left-0 bg-inherit">Ratio</th>
                                   {MESES.map(m => <th key={m} className="p-2 text-right">{m}</th>)}
                                   <th className="p-2 text-right">Total</th>
@@ -4791,7 +4791,7 @@ export default function Forecast() {
                         <div className="overflow-x-auto custom-scrollbar">
                           <table className="w-full text-left min-w-max text-xs">
                             <thead>
-                              <tr className={`text-[9px] uppercase font-black tracking-widest ${isDark ? 'bg-zinc-900 text-gray-400 border-b border-zinc-800' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+                              <tr className={`text-[9px] uppercase font-black tracking-widest ${isDark ? 'bg-white/5 text-gray-400 border-b border-white/10' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
                                 <th className="p-2 sticky left-0 bg-inherit">Ratio</th>
                                 {MESES.map(m => <th key={m} className="p-2 text-right">{m}</th>)}
                                 <th className="p-2 text-right">Total</th>
@@ -4928,7 +4928,7 @@ export default function Forecast() {
                     <div className="overflow-x-auto custom-scrollbar">
                       <table className="w-full text-left min-w-max text-xs">
                         <thead>
-                          <tr className={`text-[9px] uppercase font-black tracking-widest ${isDark ? 'bg-zinc-900 text-gray-400 border-b border-zinc-800' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+                          <tr className={`text-[9px] uppercase font-black tracking-widest ${isDark ? 'bg-white/5 text-gray-400 border-b border-white/10' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
                             <th className="p-2 sticky left-0 bg-inherit">Canal</th>
                             {MESES.map(m => <th key={m} className="p-2 text-right">{m}</th>)}
                             <th className="p-2 text-right">Total</th>
@@ -4966,7 +4966,7 @@ export default function Forecast() {
                     <div className="overflow-x-auto custom-scrollbar">
                       <table className="w-full text-left min-w-max text-xs">
                         <thead>
-                          <tr className={`text-[9px] uppercase font-black tracking-widest ${isDark ? 'bg-zinc-900 text-gray-400 border-b border-zinc-800' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+                          <tr className={`text-[9px] uppercase font-black tracking-widest ${isDark ? 'bg-white/5 text-gray-400 border-b border-white/10' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
                             <th className="p-2 sticky left-0 bg-inherit">Canal</th>
                             {MESES.map(m => <th key={m} className="p-2 text-right">{m}</th>)}
                             <th className="p-2 text-right">Total</th>
@@ -5021,7 +5021,7 @@ export default function Forecast() {
                     <div className="overflow-x-auto custom-scrollbar max-h-[60vh]">
                       <table className="w-full text-left min-w-max text-xs">
                         <thead>
-                          <tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark ? 'bg-zinc-900 text-gray-400 border-b border-zinc-800' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+                          <tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark ? 'bg-[#1c1720] text-gray-400 border-b border-white/10' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
                             <th className="p-2">GOA</th>
                             <th className="p-2 text-right">Total Plan</th>
                             <th className="p-2 text-right">Físico</th>
@@ -5105,7 +5105,7 @@ export default function Forecast() {
                   <div className="overflow-x-auto custom-scrollbar">
                     <table className="w-full text-left min-w-max text-xs">
                       <thead>
-                        <tr className={`text-[9px] uppercase font-black tracking-widest ${isDark ? 'bg-zinc-900 text-gray-400 border-b border-zinc-800' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+                        <tr className={`text-[9px] uppercase font-black tracking-widest ${isDark ? 'bg-white/5 text-gray-400 border-b border-white/10' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
                           <th className="p-2 sticky left-0 bg-inherit">Ratio</th>
                           {MESES.map(m => <th key={m} className="p-2 text-right">{m}</th>)}
                           <th className="p-2 text-right">Total</th>
@@ -5151,7 +5151,7 @@ export default function Forecast() {
                   <div className="overflow-x-auto custom-scrollbar">
                     <table className="w-full text-left min-w-max text-xs">
                       <thead>
-                        <tr className={`text-[9px] uppercase font-black tracking-widest ${isDark ? 'bg-zinc-900 text-gray-400 border-b border-zinc-800' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+                        <tr className={`text-[9px] uppercase font-black tracking-widest ${isDark ? 'bg-white/5 text-gray-400 border-b border-white/10' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
                           <th className="p-2">GOA</th>
                           <th className="p-2 text-right">Centros</th>
                           <th className="p-2 text-right">{anioActual - 1}</th>

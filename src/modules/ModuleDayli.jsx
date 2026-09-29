@@ -143,7 +143,7 @@ const DateRangePicker = ({from,to,onChange,t,isDark}) => {
         <CalIcon size={13}/> {label()}
       </button>
       {open&&(
-        <div className={`absolute top-full left-0 mt-2 z-50 rounded-2xl border shadow-2xl p-4 ${isDark?'bg-zinc-900 border-zinc-700':'bg-white border-gray-200'}`} style={{minWidth:560}}>
+        <div className={`absolute top-full left-0 mt-2 z-50 rounded-2xl border shadow-2xl p-4 ${isDark?'bg-[#1c1720] border-white/10':'bg-white border-gray-200'}`} style={{minWidth:560}}>
           <div className="flex gap-6">
             {[{y:view.year,m:view.month},{y:vN.year,m:vN.month}].map(({y,m},idx)=>(
               <div key={idx} className="flex-1">
@@ -181,7 +181,7 @@ const MultiSelect = ({label,options,selected,onChange,t,isDark}) => {
         <span className="truncate">{disp}</span><span className="text-[8px]">▾</span>
       </button>
       {open&&(
-        <div className={`absolute top-full left-0 mt-1 z-50 rounded-xl border shadow-2xl p-2 w-56 ${isDark?'bg-zinc-900 border-zinc-700':'bg-white border-gray-200'}`}>
+        <div className={`absolute top-full left-0 mt-1 z-50 rounded-xl border shadow-2xl p-2 w-56 ${isDark?'bg-[#1c1720] border-white/10':'bg-white border-gray-200'}`}>
           <div className="flex items-center justify-between mb-2 gap-2">
             <input value={q} onChange={e=>setQ(e.target.value)} placeholder="Buscar..." className={`text-[11px] px-2 py-1 rounded-lg border flex-1 ${t.input} focus:outline-none`}/>
             {selected.length>0&&<button onClick={()=>onChange([])} className={`text-[9px] px-2 py-1 rounded-lg border font-black ${t.btnGhost}`}>Todos</button>}
@@ -283,7 +283,7 @@ export default function ModuleDaily(){
   const themes={
     dark:{appBg:'bg-transparent text-gray-100',card:'bg-white/[0.045] backdrop-blur-xl border-white/10 shadow-lg shadow-black/40 transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)]',cardInner:'bg-white/5 border-white/10',
       textMain:'text-white',textMuted:'text-gray-400',textAccent1:'text-violet-300',textAccent2:'text-purple-300',border:'border-zinc-800',
-      input:'bg-zinc-950 border-zinc-700 text-white focus:ring-violet-500',btnPrimary:'bg-violet-500 text-white hover:bg-violet-400 shadow-[0_0_18px_rgba(139,92,246,0.4)]',
+      input:'bg-white/5 border-white/10 text-white focus:ring-violet-500',btnPrimary:'bg-violet-500 text-white hover:bg-violet-400 shadow-[0_0_18px_rgba(139,92,246,0.4)]',
       btnGhost:'bg-zinc-800 text-gray-300 hover:text-white hover:bg-zinc-700 border-zinc-700',
       badge:'bg-violet-500/25 text-violet-300 border-violet-400/60',badgeTeal:'bg-purple-500/25 text-purple-300 border-purple-400/60',
       badgeAmber:'bg-amber-500/25 text-amber-300 border-amber-400/60',badgeRed:'bg-rose-500/25 text-rose-300 border-rose-400/60'},
@@ -713,7 +713,7 @@ export default function ModuleDaily(){
       </div>
       <div className="overflow-x-auto custom-scrollbar max-h-[260px]">
         <table className="w-full text-left text-xs min-w-max">
-          <thead><tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark?'bg-zinc-950 text-gray-400 border-b border-zinc-800':'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+          <thead><tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark?'bg-[#1c1720] text-gray-400 border-b border-white/10':'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
             {['Nombre','Venta','PZS','MG%',per?'Tend período':'Tend cierre','Fcst Mes'].map(h=><th key={h} className="p-2 whitespace-nowrap">{h}</th>)}
           </tr></thead>
           <tbody className={`divide-y ${isDark?'divide-zinc-800/50':'divide-gray-100'}`}>
@@ -729,7 +729,7 @@ export default function ModuleDaily(){
                 <td className={`p-2 font-mono font-bold ${t.textAccent2}`}>{fmtM(r.fcst)}</td>
               </tr>); })}
           </tbody>
-          <tfoot><tr className={`font-black sticky bottom-0 ${isDark?'bg-zinc-900 border-t-2 border-violet-500/50':'bg-violet-50 border-t-2 border-violet-300'}`}>
+          <tfoot><tr className={`font-black sticky bottom-0 ${isDark?'bg-[#1c1720] border-t-2 border-violet-500/50':'bg-violet-50 border-t-2 border-violet-300'}`}>
             <td className={`p-2 ${t.textMain}`}>TOTAL</td>
             <td className={`p-2 font-mono ${accent||'text-violet-400'}`}>{fmtM(tot.v)}</td>
             <td className={`p-2 font-mono ${t.textMain}`}>{fmt(tot.u)}</td>
@@ -804,7 +804,7 @@ export default function ModuleDaily(){
                   red:{t:'text-red-400',b:'bg-red-500',bd:isDark?'border-red-500/40':'border-red-300'},
                   gray:{t:t.textMuted,b:'bg-gray-400',bd:t.border}}[color];
                 return (
-                  <div key={label} className={`p-3 rounded-xl border ${cmap.bd} ${isDark?'bg-zinc-900':'bg-white'} relative overflow-hidden`}>
+                  <div key={label} className={`p-3 rounded-xl border ${cmap.bd} ${isDark?'bg-white/[0.045] backdrop-blur-xl transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)]':'bg-white'} relative overflow-hidden`}>
                     <div className={`absolute top-0 left-0 w-1 h-full ${cmap.b}`}/>
                     <div className="flex items-center justify-between mb-1 pl-1">
                       <span className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted}`}>{label}</span>
@@ -1042,7 +1042,7 @@ export default function ModuleDaily(){
               for(let d=1;d<=days;d++){ const date=new Date(year,month,d); const iso=isoOf(date); const promo=isPromoDate(iso);
                 const hol=holidayName(date); const we=isWeekend(date); const pn=promoNamesFor(iso);
                 cells.push(<button key={iso} onClick={()=>togglePromo(iso)} title={[pn&&`Promo: ${pn}`,hol].filter(Boolean).join(' · ')}
-                  className={`relative h-12 rounded-lg flex flex-col items-center justify-center text-[10px] font-bold border transition-all ${promo?'bg-violet-500 text-white border-violet-400':(isDark?`bg-zinc-900 border-zinc-700 ${we?'text-amber-400':'text-gray-300'} hover:border-violet-500`:`bg-white border-gray-200 ${we?'text-amber-600':'text-gray-700'} hover:border-violet-400`)}`}>
+                  className={`relative h-12 rounded-lg flex flex-col items-center justify-center text-[10px] font-bold border transition-all ${promo?'bg-violet-500 text-white border-violet-400':(isDark?`bg-white/5 border-white/10 ${we?'text-amber-400':'text-gray-300'} hover:border-violet-500`:`bg-white border-gray-200 ${we?'text-amber-600':'text-gray-700'} hover:border-violet-400`)}`}>
                   <span>{d}</span>{hol&&<span className="absolute top-0.5 right-0.5 text-[7px]">🎉</span>}
                   {promo&&<span className="text-[7px]">promo</span>}
                 </button>); }
@@ -1086,7 +1086,7 @@ export default function ModuleDaily(){
                   const s=forecastMes[key]; const sel=scenarioSel===key;
                   return (
                     <button key={key} onClick={()=>setScenarioSel(sel?'actual':key)}
-                      className={`text-left p-4 rounded-xl border transition-all ${sel?'border-violet-500 ring-1 ring-violet-500':(isDark?'bg-zinc-900 border-zinc-700':'bg-white border-gray-200')}`}>
+                      className={`text-left p-4 rounded-xl border transition-all ${sel?'border-violet-500 ring-1 ring-violet-500':(isDark?'bg-white/[0.045] backdrop-blur-xl transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] border-white/10':'bg-white border-gray-200')}`}>
                       <div className="flex items-center justify-between mb-2"><span className="flex items-center gap-2"><span>{icon}</span><span className={`text-xs font-black uppercase ${color}`}>{label}</span></span>{sel&&<span className={`text-[8px] px-2 py-0.5 rounded-full border font-black ${t.badge}`}>activo</span>}</div>
                       <div className={`text-2xl font-black ${color}`}>{fmtM(s.ventaP)}</div>
                       <div className={`text-[10px] ${t.textMuted} mt-0.5`}>{fmt(s.ventaU)} pzs · MG {fmtP(s.ventaP>0?s.mg/s.ventaP*100:0)}</div>
@@ -1122,7 +1122,7 @@ export default function ModuleDaily(){
                       {label:'MG % Base',val:fmtP(r.mgBase),c:t.textMuted},
                       {label:'MG % Final',val:fmtP(r.mgFinal),c:r.mgFinal>=45?'text-violet-400':r.mgFinal>=35?'text-amber-400':'text-rose-400',
                        sub:r.bonif>0?`+${(r.mgFinal-r.mgBase).toFixed(1)} pts`:null}].map(({label,val,c,sub})=>(
-                      <div key={label} className={`p-3 rounded-lg border ${isDark?'border-zinc-800 bg-zinc-950':'border-gray-100 bg-gray-50'}`}>
+                      <div key={label} className={`p-3 rounded-lg border ${isDark?'border-white/10 bg-white/[0.045] backdrop-blur-xl transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)]':'border-gray-100 bg-gray-50'}`}>
                         <div className={`text-[9px] uppercase font-black ${t.textMuted}`}>{label}</div><div className={`text-base font-black ${c}`}>{val}</div>
                         {sub&&<div className="text-[9px] font-black text-violet-400">{sub}</div>}
                       </div>))}
@@ -1167,7 +1167,7 @@ export default function ModuleDaily(){
                       const oh=rows.reduce((s,r)=>s+r.oh,0),oo=rows.reduce((s,r)=>s+r.oo,0),n=new Set(rows.map(r=>r.ubicacion)).size;
                       const col={LOGISTICO:'text-blue-400',BODEGA:'text-purple-400',PLAN:'text-amber-400',TIENDA:'text-violet-400'}[tipo];
                       const barc={LOGISTICO:'bg-blue-400',BODEGA:'bg-purple-400',PLAN:'bg-amber-400',TIENDA:'bg-violet-400'}[tipo];
-                      return (<div key={tipo} className={`p-4 rounded-xl border ${isDark?'bg-zinc-900 border-zinc-700':'bg-white border-gray-200'}`}>
+                      return (<div key={tipo} className={`p-4 rounded-xl border ${isDark?'bg-white/[0.045] backdrop-blur-xl transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] border-white/10':'bg-white border-gray-200'}`}>
                         <div className="flex items-center justify-between mb-2"><span className={`text-[9px] font-black uppercase ${col}`}>{tipo}</span>{n>0&&<span className={`text-[9px] px-2 py-0.5 rounded-full border font-black ${t.badge}`}>{n} ub.</span>}</div>
                         <div className={`text-xl font-black ${col}`}>{fmt(oh)}</div><div className={`text-[9px] ${t.textMuted}`}>OH · {fmt(oo)} OO</div>
                         {(oh+oo)>0&&invKPI.total>0&&<div className="mt-2"><MiniBar value={oh+oo} max={invKPI.total} color={barc} isDark={isDark}/></div>}

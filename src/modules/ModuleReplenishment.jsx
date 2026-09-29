@@ -785,7 +785,7 @@ export default function App() {
                 </div>
 
                 <div className="w-full md:w-auto flex flex-col sm:flex-row items-center gap-3">
-                    <div className="flex flex-col sm:flex-row items-center gap-3 bg-gray-50 dark:bg-[#141414] p-2 rounded-lg border border-gray-200 dark:border-[#333] transition-colors w-full sm:w-auto">
+                    <div className="flex flex-col sm:flex-row items-center gap-3 bg-gray-50 dark:bg-white/[0.045] dark:backdrop-blur-xl transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] p-2 rounded-lg border border-gray-200 dark:border-[#333] transition-colors w-full sm:w-auto">
                         <label className="cursor-pointer flex items-center justify-center gap-2 px-4 py-2 rounded-md font-medium text-sm transition-all bg-purple-600 hover:bg-purple-700 dark:hover:bg-purple-500 text-white w-full sm:w-auto whitespace-nowrap shadow-sm">
                             <Upload className="w-4 h-4" />
                             Subir Archivo CSV
@@ -817,7 +817,7 @@ export default function App() {
                     <p className="text-gray-500 dark:text-gray-400 text-sm mb-6">Elige el método que prefieras para cargar tu información:</p>
                     
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-6 text-left">
-                        <div className="bg-gray-50 dark:bg-[#0a0a0a] p-6 rounded-lg border border-purple-200 dark:border-purple-500/30 relative transition-colors">
+                        <div className="bg-gray-50 dark:bg-white/[0.045] dark:backdrop-blur-xl transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] p-6 rounded-lg border border-purple-200 dark:border-purple-500/30 relative transition-colors">
                             <div className="absolute top-0 right-0 bg-purple-600 text-xs font-bold px-3 py-1 rounded-bl-lg rounded-tr-lg text-white">Recomendado</div>
                             <h3 className="text-gray-900 dark:text-white font-bold mb-3 flex items-center gap-2"><Upload className="w-5 h-5 text-purple-500 dark:text-purple-400"/> Opción 1: Archivo Local</h3>
                             <ul className="list-decimal pl-5 text-xs text-gray-600 dark:text-gray-300 space-y-2">
@@ -826,7 +826,7 @@ export default function App() {
                                 <li>Haz clic en el botón morado de arriba <strong>"Subir Archivo CSV"</strong>.</li>
                             </ul>
                         </div>
-                        <div className="bg-gray-50 dark:bg-[#0a0a0a] p-6 rounded-lg border border-gray-200 dark:border-[#333] transition-colors">
+                        <div className="bg-gray-50 dark:bg-white/[0.045] dark:backdrop-blur-xl transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] p-6 rounded-lg border border-gray-200 dark:border-[#333] transition-colors">
                             <h3 className="text-gray-900 dark:text-white font-bold mb-3 flex items-center gap-2"><Database className="w-5 h-5 text-gray-500 dark:text-gray-400"/> Opción 2: Google Sheets</h3>
                             <ul className="list-decimal pl-5 text-xs text-gray-600 dark:text-gray-300 space-y-2">
                                 <li>Ve a <strong>Archivo &gt; Compartir &gt; Publicar en la web</strong>.</li>
@@ -843,14 +843,14 @@ export default function App() {
                 <>
                     {/* CONFIGURACIÓN DEL ALGORITMO */}
                     <div className="flex flex-wrap items-center gap-4 bg-white border border-gray-200 dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] rounded-xl p-3 mb-4 shadow-sm dark:shadow-none transition-colors">
-                        <div className="flex items-center gap-2 bg-gray-100 dark:bg-[#1a1a1a] px-3 py-1.5 rounded-lg border border-gray-200 dark:border-[#333]">
+                        <div className="flex items-center gap-2 bg-gray-100 dark:bg-white/5 px-3 py-1.5 rounded-lg border border-gray-200 dark:border-[#333]">
                             <Settings className="text-purple-600 dark:text-purple-500 w-4 h-4" />
                             <span className="text-xs font-semibold text-gray-800 dark:text-white uppercase tracking-wide">Configuración</span>
                         </div>
                         
                         <div className="flex items-center gap-2 border-r border-gray-200 dark:border-[#333] pr-4">
                             <label className="text-xs text-gray-500 dark:text-gray-400">Método:</label>
-                            <select value={calcMode} onChange={e => setCalcMode(e.target.value)} className="bg-gray-50 dark:bg-[#0a0a0a] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs font-bold rounded-lg px-2 py-1 outline-none focus:border-purple-500 transition-colors">
+                            <select value={calcMode} onChange={e => setCalcMode(e.target.value)} className="bg-gray-50 dark:bg-[#1c1720] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs font-bold rounded-lg px-2 py-1 outline-none focus:border-purple-500 transition-colors">
                                 <option value="TD">Top-Down (GOA ➔ Centro ➔ SKU)</option>
                                 <option value="RA">Resurtido Automático (RA)</option>
                                 <option value="CU">Compra Única (Promedio + Tend. 3M)</option>
@@ -859,11 +859,11 @@ export default function App() {
 
                         <div className="flex items-center gap-2">
                             <label className="text-xs text-gray-500 dark:text-gray-400">Tope Crecimiento (+%):</label>
-                            <input type="number" value={maxGrowth} onChange={e => setMaxGrowth(Number(e.target.value))} className="bg-gray-50 dark:bg-[#0a0a0a] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs font-bold rounded-lg w-16 px-2 py-1 outline-none focus:border-purple-500 text-center transition-colors" />
+                            <input type="number" value={maxGrowth} onChange={e => setMaxGrowth(Number(e.target.value))} className="bg-gray-50 dark:bg-white/5 border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs font-bold rounded-lg w-16 px-2 py-1 outline-none focus:border-purple-500 text-center transition-colors" />
                         </div>
                         <div className="flex items-center gap-2 border-r border-gray-200 dark:border-[#333] pr-4">
                             <label className="text-xs text-gray-500 dark:text-gray-400">Tope Decremento (-%):</label>
-                            <input type="number" value={maxDecline} onChange={e => setMaxDecline(Number(e.target.value))} className="bg-gray-50 dark:bg-[#0a0a0a] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs font-bold rounded-lg w-16 px-2 py-1 outline-none focus:border-purple-500 text-center transition-colors" />
+                            <input type="number" value={maxDecline} onChange={e => setMaxDecline(Number(e.target.value))} className="bg-gray-50 dark:bg-white/5 border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs font-bold rounded-lg w-16 px-2 py-1 outline-none focus:border-purple-500 text-center transition-colors" />
                         </div>
                     </div>
 
@@ -871,49 +871,49 @@ export default function App() {
                     <div className="flex flex-wrap gap-3 mb-6 bg-white border border-gray-200 dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] shadow-sm dark:shadow-none rounded-xl p-4 transition-colors">
                         <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
                             <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1"><Filter className="w-3 h-3"/> Centro</label>
-                            <select value={filterCentro} onChange={(e) => { setFilterCentro(e.target.value); setFilterSeccion(''); setFilterMarca(''); setFilterGoa(''); setFilterModelo(''); setFilterNorma(''); setFilterSku(''); }} className="bg-gray-50 dark:bg-[#0a0a0a] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
+                            <select value={filterCentro} onChange={(e) => { setFilterCentro(e.target.value); setFilterSeccion(''); setFilterMarca(''); setFilterGoa(''); setFilterModelo(''); setFilterNorma(''); setFilterSku(''); }} className="bg-gray-50 dark:bg-[#1c1720] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
                                 <option value="">Todos</option>
                                 {optionsCentros.map(c => <option key={c} value={c}>{c}</option>)}
                             </select>
                         </div>
                         <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
                             <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1"><Filter className="w-3 h-3"/> Sección</label>
-                            <select value={filterSeccion} onChange={(e) => { setFilterSeccion(e.target.value); setFilterMarca(''); setFilterGoa(''); setFilterModelo(''); setFilterNorma(''); setFilterSku(''); }} className="bg-gray-50 dark:bg-[#0a0a0a] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
+                            <select value={filterSeccion} onChange={(e) => { setFilterSeccion(e.target.value); setFilterMarca(''); setFilterGoa(''); setFilterModelo(''); setFilterNorma(''); setFilterSku(''); }} className="bg-gray-50 dark:bg-[#1c1720] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
                                 <option value="">Todas</option>
                                 {optionsSecciones.map(s => <option key={s} value={s}>{s}</option>)}
                             </select>
                         </div>
                         <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
                             <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1"><Filter className="w-3 h-3"/> Marca/Prov.</label>
-                            <select value={filterMarca} onChange={(e) => { setFilterMarca(e.target.value); setFilterGoa(''); setFilterModelo(''); setFilterNorma(''); setFilterSku(''); }} className="bg-gray-50 dark:bg-[#0a0a0a] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
+                            <select value={filterMarca} onChange={(e) => { setFilterMarca(e.target.value); setFilterGoa(''); setFilterModelo(''); setFilterNorma(''); setFilterSku(''); }} className="bg-gray-50 dark:bg-[#1c1720] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
                                 <option value="">Todas</option>
                                 {optionsMarcas.map(m => <option key={m} value={m}>{m}</option>)}
                             </select>
                         </div>
                         <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
                             <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1"><Filter className="w-3 h-3"/> GOA</label>
-                            <select value={filterGoa} onChange={(e) => { setFilterGoa(e.target.value); setFilterModelo(''); setFilterNorma(''); setFilterSku(''); }} className="bg-gray-50 dark:bg-[#0a0a0a] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
+                            <select value={filterGoa} onChange={(e) => { setFilterGoa(e.target.value); setFilterModelo(''); setFilterNorma(''); setFilterSku(''); }} className="bg-gray-50 dark:bg-[#1c1720] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
                                 <option value="">Todos</option>
                                 {optionsGoas.map(g => <option key={g} value={g}>{g}</option>)}
                             </select>
                         </div>
                         <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
                             <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1"><Filter className="w-3 h-3"/> Modelo</label>
-                            <select value={filterModelo} onChange={(e) => { setFilterModelo(e.target.value); setFilterNorma(''); setFilterSku(''); }} className="bg-gray-50 dark:bg-[#0a0a0a] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
+                            <select value={filterModelo} onChange={(e) => { setFilterModelo(e.target.value); setFilterNorma(''); setFilterSku(''); }} className="bg-gray-50 dark:bg-[#1c1720] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
                                 <option value="">Todos</option>
                                 {optionsModelos.map(m => <option key={m} value={m}>{m}</option>)}
                             </select>
                         </div>
                         <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
                             <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1"><Filter className="w-3 h-3"/> Norma</label>
-                            <select value={filterNorma} onChange={(e) => { setFilterNorma(e.target.value); setFilterSku(''); }} className="bg-gray-50 dark:bg-[#0a0a0a] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
+                            <select value={filterNorma} onChange={(e) => { setFilterNorma(e.target.value); setFilterSku(''); }} className="bg-gray-50 dark:bg-[#1c1720] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
                                 <option value="">Todas</option>
                                 {optionsNormas.map(n => <option key={n} value={n}>{n}</option>)}
                             </select>
                         </div>
                         <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
                             <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1"><Search className="w-3 h-3"/> SKU</label>
-                            <select value={filterSku} onChange={(e) => setFilterSku(e.target.value)} className="bg-gray-50 dark:bg-[#0a0a0a] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
+                            <select value={filterSku} onChange={(e) => setFilterSku(e.target.value)} className="bg-gray-50 dark:bg-[#1c1720] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
                                 <option value="">Todos</option>
                                 {optionsSkus.map(s => <option key={s} value={s}>{s}</option>)}
                             </select>
@@ -921,11 +921,11 @@ export default function App() {
                         <div className="flex flex-col gap-1 flex-[2] min-w-[150px]">
                             <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1"><Calendar className="w-3 h-3"/> Rango</label>
                             <div className="flex items-center gap-1">
-                                <div className="flex items-center gap-1 w-full bg-gray-50 dark:bg-[#0a0a0a] border border-gray-300 dark:border-[#333] rounded-lg p-1 px-2 transition-colors">
+                                <div className="flex items-center gap-1 w-full bg-gray-50 dark:bg-white/[0.045] dark:backdrop-blur-xl transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] border border-gray-300 dark:border-[#333] rounded-lg p-1 px-2 transition-colors">
                                     <span className="text-xs text-gray-500 dark:text-gray-400">De:</span>
                                     <input type="number" min="1" max={periodEnd} value={periodStart} onChange={(e) => setPeriodStart(Number(e.target.value))} className="bg-transparent border-none text-gray-900 dark:text-white w-8 text-center outline-none font-bold text-xs" />
                                 </div>
-                                <div className="flex items-center gap-1 w-full bg-gray-50 dark:bg-[#0a0a0a] border border-gray-300 dark:border-[#333] rounded-lg p-1 px-2 transition-colors">
+                                <div className="flex items-center gap-1 w-full bg-gray-50 dark:bg-white/[0.045] dark:backdrop-blur-xl transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] border border-gray-300 dark:border-[#333] rounded-lg p-1 px-2 transition-colors">
                                     <span className="text-xs text-gray-500 dark:text-gray-400">A:</span>
                                     <input type="number" min={periodStart} max="52" value={periodEnd} onChange={(e) => setPeriodEnd(Number(e.target.value))} className="bg-transparent border-none text-gray-900 dark:text-white w-8 text-center outline-none font-bold text-xs" />
                                 </div>
@@ -969,13 +969,13 @@ export default function App() {
                     <div className="grid grid-cols-1 xl:grid-cols-3 gap-6 mb-6">
                         {/* TABLA DETALLE */}
                         <div className="xl:col-span-2 bg-white border border-gray-200 dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] shadow-sm dark:shadow-none rounded-xl overflow-hidden flex flex-col h-[750px] transition-colors">
-                            <div className="p-3 border-b border-gray-200 dark:border-[#262626] bg-gray-50 dark:bg-[#1a1a1a] flex justify-between items-center flex-wrap gap-2 transition-colors">
+                            <div className="p-3 border-b border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 flex justify-between items-center flex-wrap gap-2 transition-colors">
                                 <div className="flex items-center gap-3">
                                     <h2 className="font-semibold text-gray-900 dark:text-white text-sm">Detalle de Combinación (Centro-SKU)</h2>
                                     <span className="text-[10px] bg-gray-200 dark:bg-gray-800 text-gray-600 dark:text-gray-300 px-2 py-1 rounded-md">{enrichedData.length} reg.</span>
                                 </div>
                                 <div className="flex gap-4 items-center">
-                                    <div className="flex items-center bg-gray-200 dark:bg-[#1e1e1e] rounded-lg p-0.5 shadow-inner">
+                                    <div className="flex items-center bg-gray-200 dark:bg-white/5 rounded-lg p-0.5 shadow-inner">
                                         <button 
                                             onClick={() => setSortBy(sortBy === 'toBuy_desc' ? 'toBuy_asc' : 'toBuy_desc')}
                                             className={`flex items-center gap-1.5 px-3 py-1 rounded-md text-[11px] font-bold transition-all ${sortBy.startsWith('toBuy') ? 'bg-white dark:bg-[#333] text-yellow-600 dark:text-yellow-400 shadow-sm' : 'text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200'}`}
@@ -1017,7 +1017,7 @@ export default function App() {
                             </div>
                             <div className="overflow-auto flex-1 custom-scrollbar">
                                 <table className="w-full text-sm text-left whitespace-nowrap">
-                                    <thead className="text-[10px] text-gray-500 dark:text-gray-400 uppercase bg-gray-100 dark:bg-[#0f0f0f] sticky top-0 z-10 shadow-sm dark:shadow-md transition-colors">
+                                    <thead className="text-[10px] text-gray-500 dark:text-gray-400 uppercase bg-gray-100 dark:bg-[#1c1720] sticky top-0 z-10 shadow-sm dark:shadow-md transition-colors">
                                         <tr>
                                             <th className="px-3 py-3 font-semibold">Centro</th>
                                             <th className="px-3 py-3 font-semibold">Marca</th>
@@ -1086,7 +1086,7 @@ export default function App() {
                         <div className="bg-white border border-gray-200 dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] shadow-sm dark:shadow-none rounded-xl p-4 flex flex-col h-[750px] transition-colors">
                             {activeItem ? (
                                 <div className="flex-1 flex flex-col h-full overflow-y-auto custom-scrollbar pr-2">
-                                    <div className="mb-4 bg-gray-50 dark:bg-[#0a0a0a] p-3 rounded-lg border border-gray-200 dark:border-[#262626] flex justify-between items-center shrink-0 transition-colors">
+                                    <div className="mb-4 bg-gray-50 dark:bg-white/[0.045] dark:backdrop-blur-xl transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] p-3 rounded-lg border border-gray-200 dark:border-white/10 flex justify-between items-center shrink-0 transition-colors">
                                         <div className="flex-1 min-w-0 pr-2">
                                             <p className="text-[10px] text-gray-500 uppercase truncate font-semibold">{activeItem.centro} • {activeItem.marca}</p>
                                             <p className="text-sm font-bold text-gray-900 dark:text-white truncate" title={activeItem.sku_nombre}>{activeItem.sku_nombre}</p>
@@ -1104,7 +1104,7 @@ export default function App() {
                                     </div>
 
                                     {/* Gráfica 1 - Ventas y Degradación de Inventario */}
-                                    <div className="flex-none border border-gray-200 dark:border-[#262626] bg-gray-50 dark:bg-[#0a0a0a] rounded-lg p-3 mb-4 flex flex-col min-h-[250px] transition-colors">
+                                    <div className="flex-none border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/[0.045] dark:backdrop-blur-xl transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] rounded-lg p-3 mb-4 flex flex-col min-h-[250px] transition-colors">
                                         <h3 className="text-xs text-gray-500 dark:text-gray-400 uppercase font-bold mb-2">Ventas & Stockout (P{periodStart}-P{periodEnd})</h3>
                                         <div className="flex-1 relative w-full h-full mt-2 pb-6">
                                             {(() => {
@@ -1155,7 +1155,7 @@ export default function App() {
                                                                 <>
                                                                     <div className="absolute w-full bottom-0 bg-red-500/10 pointer-events-none" style={{ top: `${zeroY}%`, height: `${100 - zeroY}%` }}></div>
                                                                     <div className="absolute w-full h-px border-dashed border-t border-red-400 dark:border-red-500/80" style={{ top: `${zeroY}%` }}>
-                                                                        <span className="absolute -top-4 right-0 text-[9px] text-red-600 dark:text-red-400 font-bold bg-red-50 dark:bg-[#0a0a0a] px-1 rounded">Stock 0</span>
+                                                                        <span className="absolute -top-4 right-0 text-[9px] text-red-600 dark:text-red-400 font-bold bg-red-50 dark:bg-[#1c1720] px-1 rounded">Stock 0</span>
                                                                     </div>
                                                                 </>
                                                             )}
@@ -1235,13 +1235,13 @@ export default function App() {
                                             <div className="flex-none flex flex-col sm:flex-row gap-4 min-h-[250px] mb-4">
                                                 
                                                 {/* Gráfico 1: Antes */}
-                                                <div className="flex-1 border border-gray-200 dark:border-[#262626] bg-gray-50 dark:bg-[#0a0a0a] rounded-lg p-3 flex flex-col relative transition-colors overflow-hidden">
+                                                <div className="flex-1 border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/[0.045] dark:backdrop-blur-xl transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] rounded-lg p-3 flex flex-col relative transition-colors overflow-hidden">
                                                     <div className="flex justify-between items-start z-10 mb-2">
                                                         <div>
                                                             <h3 className="text-[10px] text-gray-500 dark:text-gray-400 uppercase font-bold">Antes (Inv. Inicial vs Vta Act)</h3>
                                                             <p className="text-[8px] text-gray-400 italic">Dependiente de los filtros actuales</p>
                                                         </div>
-                                                        <span className="text-[9px] text-red-600 dark:text-red-500 font-bold bg-white dark:bg-[#141414] px-1.5 py-0.5 rounded border border-red-200 dark:border-red-900/50" title="1.0 = Distribución Perfecta">R²: {regBefore.r2.toFixed(4)}</span>
+                                                        <span className="text-[9px] text-red-600 dark:text-red-500 font-bold bg-white dark:bg-white/5 px-1.5 py-0.5 rounded border border-red-200 dark:border-red-900/50" title="1.0 = Distribución Perfecta">R²: {regBefore.r2.toFixed(4)}</span>
                                                     </div>
                                                     <div className="flex-1 relative w-full h-full ml-4 mb-3">
                                                         <div className="absolute top-0 bottom-0 left-0 border-l border-gray-400 dark:border-gray-600"></div>
@@ -1267,13 +1267,13 @@ export default function App() {
                                                 </div>
 
                                                 {/* Gráfico 2: Después */}
-                                                <div className="flex-1 border border-gray-200 dark:border-[#262626] bg-gray-50 dark:bg-[#0a0a0a] rounded-lg p-3 flex flex-col relative transition-colors overflow-hidden">
+                                                <div className="flex-1 border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/[0.045] dark:backdrop-blur-xl transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] rounded-lg p-3 flex flex-col relative transition-colors overflow-hidden">
                                                     <div className="flex justify-between items-start z-10 mb-2">
                                                         <div>
                                                             <h3 className="text-[10px] text-gray-500 dark:text-gray-400 uppercase font-bold">Después (Inv. Final vs Demanda)</h3>
                                                             <p className="text-[8px] text-gray-400 italic">Punto amarillo: Selección actual</p>
                                                         </div>
-                                                        <span className="text-[9px] text-red-600 dark:text-red-500 font-bold bg-white dark:bg-[#141414] px-1.5 py-0.5 rounded border border-red-200 dark:border-red-900/50" title="1.0 = Distribución Perfecta">R²: {regAfter.r2.toFixed(4)}</span>
+                                                        <span className="text-[9px] text-red-600 dark:text-red-500 font-bold bg-white dark:bg-white/5 px-1.5 py-0.5 rounded border border-red-200 dark:border-red-900/50" title="1.0 = Distribución Perfecta">R²: {regAfter.r2.toFixed(4)}</span>
                                                     </div>
                                                     <div className="flex-1 relative w-full h-full ml-4 mb-3">
                                                         <div className="absolute top-0 bottom-0 left-0 border-l border-gray-400 dark:border-gray-600"></div>
@@ -1357,7 +1357,7 @@ export default function App() {
 
                     {/* NUEVA TABLA: RESUMEN POR SKU / PERIODO */}
                     <div className="bg-white border border-gray-200 dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] shadow-sm dark:shadow-none rounded-xl overflow-hidden flex flex-col h-[400px] mb-6 transition-colors">
-                        <div className="p-3 border-b border-gray-200 dark:border-[#262626] bg-gray-50 dark:bg-[#1a1a1a] flex justify-between items-center flex-wrap gap-2 transition-colors">
+                        <div className="p-3 border-b border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/5 flex justify-between items-center flex-wrap gap-2 transition-colors">
                             <div className="flex items-center gap-3">
                                 <Table className="w-4 h-4 text-purple-600 dark:text-purple-500" />
                                 <h2 className="font-semibold text-gray-900 dark:text-white text-sm">Resumen por SKU y Periodo (Forecast a Comprar)</h2>
@@ -1374,7 +1374,7 @@ export default function App() {
                         </div>
                         <div className="overflow-auto flex-1 custom-scrollbar">
                             <table className="w-full text-sm text-left whitespace-nowrap">
-                                <thead className="text-[10px] text-gray-500 dark:text-gray-400 uppercase bg-gray-100 dark:bg-[#0f0f0f] sticky top-0 z-10 shadow-sm dark:shadow-md transition-colors">
+                                <thead className="text-[10px] text-gray-500 dark:text-gray-400 uppercase bg-gray-100 dark:bg-[#1c1720] sticky top-0 z-10 shadow-sm dark:shadow-md transition-colors">
                                     <tr>
                                         <th className="px-3 py-3 font-semibold border-r border-gray-200 dark:border-[#262626]">SKU</th>
                                         <th className="px-3 py-3 font-semibold border-r border-gray-200 dark:border-[#262626]">Marca</th>

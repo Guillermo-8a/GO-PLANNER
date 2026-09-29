@@ -41,7 +41,7 @@ function TabButton({ id, label, icon: Icon, activeTab, setActiveTab, t }) {
 
 function EmptyState({ icon: Icon, title, desc, rules, action, theme, t }) {
   return (
-    <div className={`p-12 rounded-2xl border text-center flex flex-col items-center justify-center ${theme==='dark'?'bg-zinc-900/50 border-zinc-800':'bg-white border-gray-200 shadow-sm'}`}>
+    <div className={`p-12 rounded-2xl border text-center flex flex-col items-center justify-center ${theme==='dark'?'bg-white/[0.045] backdrop-blur-xl transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] border-white/10':'bg-white border-gray-200 shadow-sm'}`}>
       <div className={`p-5 rounded-full mb-6 ${theme==='dark'?'bg-purple-900/20 text-purple-400':'bg-blue-50 text-blue-600'}`}>
         <Icon size={48} strokeWidth={1.5} />
       </div>
@@ -189,26 +189,26 @@ export default function App() {
   // --- MOTOR DE TEMAS ---
   const themes = {
     dark: {
-      appBg: "bg-transparent text-[#EDEBF2]", header: "bg-zinc-950 border-purple-900/50 shadow-md",
+      appBg: "bg-transparent text-[#EDEBF2]", header: "bg-white/5 border-purple-900/50 shadow-md",
       logoIcon: "bg-purple-600 text-white", logoAccent: "text-yellow-400",
-      btnMenu: "bg-zinc-900 text-gray-300 hover:text-white hover:bg-zinc-800 border border-zinc-800",
-      menuBg: "bg-zinc-900 border border-zinc-700 shadow-xl", menuItem: "hover:bg-zinc-800 text-gray-200 border-zinc-800",
+      btnMenu: "bg-white/5 text-gray-300 hover:text-white hover:bg-zinc-800 border border-white/10",
+      menuBg: "bg-[#1c1720] border border-white/10 shadow-xl", menuItem: "hover:bg-zinc-800 text-gray-200 border-white/10",
       tabActive: "border-yellow-400 text-yellow-400", tabInactive: "border-transparent text-gray-500 hover:text-gray-300",
       card: "bg-white/[0.045] backdrop-blur-xl border-white/10 shadow-lg shadow-black/40 transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)]", cardInner: "bg-white/5 border-white/10",
       textMain: "text-white", textMuted: "text-gray-400", textAccent1: "text-purple-400", textAccent2: "text-yellow-400",
       iconAccent1: "text-purple-400 bg-purple-900/30", iconAccent2: "text-yellow-400 bg-yellow-500/20",
-      border: "border-zinc-800", input: "bg-zinc-950 border-zinc-700 text-white focus:ring-purple-500 outline-none",
-      inputYellow: "bg-zinc-950 border-zinc-700 text-yellow-400 font-bold focus:ring-yellow-500 outline-none",
+      border: "border-white/10", input: "bg-white/5 border-white/10 text-white focus:ring-purple-500 outline-none",
+      inputYellow: "bg-white/5 border-white/10 text-yellow-400 font-bold focus:ring-yellow-500 outline-none",
       btnPrimary: "bg-yellow-500 text-black hover:bg-yellow-400 shadow-[0_0_15px_rgba(234,179,8,0.2)]",
-      btnSecondary: "bg-purple-600 text-white hover:bg-purple-500", btnDanger: "text-gray-400 hover:text-red-400 bg-zinc-900 hover:bg-zinc-800 border-zinc-800",
-      btnEdit: "text-gray-400 hover:text-yellow-400 bg-zinc-900 hover:bg-zinc-800 border-zinc-800", btnGhost: "bg-zinc-800 text-gray-300 hover:text-white hover:bg-zinc-700",
-      tableHead: "bg-zinc-950 text-gray-500 border-zinc-800", tableRow: "hover:bg-zinc-800/50",
+      btnSecondary: "bg-purple-600 text-white hover:bg-purple-500", btnDanger: "text-gray-400 hover:text-red-400 bg-white/5 hover:bg-zinc-800 border-white/10",
+      btnEdit: "text-gray-400 hover:text-yellow-400 bg-white/5 hover:bg-zinc-800 border-white/10", btnGhost: "bg-zinc-800 text-gray-300 hover:text-white hover:bg-zinc-700",
+      tableHead: "bg-white/5 text-gray-500 border-white/10", tableRow: "hover:bg-zinc-800/50",
       badgeAA: "text-purple-400 bg-purple-900/30 border-purple-500/50", badgeA: "text-yellow-400 bg-yellow-900/30 border-yellow-500/50", badgeOther: "text-gray-300 bg-zinc-800 border-zinc-600",
       gradientCard: "bg-gradient-to-br from-indigo-900 to-zinc-900 border border-zinc-800",
       successText: "text-green-400", successBg: "bg-green-900/20 border-green-500/50 text-green-300",
       warningText: "text-yellow-400", warningBg: "bg-yellow-900/20 border-yellow-500/50 text-yellow-300",
       dangerText: "text-red-400", dangerBg: "bg-red-900/20 border-red-500/50 text-red-300",
-      toggleActive: "bg-yellow-500 text-black font-black shadow-md", toggleInactive: "bg-zinc-900 text-gray-400 hover:text-white border-zinc-800"
+      toggleActive: "bg-yellow-500 text-black font-black shadow-md", toggleInactive: "bg-white/5 text-gray-400 hover:text-white border-white/10"
     },
     light: {
       appBg: "bg-gray-50 text-gray-800", header: "bg-white border-gray-200 shadow-sm",
@@ -1592,7 +1592,7 @@ export default function App() {
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setIsMenuOpen(false)}></div>
                   <div className={`absolute right-0 mt-2 w-56 rounded-xl z-50 overflow-hidden transition-all shadow-2xl border ${t.menuBg}`}>
-                    <div className={`px-4 py-2 text-[10px] font-black tracking-widest uppercase border-b ${theme==='dark'?'bg-zinc-950 border-zinc-800 text-gray-500':'bg-gray-50 border-gray-200 text-gray-400'}`}>Ajustes de Herramienta</div>
+                    <div className={`px-4 py-2 text-[10px] font-black tracking-widest uppercase border-b ${theme==='dark'?'bg-white/5 border-white/10 text-gray-500':'bg-gray-50 border-gray-200 text-gray-400'}`}>Ajustes de Herramienta</div>
                     <label className={`w-full flex items-center px-4 py-3 text-sm font-bold cursor-pointer border-b transition-colors ${t.menuItem}`}>
                       <Upload size={16} className={`mr-3 ${t.textAccent1}`}/> Cargar Sesión (.json)
                       <input type="file" accept=".json" onClick={(e) => e.target.value = null} onChange={(e) => { handleImportProject(e); setIsMenuOpen(false); }} className="hidden" />
@@ -1736,7 +1736,7 @@ export default function App() {
                             <span className={`text-[8px] mt-1 font-black px-1.5 py-0.5 rounded ${store.globalCluster === activeClusters[0] ? t.badgeAA : store.globalCluster === activeClusters[1] ? t.badgeA : t.badgeOther}`}>GBL: {store.globalCluster || '-'}</span>
                           </div>
                         </div>
-                        <div className={`rounded-lg p-2 mb-4 mt-3 grid grid-cols-3 gap-2 text-center divide-x border ${theme==='dark'?'divide-zinc-800 bg-zinc-900 border-zinc-800':'divide-gray-200 bg-white border-gray-100'}`}>
+                        <div className={`rounded-lg p-2 mb-4 mt-3 grid grid-cols-3 gap-2 text-center divide-x border ${theme==='dark'?'divide-zinc-800 bg-white/[0.045] backdrop-blur-xl transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] border-white/10':'divide-gray-200 bg-white border-gray-100'}`}>
                           {(() => {
                             // Si hay filtro de GOA, usar métricas POR GOA; si no, las globales de la tienda
                             let metrics = { sales: store.sales || 0, margin: store.margin || 0, rotation: store.rotation || 0, score: store.score || 0 };
@@ -1767,7 +1767,7 @@ export default function App() {
                               <div key={`goa-${goa}`} className={`flex justify-between items-center text-xs border-b pb-1.5 ${t.border} mb-1.5`}>
                                 <span className={`truncate max-w-[120px] font-medium ${t.textMuted}`} title={goa}>{goa}</span>
                                 <select value={cluster} onChange={(e) => handleUpdateStoreCluster(store.id, goa, e.target.value)} className={`font-black p-1 rounded outline-none cursor-pointer border ${cluster === activeClusters[0] ? t.badgeAA : cluster === activeClusters[1] ? t.badgeA : t.badgeOther}`}>
-                                  {activeClusters.map(c => <option key={`opt-${c}`} value={c} className={theme==='dark'?'bg-zinc-900 text-white':''}>{c}</option>)}
+                                  {activeClusters.map(c => <option key={`opt-${c}`} value={c} className={theme==='dark'?'bg-[#1c1720] text-white':''}>{c}</option>)}
                                 </select>
                               </div>
                             ))}
@@ -1968,13 +1968,13 @@ export default function App() {
                       <th className="p-4 text-right font-bold uppercase tracking-wider text-xs">Historia (Pzs)</th>
                       <th className="p-4 text-center font-bold uppercase tracking-wider text-xs bg-black/10 border-l border-black/10" colSpan="6">Curva Mensual % (Forecast)</th>
                     </tr>
-                    <tr className={`text-[10px] uppercase ${t.textMuted} ${theme==='dark'?'bg-zinc-950/50':'bg-gray-100'}`}>
+                    <tr className={`text-[10px] uppercase ${t.textMuted} ${theme==='dark'?'bg-white/[0.03]':'bg-gray-100'}`}>
                       <th colSpan="4"></th>
                       <th className="p-2 text-center border-l border-black/10">Mes 1</th><th className="p-2 text-center">Mes 2</th><th className="p-2 text-center">Mes 3</th>
                       <th className="p-2 text-center">Mes 4</th><th className="p-2 text-center">Mes 5</th><th className="p-2 text-center">Mes 6</th>
                     </tr>
                   </thead>
-                  <tbody className={`divide-y ${t.border} ${theme==='dark'?'bg-zinc-900':'bg-white'}`}>
+                  <tbody className={`divide-y ${t.border} ${theme==='dark'?'bg-white/5':'bg-white'}`}>
                     {(goas || []).length === 0 && <tr><td colSpan="10" className={`p-8 text-center ${t.textMuted}`}>Aún no hay datos de forecast disponibles.</td></tr>}
                     {goas.map(g => {
                       const bucketPvpsCount = Object.keys(g.bucketPvps || {}).filter(k => (g.bucketPvps[k] || 0) > 0).length;
@@ -2214,7 +2214,7 @@ export default function App() {
                             const overBudget = pct > 100;
                             const barColor = overBudget ? 'bg-red-500' : pct >= 90 ? 'bg-yellow-500' : pct >= 50 ? 'bg-emerald-500' : 'bg-blue-500';
                             return (
-                              <div key={`bk-cons-${b.id}`} className={`p-3 rounded-lg border ${theme==='dark'?'bg-zinc-900/60 border-zinc-700':'bg-white/15 border-white/30'}`}>
+                              <div key={`bk-cons-${b.id}`} className={`p-3 rounded-lg border ${theme==='dark'?'bg-white/[0.045] backdrop-blur-xl transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] border-white/10':'bg-white/15 border-white/30'}`}>
                                 <div className="flex justify-between items-start mb-1">
                                   <p className={`text-xs font-black truncate text-white`} title={b.name}>{b.name}</p>
                                   <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded ${theme==='dark'?'bg-zinc-800 text-gray-300':'bg-white/20 text-white'}`}>{b.sharePct||0}%</span>
@@ -2306,7 +2306,7 @@ export default function App() {
                     <h2 className={`text-lg font-black uppercase tracking-wider ${t.textMain}`}>Panel de Inteligencia OTB</h2>
                     <p className={`text-xs mt-1 ${t.textMuted}`}>Proyección de matrices y curvas de entrega.</p>
                   </div>
-                  <div className={`flex p-1.5 rounded-xl border mt-4 sm:mt-0 ${theme==='dark'?'bg-zinc-950 border-zinc-800':'bg-gray-100 border-gray-200'}`}>
+                  <div className={`flex p-1.5 rounded-xl border mt-4 sm:mt-0 ${theme==='dark'?'bg-white/[0.045] backdrop-blur-xl transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] border-white/10':'bg-gray-100 border-gray-200'}`}>
                     <button onClick={()=>setReportView('sugerido')} className={`flex items-center px-6 py-2.5 rounded-lg text-sm transition-all ${reportView==='sugerido' ? t.toggleActive : t.toggleInactive}`}>
                       <Compass size={16} className="mr-2" /> 1. Forecast Sugerido
                     </button>
@@ -2353,8 +2353,8 @@ export default function App() {
                         const isCollapsed = collapsedGoas[goa.id];
 
                         return (
-                          <div key={goa.id} className={`rounded-xl border overflow-hidden ${theme==='dark'?'border-zinc-800 bg-zinc-950':'border-gray-200 bg-white shadow-sm'}`}>
-                            <div className={`p-4 flex justify-between items-center border-b cursor-pointer transition hover:bg-black/5 ${theme==='dark'?'border-zinc-800 bg-zinc-900/50':'border-gray-200 bg-gray-50'}`} onClick={() => toggleGoaCollapse(goa.id)}>
+                          <div key={goa.id} className={`rounded-xl border overflow-hidden ${theme==='dark'?'border-white/10 bg-white/5':'border-gray-200 bg-white shadow-sm'}`}>
+                            <div className={`p-4 flex justify-between items-center border-b cursor-pointer transition hover:bg-black/5 ${theme==='dark'?'border-white/10 bg-white/[0.03]':'border-gray-200 bg-gray-50'}`} onClick={() => toggleGoaCollapse(goa.id)}>
                               <div className="flex items-center">
                                 <button className={`p-1 mr-2 rounded-md ${t.btnGhost}`}>
                                   {isCollapsed ? <ChevronRight size={18}/> : <ChevronDown size={18}/>}
@@ -2804,7 +2804,7 @@ export default function App() {
                                   <td className={`p-3 font-black border-r ${t.border} ${row.cluster===activeClusters[0]?t.textAccent1:row.cluster===activeClusters[1]?t.textAccent2:t.textMuted}`}>{row.cluster}</td>
                                   <td className={`p-3 border-r ${t.border} ${t.textMuted}`}>{row.numStores}</td>
                                   <td className={`p-3 border-r font-bold ${t.border} ${theme==='dark'?'text-gray-300':'text-gray-700'}`}>{row.runsPorTienda}</td>
-                                  <td className={`p-3 font-black ${t.textMain} ${theme==='dark'?'bg-zinc-950/50':'bg-gray-50'}`}>{(row.totalPzs || 0).toLocaleString()}</td>
+                                  <td className={`p-3 font-black ${t.textMain} ${theme==='dark'?'bg-white/[0.03]':'bg-gray-50'}`}>{(row.totalPzs || 0).toLocaleString()}</td>
                                 </tr>
                               ))}
                               <tr className={`font-black border-t-2 ${theme==='dark'?'bg-purple-900/20 border-purple-500/30':'bg-indigo-50 border-indigo-200'}`}>
@@ -3056,7 +3056,7 @@ export default function App() {
                     Sube un CSV de preventa. <span className="font-bold">Columnas requeridas: GOA, Modelo, Curva, Regla.</span> La app cruzará estos datos con tu matriz y devolverá el archivo de Allocation.
                   </p>
                   
-                  <label className={`cursor-pointer w-full h-24 rounded-xl text-xs font-black uppercase tracking-widest transition flex flex-col items-center justify-center border-2 border-dashed ${theme==='dark'?'border-zinc-700 text-zinc-500 hover:border-yellow-400 hover:text-yellow-400 bg-zinc-900/50':'border-gray-300 text-gray-400 hover:border-blue-500 hover:text-blue-500 bg-gray-50'}`}>
+                  <label className={`cursor-pointer w-full h-24 rounded-xl text-xs font-black uppercase tracking-widest transition flex flex-col items-center justify-center border-2 border-dashed ${theme==='dark'?'border-white/10 text-zinc-500 hover:border-yellow-400 hover:text-yellow-400 bg-white/[0.03]':'border-gray-300 text-gray-400 hover:border-blue-500 hover:text-blue-500 bg-gray-50'}`}>
                     <Upload size={24} className="mb-2" /> 
                     Subir y Procesar Archivo (.CSV)
                     <input type="file" accept=".csv" onClick={(e) => e.target.value = null} onChange={(e) => {
@@ -3150,7 +3150,7 @@ export default function App() {
       {/* MODAL PARA GUARDAR SESIÓN */}
       {isSaveModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className={`w-96 p-6 rounded-2xl shadow-2xl border ${theme==='dark'?'bg-zinc-900 border-zinc-700':'bg-white border-gray-200'}`}>
+          <div className={`w-96 p-6 rounded-2xl shadow-2xl border ${theme==='dark'?'bg-[#1c1720] border-white/10':'bg-white border-gray-200'}`}>
             <h3 className={`text-lg font-bold mb-4 ${t.textMain}`}>Guardar Sesión</h3>
             <p className={`text-xs mb-4 ${t.textMuted}`}>Ingresa un nombre para identificar este escenario o GOA.</p>
             <input
@@ -3158,7 +3158,7 @@ export default function App() {
               placeholder="Ej. Escenario_Verano_2026"
               value={saveFileName}
               onChange={e => setSaveFileName(e.target.value)}
-              className={`w-full p-3 rounded-lg mb-6 text-sm font-bold outline-none border focus:ring-1 focus:ring-yellow-500 ${theme==='dark' ? 'bg-zinc-950 border-zinc-800 text-white' : 'bg-gray-50 border-gray-300 text-black'}`}
+              className={`w-full p-3 rounded-lg mb-6 text-sm font-bold outline-none border focus:ring-1 focus:ring-yellow-500 ${theme==='dark' ? 'bg-white/[0.045] backdrop-blur-xl transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] border-white/10 text-white' : 'bg-gray-50 border-gray-300 text-black'}`}
               autoFocus
             />
             <div className="flex space-x-3">
@@ -3174,7 +3174,7 @@ export default function App() {
         if (!g) return null;
         return (
           <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-            <div className={`w-[500px] max-h-[80vh] overflow-y-auto p-6 rounded-2xl shadow-2xl border ${theme==='dark'?'bg-zinc-900 border-zinc-700':'bg-white border-gray-200'}`}>
+            <div className={`w-[500px] max-h-[80vh] overflow-y-auto p-6 rounded-2xl shadow-2xl border ${theme==='dark'?'bg-[#1c1720] border-white/10':'bg-white border-gray-200'}`}>
               <h3 className={`text-lg font-bold mb-1 ${t.textMain}`}>PVPs por Bucket · {g.name}</h3>
               <p className={`text-xs mb-5 ${t.textMuted}`}>Precio por bucket. Prioridad: PVP del plan → PVP del bucket → PVP Default ({g.defaultPvp ? `$${g.defaultPvp}` : 'sin capturar'}).</p>
               <div className="space-y-2 mb-6">
@@ -3197,7 +3197,7 @@ export default function App() {
                             const cleaned = e.target.value.replace(/[^0-9.]/g, '');
                             setGoaBucketPvp(g.id, b.id, cleaned);
                           }}
-                          className={`w-24 p-2 rounded text-sm font-bold text-right outline-none border ${theme==='dark'?'bg-zinc-950 border-zinc-800 text-yellow-400':'bg-gray-50 border-gray-300 text-yellow-700'}`}
+                          className={`w-24 p-2 rounded text-sm font-bold text-right outline-none border ${theme==='dark'?'bg-white/[0.045] backdrop-blur-xl transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] border-white/10 text-yellow-400':'bg-gray-50 border-gray-300 text-yellow-700'}`}
                         />
                       </div>
                     </div>
@@ -3214,17 +3214,17 @@ export default function App() {
 
       {chequeraModal.open && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm">
-          <div className={`w-[420px] p-6 rounded-2xl shadow-2xl border ${theme==='dark'?'bg-zinc-900 border-zinc-700':'bg-white border-gray-200'}`}>
+          <div className={`w-[420px] p-6 rounded-2xl shadow-2xl border ${theme==='dark'?'bg-[#1c1720] border-white/10':'bg-white border-gray-200'}`}>
             <h3 className={`text-lg font-bold mb-2 ${t.textMain}`}>Chequera Nivel Alto — {chequeraModal.source === 'sugerido' ? 'Sugerido' : 'Preventa'}</h3>
             <p className={`text-xs mb-5 ${t.textMuted}`}>Estos valores se aplicarán a todas las filas. Si los dejas vacíos quedan en blanco.</p>
             <div className="space-y-3 mb-6">
               <div>
                 <label className={`text-[10px] font-black uppercase tracking-wider mb-1 block ${t.textMuted}`}>Sección</label>
-                <input type="text" placeholder="Ej. Damas" value={chequeraModal.seccion} onChange={e=>setChequeraModal({...chequeraModal, seccion: e.target.value})} className={`w-full p-2.5 rounded-lg text-sm font-bold outline-none border ${theme==='dark' ? 'bg-zinc-950 border-zinc-800 text-white' : 'bg-gray-50 border-gray-300 text-black'}`} autoFocus />
+                <input type="text" placeholder="Ej. Damas" value={chequeraModal.seccion} onChange={e=>setChequeraModal({...chequeraModal, seccion: e.target.value})} className={`w-full p-2.5 rounded-lg text-sm font-bold outline-none border ${theme==='dark' ? 'bg-white/[0.045] backdrop-blur-xl transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] border-white/10 text-white' : 'bg-gray-50 border-gray-300 text-black'}`} autoFocus />
               </div>
               <div>
                 <label className={`text-[10px] font-black uppercase tracking-wider mb-1 block ${t.textMuted}`}>Marca</label>
-                <input type="text" placeholder="Ej. MarcaPropia" value={chequeraModal.marca} onChange={e=>setChequeraModal({...chequeraModal, marca: e.target.value})} className={`w-full p-2.5 rounded-lg text-sm font-bold outline-none border ${theme==='dark' ? 'bg-zinc-950 border-zinc-800 text-white' : 'bg-gray-50 border-gray-300 text-black'}`} />
+                <input type="text" placeholder="Ej. MarcaPropia" value={chequeraModal.marca} onChange={e=>setChequeraModal({...chequeraModal, marca: e.target.value})} className={`w-full p-2.5 rounded-lg text-sm font-bold outline-none border ${theme==='dark' ? 'bg-white/[0.045] backdrop-blur-xl transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] border-white/10 text-white' : 'bg-gray-50 border-gray-300 text-black'}`} />
               </div>
             </div>
             <div className="flex space-x-3">

@@ -57,7 +57,7 @@ function ImportModal({ tipo, onClose, onConfirm }) {
 
   return (
     <div className="fixed inset-0 bg-black/60 flex items-center justify-center z-50 p-4">
-      <div className="bg-white dark:bg-neutral-900 rounded-xl w-full max-w-2xl max-h-[85vh] overflow-y-auto p-5">
+      <div className="bg-white dark:bg-white/5 rounded-xl w-full max-w-2xl max-h-[85vh] overflow-y-auto p-5">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-bold text-lg text-neutral-900 dark:text-white">
             Importar {tipo === 'externa' ? 'Marca Externa' : 'Marca Propia (PLM)'}
@@ -245,7 +245,7 @@ function ResumenTab({ externaRows, propiaRows }) {
             const rowTotal = months.reduce((s, m) => s + (matrix[g]?.[m] || 0), 0);
             return (
               <tr key={g} className="border-t border-neutral-200 dark:border-neutral-800">
-                <td className="p-2 sticky left-0 bg-white dark:bg-neutral-900 font-medium">{g}</td>
+                <td className="p-2 sticky left-0 bg-white dark:bg-[#1c1720] font-medium">{g}</td>
                 {months.map((m) => (
                   <td key={m} className="p-2 text-right text-neutral-700 dark:text-neutral-300">
                     {matrix[g]?.[m] ? fmt(matrix[g][m]) : '—'}
@@ -258,7 +258,7 @@ function ResumenTab({ externaRows, propiaRows }) {
         </tbody>
         <tfoot>
           <tr className="border-t-2 border-neutral-300 dark:border-neutral-700 font-bold">
-            <td className="p-2 sticky left-0 bg-white dark:bg-neutral-900">Total</td>
+            <td className="p-2 sticky left-0 bg-white dark:bg-[#1c1720]">Total</td>
             {months.map((m) => <td key={m} className="p-2 text-right">{fmt(totalsByMonth[m] || 0)}</td>)}
             <td className="p-2 text-right">{fmt(grandTotal)}</td>
           </tr>

@@ -267,8 +267,8 @@ useEffect(() => {
       card: "bg-white/[0.045] backdrop-blur-xl border-white/10 shadow-lg shadow-black/40 transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)]", cardInner: "bg-white/5 border-white/10",
       textMain: "text-white", textMuted: "text-gray-400", textAccent1: "text-purple-400", textAccent2: "text-yellow-400",
       iconAccent1: "text-purple-400 bg-purple-900/30", iconAccent2: "text-yellow-400 bg-yellow-500/20",
-      border: "border-zinc-800", input: "bg-zinc-950 border-zinc-700 text-white focus:ring-purple-500",
-      inputYellow: "bg-zinc-950 border-zinc-700 text-yellow-400 font-bold focus:ring-yellow-500",
+      border: "border-white/10", input: "bg-white/5 border-white/10 text-white focus:ring-purple-500",
+      inputYellow: "bg-white/5 border-white/10 text-yellow-400 font-bold focus:ring-yellow-500",
       btnPrimary: "bg-yellow-500 text-black hover:bg-yellow-400 shadow-[0_0_15px_rgba(234,179,8,0.2)]",
       btnGhost: "bg-zinc-800 text-gray-300 hover:text-white hover:bg-zinc-700",
       badgeAA: "text-purple-400 bg-purple-900/30 border-purple-500/50", badgeA: "text-yellow-400 bg-yellow-900/30 border-yellow-500/50", badgeOther: "text-gray-300 bg-zinc-800 border-zinc-600",
@@ -2874,7 +2874,7 @@ useEffect(() => {
           const total = residuals.reduce((s, r) => s + r.qty, 0);
           return (
             <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-              <div className={`w-full max-w-2xl max-h-[90vh] overflow-auto rounded-2xl border shadow-2xl p-6 ${theme==='dark'?'bg-zinc-900 border-zinc-800':'bg-white border-gray-200'}`}>
+              <div className={`w-full max-w-2xl max-h-[90vh] overflow-auto rounded-2xl border shadow-2xl p-6 ${theme==='dark'?'bg-[#1c1720] border-white/10':'bg-white border-gray-200'}`}>
                 <div className="flex justify-between items-center mb-4">
                   <div>
                     <h3 className={`text-lg font-black flex items-center ${t.textMain}`}>
@@ -2986,7 +2986,7 @@ useEffect(() => {
 
           return (
             <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-              <div className={`w-full max-w-4xl max-h-[90vh] overflow-auto rounded-2xl border shadow-2xl p-6 ${theme==='dark'?'bg-zinc-900 border-zinc-800':'bg-white border-gray-200'}`}>
+              <div className={`w-full max-w-4xl max-h-[90vh] overflow-auto rounded-2xl border shadow-2xl p-6 ${theme==='dark'?'bg-[#1c1720] border-white/10':'bg-white border-gray-200'}`}>
                 <div className="flex justify-between items-center mb-4">
                   <div>
                     <h3 className={`text-lg font-black flex items-center ${t.textMain}`}>
@@ -3117,7 +3117,7 @@ useEffect(() => {
 
           return (
             <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-              <div className={`w-full max-w-2xl max-h-[90vh] overflow-auto rounded-2xl border shadow-2xl p-6 ${theme==='dark'?'bg-zinc-900 border-zinc-800':'bg-white border-gray-200'}`}>
+              <div className={`w-full max-w-2xl max-h-[90vh] overflow-auto rounded-2xl border shadow-2xl p-6 ${theme==='dark'?'bg-[#1c1720] border-white/10':'bg-white border-gray-200'}`}>
                 <div className="flex justify-between items-center mb-4">
                   <div>
                     <h3 className={`text-lg font-black flex items-center ${t.textMain}`}>
@@ -3240,7 +3240,7 @@ useEffect(() => {
 
           return (
             <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-              <div className={`w-full max-w-3xl max-h-[90vh] overflow-auto rounded-2xl border shadow-2xl p-6 ${theme==='dark'?'bg-zinc-900 border-zinc-800':'bg-white border-gray-200'}`}>
+              <div className={`w-full max-w-3xl max-h-[90vh] overflow-auto rounded-2xl border shadow-2xl p-6 ${theme==='dark'?'bg-[#1c1720] border-white/10':'bg-white border-gray-200'}`}>
                 <div className="flex justify-between items-center mb-4">
                   <div>
                     <h3 className={`text-lg font-black flex items-center ${t.textMain}`}>
@@ -3342,7 +3342,7 @@ useEffect(() => {
 
         {showParamModal && (
           <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4">
-            <div className={`w-full max-w-2xl rounded-2xl border shadow-2xl p-6 ${theme==='dark'?'bg-zinc-900 border-zinc-800':'bg-white border-gray-200'}`}>
+            <div className={`w-full max-w-2xl rounded-2xl border shadow-2xl p-6 ${theme==='dark'?'bg-[#1c1720] border-white/10':'bg-white border-gray-200'}`}>
               <div className="flex justify-between items-center mb-4">
                 <div>
                   <h3 className={`text-lg font-black ${t.textMain}`}>Parametrización de Descarga</h3>
@@ -3402,7 +3402,7 @@ useEffect(() => {
         {/* TAB 1 */}
         {activeTab === 1 && (
           stores.length === 0 ? (
-            <div className={`p-10 md:p-16 rounded-2xl border text-center flex flex-col items-center justify-center ${theme==='dark'?'bg-zinc-900/50 border-zinc-800':'bg-white border-gray-200 shadow-sm'}`}>
+            <div className={`p-10 md:p-16 rounded-2xl border text-center flex flex-col items-center justify-center ${theme==='dark'?'bg-white/[0.045] backdrop-blur-xl transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] border-white/10':'bg-white border-gray-200 shadow-sm'}`}>
               <div className={`p-5 rounded-full mb-6 ${theme==='dark'?'bg-purple-900/20 text-purple-400':'bg-blue-50 text-blue-600'}`}>
                 <Icons.MapIcon size={48} strokeWidth={1.5} />
               </div>
@@ -3443,7 +3443,7 @@ useEffect(() => {
               </div>
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-6 w-full max-w-2xl text-left">
-                <div className={`p-6 rounded-xl border relative overflow-hidden group ${theme==='dark'?'bg-zinc-900 border-zinc-700':'bg-gray-50 border-gray-200'}`}>
+                <div className={`p-6 rounded-xl border relative overflow-hidden group ${theme==='dark'?'bg-white/[0.045] backdrop-blur-xl transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] border-white/10':'bg-gray-50 border-gray-200'}`}>
                   <div className={`absolute top-0 right-0 w-24 h-24 bg-purple-500/10 rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110`}></div>
                   <h4 className={`text-sm font-black uppercase tracking-widest mb-2 flex items-center ${t.textAccent1}`}><span className="bg-purple-500/20 text-purple-500 px-2 py-0.5 rounded mr-2">Paso 1</span> Base de Tiendas</h4>
                   <p className={`text-xs mb-6 h-12 ${t.textMuted}`}>Archivo .CSV obligatorio con ventas históricas para calcular el Score de Mérito.</p>
@@ -3454,7 +3454,7 @@ useEffect(() => {
                   </label>
                 </div>
 
-                <div className={`p-6 rounded-xl border relative overflow-hidden group ${theme==='dark'?'bg-zinc-900 border-zinc-700':'bg-gray-50 border-gray-200'}`}>
+                <div className={`p-6 rounded-xl border relative overflow-hidden group ${theme==='dark'?'bg-white/[0.045] backdrop-blur-xl transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] border-white/10':'bg-gray-50 border-gray-200'}`}>
                   <div className={`absolute top-0 right-0 w-24 h-24 bg-yellow-500/10 rounded-bl-full -mr-4 -mt-4 transition-transform group-hover:scale-110`}></div>
                   <h4 className={`text-sm font-black uppercase tracking-widest mb-2 flex items-center ${t.textAccent2}`}><span className="bg-yellow-500/20 text-yellow-600 px-2 py-0.5 rounded mr-2">Paso 2</span> Matriz de Marcas</h4>
                   <p className={`text-xs mb-6 h-12 ${t.textMuted}`}>Opcional. Matriz cruzada para restringir qué tiendas pueden recibir qué marcas.</p>
@@ -3670,7 +3670,7 @@ useEffect(() => {
                           </div>
                         </div>
                         
-                        <div className={`rounded-lg p-3 mb-4 mt-auto grid grid-cols-3 gap-2 text-center divide-x border ${theme==='dark'?'divide-zinc-800 bg-zinc-900 border-zinc-800':'divide-gray-200 bg-white border-gray-100'}`}>
+                        <div className={`rounded-lg p-3 mb-4 mt-auto grid grid-cols-3 gap-2 text-center divide-x border ${theme==='dark'?'divide-zinc-800 bg-white/[0.045] backdrop-blur-xl transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] border-white/10':'divide-gray-200 bg-white border-gray-100'}`}>
                           <div><p className={`text-[8px] uppercase font-bold tracking-wider ${t.textMuted}`}>Ventas</p><p className={`text-[10px] font-bold ${t.textMain}`}>{activeSales?.toLocaleString()} u</p></div>
                           <div><p className={`text-[8px] uppercase font-bold tracking-wider ${t.textMuted}`}>OH</p><p className={`text-[10px] font-bold ${t.textMain}`}>{activeOH?.toLocaleString()}</p></div>
                           <div><p className={`text-[8px] uppercase font-bold tracking-wider ${t.textMuted}`}>Mg</p><p className={`text-[10px] font-bold ${t.textMain}`}>{activeMargin?.toLocaleString()}%</p></div>
@@ -3738,7 +3738,7 @@ useEffect(() => {
               </div>
 
               {entryMode === 'MANUAL' && (
-                <div className={`p-5 rounded-xl border ${theme==='dark'?'bg-zinc-950/50 border-zinc-800':'bg-gray-50 border-gray-200'}`}>
+                <div className={`p-5 rounded-xl border ${theme==='dark'?'bg-white/[0.045] backdrop-blur-xl transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] border-white/10':'bg-gray-50 border-gray-200'}`}>
                   
                   <datalist id="secciones-list">
                     {matrixMetadata.sections.map(s => <option key={s} value={s} />)}
@@ -3829,7 +3829,7 @@ useEffect(() => {
 
             {chequera.length > 0 && (
               <div className={`rounded-xl border overflow-hidden ${t.card}`}>
-                <div className={`flex items-center justify-between px-4 py-2 border-b ${theme==='dark'?'border-zinc-800 bg-zinc-950/50':'border-gray-200 bg-gray-50'}`}>
+                <div className={`flex items-center justify-between px-4 py-2 border-b ${theme==='dark'?'border-white/10 bg-white/[0.03]':'border-gray-200 bg-gray-50'}`}>
                   <span className={`text-xs font-bold ${t.textMain}`}>
                     {chequera.length} {chequera.length === 1 ? 'modelo' : 'modelos'} en chequera · {chequera.reduce((s, it) => s + parseInt(it.qty || 0), 0).toLocaleString()} pzs total
                   </span>
@@ -3848,7 +3848,7 @@ useEffect(() => {
                 <div className="overflow-x-auto max-h-80 custom-scrollbar">
                   <table className="w-full text-left border-collapse relative">
                     <thead className="sticky top-0 z-10">
-                      <tr className={`text-[10px] uppercase font-black tracking-widest ${theme==='dark'?'bg-zinc-950 text-gray-400 border-b border-zinc-800':'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+                      <tr className={`text-[10px] uppercase font-black tracking-widest ${theme==='dark'?'bg-white/5 text-gray-400 border-b border-white/10':'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
                         <th className="p-3 pl-4">SECCIÓN</th>
                         <th className="p-3">GOA</th>
                         <th className="p-3">MARCA</th>
@@ -3999,7 +3999,7 @@ useEffect(() => {
                     </div>
                     <div className="space-y-2">
                       {overstockAlerts.map((a, i) => (
-                        <details key={i} className={`p-3 rounded-lg border ${theme==='dark'?'bg-zinc-900/60 border-red-900/40':'bg-white border-red-200'}`}>
+                        <details key={i} className={`p-3 rounded-lg border ${theme==='dark'?'bg-white/[0.045] backdrop-blur-xl transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] border-red-900/40':'bg-white border-red-200'}`}>
                           <summary className="cursor-pointer flex items-center justify-between text-xs font-bold">
                             <span className={`${theme==='dark'?'text-red-300':'text-red-700'}`}>
                               <span className="px-2 py-0.5 rounded bg-red-600 text-white mr-2">{a.goa}</span>
@@ -4253,9 +4253,9 @@ useEffect(() => {
                       <table className="w-full text-left border-collapse min-w-max">
                         <thead>
                           <tr className={`text-[9px] uppercase font-black tracking-widest ${theme==='dark'?'text-gray-400':'text-gray-500'}`}>
-                            <th className={`p-2 sticky left-0 top-0 z-30 ${theme==='dark'?'bg-zinc-950':'bg-gray-50'} shadow-[2px_2px_5px_-2px_rgba(0,0,0,0.3)] border-b ${theme==='dark'?'border-zinc-800':'border-gray-200'}`}>Tienda</th>
+                            <th className={`p-2 sticky left-0 top-0 z-30 ${theme==='dark'?'bg-[#1c1720]':'bg-gray-50'} shadow-[2px_2px_5px_-2px_rgba(0,0,0,0.3)] border-b ${theme==='dark'?'border-white/10':'border-gray-200'}`}>Tienda</th>
                             {matrixData.skuCols.map(c => (
-                              <th key={c.sku} className={`p-2 text-center sticky top-0 z-10 ${theme==='dark'?'bg-zinc-950':'bg-gray-50'} border-b ${theme==='dark'?'border-zinc-800':'border-gray-200'}`} title={`GOA: ${c.goa} | Modelo: ${c.modelo} | SKU: ${c.sku}`}>
+                              <th key={c.sku} className={`p-2 text-center sticky top-0 z-10 ${theme==='dark'?'bg-[#1c1720]':'bg-gray-50'} border-b ${theme==='dark'?'border-white/10':'border-gray-200'}`} title={`GOA: ${c.goa} | Modelo: ${c.modelo} | SKU: ${c.sku}`}>
                                 <div className="flex flex-col items-center">
                                   <span className="text-[9px] font-black text-gray-500 mb-0.5">{c.goa}</span>
                                   <span className="text-violet-500 text-xs">{c.talla !== 'N/A' ? `T-${c.talla}` : 'SKU'}</span>
@@ -4263,13 +4263,13 @@ useEffect(() => {
                                 </div>
                               </th>
                             ))}
-                            <th className={`p-2 text-right text-emerald-500 sticky right-0 top-0 z-30 ${theme==='dark'?'bg-zinc-950':'bg-gray-50'} shadow-[-2px_2px_5px_-2px_rgba(0,0,0,0.3)] border-b ${theme==='dark'?'border-zinc-800':'border-gray-200'}`}>Total</th>
+                            <th className={`p-2 text-right text-emerald-500 sticky right-0 top-0 z-30 ${theme==='dark'?'bg-[#1c1720]':'bg-gray-50'} shadow-[-2px_2px_5px_-2px_rgba(0,0,0,0.3)] border-b ${theme==='dark'?'border-white/10':'border-gray-200'}`}>Total</th>
                           </tr>
                         </thead>
                         <tbody className={`divide-y ${theme==='dark'?'divide-zinc-800/50':'divide-gray-200'}`}>
                           {matrixData.storesList.map(s => (
                             <tr key={s.centro} className={`hover:${theme==='dark'?'bg-zinc-800/50':'bg-white'}`}>
-                              <td className={`p-2 text-xs font-bold sticky left-0 z-10 ${theme==='dark'?'bg-zinc-950':'bg-gray-50'} shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)] truncate max-w-[200px]`} title={s.nombre}>
+                              <td className={`p-2 text-xs font-bold sticky left-0 z-10 ${theme==='dark'?'bg-[#1c1720]':'bg-gray-50'} shadow-[2px_0_5px_-2px_rgba(0,0,0,0.3)] truncate max-w-[200px]`} title={s.nombre}>
                                 <span className="text-[9px] text-zinc-500 mr-2 font-mono">{s.centro}</span>
                                 <span className={t.textMain}>{s.nombre}</span>
                               </td>
@@ -4281,17 +4281,17 @@ useEffect(() => {
                                   </td>
                                 );
                               })}
-                              <td className={`p-2 text-xs text-right font-black text-emerald-500 sticky right-0 z-10 ${theme==='dark'?'bg-zinc-950':'bg-gray-50'} shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.3)]`}>{s.total}</td>
+                              <td className={`p-2 text-xs text-right font-black text-emerald-500 sticky right-0 z-10 ${theme==='dark'?'bg-[#1c1720]':'bg-gray-50'} shadow-[-2px_0_5px_-2px_rgba(0,0,0,0.3)]`}>{s.total}</td>
                             </tr>
                           ))}
                         </tbody>
                         <tfoot>
                           <tr className={`font-black text-xs`}>
-                            <td className={`p-2 sticky left-0 bottom-0 z-30 ${theme==='dark'?'bg-zinc-900 border-t border-zinc-700':'bg-gray-100 border-t border-gray-300'} shadow-[2px_-2px_5px_-2px_rgba(0,0,0,0.3)] ${t.textMain}`}>TOTAL GENERAL</td>
+                            <td className={`p-2 sticky left-0 bottom-0 z-30 ${theme==='dark'?'bg-[#1c1720] border-t border-white/10':'bg-gray-100 border-t border-gray-300'} shadow-[2px_-2px_5px_-2px_rgba(0,0,0,0.3)] ${t.textMain}`}>TOTAL GENERAL</td>
                             {matrixData.skuCols.map(c => (
-                              <td key={`tot-${c.sku}`} className={`p-2 text-center font-mono text-violet-500 sticky bottom-0 z-20 ${theme==='dark'?'bg-zinc-900 border-t border-zinc-700':'bg-gray-100 border-t border-gray-300'}`}>{matrixData.totals[c.sku]}</td>
+                              <td key={`tot-${c.sku}`} className={`p-2 text-center font-mono text-violet-500 sticky bottom-0 z-20 ${theme==='dark'?'bg-[#1c1720] border-t border-white/10':'bg-gray-100 border-t border-gray-300'}`}>{matrixData.totals[c.sku]}</td>
                             ))}
-                            <td className={`p-2 text-right font-mono text-emerald-500 sticky right-0 bottom-0 z-30 ${theme==='dark'?'bg-zinc-900 border-t border-zinc-700':'bg-gray-100 border-t border-gray-300'} shadow-[-2px_-2px_5px_-2px_rgba(0,0,0,0.3)]`}>{matrixData.totals.global}</td>
+                            <td className={`p-2 text-right font-mono text-emerald-500 sticky right-0 bottom-0 z-30 ${theme==='dark'?'bg-[#1c1720] border-t border-white/10':'bg-gray-100 border-t border-gray-300'} shadow-[-2px_-2px_5px_-2px_rgba(0,0,0,0.3)]`}>{matrixData.totals.global}</td>
                           </tr>
                         </tfoot>
                       </table>
@@ -4368,7 +4368,7 @@ useEffect(() => {
                     <div className="overflow-auto max-h-[60vh] custom-scrollbar">
                       <table className="w-full text-left border-collapse text-xs">
                         <thead className="sticky top-0 z-10">
-                          <tr className={`text-[9px] uppercase font-black tracking-widest ${theme==='dark'?'bg-zinc-950 text-gray-400 border-b border-zinc-800':'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+                          <tr className={`text-[9px] uppercase font-black tracking-widest ${theme==='dark'?'bg-white/5 text-gray-400 border-b border-white/10':'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
                             <th className="p-2">Tienda</th>
                             <th className="p-2">Cluster</th>
                             <th className="p-2">GOA / Modelo</th>

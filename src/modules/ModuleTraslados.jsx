@@ -154,7 +154,7 @@ export default function Traslados() {
       textMain: 'text-white', textMuted: 'text-gray-400',
       textAccent1: 'text-yellow-400', textAccent2: 'text-violet-400',
       border: 'border-zinc-800',
-      input: 'bg-zinc-950 border-zinc-700 text-white focus:ring-orange-500',
+      input: 'bg-white/5 border-white/10 text-white focus:ring-orange-500',
       btnPrimary: 'bg-yellow-400 text-black hover:bg-yellow-300 shadow-[0_0_15px_rgba(234,179,8,0.3)]',
       btnSecondary: 'bg-violet-600 text-white hover:bg-violet-500',
       btnGhost: 'bg-zinc-800 text-gray-300 hover:text-white hover:bg-zinc-700',
@@ -1855,7 +1855,7 @@ export default function Traslados() {
                     <h3 className={`text-[10px] font-black uppercase tracking-widest mb-3 ${t.textMuted}`}>GOAs de Temporada</h3>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-52 overflow-y-auto pr-1 custom-scrollbar">
                       {opcionesGoa.filter(g => g !== 'ALL').map(goa => (
-                        <div key={goa} className={`flex items-center gap-2 p-2 rounded-lg border ${isDark ? 'border-zinc-800 bg-zinc-900' : 'border-gray-200 bg-white'}`}>
+                        <div key={goa} className={`flex items-center gap-2 p-2 rounded-lg border ${isDark ? 'border-white/10 bg-white/[0.045] backdrop-blur-xl transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)]' : 'border-gray-200 bg-white'}`}>
                           <span className={`flex-1 text-xs font-bold truncate ${t.textMain}`}>{goa}</span>
                           <select
                             value={goasTemporada[goa] || ''}
@@ -2140,7 +2140,7 @@ export default function Traslados() {
                   <div className="overflow-x-auto max-h-[55vh] custom-scrollbar">
                     <table className="w-full text-left min-w-max">
                       <thead>
-                        <tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark ? 'bg-zinc-900 text-gray-400 border-b border-zinc-800' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+                        <tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark ? 'bg-[#1c1720] text-gray-400 border-b border-white/10' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
                           {['Sección', 'Núm.', 'SKU', 'Marca', 'GOA', 'Centro Salida', 'Centro Receptor', 'Tipo Rec.', 'Pzs', 'Importe', 'Costo Traslado', 'Razón'].map(h => (
                             <th key={h} className="p-2 whitespace-nowrap">{h}</th>
                           ))}
@@ -2471,7 +2471,7 @@ export default function Traslados() {
                   <div className="overflow-x-auto max-h-[55vh] custom-scrollbar">
                     <table className="w-full text-left min-w-max">
                       <thead>
-                        <tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark ? 'bg-zinc-900 text-gray-400 border-b border-zinc-800' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+                        <tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark ? 'bg-[#1c1720] text-gray-400 border-b border-white/10' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
                           {['Secci\u00f3n', 'N\u00fam.', 'Marca', 'GOA', 'SKU', 'N SKU', 'Talla', 'Centro Salida', 'Centro Receptor', 'OH Disp', 'Pzs', 'OH Queda', 'Importe'].map(h => (
                             <th key={h} className="p-2 whitespace-nowrap">{h}</th>
                           ))}
@@ -3133,7 +3133,7 @@ export default function Traslados() {
                     <div className="overflow-x-auto custom-scrollbar max-h-72">
                       <table className="w-full text-left text-xs min-w-max">
                         <thead>
-                          <tr className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} border-b ${t.border} sticky top-0 ${isDark?'bg-zinc-900':'bg-white'}`}>
+                          <tr className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} border-b ${t.border} sticky top-0 ${isDark?'bg-[#1c1720]':'bg-white'}`}>
                             {['Zona','Marca','GOA',nivNivel==='sku'?'SKU / Descripción':'Clave','Motivo','Tiendas','OH Total','Importe'].map(h => <th key={h} className="p-2 whitespace-nowrap">{h}</th>)}
                           </tr>
                         </thead>
@@ -3180,7 +3180,7 @@ export default function Traslados() {
                   <div className="overflow-x-auto max-h-[55vh] custom-scrollbar">
                     <table className="w-full text-left min-w-max">
                       <thead>
-                        <tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark ? 'bg-zinc-900 text-gray-400 border-b border-zinc-800' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+                        <tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark ? 'bg-[#1c1720] text-gray-400 border-b border-white/10' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
                           {['Zona','Marca','GOA',nivNivel==='sku'?'SKU':'Clave','Centro Salida','Centro Receptor','Pzs','Importe','MOS Orig','MOS Dest','Índice pot.'].map(h => <th key={h} className="p-2 whitespace-nowrap">{h}</th>)}
                         </tr>
                       </thead>
