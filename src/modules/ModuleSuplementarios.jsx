@@ -433,7 +433,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
           ['MOS cierre', dec(totalK.mos), `LY ${dec(lyK.mos)}`],
           ['Rotación', dec(totalK.rot), `LY ${dec(lyK.rot)}`],
         ].map(([l, v, s]) => (
-          <div key={l} className={card}>
+          <div key={l} className={`${card} text-center`}>
             <p className={`text-[10px] uppercase tracking-wide ${t.textMuted}`}>{l}</p>
             <p className={`text-xl font-black ${t.text}`}>{v}</p>
             <p className={`text-[10px] ${t.textMuted}`}>{s}</p>
@@ -627,7 +627,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
     <div className="space-y-4">
       <div className="flex items-center gap-2">
         <span className={`text-xs ${t.textMuted}`}>{dim}:</span>
-        <select value={ent} onChange={(e) => setEnt(e.target.value)} className={`px-2 py-1.5 text-xs rounded-lg border ${t.input}`}>
+        <select value={ent} onChange={(e) => setEnt(e.target.value)} style={{ colorScheme: isDark ? 'dark' : 'light' }} className={`px-2 py-1.5 text-xs rounded-lg border ${t.input} ${isDark ? '[&>option]:bg-[#1c1720] [&>option]:text-[#EDEBF2]' : ''}`}>
           <option value="__total">Total OTB</option>
           {entities.map((e) => <option key={e.name} value={e.name}>{e.name}</option>)}
         </select>
@@ -658,8 +658,8 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
               <YAxis tick={{ fontSize: 10, fill: isDark ? '#948FA0' : '#6b7280' }} domain={['auto', 'auto']} />
               <Tooltip formatter={(v) => dec(v, 2)} contentStyle={{ background: isDark ? '#1c1720' : '#fff', border: 'none', fontSize: 11 }} />
               <Legend wrapperStyle={{ fontSize: 10 }} />
-              <ReferenceLine y={1} stroke={isDark ? '#948FA0' : '#9ca3af'} strokeDasharray="4 4" />
-              <Line dataKey="LY" stroke={isDark ? '#948FA0' : '#94a3b8'} strokeWidth={2} dot={{ r: 2 }} />
+              <ReferenceLine y={1} stroke={isDark ? '#6b6778' : '#cbd5e1'} strokeDasharray="2 4" label={{ value: 'Promedio = 1', position: 'insideTopRight', fontSize: 9, fill: isDark ? '#948FA0' : '#6b7280' }} />
+              <Line dataKey="LY" stroke="#E0BB3E" strokeWidth={2} strokeDasharray="6 4" dot={{ r: 3 }} />
               <Line dataKey="Plan" stroke={isDark ? '#B39DDB' : '#2563eb'} strokeWidth={2} dot={{ r: 2 }} />
             </LineChart>
           </ResponsiveContainer>
