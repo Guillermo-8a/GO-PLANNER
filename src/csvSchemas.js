@@ -31,6 +31,57 @@ export const CSV_SCHEMAS = [
     ],
   },
   {
+    module: 'Allocation',
+    formats: [
+      {
+        title: 'ZO9_DM (Red Logística)',
+        desc: 'Obligatorio en cada revisión. Solo el export crudo de parametrizaciones, sin las columnas de fórmulas (A–N, AG–AW) de la plantilla de validación. Acepta .xlsx o .csv; cada hoja se reconoce por encabezados, no por nombre. Los archivos pueden cargarse juntos (selección múltiple) o por separado.',
+        columns: ['Gpo.Art.', 'Proveedor', 'Marca', 'Gen. / Ind.', 'Var. / Ind.', 'Descripción', 'BT', 'Centro', 'AP N', 'Nivel Forecast N', 'Stock Min. N', 'Stock Max. N', 'WOS N', 'Plazo Ent. N', 'AA threshold N', 'Allocation Min. N', 'Allocation Max. N', 'Store Priority N'],
+        template: [['Gpo.Art.', 'Proveedor', 'Marca', 'Gen. / Ind.', 'Var. / Ind.', 'Descripción', 'BT', 'Centro', 'AP N', 'Nivel Forecast N', 'Stock Min. N', 'Stock Max. N', 'WOS N', 'Plazo Ent. N', 'AA threshold N', 'Allocation Min. N', 'Allocation Max. N', 'Store Priority N']],
+      },
+      {
+        title: 'BASE_FECHAS O9 (ZRT_FECHASO9)',
+        desc: 'Obligatorio. Da el mes de inicio de temporada (clima del mes, compra del mes), las semanas para validar WOS y el check de inicio en lunes.',
+        columns: ['Material', 'Fecha in de temp.', 'Fecha fin de temp.'],
+        template: [['Material', 'Fecha in de temp.', 'Fecha fin de temp.']],
+      },
+      {
+        title: 'COMPRA_MES (chequera a nivel SKU)',
+        desc: 'Obligatorio para las reglas de compra vs Σ Stock Min y curva de tallas.',
+        columns: ['Artículo', 'MES', 'Piezas'],
+        template: [['Modelo', 'Artículo', 'Descripción grupo', 'MES', 'Piezas', 'Proveedor']],
+      },
+      {
+        title: 'CATALOGO (ZSCLB1)',
+        desc: 'Obligatorio. De las ~70 columnas del catálogo solo se leen estas; el resto puede ir o no.',
+        columns: ['Artículo', 'Modelo', 'Color', 'Talla', 'Descripción grupo', 'Denominación marca', 'Descr. Proveedor (opcional)'],
+      },
+      {
+        title: 'BASE (matrices)',
+        desc: 'Se carga una vez: queda guardada en el navegador hasta que subas otra. Tablas lado a lado: matriz marca × centro con clima y cluster; Código-Marca-Agrupador (licencias); Código de grupo-Grupo-Tipo de mercancía (INVERNAL/CALOR/ATEMPORAL); Centro-AP (centros AP7); CEDIS y fullfilment.',
+        columns: ['Centro', 'Zona', 'Desc Centro', 'Clima', 'MARCA', 'VA / NO VA', 'Cluster', 'CODIGO · MARCA_CAT · AGRUPADOR', 'CODIGO · MARCA_CAT · TIPO MERCANCÍA', 'CENTRO · AP', 'CEDIS Y FULLFILMENT'],
+      },
+      {
+        title: 'MATRIZ CLIMA',
+        desc: 'Se carga una vez (queda guardada). Clima general y por mes 1–12 de cada centro.',
+        columns: ['DET', 'CLIMA GENERAL', '1 … 12'],
+        template: [['DET', 'BLOQUE', 'TIENDAS', 'PLAZA', 'ZONA', 'FORMATO', 'CLIMA GENERAL', 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]],
+      },
+      {
+        title: 'ZO9_MARA (opcional)',
+        desc: 'Solo para validar Allocation coverage vs semanas de temporada. Sin ella esa regla no corre.',
+        columns: ['Material', 'Allocation coverage'],
+        template: [['Grupo art.', 'Material', 'Threshold centralización', 'Allocation coverage', 'EOL', 'EOL ALL']],
+      },
+      {
+        title: 'OC / pedidos',
+        desc: 'Para el tab OC. Se cruza artículo × centro contra la parametrización ya corregida. PASOS y VALIDACIONES de la plantilla no se usan.',
+        columns: ['Var. / Ind. / Artículo / SKU*', 'Centro*', 'Cantidad*', 'OC (opcional)'],
+        template: [['OC', 'Var. / Ind.', 'Centro', 'Cantidad']],
+      },
+    ],
+  },
+  {
     module: 'Assortment OTB',
     formats: [
       {
