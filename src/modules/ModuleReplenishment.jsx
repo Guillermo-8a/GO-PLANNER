@@ -5,6 +5,9 @@ import {
   Settings, FileText, Table
 } from 'lucide-react';
 
+// Números de CSV: "1,234.5" → 1234.5 (antes Number('1,234') daba NaN → 0)
+const toNum = (v) => parseFloat(String(v ?? '').replace(/[^0-9.-]+/g, '')) || 0;
+
 // --- FUNCIONES MATEMÁTICAS ---
 const calculateRegression = (data) => {
     if (data.length < 2) return { m: 0, b: data[0]?.y || 0, r2: 1 };
@@ -156,8 +159,8 @@ export default function App() {
                     const val2 = row[`m${p}_a2`] ?? row[`mes${p}_a2`] ?? row[`s${p}_a2`]; 
                     
                     if (val1 !== undefined || val2 !== undefined) {
-                        const y1 = Number(val1) || 0;
-                        const y2 = Number(val2) || 0;
+                        const y1 = toNum(val1);
+                        const y2 = toNum(val2);
                         monthlySales.push({
                             period: p,
                             y1: y1,
@@ -171,8 +174,8 @@ export default function App() {
                     const v1 = findCol(row, ['venta', 'vta', 'año 1', 'ant']);
                     const v2 = findCol(row, ['año 2', 'act', 'año2']);
                     if (v1 !== undefined || v2 !== undefined) {
-                        const y1 = Number(v1) || 0;
-                        const y2 = Number(v2) || 0;
+                        const y1 = toNum(v1);
+                        const y2 = toNum(v2);
                         monthlySales.push({ period: 1, y1: y1, y2: y2 });
                         sumTotalY2 += y2;
                     }
@@ -180,7 +183,7 @@ export default function App() {
                 
                 // LÓGICA CORREGIDA PARA VTA ACUM: Toma estrictamente la columna de tu CSV
                 const vtaAcumCol = findCol(row, ['vta acum', 'vta_acumulada_act', 'vta act']);
-                const vtaAcumAct = (vtaAcumCol !== undefined && vtaAcumCol !== '') ? Number(vtaAcumCol) : sumTotalY2;
+                const vtaAcumAct = (vtaAcumCol !== undefined && vtaAcumCol !== '') ? toNum(vtaAcumCol) : sumTotalY2;
 
                 // LÓGICA PARA EXTRAER COLUMNAS tend1, tend2, tend3 SI EXISTEN
                 const tend1Val = findCol(row, ['tend1']);
@@ -198,12 +201,12 @@ export default function App() {
                     norma: row.norma || (isHeaderRow && findCol(row, ['norma', 'resurtido', 'tipo'])) || 'Sin Norma',
                     sku: row.sku || (isHeaderRow && findCol(row, ['sku', 'articulo', 'artículo', 'item'])) || `SKU-${index}`,
                     sku_nombre: row.sku_nombre || (isHeaderRow && findCol(row, ['sku_nombre', 'nombre', 'descripción', 'desc'])) || 'Sin Nombre',
-                    oh: Number(row.oh || (isHeaderRow && findCol(row, ['oh', 'inv', 'físico', 'stock']))) || 0,
-                    oo: Number(row.oo || (isHeaderRow && findCol(row, ['oo', 'transito', 'tránsito', 'pedido']))) || 0,
+                    oh: toNum(row.oh || (isHeaderRow && findCol(row, ['oh', 'inv', 'físico', 'stock']))),
+                    oo: toNum(row.oo || (isHeaderRow && findCol(row, ['oo', 'transito', 'tránsito', 'pedido']))),
                     vtaAcumAct: vtaAcumAct,
-                    tend1: tend1Val !== undefined && tend1Val !== '' ? Number(tend1Val) : null,
-                    tend2: tend2Val !== undefined && tend2Val !== '' ? Number(tend2Val) : null,
-                    tend3: tend3Val !== undefined && tend3Val !== '' ? Number(tend3Val) : null,
+                    tend1: tend1Val !== undefined && tend1Val !== '' ? toNum(tend1Val) : null,
+                    tend2: tend2Val !== undefined && tend2Val !== '' ? toNum(tend2Val) : null,
+                    tend3: tend3Val !== undefined && tend3Val !== '' ? toNum(tend3Val) : null,
                     monthlySales: monthlySales.length > 0 ? monthlySales : [{period: 1, y1: 0, y2: 0}]
                 };
             });
@@ -218,7 +221,8 @@ export default function App() {
                  setPeriodEnd(1);
             } else {
                  setPeriodStart(Math.min(currentMonth, maxPeriod));
-                 setPeriodEnd(Math.min(currentMonth + 2, maxPeriod)); 
+                 // mensual: la ventana puede cruzar a enero (13 = Ene del año siguiente)
+                 setPeriodEnd(maxPeriod <= 12 ? currentMonth + 2 : Math.min(currentMonth + 2, maxPeriod));
             }
 
             setData(processedData);
@@ -302,8 +306,33 @@ export default function App() {
     };
 
     // BASE DE DATOS PRE-FILTROS DE UI
+    // Periodos del ciclo (12 mensual / 52 semanal) y ventana de pronóstico con cruce de año
+    const nPer = useMemo(() => data.reduce((mx, d) => d.monthlySales.reduce((a, m) => Math.max(a, m.period), mx), 1), [data]);
+    const windowPeriods = useMemo(() => {
+        const out = [];
+        for (let i = periodStart; i <= periodEnd; i++) out.push({ p: ((i - 1) % nPer) + 1, wrapped: i > nPer });
+        return out;
+    }, [periodStart, periodEnd, nPer]);
+
     const computedData = useMemo(() => {
         if (!data || data.length === 0) return [];
+        const currentMonthNow = new Date().getMonth() + 1;
+        // Base por periodo. Mensual: mes ya cerrado este año o del año siguiente → venta de este año (y2);
+        // mes actual/futuro → mismo mes del año anterior (y1). Antes el mes en curso usaba la venta parcial de y2
+        // y el pronóstico salía muy bajo. Semanal: regla anterior (y2 si hay, si no y1).
+        const winOf = (row) => {
+            const rel = windowPeriods.map(w => {
+                const m = row.monthlySales.find(x => x.period === w.p);
+                return { period: w.p, y1: m?.y1 || 0, y2: m?.y2 || 0, wrapped: w.wrapped };
+            });
+            const sumY1 = rel.reduce((a, r) => a + r.y1, 0), sumY2 = rel.reduce((a, r) => a + r.y2, 0);
+            rel.forEach(r => {
+                if (nPer <= 12) r.b = (r.wrapped || r.period < currentMonthNow) ? r.y2 : r.y1;
+                else r.b = sumY2 > 0 ? r.y2 : r.y1;
+            });
+            if (rel.every(r => !r.b)) rel.forEach(r => { r.b = r.y2 || r.y1; }); // SKU sin historia en el año elegido
+            return { rel, sumY1, sumY2, base: rel.reduce((a, r) => a + r.b, 0) };
+        };
         
         const goaAgg = {};
         const gcAgg = {};
@@ -315,9 +344,7 @@ export default function App() {
         if (actualRecentPeriods.length === 0) actualRecentPeriods = [1];
 
         data.forEach(row => {
-            const relevantPeriods = row.monthlySales.filter(m => m.period >= periodStart && m.period <= periodEnd);
-            const sumY2_base = relevantPeriods.reduce((acc, curr) => acc + curr.y2, 0);
-            centroSalesMap[row.centro] = (centroSalesMap[row.centro] || 0) + sumY2_base;
+            centroSalesMap[row.centro] = (centroSalesMap[row.centro] || 0) + winOf(row).base;
         });
         
         const sortedCentros = Object.entries(centroSalesMap).sort((a, b) => b[1] - a[1]).map(e => e[0]);
@@ -325,10 +352,8 @@ export default function App() {
 
         if (calcMode === 'TD') {
             data.forEach(row => {
-                const relevantPeriods = row.monthlySales.filter(m => m.period >= periodStart && m.period <= periodEnd);
-                const sumY1_base = relevantPeriods.reduce((acc, curr) => acc + curr.y1, 0);
-                const sumY2_base = relevantPeriods.reduce((acc, curr) => acc + curr.y2, 0);
-                
+                const base = winOf(row).base;
+
                 // Extraer venta reciente histórica para sacar tendencia real (Últimos 3 meses vs Año anterior)
                 let sumY1_recent = 0;
                 let sumY2_recent = 0;
@@ -351,7 +376,6 @@ export default function App() {
                 const gcKey = `${row.goa}|${row.centro}`;
                 if (!gcAgg[gcKey]) gcAgg[gcKey] = { baseSales: 0 };
                 
-                const base = sumY2_base > 0 ? sumY2_base : sumY1_base;
                 goaAgg[row.goa].baseSales += base;
                 gcAgg[gcKey].baseSales += base;
             });
@@ -370,10 +394,9 @@ export default function App() {
         }
 
         return data.map(row => {
-            const relevantPeriods = row.monthlySales.filter(m => m.period >= periodStart && m.period <= periodEnd);
-            const sumY1_base = relevantPeriods.reduce((acc, curr) => acc + curr.y1, 0);
-            const sumY2_base = relevantPeriods.reduce((acc, curr) => acc + curr.y2, 0);
-            
+            const W = winOf(row);
+            const relevantPeriods = W.rel, sumY1_base = W.sumY1, sumY2_base = W.sumY2;
+
             let sumY1_recent = 0;
             let sumY2_recent = 0;
             row.monthlySales.forEach(m => {
@@ -387,7 +410,7 @@ export default function App() {
                 sumY2_recent = (row.tend1 || 0) + (row.tend2 || 0) + (row.tend3 || 0);
             }
 
-            let baseSales = sumY2_base > 0 ? sumY2_base : sumY1_base;
+            let baseSales = W.base;
             let rawTrend = 0;
             let cappedTrend = 0;
             let forecast = 0;
@@ -428,9 +451,7 @@ export default function App() {
             const periodsWithFcst = relevantPeriods.map(p => {
                 let pBase = 0;
                 if (calcMode === 'RA' || calcMode === 'TD') {
-                    if (sumY1_base > 0 && sumY2_base > 0) pBase = p.y2;
-                    else if (sumY1_base > 0 && sumY2_base === 0) pBase = p.y1;
-                    else pBase = p.y2;
+                    pBase = p.b;
                 } else {
                     pBase = activeYears > 0 ? ((sumY1_base > 0 ? p.y1 : 0) + (sumY2_base > 0 ? p.y2 : 0)) / activeYears : 0;
                 }
@@ -454,7 +475,7 @@ export default function App() {
                 relevantPeriods: periodsWithFcst
             };
         });
-    }, [data, periodStart, periodEnd, calcMode, maxGrowth, maxDecline]);
+    }, [data, windowPeriods, nPer, calcMode, maxGrowth, maxDecline]);
 
     // LISTAS DE OPCIONES PARA FILTROS
     const optionsCentros = useMemo(() => [...new Set(computedData.map(d => d.centro))].sort(), [computedData]);
@@ -515,7 +536,7 @@ export default function App() {
         if (filterNorma) result = result.filter(d => d.norma === filterNorma);
         if (filterSku) result = result.filter(d => d.sku === filterSku);
         
-        return result.sort((a, b) => {
+        return [...result].sort((a, b) => {
             if (sortBy === 'toBuy_desc') return b.toBuy - a.toBuy;
             if (sortBy === 'toBuy_asc') return a.toBuy - b.toBuy;
             // Ordena por la suma real del inventario OH + OO
@@ -639,12 +660,8 @@ export default function App() {
     }, [enrichedData]);
 
     const periodColumnsArray = useMemo(() => {
-        const cols = [];
-        for(let i = periodStart; i <= periodEnd; i++) {
-            cols.push(i);
-        }
-        return cols;
-    }, [periodStart, periodEnd]);
+        return windowPeriods.map(w => w.p);
+    }, [windowPeriods]);
 
     const getSummaryBy = (key) => {
         const groups = {};

@@ -18,12 +18,14 @@ const delta = (curr,prev) => prev&&prev!==0?((curr-prev)/Math.abs(prev))*100:nul
 const isoOf = d => d instanceof Date ? `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}` : d;
 const mdOf  = d => `${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
 
+const MES3=['ene','feb','mar','abr','may','jun','jul','ago','sep','oct','nov','dic'];
+const stripAcc=s=>s.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
 const parseDate = s => {
   if(!s) return null;
   const c=s.trim(); let d;
   if(/^\d{4}-\d{2}-\d{2}/.test(c)) d=new Date(c.slice(0,10)+'T00:00:00');
   else { const p=c.split(/[\/\-\.]/);
-    if(p.length===3){ const [a,b,cc]=p;
+    if(p.length===3){ let [a,b,cc]=p; const mi=MES3.indexOf(stripAcc(b).slice(0,3).toLowerCase()); if(mi>=0) b=String(mi+1); // 28-sep-2026
       if(a.length===4) d=new Date(`${a}-${b.padStart(2,'0')}-${cc.padStart(2,'0')}T00:00:00`);
       else d=new Date(`${cc.length===4?cc:'20'+cc}-${b.padStart(2,'0')}-${a.padStart(2,'0')}T00:00:00`);
     }}
@@ -415,9 +417,10 @@ export default function ModuleDaily(){
   },[manualPromo,allPromoEntries,fSec,fMarca,defaultUplift]);
 
   // Promedio por día de semana (proyección consciente de findes)
-  const avgByDow=useMemo(()=>{ const m={};
-    tyData.forEach(r=>{ if(!r.fecha) return; const d=(r.fecha.getDay()+6)%7; if(!m[d])m[d]={sum:0,dates:new Set()}; m[d].sum+=r.ventaP; m[d].dates.add(r.fecha.toDateString()); });
-    const o={}; for(let d=0;d<7;d++) o[d]=m[d]?m[d].sum/m[d].dates.size:0; return o; },[tyData]);
+  // Solo las últimas 6 semanas: antes promediaba todo el rango (ej. el año) y perdía la estacionalidad del mes
+  const avgByDow=useMemo(()=>{ const m={}; const from=lastDateTY?new Date(lastDateTY.getTime()-41*86400000):null;
+    tyData.forEach(r=>{ if(!r.fecha||(from&&r.fecha<from)) return; const d=(r.fecha.getDay()+6)%7; if(!m[d])m[d]={sum:0,dates:new Set()}; m[d].sum+=r.ventaP; m[d].dates.add(r.fecha.toDateString()); });
+    const o={}; for(let d=0;d<7;d++) o[d]=m[d]?m[d].sum/m[d].dates.size:0; return o; },[tyData,lastDateTY]);
 
   // ── FORECAST ──
   const forecastMes=useMemo(()=>{
@@ -442,14 +445,18 @@ export default function ModuleDaily(){
     const lyMesDias=new Set(lyMesRows.map(r=>r.fecha.toDateString())).size||diasMes;
     const lyRunRate=lyMesDias>0?lyMesTotal/lyMesDias:0;
     const crecLY=lyRunRate>0?runRate/lyRunRate-1:0;
+    // Arriesgado: forma del resto del mes LY × crecimiento real (antes multiplicaba la proyección TY por el crecimiento
+    // otra vez → contaba el crecimiento doble). Sin LY del resto del mes: neutral +5%.
+    const lyRest=allData.filter(r=>r.year===lyYear&&r.fecha&&dimsOk(r)&&r.fecha.getMonth()===month&&r.fecha.getDate()>diaActual).reduce((s,r)=>s+r.ventaP,0);
+    const projRisk=lyRest>0?Math.max(projNeutral,lyRest*(1+crecLY)):projNeutral*1.05;
     const ov=1+fcstOverridePct/100;
     const avgPrice=accMesU>0?accMes/accMesU:1;
     const mk=v=>({ventaP:v,ventaU:avgPrice>0?Math.round(v/avgPrice):0,mg:v*kpiTY.mgPct/100});
     return { diaActual,diasMes,runRate,accMes,lyMesTotal,crecLY,promoDaysAhead,
       cons:mk(Math.max(0,(accMes+runRate*(diasMes-diaActual)*0.85))*ov),
       neut:mk(Math.max(0,(accMes+projNeutral))*ov),
-      risk:mk(Math.max(0,(accMes+projNeutral*(1+Math.max(0,crecLY))))*ov) };
-  },[tyData,lyData,lastDateTY,avgByDow,isPromoDate,upliftFor,lyYear,fcstOverridePct,kpiTY.mgPct]);
+      risk:mk(Math.max(0,(accMes+projRisk))*ov) };
+  },[tyData,lyData,allData,dimsOk,lastDateTY,avgByDow,isPromoDate,upliftFor,lyYear,fcstOverridePct,kpiTY.mgPct]);
 
   // ── Serie diaria ──
   const serieDiaria=useMemo(()=>{ const map={};
@@ -502,10 +509,11 @@ export default function ModuleDaily(){
     const tyM={},lyM={};
     tyData.forEach(r=>{ const k=r[key]||'N/D'; if(!tyM[k])tyM[k]={key:k,ventaP:0,ventaU:0,utilidad:0,markdown:0}; tyM[k].ventaP+=r.ventaP; tyM[k].ventaU+=r.ventaU; tyM[k].utilidad+=r.utilidad; tyM[k].markdown+=r.markdown; });
     lyData.forEach(r=>{ const k=r[key]||'N/D'; lyM[k]=(lyM[k]||0)+r.ventaP; });
-    const diaActual=lastDateTY?lastDateTY.getDate():30;
+    // Días reales con venta en el rango (antes dividía entre el día del mes aunque el rango fuera de varios meses)
+    const pDays=new Set(tyData.filter(r=>r.fecha).map(r=>r.fecha.toDateString())).size||1;
     const diasMes=lastDateTY?new Date(lastDateTY.getFullYear(),lastDateTY.getMonth()+1,0).getDate():30;
     return Object.values(tyM).map(g=>({ ...g, mgPct:g.ventaP>0?g.utilidad/g.ventaP*100:0,
-      tendencia:delta(g.ventaP,lyM[g.key]), fcst:diaActual>0?g.ventaP/diaActual*diasMes:g.ventaP })).sort((a,b)=>b.ventaP-a.ventaP);
+      tendencia:delta(g.ventaP,lyM[g.key]), fcst:g.ventaP/pDays*diasMes })).sort((a,b)=>b.ventaP-a.ventaP);
   },[tyData,lyData,lastDateTY]);
 
   // Agrupador para tablas dashboard: RESPETA el filtro (período = header). Tend período vs LY mismo período; Cierre vs LY mes completo.

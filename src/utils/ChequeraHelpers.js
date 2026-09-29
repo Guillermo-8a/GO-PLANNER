@@ -47,6 +47,10 @@ export async function parseSpreadsheet(file) {
   return { headers, rows };
 }
 
+const MONTH_FIELDS = new Set(['mesRecepcion', 'mesPreventa', 'mesReal']);
+// "$1,299.00" → 1299 (antes Number() daba NaN y el resumen salía en $0)
+export const toNum = (v) => parseFloat(String(v ?? '').replace(/[^0-9.-]+/g, '')) || 0;
+
 // idx = índice de fila de datos (0-based, sin encabezado)
 export function applyMapping(rawRows, mapping, imgMap = new Map()) {
   return rawRows.map((raw, idx) => {
@@ -54,7 +58,12 @@ export function applyMapping(rawRows, mapping, imgMap = new Map()) {
     CHEQUERA_FIELDS.forEach((f) => { row[f.key] = ''; });
     Object.entries(raw).forEach(([header, value]) => {
       const field = mapping[header];
-      if (field) row[field] = value != null ? String(value).trim() : '';
+      if (!field) return;
+      // Fechas de Excel llegan como número de serie (ej. 45566) → "oct-24" para que el resumen las ordene
+      if (MONTH_FIELDS.has(field) && typeof value === 'number' && value > 20000) {
+        const d = new Date(Math.round((value - 25569) * 86400000));
+        row[field] = `${MESES[d.getUTCMonth()]}-${String(d.getUTCFullYear()).slice(2)}`;
+      } else row[field] = value != null ? String(value).trim() : '';
     });
     const blob = imgMap.get(idx + 1); // +1: la fila 0 del sheet es el encabezado
     if (blob) row._imageBlob = blob;

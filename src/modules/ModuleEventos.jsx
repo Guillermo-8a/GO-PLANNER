@@ -601,8 +601,9 @@ export default function ModuleEventos(){
     const snapBySku = buildSnapBySku(snapRowsActual);
     const snapBySkuLY = hasLY ? buildSnapBySku(snapRowsLY) : {};
     const snapAantBySku = buildSnapBySku(snapRows);
+    // Solo año actual: antes mezclaba la venta LY al calcular el precio realizado y podía clasificar mal Regular/Descuento
     const salesBySkuFull={};
-    salesRows.forEach(r=>{
+    salesRows.filter(r=>!(hasLY&&r.fecha&&r.fecha.getFullYear()===anoAnterior)).forEach(r=>{
       const k=r.sku;
       if(!salesBySkuFull[k]) salesBySkuFull[k]={ventaU:0,ventaP:0};
       salesBySkuFull[k].ventaU+=r.ventaU; salesBySkuFull[k].ventaP+=r.ventaP;

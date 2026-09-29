@@ -8,7 +8,19 @@ import {
 // ─── HELPERS ────────────────────────────────────────────────────────────────
 const parseCSVRow = (row, sep) =>
   row.split(new RegExp(`\\${sep}(?=(?:(?:[^"]*"){2})*[^"]*$)`)).map(c => c.replace(/^"|"$/g, '').trim());
-const num = v => parseFloat(String(v||'0').replace(/[^0-9.,-]/g,'').replace(/\.(?=\d{3}\b)/g,'').replace(',','.'))||0;
+// Acepta 1,234.56 (MX/US), 1.234,56 (EU), 1234.5 y 12,5. Antes "12,345" se leía como 12.345.
+const num = v => { let s=String(v??'').replace(/[^0-9.,-]/g,''); if(!s) return 0;
+  const c=s.lastIndexOf(','), d=s.lastIndexOf('.');
+  if(c>=0&&d>=0) s=c>d? s.replace(/\./g,'').replace(',','.') : s.replace(/,/g,'');
+  else if(c>=0) s=/^-?\d{1,3}(,\d{3})+$/.test(s)? s.replace(/,/g,'') : s.replace(',','.');
+  else if((s.match(/\./g)||[]).length>1) s=s.replace(/\./g,'');
+  return parseFloat(s)||0; };
+// Medidas de stock: al juntar varios meses se promedian por periodo (antes se sumaban y el inventario se inflaba)
+const STOCK=new Set(['prom','invIni','invFin','ideal']);
+const perKey=r=>`${r.ano}|${r.mes}`;
+const aggXY=(rows,keyOf,xKey,yKey)=>{ const m=new Map();
+  for(const r of rows){ const k=keyOf(r); const a=m.get(k)||{x:0,y:0,name:k,per:new Set()}; a.x+=r[xKey]||0; a.y+=r[yKey]||0; a.per.add(perKey(r)); m.set(k,a); }
+  return [...m.values()].map(a=>{ const n=a.per.size||1; return {x:STOCK.has(xKey)?a.x/n:a.x, y:STOCK.has(yKey)?a.y/n:a.y, name:a.name}; }); };
 const fmt = (n,d=0) => n==null?'-':n.toLocaleString('es-MX',{minimumFractionDigits:d,maximumFractionDigits:d});
 const stripDiac = s => s.normalize('NFD').replace(/[\u0300-\u036f]/g,'');
 const minMax = arr => { let mn=Infinity,mx=-Infinity; for(const v of arr){ if(v<mn)mn=v; if(v>mx)mx=v; } return [mn,mx]; };
@@ -139,11 +151,10 @@ export default function ModuleDispersion(){
   const passFilters=r=>FILTER_DIMS.every(d=>!filters[d.key]||r[d.key]===filters[d.key]);
 
   const { points, reg, dropped, raw, xMin, xMax } = useMemo(()=>{
-    let pairs=data.filter(passFilters).map(r=>({x:r[xKey],y:r[yKey],g:r[level]}));
-    const before=pairs.length; if(excludeZeros) pairs=pairs.filter(p=>p.x!==0&&p.y!==0);
-    const dropped=before-pairs.length;
-    let pts; if(level==='__row__'){ pts=pairs.map(p=>({x:p.x,y:p.y,name:''})); }
-    else { const m=new Map(); for(const p of pairs){ const k=p.g||'N/D'; const a=m.get(k)||{x:0,y:0,name:k}; a.x+=p.x; a.y+=p.y; m.set(k,a); } pts=[...m.values()]; }
+    let rows=data.filter(passFilters);
+    const before=rows.length; if(excludeZeros) rows=rows.filter(r=>r[xKey]!==0&&r[yKey]!==0);
+    const dropped=before-rows.length, pairs=rows;
+    const pts=level==='__row__'? rows.map(r=>({x:r[xKey],y:r[yKey],name:''})) : aggXY(rows,r=>r[level]||'N/D',xKey,yKey);
     const [xMin,xMax]=minMax(pts.map(p=>p.x));
     return { points:pts, reg:linearRegression(pts), dropped, raw:pairs.length, xMin, xMax };
   },[data,filters,xKey,yKey,level,excludeZeros]);
@@ -164,17 +175,13 @@ export default function ModuleDispersion(){
     const activeLevels=hier.filter(h=>filters[h.key]);
     if(activeLevels.length===0){
       // Sin filtros: muestra R² global (todos los datos agregados a tienda)
-      const m=new Map();
-      for(const r of data){ const k=r.tienda||'N/D'; const a=m.get(k)||{x:0,y:0}; a.x+=r[xKey]||0; a.y+=r[yKey]||0; m.set(k,a); }
-      let pts=[...m.values()]; if(excludeZeros) pts=pts.filter(p=>p.x!==0&&p.y!==0);
+      let pts=aggXY(data,r=>r.tienda||'N/D',xKey,yKey); if(excludeZeros) pts=pts.filter(p=>p.x!==0&&p.y!==0);
       return [{key:'global',label:'General',value:'Todos los datos', ...linearRegression(pts), nGroups:pts.length}];
     }
     return activeLevels.map(h=>{
       // Filtra data hasta este nivel y todos los anteriores
       const subset=data.filter(r=>activeLevels.slice(0,activeLevels.indexOf(h)+1).every(lv=>r[lv.key]===filters[lv.key]));
-      const m=new Map();
-      for(const r of subset){ const k=r.tienda||'N/D'; const a=m.get(k)||{x:0,y:0}; a.x+=r[xKey]||0; a.y+=r[yKey]||0; m.set(k,a); }
-      let pts=[...m.values()]; if(excludeZeros) pts=pts.filter(p=>p.x!==0&&p.y!==0);
+      let pts=aggXY(subset,r=>r.tienda||'N/D',xKey,yKey); if(excludeZeros) pts=pts.filter(p=>p.x!==0&&p.y!==0);
       return {...h, value:filters[h.key], ...linearRegression(pts), nGroups:pts.length};
     });
   },[data,filters,xKey,yKey,excludeZeros]);
@@ -182,9 +189,9 @@ export default function ModuleDispersion(){
   const tableLevel=level==='__row__'?'tienda':level;
   const tableRows=useMemo(()=>{ const m=new Map();
     for(const r of data){ if(!passFilters(r)) continue; const k=r[tableLevel]||'N/D';
-      const a=m.get(k)||{name:k,venta:0,prom:0,invIni:0,invFin:0,ideal:0,n:0};
-      a.venta+=r.venta;a.prom+=r.prom;a.invIni+=r.invIni;a.invFin+=r.invFin;a.ideal+=r.ideal;a.n++; m.set(k,a); }
-    let arr=[...m.values()].map(a=>({...a,dif:a.ideal-a.invFin}));
+      const a=m.get(k)||{name:k,venta:0,prom:0,invIni:0,invFin:0,ideal:0,n:0,per:new Set()};
+      a.venta+=r.venta;a.prom+=r.prom;a.invIni+=r.invIni;a.invFin+=r.invFin;a.ideal+=r.ideal;a.n++; a.per.add(perKey(r)); m.set(k,a); }
+    let arr=[...m.values()].map(({per,...a})=>{ const n=per.size||1; const o={...a,prom:a.prom/n,invIni:a.invIni/n,invFin:a.invFin/n,ideal:a.ideal/n}; return {...o,dif:o.ideal-o.invFin}; });
     if(search.trim()){ const q=search.toLowerCase(); arr=arr.filter(r=>r.name.toLowerCase().includes(q)); }
     arr.sort((x,y)=>{ const d=Math.abs(y[sortKey])-Math.abs(x[sortKey]); return sortDir==='desc'?d:-d; });
     return arr; },[data,filters,tableLevel,sortKey,sortDir,search]);

@@ -3,7 +3,7 @@ import { useAltTabs } from '../utils/excelNav';
 import { Upload, Plus, Trash2, X, Check, Search, Image as ImageIcon, Wallet } from 'lucide-react';
 import {
   CHEQUERA_FIELDS, autoMapHeaders, parseSpreadsheet, applyMapping,
-  extractEmbeddedImages, saveImageBlob, getImageBlob, sortMonthKeys,
+  extractEmbeddedImages, saveImageBlob, getImageBlob, sortMonthKeys, toNum,
 }  from '../utils/ChequeraHelpers';
 
 const emptyRow = () => {
@@ -207,7 +207,7 @@ function ResumenTab({ externaRows, propiaRows }) {
     all.forEach((r) => {
       const g = `${r.marca || '—'} / ${r.proveedor || '—'}`;
       const m = r.mesRecepcion || 'Sin mes';
-      const val = (Number(r.pvp) || 0) * (Number(r.cantidad) || 0);
+      const val = toNum(r.pvp) * toNum(r.cantidad);
       groupSet.add(g); monthSet.add(m);
       map[g] = map[g] || {};
       map[g][m] = (map[g][m] || 0) + val;
