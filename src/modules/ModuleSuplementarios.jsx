@@ -197,7 +197,7 @@ function allocate(otbArr, ents, cfg = {}, locks = {}) {
 //    (Vta anual / Rot base de la marca + (Vta del mes − Vta promedio)), escalado para cuadrar el OTB de cada mes.
 //  · Compra = Inv final − Inv inicial + Venta + Mkd + CMSI (resultante). Si en un mes una marca quedaría con compra
 //    negativa, se le sube su inv final y se descuenta de otras marcas con compra disponible (el OTB del mes no cambia).
-function invYCompra(A, otb) {
+function invYCompra(A, otb, cfgInv = {}) {
   const n = A.vta.rows.length;
   if (!n) return;
   const V = A.vta.rows.map((r) => r.plan), M = A.mkd.rows.map((r) => r.plan), Q = A.cmsi.rows.map((r) => r.plan);
@@ -208,7 +208,8 @@ function invYCompra(A, otb) {
   const T = rng(n).map((i) => {
     const bv = A.vta.rows[i].base || [], bi = A.inv.rows[i].base || [];
     const bAvg = sum(rng(13).map((k) => +bi[k] || 0)) / 13, bV = sum(R12.map((k) => +bv[k] || 0));
-    const rot = bAvg > 0 && bV > 0 ? bV / bAvg : rotOtb;
+    const rotMan = +cfgInv[A.vta.rows[i].name]?.rot;
+    const rot = rotMan > 0 ? rotMan : bAvg > 0 && bV > 0 ? bV / bAvg : rotOtb; // Rot objetivo capturada o la de la base
     const vA = sum(V[i]), prom = vA / 12;
     return rng(13).map((k) => (k ? Math.max(0, (rot ? vA / rot : 0) + ((+V[i][k % 12] || 0) - prom)) : 0));
   });
@@ -379,7 +380,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
         const ents = entities.map((e) => ({ name: e.name, base: baseOf(e, m.key), hist: e.hist?.[m.key] || zeros(nCols(m.key)) }));
         return [m.key, allocate(otb[m.key] || zeros(nCols(m.key)), ents, cfg[m.key], locks[m.key])];
       }));
-      invYCompra(A, otb);
+      invYCompra(A, otb, cfg.inv);
       return A;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -632,7 +633,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
               <th className={`${th} text-left sticky left-0 z-20`} style={solid}>{dim}</th>
               <th className={th}>{baseLbl}</th><th className={th}>Share {baseLbl}</th>{isIS && <th className={th}>Modelo</th>}<th className={th}>Share manual</th><th className={th}>Estrategia %</th>
               <th className={th}>Share final</th><th className={th}>Plan</th><th className={th}>Crec. vs {cmpLbl}</th>
-              {isInv && <><th className={th}>Rot final</th><th className={th}>Rot {cmpLbl}</th></>}
+              {isInv && <><th className={th} title="Rotación objetivo de la marca (vacío = la de la base)">Rot obj</th><th className={th}>Rot final</th><th className={th}>Rot {cmpLbl}</th></>}
               {KC.map((k) => <th key={k} className={th}>{MLABEL[k]}</th>)}
             </tr></thead>
             <tbody>
@@ -662,6 +663,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
                     <td className={`${td} font-bold ${t.text}`}>{fmt(tot(r.plan))}</td>
                     <td className={`${td} ${g == null ? t.textMuted : g >= 0 ? good : bad}`}>{pct(g)}</td>
                     {isInv && <>
+                      <td className="px-0.5 py-0.5 w-16"><NumCell value={c.rot ?? ''} placeholder={dec(kpis(byEnt[r.name].base, R12).rot)} onCommit={(v) => setCfg(r.name, 'rot', v)} grid="bajrot" r={ri} c={0} className={t.input} /></td>
                       <td className={`${td} font-bold ${rotP != null && rotL != null ? (rotP >= rotL ? good : bad) : t.text}`}>{dec(rotP)}</td>
                       <td className={`${td} ${t.textMuted}`}>{dec(rotL)}</td>
                     </>}
@@ -683,13 +685,13 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
                 <td className={`${td} ${manualSum > 100 ? bad : t.textMuted}`}>{manualSum ? `${manualSum.toFixed(1)}%` : ''}</td><td />
                 <td className={`${td} ${t.text}`}>100%</td>
                 <td className={`${td} font-black ${t.text}`}>{fmt(isInv ? sum(A.colTot) / KC.length : sum(A.colTot))}</td><td />
-                {isInv && <><td className={`${td} font-bold ${t.text}`}>{dec(kpis(otb, R12).rot)}</td><td className={`${td} ${t.textMuted}`}>{dec(kpis(byEnt.__total.hist, R12).rot)}</td></>}
+                {isInv && <><td /><td className={`${td} font-bold ${t.text}`}>{dec(kpis(otb, R12).rot)}</td><td className={`${td} ${t.textMuted}`}>{dec(kpis(byEnt.__total.hist, R12).rot)}</td></>}
                 {KC.map((k) => <td key={k} className={`${td} font-bold ${t.text}`}>{fmt(A.colTot[k])}</td>)}
               </tr>
               <tr>
                 <td className={`px-2 py-1 text-xs sticky left-0 z-10 ${t.textMuted}`} style={solid}>OTB objetivo</td><td colSpan={isIS ? 6 : 5} />
                 <td className={`${td} ${t.textMuted}`}>{fmt(isInv ? sum(otbM) / KC.length : sum(otbM))}</td><td />
-                {isInv && <td colSpan={2} />}
+                {isInv && <td colSpan={3} />}
                 {KC.map((k) => (
                   <td key={k} className={`${td} ${monthOk[k] ? good : bad}`}>
                     <span className="inline-flex items-center gap-0.5">{monthOk[k] ? <Check size={11} /> : <AlertCircle size={11} />}{fmt(otbM[k])}</span>
@@ -701,7 +703,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
           <p className={`mt-2 text-[10px] ${t.textMuted}`}>
             Pega bloques desde Excel (Cmd+V) sobre la primera celda: share, estrategia o meses. Share manual vacío = share de la base ({baseLbl}). Estrategia % multiplica el share (se renormaliza a 100%). Editar/pegar un mes lo fija (amarillo); el resto se reacomoda para cuadrar el OTB mensual.
             {' LY = HIST (año en curso) hasta el corte + IS (pronóstico del resto del año con el modelo de mejor accuracy sobre LLY + HIST: Estacional YTD, Holt, Holt-Winters; backtest en los últimos ≤3 meses de HIST; filas FCST del Excel tienen prioridad). Base LY + LLY = promedio de ambos años para share y estacionalidad; si una marca tiene un año en 0 (nueva o de salida) usa solo el otro.'}
-            {isInv && ' Inventario: Ene (inv inicial) se reparte por share; Feb…Cierre = Vta anual ÷ Rot base de la marca + (Vta del mes − Vta promedio), escalado al OTB del mes. Inventario en 0 es válido (marcas estacionales).'}
+            {isInv && ' Inventario: Ene (inv inicial) se reparte por share; Feb…Cierre = Vta anual ÷ Rot obj de la marca (capturada, o la de la base si está vacía) + (Vta del mes − Vta promedio), escalado al OTB del mes. Inventario en 0 es válido (marcas estacionales).'}
             {isCompra && ' Compra = Inv final − Inv inicial + Venta + Mkd + CMSI por marca. Si una marca quedaría con compra negativa se le deja más inventario y se descuenta de otras marcas ese mes (el OTB no cambia).'}
             {isCompra && alloc.compra.negativos && ' ⚠ Hay meses donde no alcanza para evitar compras negativas: revisa que el OTB (inv, venta, mkd, cmsi y compra) sea consistente.'}
             {isInv && ' Rot final = Vta plan / promedio de 13 inventarios plan de la marca (verde si ≥ ${cmpLbl}).'}
