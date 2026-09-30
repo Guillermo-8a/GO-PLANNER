@@ -1673,6 +1673,19 @@ export default function Forecast() {
     // El cierre (Inv Final Dic) usa el inv inicial de "Ene siguiente" si se capturó (invIni[12])
     const invFinalCierre = otbMaster.invIni[12] ?? null;
 
+    // Sin compras negativas: Compra = max(0, Venta + Mkd + MSI + Inv obj − Inv ini). Si el inventario objetivo baja más
+    // de lo que se desplaza, la compra queda en 0 y el inventario real (inv ini + compra − venta − mkd − msi) queda arriba
+    // del objetivo; ese inventario real es el inicial del mes siguiente. Inventario nunca negativo (≥ objetivo ≥ 0).
+    const compraArr = Array(12).fill(0);
+    let invCierreReal = 0;
+    for (let i = 0; i < 12; i++) {
+      const v = vtaFinal[i], flujos = v + v * (mkdPctMes[i] || 0) + v * msiPct;
+      const objetivo = i < 11 ? invInicialArr[i+1] : (invFinalCierre ?? invInicialArr[i]);
+      compraArr[i] = Math.max(0, flujos + objetivo - invInicialArr[i]);
+      const fin = invInicialArr[i] + compraArr[i] - flujos;
+      if (i < 11) invInicialArr[i+1] = fin; else invCierreReal = fin;
+    }
+
     // Rotación mensual acumulada (lectura): Rot M = venta(Ene→M) / prom(inv Ene→M+1)
     const rotMensualAcum = Array(12).fill(0);
     let ventaAcum = 0;
@@ -1681,7 +1694,7 @@ export default function Forecast() {
       // promedio de inv inicial de Ene..M+1 (incluye el cierre si es Dic)
       const invsParaProm = [];
       for (let j = 0; j <= i; j++) invsParaProm.push(invInicialArr[j]);
-      const invSiguiente = (i < 11) ? invInicialArr[i+1] : (invFinalCierre ?? invInicialArr[i]);
+      const invSiguiente = (i < 11) ? invInicialArr[i+1] : invCierreReal;
       invsParaProm.push(invSiguiente);
       const promInv = invsParaProm.reduce((a,b)=>a+b,0) / invsParaProm.length;
       rotMensualAcum[i] = promInv > 0 ? ventaAcum / promInv : 0;
@@ -1691,11 +1704,11 @@ export default function Forecast() {
     for (let i = 0; i < 12; i++) {
       const venta = vtaFinal[i];
       const invInicial = invInicialArr[i];
-      const invFinal = (i < 11) ? invInicialArr[i+1] : (invFinalCierre ?? invInicial);
+      const invFinal = (i < 11) ? invInicialArr[i+1] : invCierreReal;
       const mkd = venta * (mkdPctMes[i] || 0);
       const msi = venta * msiPct;
-      // Compra (a precio de venta) = Venta + Mkd + MSI + Inv final − Inv inicial (mkd y msi son mercancía a precio de venta)
-      const compra = venta + mkd + msi + (invFinal - invInicial);
+      // Compra (a precio de venta) = Venta + Mkd + MSI + Inv final − Inv inicial, mínimo 0 (ver cascada arriba)
+      const compra = compraArr[i];
       const mgPct = mgFinal[i];
       const utilidadBruta = venta * mgPct;
 
@@ -1883,17 +1896,19 @@ export default function Forecast() {
         invInicial = invFinal;
       }
 
-      // 2do pase: cero a negativos, redistribuir a positivas
-      const totalCompraNeg = comprasBrutas.filter(c => c < 0).reduce((s,c) => s + c, 0);
-      const sumaPositivas = comprasBrutas.filter(c => c > 0).reduce((s,c) => s + c, 0);
-      const comprasAjustadas = comprasBrutas.map(c => {
-        if (c <= 0) return 0;
-        if (sumaPositivas > 0 && totalCompraNeg < 0) {
-          const ajuste = (c / sumaPositivas) * totalCompraNeg;
-          return Math.max(0, c + ajuste);
+      // 2do pase: sin compras negativas y sin inventario negativo. Compra = max(0, flujos + inv obj − inv real);
+      // si el objetivo baja más de lo que se vende, compra 0 y el inventario real queda arriba del objetivo.
+      // (Antes se restaban las negativas a otros meses, lo que podía dejar inventario negativo.)
+      const comprasAjustadas = [];
+      {
+        let invReal = invIniCruceEne;
+        for (let i = 0; i < 12; i++) {
+          const flujos = ventaMensualAjustada[i] + (mkdMensual[i] || 0) + (msiMensual[i] || 0);
+          const c = Math.max(0, flujos + invObjetivoPorMes[i] - invReal);
+          comprasAjustadas.push(c);
+          invReal = invReal + c - flujos;
         }
-        return c;
-      });
+      }
 
       // 3er pase: cascada final
       invInicial = invIniCruceEne;
@@ -2004,15 +2019,13 @@ export default function Forecast() {
         for (let i = 0; i < 12; i++) {
           const venta = ventaMensual[i];
           const ventaSig = i < 11 ? ventaMensual[i+1] : venta;
-          const invFinal = rotMensual > 0 ? ventaSig / rotMensual : 0;
+          const invObj = rotMensual > 0 ? ventaSig / rotMensual : 0;
           const mkd = 0; // apertura sin historial de markdown
           const msi = venta * msiPct;
-          let compra = venta + (invFinal - invInicial);
-          // Compra de surtido inicial: en mes apertura, compra incluye el inv inicial de arranque
-          if ((i + 1) === mesApertura) {
-            compra = venta + invFinal; // arranca de 0, surte todo
-          }
-          if (compra < 0) compra = 0;
+          // Compra ≥ 0 e inventario encadenado (inv ini + compra − venta − msi), nunca negativo. El surtido inicial
+          // se compra el mes previo (su inv objetivo cubre la venta del mes de apertura).
+          const compra = Math.max(0, venta + msi + invObj - invInicial);
+          const invFinal = invInicial + compra - venta - msi;
 
           let bonif = 0;
           if (mesPreApertura && (i + 1) === mesPreApertura) {
@@ -2029,7 +2042,7 @@ export default function Forecast() {
           filasMensual.push({
             mes: i+1, invInicial, venta, mkd, msi, costo, compra, invFinal,
             utilidad, mgPct: venta > 0 ? utilidad/venta : 0, bonif, rotacion: rotAnual,
-            invObjetivo: invFinal, esPico: false, compraRebalanceada: false,
+            invObjetivo: invObj, esPico: false, compraRebalanceada: false,
             aplica: venta > 0,
           });
           invInicial = invFinal;
