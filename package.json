@@ -9,6 +9,7 @@
     "preview": "vite preview"
   },
   "dependencies": {
+    "@google-cloud/bigquery": "^7.9.1",
     "html2canvas": "^1.4.1",
     "jspdf": "^4.2.1",
     "jszip": "^3.10.1",
