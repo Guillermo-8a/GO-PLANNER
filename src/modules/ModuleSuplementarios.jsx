@@ -191,29 +191,45 @@ function allocate(otbArr, ents, cfg = {}, locks = {}) {
   return { rows, colTot };
 }
 
-// Inventario por marca = consecuencia de los demás ratios: Inv ini Ene (bajada del OTB) y después
-// Inv[k+1] = Inv[k] + Compra[k] − Venta[k] − Mkd[k] − CMSI[k]  (todo mercancía a precio de venta).
-// Si una marca queda negativa en un mes, se le pasa compra de ese mes desde marcas con compra e inventario
-// disponibles (el total del mes no cambia y ninguna compra ni inventario queda negativo). Celdas de compra fijas no se tocan.
-function rollInventory(A, entities, otb, cfgInv = {}, lkC = {}) {
-  const n = entities.length;
+// Inventario y compra por marca:
+//  · Inv ini Ene = bajada del OTB por share (base + share manual/estrategia del ratio Inventario).
+//  · Inv ini de Feb…Cierre = objetivo por rotación y ciclicidad de la venta plan de la marca
+//    (Vta anual / Rot base de la marca + (Vta del mes − Vta promedio)), escalado para cuadrar el OTB de cada mes.
+//  · Compra = Inv final − Inv inicial + Venta + Mkd + CMSI (resultante). Si en un mes una marca quedaría con compra
+//    negativa, se le sube su inv final y se descuenta de otras marcas con compra disponible (el OTB del mes no cambia).
+function invYCompra(A, otb) {
+  const n = A.vta.rows.length;
   if (!n) return;
-  const inv0 = allocate([+otb.inv?.[0] || 0], A.inv.rows.map((r) => ({ name: r.name, base: [r.base[0]] })), cfgInv, {}).rows.map((r) => r.plan[0]);
-  const C = A.compra.rows.map((r) => [...r.plan]), V = A.vta.rows.map((r) => r.plan), M = A.mkd.rows.map((r) => r.plan), Q = A.cmsi.rows.map((r) => r.plan);
-  const I = rng(n).map((i) => { const a = zeros(13); a[0] = inv0[i]; return a; });
-  const fixed = (i, k) => lkC[entities[i].name]?.[k] != null;
+  const V = A.vta.rows.map((r) => r.plan), M = A.mkd.rows.map((r) => r.plan), Q = A.cmsi.rows.map((r) => r.plan);
+  const fl = (i, k) => (+V[i][k] || 0) + (+M[i][k] || 0) + (+Q[i][k] || 0);
+  const oInv = (k) => +otb.inv?.[k] || 0;
+  const oAvg = sum(rng(13).map(oInv)) / 13, rotOtb = oAvg ? sum(R12.map((k) => +otb.vta?.[k] || 0)) / oAvg : 0;
+  const I = A.inv.rows.map((r) => { const a = zeros(13); a[0] = +r.plan[0] || 0; return a; });
+  const T = rng(n).map((i) => {
+    const bv = A.vta.rows[i].base || [], bi = A.inv.rows[i].base || [];
+    const bAvg = sum(rng(13).map((k) => +bi[k] || 0)) / 13, bV = sum(R12.map((k) => +bv[k] || 0));
+    const rot = bAvg > 0 && bV > 0 ? bV / bAvg : rotOtb;
+    const vA = sum(V[i]), prom = vA / 12;
+    return rng(13).map((k) => (k ? Math.max(0, (rot ? vA / rot : 0) + ((+V[i][k % 12] || 0) - prom)) : 0));
+  });
+  for (let k = 1; k <= 12; k++) {
+    const s = sum(rng(n).map((i) => T[i][k]));
+    rng(n).forEach((i) => { I[i][k] = s ? (T[i][k] * oInv(k)) / s : oInv(k) / n; });
+  }
+  const C = rng(n).map(() => zeros(12));
+  let neg = false;
   for (let k = 0; k < 12; k++) {
-    const next = (i) => I[i][k] + C[i][k] - (+V[i][k] || 0) - (+M[i][k] || 0) - (+Q[i][k] || 0);
+    const cmp = (i) => I[i][k + 1] - I[i][k] + fl(i, k);
     rng(n).forEach((i) => {
-      let d = -next(i);
-      if (d <= 0.5 || fixed(i, k)) return;
-      const donors = rng(n).filter((j) => j !== i && !fixed(j, k)).map((j) => ({ j, cap: Math.max(0, Math.min(C[j][k], next(j))) })).filter((x) => x.cap > 0);
-      const cap = sum(donors.map((x) => x.cap)); if (!cap) return;
+      const d = -cmp(i);
+      if (d <= 0.5) return;
+      const don = rng(n).filter((j) => j !== i).map((j) => ({ j, cap: Math.max(0, Math.min(cmp(j), I[j][k + 1])) })).filter((x) => x.cap > 0);
+      const cap = sum(don.map((x) => x.cap)); if (!cap) return;
       const take = Math.min(d, cap);
-      donors.forEach(({ j, cap: c }) => { C[j][k] -= take * c / cap; });
-      C[i][k] += take;
+      don.forEach(({ j, cap: c }) => { I[j][k + 1] -= (take * c) / cap; });
+      I[i][k + 1] += take;
     });
-    rng(n).forEach((i) => { const v = next(i); I[i][k + 1] = Math.abs(v) < 0.5 ? 0 : v; });
+    rng(n).forEach((i) => { const c = cmp(i); if (c < -0.5) neg = true; C[i][k] = Math.max(0, c); });
   }
   const upd = (key, P) => {
     const tot = sum(P.map(sum)) || 1;
@@ -221,7 +237,7 @@ function rollInventory(A, entities, otb, cfgInv = {}, lkC = {}) {
     A[key].colTot = rng(P[0].length).map((k) => sum(P.map((p) => p[k])));
   };
   upd('compra', C); upd('inv', I);
-  A.inv.negativos = I.some((a) => a.some((v) => v < -0.5));
+  A.compra.negativos = neg;
 }
 
 // Inventario = inv INICIAL por mes (+ cierre en idx 12). Para un periodo: inv fin = inv ini del mes siguiente.
@@ -321,7 +337,9 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
   const { dim, otb, entities, cfg, locks } = st;
   // Años respecto al plan: HIST del Excel = año en curso (real hasta el corte) → LY = HIST + IS (pronóstico del resto)
   // REAL del Excel = año anterior cerrado → LLY
-  const baseMode = st.baseMode || 'prom'; // 'prom' promedio LY+LLY | 'is' solo LY | 'ly' solo LLY
+  // Base de ciclicidad/share por ratio (independiente): 'prom' promedio LY+LLY | 'is' solo LY | 'ly' solo LLY
+  const modeOf = (mk) => st.baseModes?.[mk] || st.baseMode || 'prom';
+  const baseMode = modeOf(metric);
   // Corte automático: último mes con venta en HIST (se puede cambiar a mano)
   const corteAuto = Math.max(0, ...entities.map((e) => { const v = e.hist?.vta || []; let k = 12; while (k > 0 && !(+v[k - 1])) k--; return k; }));
   const corte = st.corte ?? corteAuto;
@@ -344,15 +362,16 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
   const baseOf = (e, mk) => {
     const lly = llyOf(e, mk), ly = lyOf(e, mk);
     if (!ly) return lly;
-    if (baseMode === 'ly') return sum(lly) > 0 ? lly : ly;
-    if (baseMode === 'is') return ly;
+    const bm = modeOf(mk);
+    if (bm === 'ly') return sum(lly) > 0 ? lly : ly;
+    if (bm === 'is') return ly;
     const a = sum(ly) > 0, b = sum(lly) > 0;
     // Por mes: si un año trae 0 en ese mes (HIST incompleto, marca nueva), usa el otro
     return a && b ? ly.map((v, k) => { const x = +v || 0, y = +lly[k] || 0; return x && y ? (x + y) / 2 : x || y; }) : a ? ly : lly;
   };
   // Comparativo (crecimientos, KPIs "vs LY"): LY si hay real, si no LLY
-  const cmpOf = (e, mk) => (baseMode === 'ly' ? llyOf(e, mk) : lyOf(e, mk) || llyOf(e, mk));
-  const cmpLbl = baseMode === 'ly' ? 'LLY' : 'LY';
+  const cmpOf = (e, mk) => lyOf(e, mk) || llyOf(e, mk);
+  const cmpLbl = entities.some((e) => e.hist) ? 'LY' : 'LLY';
 
   const alloc = useMemo(
     () => {
@@ -360,11 +379,11 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
         const ents = entities.map((e) => ({ name: e.name, base: baseOf(e, m.key), hist: e.hist?.[m.key] || zeros(nCols(m.key)) }));
         return [m.key, allocate(otb[m.key] || zeros(nCols(m.key)), ents, cfg[m.key], locks[m.key])];
       }));
-      rollInventory(A, entities, otb, cfg.inv, locks.compra);
+      invYCompra(A, otb);
       return A;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [otb, entities, cfg, locks, isFc]
+    [otb, entities, cfg, locks, isFc, st.baseModes, st.baseMode]
   );
 
   // data por entidad: { plan: {metric:[..]}, hist: {metric:[..]} }
@@ -382,7 +401,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
     const totOf = (tp) => Object.fromEntries(METRICS.map((m) => [m.key, rng(nCols(m.key)).map((k) => sum(entities.map((e) => +out[e.name][tp][m.key][k] || 0)))]));
     out.__total = { plan: otb, hist: totOf('hist'), base: totOf('base'), ly: totOf('ly'), lly: totOf('lly') };
     return out;
-  }, [alloc, entities, otb, isFc, baseMode]);
+  }, [alloc, entities, otb, isFc]);
 
   const onFile = async (e) => {
     const f = e.target.files?.[0]; e.target.value = '';
@@ -565,7 +584,8 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
   const manualSum = sum(Object.values(mCfg).map((c) => (c.share !== '' && c.share != null ? +c.share : 0)));
   const isInv = metric === 'inv';
   const baseLbl = baseMode === 'prom' ? 'Prom LY+LLY' : baseMode === 'is' ? 'LY' : 'LLY';
-  const isIS = baseMode !== 'ly' && entities.some((e) => e.hist);
+  const isCompra = metric === 'compra';
+  const isIS = !isCompra && baseMode !== 'ly' && entities.some((e) => e.hist);
   const solid = { background: isDark ? '#1c1720' : '#ffffff' };
   const hasTy = entities.some((e) => e.ty);
   const BajadaTab = (
@@ -575,18 +595,23 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
           <button key={m.key} onClick={() => setMetric(m.key)} className={`px-3 py-1.5 text-xs rounded-lg border ${metric === m.key ? t.toggleActive : `${t.toggle} ${t.textMuted}`}`}>{m.label}</button>
         ))}
         <div className="flex-1" />
-        <div className={`flex items-center rounded-lg border p-0.5 ${t.toggle}`} title="Base para share y estacionalidad">
-          {[['prom', 'LY + LLY'], ['is', 'Solo LY'], ['ly', 'Solo LLY']].map(([k, l]) => (
-            <button key={k} onClick={() => setSt((s) => ({ ...s, baseMode: k }))} className={`px-3 py-1 text-xs rounded-md ${baseMode === k ? t.toggleActive : t.textMuted}`}>{l}</button>
-          ))}
+        <div className="flex flex-col gap-0.5">
+          <span className={`text-[10px] uppercase tracking-wide ${t.textMuted}`}>{isCompra ? 'Compra' : `Ciclicidad y share · ${METRICS.find((m) => m.key === metric).label}`}</span>
+          {isCompra ? (
+            <span className={`px-3 py-1 text-xs rounded-lg border ${t.toggle} ${t.textMuted}`}>Resultante: Inv fin − Inv ini + Vta + Mkd + CMSI</span>
+          ) : (
+            <div className={`flex items-center rounded-lg border p-0.5 ${t.toggle}`}>
+              {[['prom', 'LY + LLY'], ['is', 'Solo LY'], ['ly', 'Solo LLY']].map(([k, l]) => (
+                <button key={k} onClick={() => setSt((s) => ({ ...s, baseModes: { ...(s.baseModes || {}), [metric]: k } }))} className={`w-20 py-1 text-xs rounded-md ${baseMode === k ? t.toggleActive : t.textMuted}`}>{l}</button>
+              ))}
+            </div>
+          )}
         </div>
-        {baseMode !== 'ly' && (
-          <label className={`flex items-center gap-1.5 text-xs ${t.textMuted}`}>HIST (real) hasta
-            <select value={corte} onChange={(e) => setSt((s) => ({ ...s, corte: +e.target.value }))} style={selStyle} className={selCls}>
-              {rng(13).map((k) => <option key={k} value={k}>{k ? MONTHS[k - 1] : '—'}</option>)}
-            </select>
-          </label>
-        )}
+        <label className={`flex items-center gap-1.5 text-xs ${t.textMuted}`}>HIST (real) hasta
+          <select value={corte} onChange={(e) => setSt((s) => ({ ...s, corte: +e.target.value }))} style={selStyle} className={selCls}>
+            {rng(13).map((k) => <option key={k} value={k}>{k ? MONTHS[k - 1] : '—'}</option>)}
+          </select>
+        </label>
         <label className={`flex items-center gap-1.5 text-xs ${t.textMuted}`}>Ordenar
           <select value={sortBaj} onChange={(e) => setSt((s) => ({ ...s, sortBaj: e.target.value }))} style={selStyle} className={selCls}>
             <option value="ly">Venta {cmpLbl}</option><option value="base">Share base</option><option value="plan">Plan</option><option value="az">A–Z</option>
@@ -595,7 +620,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
         <button onClick={copyCfgToAll} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg ${t.btnGhost}`} title="Aplica share y estrategia de este ratio a todos"><Copy size={13} />Copiar ajustes a todos</button>
         <button onClick={() => clearLocks()} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg ${t.btnGhost}`}><RotateCcw size={13} />Liberar fijas</button>
       </div>
-      {baseMode !== 'ly' && !hasTy && (
+      {!hasTy && (
         <div className={`px-3 py-2 rounded-lg border text-xs ${t.warningBg}`}>Sin LLY: sube filas Tipo REAL (año anterior cerrado) por {dim.toLowerCase()} para promediar LY + LLY y mejorar el IS. Mientras, la base usa solo LY (HIST + IS).</div>
       )}
       {!entities.length ? (
@@ -630,8 +655,9 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
                       <td className={`${td} ${t.textMuted}`} title={f.scores?.map((x) => `${x.name}: ${x.acc == null ? '—' : x.acc.toFixed(1) + '%'}`).join('\n')}>
                         {f.model}{f.acc != null && <span className={f.acc >= 85 ? good : f.acc >= 70 ? warn : bad}> · {f.acc.toFixed(0)}%</span>}
                       </td>); })()}
+                    {isCompra ? <><td className={`${td} ${t.textMuted}`}>—</td><td className={`${td} ${t.textMuted}`}>—</td></> : <>
                     <td className="px-0.5 py-0.5 w-20"><NumCell value={c.share ?? ''} placeholder="base" onCommit={(v) => setCfg(r.name, 'share', v)} onPasteGrid={paste(0)} grid="baj" r={ri} c={0} className={t.input} /></td>
-                    <td className="px-0.5 py-0.5 w-20"><NumCell value={c.adj ?? ''} placeholder="0" onCommit={(v) => setCfg(r.name, 'adj', v)} onPasteGrid={paste(1)} grid="baj" r={ri} c={1} className={t.input} /></td>
+                    <td className="px-0.5 py-0.5 w-20"><NumCell value={c.adj ?? ''} placeholder="0" onCommit={(v) => setCfg(r.name, 'adj', v)} onPasteGrid={paste(1)} grid="baj" r={ri} c={1} className={t.input} /></td></>}
                     <td className={`${td} font-bold ${t.text}`}>{pct(r.share)}</td>
                     <td className={`${td} font-bold ${t.text}`}>{fmt(tot(r.plan))}</td>
                     <td className={`${td} ${g == null ? t.textMuted : g >= 0 ? good : bad}`}>{pct(g)}</td>
@@ -639,8 +665,8 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
                       <td className={`${td} font-bold ${rotP != null && rotL != null ? (rotP >= rotL ? good : bad) : t.text}`}>{dec(rotP)}</td>
                       <td className={`${td} ${t.textMuted}`}>{dec(rotL)}</td>
                     </>}
-                    {KC.map((k) => isInv && k > 0 ? (
-                      <td key={k} className={`${td} ${r.plan[k] < -0.5 ? bad : t.text}`} title="Inv = inv anterior + compra − venta − mkd − cmsi">{fmt(r.plan[k])}</td>
+                    {KC.map((k) => (isInv && k > 0) || isCompra ? (
+                      <td key={k} className={`${td} ${t.text}`} title={isCompra ? 'Compra = Inv fin − Inv ini + Vta + Mkd + CMSI' : 'Inv objetivo por rotación y ciclicidad de la venta'}>{fmt(r.plan[k])}</td>
                     ) : (
                       <td key={k} className="px-0.5 py-0.5">
                         <NumCell value={Math.round(r.plan[k])} onCommit={(v) => setLock(r.name, k, v)} onPasteGrid={paste(k + 2)} grid="baj" r={ri} c={k + 2} className={lk[k] != null ? t.inputY : t.input} />
@@ -675,8 +701,9 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
           <p className={`mt-2 text-[10px] ${t.textMuted}`}>
             Pega bloques desde Excel (Cmd+V) sobre la primera celda: share, estrategia o meses. Share manual vacío = share de la base ({baseLbl}). Estrategia % multiplica el share (se renormaliza a 100%). Editar/pegar un mes lo fija (amarillo); el resto se reacomoda para cuadrar el OTB mensual.
             {' LY = HIST (año en curso) hasta el corte + IS (pronóstico del resto del año con el modelo de mejor accuracy sobre LLY + HIST: Estacional YTD, Holt, Holt-Winters; backtest en los últimos ≤3 meses de HIST; filas FCST del Excel tienen prioridad). Base LY + LLY = promedio de ambos años para share y estacionalidad; si una marca tiene un año en 0 (nueva o de salida) usa solo el otro.'}
-            {isInv && ' Inventario: solo se captura/ajusta Ene (inv inicial); los demás meses = inv anterior + compra − venta − mkd − cmsi. Inventario en 0 es válido (marcas estacionales sin venta en esos meses). Si una marca quedaría en negativo se le reasigna compra de ese mes desde otras marcas (el total no cambia).'}
-            {isInv && A.negativos && ' ⚠ Aún hay inventarios negativos: la compra total del OTB en esos meses no alcanza.'}
+            {isInv && ' Inventario: Ene (inv inicial) se reparte por share; Feb…Cierre = Vta anual ÷ Rot base de la marca + (Vta del mes − Vta promedio), escalado al OTB del mes. Inventario en 0 es válido (marcas estacionales).'}
+            {isCompra && ' Compra = Inv final − Inv inicial + Venta + Mkd + CMSI por marca. Si una marca quedaría con compra negativa se le deja más inventario y se descuenta de otras marcas ese mes (el OTB no cambia).'}
+            {isCompra && alloc.compra.negativos && ' ⚠ Hay meses donde no alcanza para evitar compras negativas: revisa que el OTB (inv, venta, mkd, cmsi y compra) sea consistente.'}
             {isInv && ' Rot final = Vta plan / promedio de 13 inventarios plan de la marca (verde si ≥ ${cmpLbl}).'}
           </p>
         </div>
@@ -743,7 +770,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
               <ReferenceLine y={1} stroke={isDark ? '#6b6778' : '#cbd5e1'} strokeDasharray="2 4" label={{ value: 'Promedio = 1', position: 'insideTopRight', fontSize: 9, fill: isDark ? '#948FA0' : '#6b7280' }} />
               <Line dataKey="LLY" stroke={isDark ? '#948FA0' : '#94a3b8'} strokeWidth={2} strokeDasharray="2 3" dot={{ r: 2 }} />
               {hasLY && <Line dataKey="LY" stroke="#E0BB3E" strokeWidth={2} strokeDasharray="6 4" dot={{ r: 3 }} />}
-              {baseMode === 'prom' && hasLY && <Line dataKey="Base" stroke="#4FB0A5" strokeWidth={2} dot={false} />}
+              {modeOf('vta') === 'prom' && hasLY && <Line dataKey="Base" stroke="#4FB0A5" strokeWidth={2} dot={false} />}
               <Line dataKey="Plan" stroke={isDark ? '#B39DDB' : '#2563eb'} strokeWidth={2} dot={{ r: 2 }} />
             </LineChart>
           </ResponsiveContainer>
