@@ -241,6 +241,38 @@ function invYCompra(A, otb, cfgInv = {}) {
   A.compra.negativos = neg;
 }
 
+// Utilidad por marca y mes según el Mg% prometido y los descuentos del mes:
+//   Utilidad = Vta × Mg − Mkd × (1 − Mg) − CMSI + Boni,  Boni = Boni% × Compra × (1 − Mg)  (bonificación a costo)
+// Mg vacío = Mg implícito de la base (despejado de la misma fórmula). Después se cuadra al OTB de cada mes con un ajuste
+// aditivo proporcional a la venta de la marca en el mes (acepta utilidades negativas). Celdas fijas no se tocan.
+function utilidadPorMg(A, otb, cfgU = {}, lkU = {}) {
+  const n = A.vta.rows.length;
+  if (!n) return;
+  const P = rng(n).map((i) => {
+    const name = A.vta.rows[i].name, c = cfgU[name] || {}, b = (+c.boni || 0) / 100;
+    const sb = (k) => sum((A[k].rows[i].base || []).slice(0, 12).map((v) => +v || 0));
+    const den = sb('vta') + sb('mkd') - b * sb('compra');
+    const mgBase = den > 0 ? (sb('utilidad') + sb('mkd') + sb('cmsi') - b * sb('compra')) / den : null;
+    const mg = c.mg !== '' && c.mg != null ? +c.mg / 100 : mgBase ?? 0;
+    A.utilidad.rows[i].mgBase = mgBase;
+    const g = (k, m) => +A[k].rows[i].plan[m] || 0;
+    return R12.map((m) => {
+      const lk = lkU[name]?.[m];
+      if (lk != null) return { v: +lk, fixed: true };
+      return { v: g('vta', m) * mg - g('mkd', m) * (1 - mg) - g('cmsi', m) + b * g('compra', m) * (1 - mg), fixed: false };
+    });
+  });
+  R12.forEach((m) => {
+    const gap = (+otb.utilidad?.[m] || 0) - sum(P.map((r) => r[m].v));
+    const free = rng(n).filter((i) => !P[i][m].fixed);
+    const w = sum(free.map((i) => +A.vta.rows[i].plan[m] || 0));
+    free.forEach((i) => { P[i][m].v += gap * (w ? (+A.vta.rows[i].plan[m] || 0) / w : 1 / free.length); });
+  });
+  const U = P.map((r) => r.map((x) => x.v)), tot = sum(U.map(sum)) || 1;
+  A.utilidad.rows.forEach((r, i) => { r.plan = U[i]; r.planTot = sum(U[i]); r.share = r.planTot / tot; });
+  A.utilidad.colTot = R12.map((m) => sum(U.map((u) => u[m])));
+}
+
 // Inventario = inv INICIAL por mes (+ cierre en idx 12). Para un periodo: inv fin = inv ini del mes siguiente.
 // Rotación = Σ venta del periodo / promedio de (n+1) inventarios (año: 12 ventas / 13 inventarios).
 function kpis(d, ms) {
@@ -381,6 +413,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
         return [m.key, allocate(otb[m.key] || zeros(nCols(m.key)), ents, cfg[m.key], locks[m.key])];
       }));
       invYCompra(A, otb, cfg.inv);
+      utilidadPorMg(A, otb, cfg.utilidad, locks.utilidad);
       return A;
     },
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -466,7 +499,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
       const name = names[r0 + i]; if (!name) return;
       line.forEach((v, j) => {
         const c = c0 + j;
-        if (c <= 1) mc[name] = { ...(mc[name] || {}), [c === 0 ? 'share' : 'adj']: v };
+        if (c <= 1) mc[name] = { ...(mc[name] || {}), [c === 0 ? (metric === 'utilidad' ? 'mg' : 'share') : (metric === 'utilidad' ? 'boni' : 'adj')]: v };
         else if (c - 2 < nCols(metric) && v !== '' && !(metric === 'inv' && c > 2)) ml[name] = { ...(ml[name] || {}), [c - 2]: metric === 'utilidad' ? v : Math.max(0, v) };
       });
     });
@@ -585,7 +618,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
   const manualSum = sum(Object.values(mCfg).map((c) => (c.share !== '' && c.share != null ? +c.share : 0)));
   const isInv = metric === 'inv';
   const baseLbl = baseMode === 'prom' ? 'Prom LY+LLY' : baseMode === 'is' ? 'LY' : 'LLY';
-  const isCompra = metric === 'compra';
+  const isCompra = metric === 'compra', isUt = metric === 'utilidad';
   const isIS = !isCompra && baseMode !== 'ly' && entities.some((e) => e.hist);
   const solid = { background: isDark ? '#1c1720' : '#ffffff' };
   const hasTy = entities.some((e) => e.ty);
@@ -597,9 +630,9 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
         ))}
         <div className="flex-1" />
         <div className="flex flex-col gap-0.5">
-          <span className={`text-[10px] uppercase tracking-wide ${t.textMuted}`}>{isCompra ? 'Compra' : `Ciclicidad y share · ${METRICS.find((m) => m.key === metric).label}`}</span>
-          {isCompra ? (
-            <span className={`px-3 py-1 text-xs rounded-lg border ${t.toggle} ${t.textMuted}`}>Resultante: Inv fin − Inv ini + Vta + Mkd + CMSI</span>
+          <span className={`text-[10px] uppercase tracking-wide ${t.textMuted}`}>{isCompra ? 'Compra' : isUt ? 'Utilidad' : `Ciclicidad y share · ${METRICS.find((m) => m.key === metric).label}`}</span>
+          {isCompra || isUt ? (
+            <span className={`px-3 py-1 text-xs rounded-lg border ${t.toggle} ${t.textMuted}`}>{isCompra ? 'Resultante: Inv fin − Inv ini + Vta + Mkd + CMSI' : 'Vta × Mg − Mkd × (1 − Mg) − CMSI + Boni'}</span>
           ) : (
             <div className={`flex items-center rounded-lg border p-0.5 ${t.toggle}`}>
               {[['prom', 'LY + LLY'], ['is', 'Solo LY'], ['ly', 'Solo LLY']].map(([k, l]) => (
@@ -631,8 +664,8 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
           <table className="w-full">
             <thead><tr>
               <th className={`${th} text-left sticky left-0 z-20`} style={solid}>{dim}</th>
-              <th className={th}>{baseLbl}</th><th className={th}>Share {baseLbl}</th>{isIS && <th className={th}>Modelo</th>}<th className={th}>Share manual</th><th className={th}>Estrategia %</th>
-              <th className={th}>Share final</th><th className={th}>Plan</th><th className={th}>Crec. vs {cmpLbl}</th>
+              <th className={th}>{baseLbl}</th><th className={th}>Share {baseLbl}</th>{isIS && <th className={th}>Modelo</th>}{isUt ? <><th className={th} title="Mg% que promete la marca (vacío = Mg implícito de la base)">Mg% prom.</th><th className={th} title="Bonificación por CMSI, % de la compra a costo">Boni % CMSI</th></> : <><th className={th}>Share manual</th><th className={th}>Estrategia %</th></>}
+              <th className={th}>{isUt ? 'Mg% final' : 'Share final'}</th><th className={th}>Plan</th><th className={th}>Crec. vs {cmpLbl}</th>
               {isInv && <><th className={th} title="Rotación objetivo de la marca (vacío = la de la base)">Rot obj</th><th className={th}>Rot final</th><th className={th}>Rot {cmpLbl}</th></>}
               {KC.map((k) => <th key={k} className={th}>{MLABEL[k]}</th>)}
             </tr></thead>
@@ -656,10 +689,12 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
                       <td className={`${td} ${t.textMuted}`} title={f.scores?.map((x) => `${x.name}: ${x.acc == null ? '—' : x.acc.toFixed(1) + '%'}`).join('\n')}>
                         {f.model}{f.acc != null && <span className={f.acc >= 85 ? good : f.acc >= 70 ? warn : bad}> · {f.acc.toFixed(0)}%</span>}
                       </td>); })()}
-                    {isCompra ? <><td className={`${td} ${t.textMuted}`}>—</td><td className={`${td} ${t.textMuted}`}>—</td></> : <>
+                    {isCompra ? <><td className={`${td} ${t.textMuted}`}>—</td><td className={`${td} ${t.textMuted}`}>—</td></> : isUt ? <>
+                    <td className="px-0.5 py-0.5 w-20"><NumCell value={c.mg ?? ''} placeholder={r.mgBase != null ? (r.mgBase * 100).toFixed(1) : 'base'} onCommit={(v) => setCfg(r.name, 'mg', v)} onPasteGrid={paste(0)} grid="baj" r={ri} c={0} className={t.input} /></td>
+                    <td className="px-0.5 py-0.5 w-20"><NumCell value={c.boni ?? ''} placeholder="0" onCommit={(v) => setCfg(r.name, 'boni', v)} onPasteGrid={paste(1)} grid="baj" r={ri} c={1} className={t.input} /></td></> : <>
                     <td className="px-0.5 py-0.5 w-20"><NumCell value={c.share ?? ''} placeholder="base" onCommit={(v) => setCfg(r.name, 'share', v)} onPasteGrid={paste(0)} grid="baj" r={ri} c={0} className={t.input} /></td>
                     <td className="px-0.5 py-0.5 w-20"><NumCell value={c.adj ?? ''} placeholder="0" onCommit={(v) => setCfg(r.name, 'adj', v)} onPasteGrid={paste(1)} grid="baj" r={ri} c={1} className={t.input} /></td></>}
-                    <td className={`${td} font-bold ${t.text}`}>{pct(r.share)}</td>
+                    <td className={`${td} font-bold ${t.text}`} title={isUt ? 'Utilidad plan ÷ Venta plan (después del cuadre al OTB)' : ''}>{pct(isUt ? (sum(byEnt[r.name].plan.vta) ? r.planTot / sum(byEnt[r.name].plan.vta) : null) : r.share)}</td>
                     <td className={`${td} font-bold ${t.text}`}>{fmt(tot(r.plan))}</td>
                     <td className={`${td} ${g == null ? t.textMuted : g >= 0 ? good : bad}`}>{pct(g)}</td>
                     {isInv && <>
@@ -704,6 +739,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
             Pega bloques desde Excel (Cmd+V) sobre la primera celda: share, estrategia o meses. Share manual vacío = share de la base ({baseLbl}). Estrategia % multiplica el share (se renormaliza a 100%). Editar/pegar un mes lo fija (amarillo); el resto se reacomoda para cuadrar el OTB mensual.
             {' LY = HIST (año en curso) hasta el corte + IS (pronóstico del resto del año con el modelo de mejor accuracy sobre LLY + HIST: Estacional YTD, Holt, Holt-Winters; backtest en los últimos ≤3 meses de HIST; filas FCST del Excel tienen prioridad). Base LY + LLY = promedio de ambos años para share y estacionalidad; si una marca tiene un año en 0 (nueva o de salida) usa solo el otro.'}
             {isInv && ' Inventario: Ene (inv inicial) se reparte por share; Feb…Cierre = Vta anual ÷ Rot obj de la marca (capturada, o la de la base si está vacía) + (Vta del mes − Vta promedio), escalado al OTB del mes. Inventario en 0 es válido (marcas estacionales).'}
+            {isUt && ' Utilidad = Vta × Mg − Mkd × (1 − Mg) − CMSI + Boni (Boni% × compra a costo). Los meses con más descuento dejan menos utilidad. Mg% vacío = Mg implícito de la base (en gris). Al final se cuadra al OTB de cada mes repartiendo la diferencia por venta; Mg% final ya incluye ese cuadre.'}
             {isCompra && ' Compra = Inv final − Inv inicial + Venta + Mkd + CMSI por marca. Si una marca quedaría con compra negativa se le deja más inventario y se descuenta de otras marcas ese mes (el OTB no cambia).'}
             {isCompra && alloc.compra.negativos && ' ⚠ Hay meses donde no alcanza para evitar compras negativas: revisa que el OTB (inv, venta, mkd, cmsi y compra) sea consistente.'}
             {isInv && ' Rot final = Vta plan / promedio de 13 inventarios plan de la marca (verde si ≥ ${cmpLbl}).'}
