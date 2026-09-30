@@ -564,7 +564,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
   const monthOk = KC.map((k) => Math.abs(A.colTot[k] - (+otbM[k] || 0)) < 1);
   const manualSum = sum(Object.values(mCfg).map((c) => (c.share !== '' && c.share != null ? +c.share : 0)));
   const isInv = metric === 'inv';
-  const baseLbl = baseMode === 'prom' ? 'Base' : baseMode === 'is' ? 'LY' : 'LLY';
+  const baseLbl = baseMode === 'prom' ? 'Prom LY+LLY' : baseMode === 'is' ? 'LY' : 'LLY';
   const isIS = baseMode !== 'ly' && entities.some((e) => e.hist);
   const solid = { background: isDark ? '#1c1720' : '#ffffff' };
   const hasTy = entities.some((e) => e.ty);
