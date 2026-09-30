@@ -70,6 +70,28 @@ const useThemeLocal = () => {
 };
 
 // ─── MINI-CHART: LÍNEA HISTÓRICO + PROYECCIÓN ──────────────────────────────
+// Inventario encadenado sin compras negativas y con la ROTACIÓN amarrada.
+// inv0 = inv inicial Ene; objetivos[k] = inv final objetivo del mes k; flujos[k] = venta + mkd + msi.
+// Compra = max(0, flujos + objetivo − inv real). Si en algún mes el piso de compra 0 deja el inventario arriba del
+// objetivo, el excedente se descuenta de los objetivos de los meses libres (proporcional) para que la suma de
+// inventarios —y por lo tanto la rotación— no cambie. fijos = índices de objetivos capturados a mano.
+const cascadaRot = (inv0, objetivos, flujos, fijos = new Set()) => {
+  const T = objetivos.map((v) => Math.max(0, +v || 0)), S = T.reduce((a, b) => a + b, 0);
+  let fin = [];
+  for (let it = 0; it < 40; it++) {
+    fin = []; let prev = inv0;
+    for (let k = 0; k < 12; k++) { prev = Math.max(T[k], prev - flujos[k]); fin.push(prev); }
+    const exc = fin.reduce((a, b) => a + b, 0) - S;
+    if (Math.abs(exc) < 1) break;
+    const libres = T.map((_, k) => k).filter((k) => !fijos.has(k) && fin[k] <= T[k] + 0.5 && T[k] > 0);
+    const base = libres.reduce((a, k) => a + T[k], 0);
+    if (!base) break;
+    libres.forEach((k) => { T[k] = Math.max(0, T[k] - exc * T[k] / base); });
+  }
+  const compras = fin.map((f, k) => Math.max(0, f - (k ? fin[k - 1] : inv0) + flujos[k]));
+  return { fin, compras };
+};
+
 const LineForecast = ({ historico, proyeccion, theme, height = 120 }) => {
   const isDark = theme === 'dark';
   const all = [...historico, ...proyeccion];
@@ -1673,18 +1695,19 @@ export default function Forecast() {
     // El cierre (Inv Final Dic) usa el inv inicial de "Ene siguiente" si se capturó (invIni[12])
     const invFinalCierre = otbMaster.invIni[12] ?? null;
 
-    // Sin compras negativas: Compra = max(0, Venta + Mkd + MSI + Inv obj − Inv ini). Si el inventario objetivo baja más
-    // de lo que se desplaza, la compra queda en 0 y el inventario real (inv ini + compra − venta − mkd − msi) queda arriba
-    // del objetivo; ese inventario real es el inicial del mes siguiente. Inventario nunca negativo (≥ objetivo ≥ 0).
-    const compraArr = Array(12).fill(0);
-    let invCierreReal = 0;
-    for (let i = 0; i < 12; i++) {
-      const v = vtaFinal[i], flujos = v + v * (mkdPctMes[i] || 0) + v * msiPct;
-      const objetivo = i < 11 ? invInicialArr[i+1] : (invFinalCierre ?? invInicialArr[i]);
-      compraArr[i] = Math.max(0, flujos + objetivo - invInicialArr[i]);
-      const fin = invInicialArr[i] + compraArr[i] - flujos;
-      if (i < 11) invInicialArr[i+1] = fin; else invCierreReal = fin;
-    }
+    // Compras ≥ 0 e inventario encadenado sin mover la rotación (ver cascadaRot)
+    const fijosOtb = new Set();
+    for (let k = 0; k < 11; k++) if (otbMaster.invIni[k+1] != null) fijosOtb.add(k);
+    if (invFinalCierre != null) fijosOtb.add(11);
+    const casc = cascadaRot(
+      invInicialArr[0],
+      Array(12).fill(0).map((_, k) => k < 11 ? invInicialArr[k+1] : (invFinalCierre ?? invInicialArr[11])),
+      vtaFinal.map((v, k) => v + v * (mkdPctMes[k] || 0) + v * msiPct),
+      fijosOtb,
+    );
+    const compraArr = casc.compras;
+    for (let k = 0; k < 11; k++) invInicialArr[k+1] = casc.fin[k];
+    const invCierreReal = casc.fin[11];
 
     // Rotación mensual acumulada (lectura): Rot M = venta(Ene→M) / prom(inv Ene→M+1)
     const rotMensualAcum = Array(12).fill(0);
@@ -1896,19 +1919,12 @@ export default function Forecast() {
         invInicial = invFinal;
       }
 
-      // 2do pase: sin compras negativas y sin inventario negativo. Compra = max(0, flujos + inv obj − inv real);
-      // si el objetivo baja más de lo que se vende, compra 0 y el inventario real queda arriba del objetivo.
-      // (Antes se restaban las negativas a otros meses, lo que podía dejar inventario negativo.)
-      const comprasAjustadas = [];
-      {
-        let invReal = invIniCruceEne;
-        for (let i = 0; i < 12; i++) {
-          const flujos = ventaMensualAjustada[i] + (mkdMensual[i] || 0) + (msiMensual[i] || 0);
-          const c = Math.max(0, flujos + invObjetivoPorMes[i] - invReal);
-          comprasAjustadas.push(c);
-          invReal = invReal + c - flujos;
-        }
-      }
+      // 2do pase: compras ≥ 0, inventario ≥ 0 y rotación amarrada (cascadaRot). Antes se restaban las negativas a
+      // otros meses, lo que podía dejar inventario negativo.
+      const comprasAjustadas = cascadaRot(
+        invIniCruceEne, invObjetivoPorMes,
+        ventaMensualAjustada.map((v, i) => v + (mkdMensual[i] || 0) + (msiMensual[i] || 0)),
+      ).compras;
 
       // 3er pase: cascada final
       invInicial = invIniCruceEne;
@@ -2015,6 +2031,10 @@ export default function Forecast() {
         // Cascada
         const filasMensual = [];
         let invInicial = 0; // apertura arranca sin inventario
+        // Compras ≥ 0 e inventario encadenado con la rotación amarrada (surtido inicial en el mes previo a la apertura)
+        const cascAp = cascadaRot(0,
+          ventaMensual.map((v, i) => rotMensual > 0 ? (i < 11 ? ventaMensual[i+1] : v) / rotMensual : 0),
+          ventaMensual.map((v) => v + v * msiPct));
         // Markdown y MSI simples
         for (let i = 0; i < 12; i++) {
           const venta = ventaMensual[i];
@@ -2022,10 +2042,8 @@ export default function Forecast() {
           const invObj = rotMensual > 0 ? ventaSig / rotMensual : 0;
           const mkd = 0; // apertura sin historial de markdown
           const msi = venta * msiPct;
-          // Compra ≥ 0 e inventario encadenado (inv ini + compra − venta − msi), nunca negativo. El surtido inicial
-          // se compra el mes previo (su inv objetivo cubre la venta del mes de apertura).
-          const compra = Math.max(0, venta + msi + invObj - invInicial);
-          const invFinal = invInicial + compra - venta - msi;
+          const compra = cascAp.compras[i];
+          const invFinal = cascAp.fin[i];
 
           let bonif = 0;
           if (mesPreApertura && (i + 1) === mesPreApertura) {
