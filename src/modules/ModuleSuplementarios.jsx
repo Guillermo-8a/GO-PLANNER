@@ -683,7 +683,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
               <th className={`${thL} sticky left-0 z-20`} style={solid}>{dim}</th>
               <th className={th}>{baseLbl}</th><th className={th}>Share {baseLbl}</th>{isIS && <th className={th}>Modelo</th>}{isUt ? <><th className={th} title="Mg% que promete la marca (vacío = Mg implícito de la base)">Mg% prom.</th><th className={th} title="Bonificación por CMSI, % de la compra a costo">Boni % CMSI</th></> : <><th className={th}>Share manual</th><th className={th}>Estrategia %</th></>}
               <th className={th}>{isUt ? 'Mg% final' : 'Share final'}</th><th className={th}>Plan</th><th className={th}>Crec. vs {cmpLbl}</th>
-              {isInv && <><th className={th} title="Rotación objetivo de la marca (vacío = la de la base)">Rot obj</th><th className={th}>Rot final</th><th className={th}>Rot {cmpLbl}</th></>}
+              {isInv && <><th className={th} title="Rotación objetivo de la marca (vacío = la de la base)">Rot obj</th><th className={th} title="Inv cierre (Ene siguiente) vs Inv inicial Ene">Cierre vs Ene</th><th className={th}>Rot final</th><th className={th}>Rot {cmpLbl}</th></>}
               {KC.map((k) => <th key={k} className={th}>{MLABEL[k]}</th>)}
             </tr></thead>
             <tbody>
@@ -716,6 +716,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
                     <td className={`${td} ${g == null ? t.textMuted : g >= 0 ? good : bad}`}>{pct(g)}</td>
                     {isInv && <>
                       <td className="px-0.5 py-0.5 w-16"><NumCell value={c.rot ?? ''} placeholder={dec(kpis(byEnt[r.name].base, R12).rot)} onCommit={(v) => setCfg(r.name, 'rot', v)} grid="bajrot" r={ri} c={0} className={t.input} /></td>
+                      {(() => { const gC = growth(r.plan[12], r.plan[0]); return <td className={`${td} font-bold ${gC == null ? t.textMuted : Math.abs(gC) > 0.15 ? bad : good}`} title="Rojo si cambia más de ±15%">{pct(gC)}</td>; })()}
                       <td className={`${td} font-bold ${rotP != null && rotL != null ? (rotP >= rotL ? good : bad) : t.text}`}>{dec(rotP)}</td>
                       <td className={`${td} ${t.textMuted}`}>{dec(rotL)}</td>
                     </>}
@@ -737,13 +738,13 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
                 <td className={`${td} ${manualSum > 100 ? bad : t.textMuted}`}>{manualSum ? `${manualSum.toFixed(1)}%` : ''}</td><td />
                 <td className={`${td} ${t.text}`}>100%</td>
                 <td className={`${td} font-black ${t.text}`}>{fmt(isInv ? sum(A.colTot) / KC.length : sum(A.colTot))}</td><td />
-                {isInv && <><td /><td className={`${td} font-bold ${t.text}`}>{dec(kpis(otb, R12).rot)}</td><td className={`${td} ${t.textMuted}`}>{dec(kpis(byEnt.__total.hist, R12).rot)}</td></>}
+                {isInv && <><td /><td className={`${td} font-bold ${t.text}`}>{pct(growth(+otbM[12] || 0, +otbM[0] || 0))}</td><td className={`${td} font-bold ${t.text}`}>{dec(kpis(otb, R12).rot)}</td><td className={`${td} ${t.textMuted}`}>{dec(kpis(byEnt.__total.hist, R12).rot)}</td></>}
                 {KC.map((k) => <td key={k} className={`${td} font-bold ${t.text}`}>{fmt(A.colTot[k])}</td>)}
               </tr>
               <tr>
                 <td className={`px-2 py-1 text-xs sticky left-0 z-10 ${t.textMuted}`} style={solid}>OTB objetivo</td><td colSpan={isIS ? 6 : 5} />
                 <td className={`${td} ${t.textMuted}`}>{fmt(isInv ? sum(otbM) / KC.length : sum(otbM))}</td><td />
-                {isInv && <td colSpan={3} />}
+                {isInv && <td colSpan={4} />}
                 {KC.map((k) => (
                   <td key={k} className={`${td} ${monthOk[k] ? good : bad}`}>
                     <span className="inline-flex items-center gap-0.5">{monthOk[k] ? <Check size={11} /> : <AlertCircle size={11} />}{fmt(otbM[k])}</span>
