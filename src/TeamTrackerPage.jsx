@@ -122,7 +122,7 @@ async function kvSet(key, value) {
   if (!res.ok) throw new Error('HTTP ' + res.status);
 }
 
-const HO_DEFAULT = { limit: 15, penalty: 1, days: {}, strikes: [] };
+const HO_DEFAULT = { lives: 3, days: {}, strikes: [] };
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 const DOW = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
 
@@ -846,16 +846,17 @@ function ResumenView({ week, totals, byMember, byPilar }) {
   );
 }
 
-// HO Comprometido: calendario HO/vacaciones del equipo + bolsa de HO compartida.
-// Regla: al menos la mitad del equipo presencial cada día. Cada incumplimiento resta `penalty` HO a TODOS.
+// HO Comprometido: premio de 1 HO por semana por persona, mapeado para que siempre haya al menos la mitad presencial.
+// El equipo tiene `lives` vidas: cada incumplimiento en HO resta una; en 0 se acaba el HO semanal para todos.
 function HOView({ team, ho, isAdmin, onSave, onNotice }) {
   const [month, setMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
   const [strike, setStrike] = useState({ name: '', reason: '', date: todayISO() });
   const year = month.getFullYear(), yKey = String(year);
   const days = [];
   for (let d = new Date(month); d.getMonth() === month.getMonth(); d = addDays(d, 1)) if (d.getDay() % 6) days.push(toISO(d));
-  const strikesYear = ho.strikes.filter((x) => x.date.startsWith(yKey));
-  const avail = Math.max(0, ho.limit - strikesYear.length * ho.penalty);
+  const lives = Math.max(0, ho.lives - ho.strikes.length);
+  const weekOf = (d) => toISO(startOfWeek(new Date(d + 'T00:00')));
+  const hoInWeek = (d, name) => Object.entries(ho.days).some(([x, m]) => x !== d && m[name] === 'ho' && weekOf(x) === weekOf(d));
   const used = (name, kind) => Object.entries(ho.days).filter(([d, m]) => d.startsWith(yKey) && m[name] === kind).length;
   const minOffice = Math.ceil(team.length / 2);
   const outOn = (d, kind) => Object.values(ho.days[d] || {}).filter((k) => !kind || k === kind).length;
@@ -865,7 +866,8 @@ function HOView({ team, ho, isAdmin, onSave, onNotice }) {
     const cur = ho.days[d]?.[name] || '';
     const next = cur === '' ? 'ho' : cur === 'ho' ? 'vac' : '';
     if (next === 'ho') {
-      if (used(name, 'ho') >= avail) { onNotice(avail ? `${name} ya usó sus ${avail} HO del año.` : 'Se acabó el HO para todos.'); return; }
+      if (!lives) { onNotice('Se acabó el HO semanal para todos.'); return; }
+      if (hoInWeek(d, name)) { onNotice(`${name} ya tiene su HO de esa semana.`); return; }
       if (team.length - outOn(d) - 1 < minOffice) { onNotice(`El ${fmtShort(d)} ya no se cumple la mitad presencial (mín. ${minOffice}).`); return; }
     }
     const dm = { ...(ho.days[d] || {}) };
@@ -878,7 +880,7 @@ function HOView({ team, ho, isAdmin, onSave, onNotice }) {
     onSave({ ...ho, strikes: [...ho.strikes, { id: uid(), ...strike, reason: strike.reason.trim() }] });
     setStrike({ name: '', reason: '', date: todayISO() });
   }
-  const setCfg = (k, v) => onSave({ ...ho, [k]: Math.max(0, parseInt(v, 10) || 0) });
+  const setLives = (v) => onSave({ ...ho, lives: Math.max(1, parseInt(v, 10) || 1) });
 
   if (!team.length) return <p className="tt-empty-hint">Agrega gente al equipo para mapear HO.</p>;
   return (
@@ -887,25 +889,24 @@ function HOView({ team, ho, isAdmin, onSave, onNotice }) {
         <button className="tt-ghost-btn" onClick={() => setMonth(new Date(year, month.getMonth() - 1, 1))}>‹</button>
         <span className="tt-ho-month">{MESES[month.getMonth()]} {year}</span>
         <button className="tt-ghost-btn" onClick={() => setMonth(new Date(year, month.getMonth() + 1, 1))}>›</button>
-        <span className="tt-ho-legend"><i className="is-ho" />HO <i className="is-vac" />Vacaciones · click en la celda para cambiar · mínimo presencial {minOffice} de {team.length}</span>
+        <span className="tt-ho-legend"><i className="is-ho" />HO <i className="is-vac" />Vacaciones · 1 HO por semana · mínimo presencial {minOffice} de {team.length}</span>
       </div>
       <div className="tt-ho-scroll">
         <table className="tt-ho-grid">
           <thead>
             <tr>
               <th className="tt-ho-name" />
-              {days.map((d) => { const dt = new Date(d + 'T00:00'); return <th key={d} className={d === today ? 'is-today' : ''}><span>{DOW[dt.getDay()]}</span>{dt.getDate()}</th>; })}
+              {days.map((d) => { const dt = new Date(d + 'T00:00'); return <th key={d} className={`${d === today ? 'is-today' : ''} ${dt.getDay() === 1 ? 'is-mon' : ''}`}><span>{DOW[dt.getDay()]}</span>{dt.getDate()}</th>; })}
               <th className="tt-ho-tot">HO {year}</th><th className="tt-ho-tot">Vac</th>
             </tr>
           </thead>
           <tbody>
             {team.map((name) => {
-              const u = used(name, 'ho');
               return (
                 <tr key={name}>
                   <td className="tt-ho-name"><span className="tt-avatar tt-avatar-sm" style={{ background: avatarGradient(name) }}>{initials(name)}</span>{name}</td>
-                  {days.map((d) => { const k = ho.days[d]?.[name] || ''; return <td key={d} className={`tt-ho-cell ${k ? 'is-' + k : ''} ${d === today ? 'is-today' : ''}`} onClick={() => cycle(d, name)}>{k === 'ho' ? 'HO' : k === 'vac' ? 'V' : ''}</td>; })}
-                  <td className={`tt-ho-tot ${u >= avail ? 'is-bad' : ''}`}>{u}/{avail}</td>
+                  {days.map((d) => { const k = ho.days[d]?.[name] || ''; return <td key={d} className={`tt-ho-cell ${k ? 'is-' + k : ''} ${d === today ? 'is-today' : ''} ${new Date(d + 'T00:00').getDay() === 1 ? 'is-mon' : ''}`} onClick={() => cycle(d, name)}>{k === 'ho' ? 'HO' : k === 'vac' ? 'V' : ''}</td>; })}
+                  <td className="tt-ho-tot">{used(name, 'ho')}</td>
                   <td className="tt-ho-tot">{used(name, 'vac')}</td>
                 </tr>
               );
@@ -914,20 +915,20 @@ function HOView({ team, ho, isAdmin, onSave, onNotice }) {
           <tfoot>
             <tr>
               <td className="tt-ho-name">Presenciales</td>
-              {days.map((d) => { const inOff = team.length - outOn(d); return <td key={d} className={inOff < minOffice ? 'is-bad' : ''}>{inOff}</td>; })}
+              {days.map((d) => { const inOff = team.length - outOn(d); return <td key={d} className={`${inOff < minOffice ? 'is-bad' : ''} ${new Date(d + 'T00:00').getDay() === 1 ? 'is-mon' : ''}`}>{inOff}</td>; })}
               <td colSpan={2} />
             </tr>
           </tfoot>
         </table>
       </div>
 
-      <div className={`tt-resumen-banner tt-ho-bolsa ${avail === 0 ? 'is-empty' : ''}`}>
+      <div className={`tt-resumen-banner tt-ho-bolsa ${lives === 0 ? 'is-empty' : ''}`}>
         <div>
-          <span className="tt-tag">Bolsa de HO del equipo · {year}</span>
-          <p className="tt-banner-big">{avail} de {ho.limit}<span className="tt-banner-small"> HO disponibles para cada quien</span></p>
-          <p className="tt-banner-small">{avail === 0 ? 'Se acabó el HO para todos. Gracias a los que no contestaron 🙃' : `Cada incumplimiento en HO (no contestar, no entregar) resta ${ho.penalty} HO a todos. Llevamos ${strikesYear.length}.`}</p>
+          <span className="tt-tag">HO semanal · premio por desempeño</span>
+          <p className="tt-banner-big">{'❤️'.repeat(lives)}{'🖤'.repeat(Math.min(ho.strikes.length, ho.lives))}<span className="tt-banner-small"> {lives} de {ho.lives} vidas</span></p>
+          <p className="tt-banner-small">{lives === 0 ? 'Se acabó el HO semanal para todos. Gracias a los que no contestaron 🙃' : `Cada incumplimiento en HO (no contestar, no entregar) quita una vida a todo el equipo. Con 0 se acaba el HO semanal${lives === 1 ? ' — queda la última 👀' : ''}.`}</p>
         </div>
-        <ProgressRing pct={ho.limit ? Math.round((avail / ho.limit) * 100) : 0} color={avail === 0 ? '#D98A8A' : avail <= ho.limit / 3 ? '#E0BB3E' : '#8BC9A3'} />
+        <ProgressRing pct={Math.round((lives / ho.lives) * 100)} color={lives === 0 ? '#D98A8A' : lives === 1 ? '#E0BB3E' : '#8BC9A3'} />
       </div>
 
       <h4 className="tt-subhead">Incumplimientos</h4>
@@ -939,16 +940,15 @@ function HOView({ team, ho, isAdmin, onSave, onNotice }) {
           <input type="date" value={strike.date} onChange={(e) => setStrike({ ...strike, date: e.target.value })} />
           <input placeholder="Motivo (ej. no contestó en HO)" value={strike.reason} onChange={(e) => setStrike({ ...strike, reason: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && addStrike()} />
           <button className="tt-new-btn" onClick={addStrike}>+ Registrar</button>
-          <label>Límite anual <input type="number" value={ho.limit} onChange={(e) => setCfg('limit', e.target.value)} /></label>
-          <label>Resta por falta <input type="number" value={ho.penalty} onChange={(e) => setCfg('penalty', e.target.value)} /></label>
+          <label>Vidas <input type="number" min="1" value={ho.lives} onChange={(e) => setLives(e.target.value)} /></label>
         </div>
       )}
-      {strikesYear.length === 0 ? <p className="tt-empty-hint">Sin incumplimientos este año. Que siga así.</p> : (
+      {ho.strikes.length === 0 ? <p className="tt-empty-hint">Sin incumplimientos. Que siga así.</p> : (
         <div className="tt-ho-strikes">
-          {[...strikesYear].sort((a, b) => b.date.localeCompare(a.date)).map((x) => (
+          {[...ho.strikes].sort((a, b) => b.date.localeCompare(a.date)).map((x) => (
             <div key={x.id} className="tt-ho-strike">
               <span className="tt-avatar tt-avatar-sm" style={{ background: avatarGradient(x.name) }}>{initials(x.name)}</span>
-              <b>{x.name}</b><span>{fmtShort(x.date)}</span><span className="tt-ho-reason">{x.reason}</span><span className="tt-bar-late">−{ho.penalty} a todos</span>
+              <b>{x.name}</b><span>{fmtShort(x.date)}</span><span className="tt-ho-reason">{x.reason}</span><span className="tt-bar-late">−1 vida</span>
               {isAdmin && <button className="tt-ho-del" title="Quitar" onClick={() => onSave({ ...ho, strikes: ho.strikes.filter((y) => y.id !== x.id) })}>✕</button>}
             </div>
           ))}
@@ -1155,6 +1155,7 @@ body { background: #14121a; }
 .tt-ho-grid th, .tt-ho-grid td { padding: 6px 4px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.06); min-width: 30px; }
 .tt-ho-grid th { color: #948FA0; font-weight: 600; font-size: 11px; }
 .tt-ho-grid th span { display: block; font-size: 9.5px; opacity: .7; }
+.tt-ho-grid .is-mon { border-left: 1px solid rgba(255,255,255,0.14); }
 .tt-ho-grid .is-today { box-shadow: inset 0 0 0 1px rgba(224,187,62,0.6); }
 .tt-ho-name { text-align: left !important; white-space: nowrap; padding-left: 12px !important; display: flex; align-items: center; gap: 6px; min-width: 150px; position: sticky; left: 0; background: #1c1720; z-index: 1; }
 .tt-ho-cell { cursor: pointer; font-size: 10.5px; font-weight: 700; color: #EDEBF2; transition: background .15s ease; }
