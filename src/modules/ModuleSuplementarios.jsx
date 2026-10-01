@@ -193,8 +193,8 @@ function allocate(otbArr, ents, cfg = {}, locks = {}) {
 
 // Inventario y compra por marca:
 //  · Inv ini Ene = bajada del OTB por share (base + share manual/estrategia del ratio Inventario).
-//  · Inv ini de Feb…Cierre = objetivo por rotación y ciclicidad de la venta plan de la marca
-//    (Vta anual / Rot base de la marca + (Vta del mes − Vta promedio)), escalado para cuadrar el OTB de cada mes.
+//  · Inv ini de Feb…Cierre = cobertura: venta plan de los siguientes MOS meses (MOS = 12 / Rot de la marca),
+//    escalado para cuadrar el OTB de cada mes.
 //  · Compra = Inv final − Inv inicial + Venta + Mkd + CMSI (resultante). Si en un mes una marca quedaría con compra
 //    negativa, se le sube su inv final y se descuenta de otras marcas con compra disponible (el OTB del mes no cambia).
 function invYCompra(A, otb, cfgInv = {}, lkInv = {}) {
@@ -210,8 +210,15 @@ function invYCompra(A, otb, cfgInv = {}, lkInv = {}) {
     const bAvg = sum(rng(13).map((k) => +bi[k] || 0)) / 13, bV = sum(R12.map((k) => +bv[k] || 0));
     const rotMan = +cfgInv[A.vta.rows[i].name]?.rot;
     const rot = rotMan > 0 ? rotMan : bAvg > 0 && bV > 0 ? bV / bAvg : rotOtb; // Rot objetivo capturada o la de la base
-    const vA = sum(V[i]), prom = vA / 12;
-    return rng(13).map((k) => (k ? Math.max(0, (rot ? vA / rot : 0) + ((+V[i][k % 12] || 0) - prom)) : 0));
+    // Meses de inventario = 12 / Rot. Se compra para vender: el inv inicial del mes k cubre la venta de los
+    // siguientes MOS meses (k, k+1, … fracción incluida; después de Dic usa la venta de Ene… del plan).
+    const mos = rot > 0 ? 12 / rot : 0;
+    return rng(13).map((k) => {
+      if (!k) return 0;
+      let cub = 0, rest = mos, j = k;
+      while (rest > 0 && j < k + 24) { const f = Math.min(1, rest); cub += f * (+V[i][j % 12] || 0); rest -= f; j++; }
+      return cub;
+    });
   });
   // Cierre (Ene siguiente, idx 12): si capturas el de una marca se respeta y las demás reparten el resto del OTB
   const fixC = (i) => lkInv[A.inv.rows[i].name]?.[12];
@@ -713,7 +720,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
                       <td className={`${td} ${t.textMuted}`}>{dec(rotL)}</td>
                     </>}
                     {KC.map((k) => (isInv && k > 0 && k < 12) || isCompra ? (
-                      <td key={k} className={`${td} ${t.text}`} title={isCompra ? 'Compra = Inv fin − Inv ini + Vta + Mkd + CMSI' : 'Inv objetivo por rotación y ciclicidad de la venta'}>{fmt(r.plan[k])}</td>
+                      <td key={k} className={`${td} ${t.text}`} title={isCompra ? 'Compra = Inv fin − Inv ini + Vta + Mkd + CMSI' : 'Inv = venta de los siguientes MOS meses (12 ÷ Rot)'}>{fmt(r.plan[k])}</td>
                     ) : (
                       <td key={k} className="px-0.5 py-0.5">
                         <NumCell value={Math.round(r.plan[k])} onCommit={(v) => setLock(r.name, k, v)} onPasteGrid={paste(k + 2)} grid="baj" r={ri} c={k + 2} className={lk[k] != null ? t.inputY : t.input} />
@@ -748,7 +755,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
           <p className={`mt-2 text-[10px] ${t.textMuted}`}>
             Pega bloques desde Excel (Cmd+V) sobre la primera celda: share, estrategia o meses. Share manual vacío = share de la base ({baseLbl}). Estrategia % multiplica el share (se renormaliza a 100%). Editar/pegar un mes lo fija (amarillo); el resto se reacomoda para cuadrar el OTB mensual.
             {' LY = HIST (año en curso) hasta el corte + IS (pronóstico del resto del año con el modelo de mejor accuracy sobre LLY + HIST: Estacional YTD, Holt, Holt-Winters; backtest en los últimos ≤3 meses de HIST; filas FCST del Excel tienen prioridad). Base LY + LLY = promedio de ambos años para share y estacionalidad; si una marca tiene un año en 0 (nueva o de salida) usa solo el otro.'}
-            {isInv && ' Inventario: Ene (inv inicial) se reparte por share y Cierre (Ene siguiente) se puede fijar por marca (las demás reparten el resto del OTB); Feb…Dic = Vta anual ÷ Rot obj de la marca (capturada, o la de la base si está vacía) + (Vta del mes − Vta promedio), escalado al OTB del mes. Inventario en 0 es válido (marcas estacionales).'}
+            {isInv && ' Inventario: Ene (inv inicial) se reparte por share y Cierre (Ene siguiente) se puede fijar por marca (las demás reparten el resto del OTB); Feb…Dic = cobertura de la venta de los siguientes meses de inventario (MOS = 12 ÷ Rot obj de la marca, o la de la base si está vacía): se compra para vender, p.ej. el inv de fin de Oct cubre Nov–Dic si MOS ≈ 2. Escalado al OTB del mes. Inventario en 0 es válido (marcas estacionales).'}
             {isUt && ' Utilidad = Vta × Mg − Mkd × (1 − Mg) − CMSI + Boni (Boni% × compra a costo). Los meses con más descuento dejan menos utilidad. Mg% vacío = Mg implícito de la base (en gris). Al final se cuadra al OTB de cada mes repartiendo la diferencia por venta; Mg% final ya incluye ese cuadre.'}
             {isCompra && ' Compra = Inv final − Inv inicial + Venta + Mkd + CMSI por marca. Si una marca quedaría con compra negativa se le deja más inventario y se descuenta de otras marcas ese mes (el OTB no cambia).'}
             {isCompra && alloc.compra.negativos && ' ⚠ Hay meses donde no alcanza para evitar compras negativas: revisa que el OTB (inv, venta, mkd, cmsi y compra) sea consistente.'}
