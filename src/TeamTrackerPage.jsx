@@ -122,10 +122,15 @@ async function kvSet(key, value) {
   if (!res.ok) throw new Error('HTTP ' + res.status);
 }
 
+const HO_DEFAULT = { limit: 15, penalty: 1, days: {}, strikes: [] };
+const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
+const DOW = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
+
 export default function TeamTrackerPage() {
   const [tasks, setTasks] = useState(null);
   const [team, setTeam] = useState(null);
   const [adminPin, setAdminPin] = useState(null);
+  const [ho, setHo] = useState(null);
   const [isAdmin, setIsAdmin] = useState(false);
   const [tab, setTab] = useState('board');
   const [filter, setFilter] = useState('all');
@@ -170,12 +175,15 @@ export default function TeamTrackerPage() {
         return prev && JSON.stringify(prev) === s ? prev : nextTeam;
       });
       setAdminPin(nextPin);
+      const nextHo = all['ho-board'] ? { ...HO_DEFAULT, ...JSON.parse(all['ho-board']) } : HO_DEFAULT;
+      setHo((prev) => (prev && JSON.stringify(prev) === JSON.stringify(nextHo) ? prev : nextHo));
     } catch (e) {
       if (!silent) {
         setNotice('No se pudo conectar con el backend: ' + (e && e.message ? e.message : 'error desconocido'));
         setTasks([]);
         setTeam([]);
         setAdminPin(null);
+        setHo(HO_DEFAULT);
       }
       // en un refresco silencioso en segundo plano, si falla, dejamos lo
       // que ya está en pantalla en vez de vaciarlo
@@ -225,6 +233,12 @@ export default function TeamTrackerPage() {
     setTeam(next);
     try { await kvSet('team-roster', JSON.stringify(next)); }
     catch (e) { setNotice('No se pudo guardar el equipo: ' + (e && e.message ? e.message : 'error desconocido')); }
+  }
+
+  async function saveHo(next) {
+    setHo(next);
+    try { await kvSet('ho-board', JSON.stringify(next)); }
+    catch (e) { setNotice('No se pudo guardar HO: ' + (e && e.message ? e.message : 'error desconocido')); }
   }
 
   function toggleAdmin() {
@@ -418,6 +432,7 @@ export default function TeamTrackerPage() {
     { key: 'board', label: 'Tablero' },
     { key: 'gantt', label: 'Gantt' },
     { key: 'resumen', label: 'Resumen semanal' },
+    { key: 'ho', label: 'HO Comprometido' },
     ...(isAdmin ? [{ key: 'desempeno', label: 'Desempeño' }] : []),
   ];
 
@@ -525,6 +540,7 @@ export default function TeamTrackerPage() {
           {tab === 'gantt' && <GanttView tasks={visibleTasks} range={ganttRange} />}
           {tab === 'resumen' && <ResumenView week={week} totals={weekTotals} byMember={weekByMember} byPilar={weekByPilar} />}
           {tab === 'desempeno' && isAdmin && <DesempenoView data={historical} />}
+          {tab === 'ho' && <HOView team={team} ho={ho || HO_DEFAULT} isAdmin={isAdmin} onSave={saveHo} onNotice={setNotice} />}
         </main>
 
         {showForm && (
@@ -830,6 +846,118 @@ function ResumenView({ week, totals, byMember, byPilar }) {
   );
 }
 
+// HO Comprometido: calendario HO/vacaciones del equipo + bolsa de HO compartida.
+// Regla: al menos la mitad del equipo presencial cada día. Cada incumplimiento resta `penalty` HO a TODOS.
+function HOView({ team, ho, isAdmin, onSave, onNotice }) {
+  const [month, setMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
+  const [strike, setStrike] = useState({ name: '', reason: '', date: todayISO() });
+  const year = month.getFullYear(), yKey = String(year);
+  const days = [];
+  for (let d = new Date(month); d.getMonth() === month.getMonth(); d = addDays(d, 1)) if (d.getDay() % 6) days.push(toISO(d));
+  const strikesYear = ho.strikes.filter((x) => x.date.startsWith(yKey));
+  const avail = Math.max(0, ho.limit - strikesYear.length * ho.penalty);
+  const used = (name, kind) => Object.entries(ho.days).filter(([d, m]) => d.startsWith(yKey) && m[name] === kind).length;
+  const minOffice = Math.ceil(team.length / 2);
+  const outOn = (d, kind) => Object.values(ho.days[d] || {}).filter((k) => !kind || k === kind).length;
+  const today = todayISO();
+
+  function cycle(d, name) {
+    const cur = ho.days[d]?.[name] || '';
+    const next = cur === '' ? 'ho' : cur === 'ho' ? 'vac' : '';
+    if (next === 'ho') {
+      if (used(name, 'ho') >= avail) { onNotice(avail ? `${name} ya usó sus ${avail} HO del año.` : 'Se acabó el HO para todos.'); return; }
+      if (team.length - outOn(d) - 1 < minOffice) { onNotice(`El ${fmtShort(d)} ya no se cumple la mitad presencial (mín. ${minOffice}).`); return; }
+    }
+    const dm = { ...(ho.days[d] || {}) };
+    if (next) dm[name] = next; else delete dm[name];
+    const daysNext = { ...ho.days }; if (Object.keys(dm).length) daysNext[d] = dm; else delete daysNext[d];
+    onSave({ ...ho, days: daysNext });
+  }
+  function addStrike() {
+    if (!strike.name || !strike.reason.trim()) { onNotice('Elige a quién y el motivo.'); return; }
+    onSave({ ...ho, strikes: [...ho.strikes, { id: uid(), ...strike, reason: strike.reason.trim() }] });
+    setStrike({ name: '', reason: '', date: todayISO() });
+  }
+  const setCfg = (k, v) => onSave({ ...ho, [k]: Math.max(0, parseInt(v, 10) || 0) });
+
+  if (!team.length) return <p className="tt-empty-hint">Agrega gente al equipo para mapear HO.</p>;
+  return (
+    <div className="tt-ho">
+      <div className="tt-ho-head">
+        <button className="tt-ghost-btn" onClick={() => setMonth(new Date(year, month.getMonth() - 1, 1))}>‹</button>
+        <span className="tt-ho-month">{MESES[month.getMonth()]} {year}</span>
+        <button className="tt-ghost-btn" onClick={() => setMonth(new Date(year, month.getMonth() + 1, 1))}>›</button>
+        <span className="tt-ho-legend"><i className="is-ho" />HO <i className="is-vac" />Vacaciones · click en la celda para cambiar · mínimo presencial {minOffice} de {team.length}</span>
+      </div>
+      <div className="tt-ho-scroll">
+        <table className="tt-ho-grid">
+          <thead>
+            <tr>
+              <th className="tt-ho-name" />
+              {days.map((d) => { const dt = new Date(d + 'T00:00'); return <th key={d} className={d === today ? 'is-today' : ''}><span>{DOW[dt.getDay()]}</span>{dt.getDate()}</th>; })}
+              <th className="tt-ho-tot">HO {year}</th><th className="tt-ho-tot">Vac</th>
+            </tr>
+          </thead>
+          <tbody>
+            {team.map((name) => {
+              const u = used(name, 'ho');
+              return (
+                <tr key={name}>
+                  <td className="tt-ho-name"><span className="tt-avatar tt-avatar-sm" style={{ background: avatarGradient(name) }}>{initials(name)}</span>{name}</td>
+                  {days.map((d) => { const k = ho.days[d]?.[name] || ''; return <td key={d} className={`tt-ho-cell ${k ? 'is-' + k : ''} ${d === today ? 'is-today' : ''}`} onClick={() => cycle(d, name)}>{k === 'ho' ? 'HO' : k === 'vac' ? 'V' : ''}</td>; })}
+                  <td className={`tt-ho-tot ${u >= avail ? 'is-bad' : ''}`}>{u}/{avail}</td>
+                  <td className="tt-ho-tot">{used(name, 'vac')}</td>
+                </tr>
+              );
+            })}
+          </tbody>
+          <tfoot>
+            <tr>
+              <td className="tt-ho-name">Presenciales</td>
+              {days.map((d) => { const inOff = team.length - outOn(d); return <td key={d} className={inOff < minOffice ? 'is-bad' : ''}>{inOff}</td>; })}
+              <td colSpan={2} />
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      <div className={`tt-resumen-banner tt-ho-bolsa ${avail === 0 ? 'is-empty' : ''}`}>
+        <div>
+          <span className="tt-tag">Bolsa de HO del equipo · {year}</span>
+          <p className="tt-banner-big">{avail} de {ho.limit}<span className="tt-banner-small"> HO disponibles para cada quien</span></p>
+          <p className="tt-banner-small">{avail === 0 ? 'Se acabó el HO para todos. Gracias a los que no contestaron 🙃' : `Cada incumplimiento en HO (no contestar, no entregar) resta ${ho.penalty} HO a todos. Llevamos ${strikesYear.length}.`}</p>
+        </div>
+        <ProgressRing pct={ho.limit ? Math.round((avail / ho.limit) * 100) : 0} color={avail === 0 ? '#D98A8A' : avail <= ho.limit / 3 ? '#E0BB3E' : '#8BC9A3'} />
+      </div>
+
+      <h4 className="tt-subhead">Incumplimientos</h4>
+      {isAdmin && (
+        <div className="tt-ho-strike-form">
+          <select value={strike.name} onChange={(e) => setStrike({ ...strike, name: e.target.value })}>
+            <option value="">¿Quién?</option>{team.map((m) => <option key={m}>{m}</option>)}
+          </select>
+          <input type="date" value={strike.date} onChange={(e) => setStrike({ ...strike, date: e.target.value })} />
+          <input placeholder="Motivo (ej. no contestó en HO)" value={strike.reason} onChange={(e) => setStrike({ ...strike, reason: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && addStrike()} />
+          <button className="tt-new-btn" onClick={addStrike}>+ Registrar</button>
+          <label>Límite anual <input type="number" value={ho.limit} onChange={(e) => setCfg('limit', e.target.value)} /></label>
+          <label>Resta por falta <input type="number" value={ho.penalty} onChange={(e) => setCfg('penalty', e.target.value)} /></label>
+        </div>
+      )}
+      {strikesYear.length === 0 ? <p className="tt-empty-hint">Sin incumplimientos este año. Que siga así.</p> : (
+        <div className="tt-ho-strikes">
+          {[...strikesYear].sort((a, b) => b.date.localeCompare(a.date)).map((x) => (
+            <div key={x.id} className="tt-ho-strike">
+              <span className="tt-avatar tt-avatar-sm" style={{ background: avatarGradient(x.name) }}>{initials(x.name)}</span>
+              <b>{x.name}</b><span>{fmtShort(x.date)}</span><span className="tt-ho-reason">{x.reason}</span><span className="tt-bar-late">−{ho.penalty} a todos</span>
+              {isAdmin && <button className="tt-ho-del" title="Quitar" onClick={() => onSave({ ...ho, strikes: ho.strikes.filter((y) => y.id !== x.id) })}>✕</button>}
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
 function DesempenoView({ data }) {
   return (
     <div className="tt-desempeno">
@@ -1014,6 +1142,39 @@ body { background: #14121a; }
 .tt-bar-value { width: 130px; flex-shrink: 0; font-size: 12px; color: #B7B2C4; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .tt-bar-late { color: #E0A0A0; }
 .tt-desempeno-note { margin-bottom: 14px; }
+
+.tt-ho { display: flex; flex-direction: column; gap: 14px; animation: ttFadeIn .3s ease; }
+.tt-ho-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.tt-ho-month { font-size: 15px; font-weight: 700; min-width: 140px; text-align: center; }
+.tt-ho-legend { margin-left: auto; font-size: 11.5px; color: #948FA0; display: flex; align-items: center; gap: 6px; }
+.tt-ho-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; }
+.tt-ho-legend i.is-ho, .tt-ho-cell.is-ho { background: rgba(138,115,173,0.45); }
+.tt-ho-legend i.is-vac, .tt-ho-cell.is-vac { background: rgba(224,187,62,0.35); }
+.tt-ho-scroll { overflow-x: auto; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; }
+.tt-ho-grid { border-collapse: collapse; font-size: 12px; width: 100%; }
+.tt-ho-grid th, .tt-ho-grid td { padding: 6px 4px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.06); min-width: 30px; }
+.tt-ho-grid th { color: #948FA0; font-weight: 600; font-size: 11px; }
+.tt-ho-grid th span { display: block; font-size: 9.5px; opacity: .7; }
+.tt-ho-grid .is-today { box-shadow: inset 0 0 0 1px rgba(224,187,62,0.6); }
+.tt-ho-name { text-align: left !important; white-space: nowrap; padding-left: 12px !important; display: flex; align-items: center; gap: 6px; min-width: 150px; position: sticky; left: 0; background: #1c1720; z-index: 1; }
+.tt-ho-cell { cursor: pointer; font-size: 10.5px; font-weight: 700; color: #EDEBF2; transition: background .15s ease; }
+.tt-ho-cell:hover { background: rgba(255,255,255,0.08); }
+.tt-ho-tot { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #B7B2C4; min-width: 52px !important; }
+.tt-ho-grid tfoot td { color: #8BC9A3; font-weight: 700; border-bottom: none; }
+.tt-ho-grid .is-bad { color: #E0A0A0 !important; }
+.tt-ho-bolsa.is-empty { border-color: rgba(217,138,138,0.5); box-shadow: 0 0 40px -12px rgba(217,138,138,0.5); }
+.tt-ho-bolsa .tt-banner-small { display: block; margin-top: 4px; }
+.tt-ho-strike-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.tt-ho-strike-form input, .tt-ho-strike-form select { border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.05); border-radius: 7px; padding: 6px 8px; font-size: 12.5px; color: #EDEBF2; font-family: inherit; color-scheme: dark; }
+.tt-ho-strike-form select option { background: #1c1720; }
+.tt-ho-strike-form input:not([type]) { flex: 1; min-width: 200px; }
+.tt-ho-strike-form label { font-size: 11.5px; color: #948FA0; display: flex; align-items: center; gap: 6px; }
+.tt-ho-strike-form label input { width: 54px; }
+.tt-ho-strikes { display: flex; flex-direction: column; gap: 6px; }
+.tt-ho-strike { display: flex; align-items: center; gap: 10px; font-size: 12.5px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07); border-radius: 9px; padding: 7px 10px; }
+.tt-ho-reason { flex: 1; color: #B7B2C4; }
+.tt-ho-del { border: none; background: none; color: #948FA0; cursor: pointer; }
+.tt-ho-del:hover { color: #E0A0A0; }
 
 .tt-modal-back { position: fixed; inset: 0; background: rgba(10,9,13,0.6); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 10; animation: ttFadeIn .15s ease; }
 .tt-modal { background: rgba(28,25,34,0.85); backdrop-filter: blur(24px); border: 1px solid rgba(255,255,255,0.12); border-radius: 14px; padding: 22px; width: 340px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); animation: ttFadeUp .2s ease; }
