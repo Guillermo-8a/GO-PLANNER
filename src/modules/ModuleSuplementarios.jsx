@@ -197,7 +197,7 @@ function allocate(otbArr, ents, cfg = {}, locks = {}) {
 //    (Vta anual / Rot base de la marca + (Vta del mes − Vta promedio)), escalado para cuadrar el OTB de cada mes.
 //  · Compra = Inv final − Inv inicial + Venta + Mkd + CMSI (resultante). Si en un mes una marca quedaría con compra
 //    negativa, se le sube su inv final y se descuenta de otras marcas con compra disponible (el OTB del mes no cambia).
-function invYCompra(A, otb, cfgInv = {}) {
+function invYCompra(A, otb, cfgInv = {}, lkInv = {}) {
   const n = A.vta.rows.length;
   if (!n) return;
   const V = A.vta.rows.map((r) => r.plan), M = A.mkd.rows.map((r) => r.plan), Q = A.cmsi.rows.map((r) => r.plan);
@@ -213,9 +213,15 @@ function invYCompra(A, otb, cfgInv = {}) {
     const vA = sum(V[i]), prom = vA / 12;
     return rng(13).map((k) => (k ? Math.max(0, (rot ? vA / rot : 0) + ((+V[i][k % 12] || 0) - prom)) : 0));
   });
+  // Cierre (Ene siguiente, idx 12): si capturas el de una marca se respeta y las demás reparten el resto del OTB
+  const fixC = (i) => lkInv[A.inv.rows[i].name]?.[12];
   for (let k = 1; k <= 12; k++) {
-    const s = sum(rng(n).map((i) => T[i][k]));
-    rng(n).forEach((i) => { I[i][k] = s ? (T[i][k] * oInv(k)) / s : oInv(k) / n; });
+    const fx = k === 12 ? rng(n).filter((i) => fixC(i) != null) : [];
+    const libre = rng(n).filter((i) => !fx.includes(i));
+    fx.forEach((i) => { I[i][12] = Math.max(0, +fixC(i)); });
+    const resto = Math.max(0, oInv(k) - sum(fx.map((i) => I[i][12])));
+    const s = sum(libre.map((i) => T[i][k]));
+    libre.forEach((i) => { I[i][k] = s ? (T[i][k] * resto) / s : resto / libre.length; });
   }
   const C = rng(n).map(() => zeros(12));
   let neg = false;
@@ -408,11 +414,14 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
 
   const alloc = useMemo(
     () => {
-      const A = Object.fromEntries(METRICS.map((m) => {
-        const ents = entities.map((e) => ({ name: e.name, base: baseOf(e, m.key), hist: e.hist?.[m.key] || zeros(nCols(m.key)) }));
-        return [m.key, allocate(otb[m.key] || zeros(nCols(m.key)), ents, cfg[m.key], locks[m.key])];
-      }));
-      invYCompra(A, otb, cfg.inv);
+      const run = (mk, cf) => allocate(otb[mk] || zeros(nCols(mk)), entities.map((e) => ({ name: e.name, base: baseOf(e, mk) })), cf, locks[mk]);
+      const vta = run('vta', cfg.vta);
+      // Marcas sin venta plan: fuera de los demás ratios (share 0)
+      const sinVta = vta.rows.filter((r) => !(r.planTot > 0)).map((r) => r.name);
+      const A = Object.fromEntries(METRICS.map((m) => [m.key, m.key === 'vta' ? vta
+        : run(m.key, { ...(cfg[m.key] || {}), ...Object.fromEntries(sinVta.map((n) => [n, { ...(cfg[m.key]?.[n] || {}), share: 0 }])) })]));
+      A.sinVta = new Set(sinVta);
+      invYCompra(A, otb, cfg.inv, locks.inv);
       utilidadPorMg(A, otb, cfg.utilidad, locks.utilidad);
       return A;
     },
@@ -500,7 +509,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
       line.forEach((v, j) => {
         const c = c0 + j;
         if (c <= 1) mc[name] = { ...(mc[name] || {}), [c === 0 ? (metric === 'utilidad' ? 'mg' : 'share') : (metric === 'utilidad' ? 'boni' : 'adj')]: v };
-        else if (c - 2 < nCols(metric) && v !== '' && !(metric === 'inv' && c > 2)) ml[name] = { ...(ml[name] || {}), [c - 2]: metric === 'utilidad' ? v : Math.max(0, v) };
+        else if (c - 2 < nCols(metric) && v !== '' && !(metric === 'inv' && c > 2 && c < 14) && metric !== 'compra') ml[name] = { ...(ml[name] || {}), [c - 2]: metric === 'utilidad' ? v : Math.max(0, v) };
       });
     });
     return { ...s, cfg: { ...s.cfg, [metric]: mc }, locks: { ...s.locks, [metric]: ml } };
@@ -514,7 +523,8 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
   const clearAll = () => { if (confirm('¿Borrar OTB, históricos y ajustes de Suplementarios?')) setSt({ dim, otb: Object.fromEntries(METRICS.map((m) => [m.key, zeros(nCols(m.key))])), entities: [], cfg: {}, locks: {} }); };
 
   const card = `rounded-2xl border p-4 ${t.card}`;
-  const th = `px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-right whitespace-nowrap ${t.tableHead}`;
+  const th = `px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-center whitespace-nowrap ${t.tableHead}`;
+  const thL = th.replace('text-center', 'text-left');
   const td = 'px-2 py-1 text-xs text-right whitespace-nowrap tabular-nums';
   const good = t.success, bad = t.danger, warn = t.warning;
   // <select> nativo: en Windows las opciones salen blancas y el borde negro si no se fuerzan
@@ -557,7 +567,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
       </div>
       <div className={`${card} overflow-x-auto`}>
         <table className="w-full">
-          <thead><tr><th className={`${th} text-left`}>Ratio</th>{MLABEL.map((m) => <th key={m} className={th}>{m}</th>)}<th className={th}>Total</th><th className={th}>{cmpLbl}</th><th className={th}>Crec.</th></tr></thead>
+          <thead><tr><th className={`${thL}`}>Ratio</th>{MLABEL.map((m) => <th key={m} className={th}>{m}</th>)}<th className={th}>Total</th><th className={th}>{cmpLbl}</th><th className={th}>Crec.</th></tr></thead>
           <tbody>
             {METRICS.map((m, ri) => {
               const arr = otb[m.key] || zeros(nCols(m.key));
@@ -606,7 +616,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
   // Orden de marcas en la bajada: venta LY (default), share base del ratio, plan del ratio o A–Z
   const sortBaj = st.sortBaj || 'ly';
   const vtaLyOf = (name) => sum(byEnt[name]?.hist.vta || []);
-  const bajRows = [...A.rows].sort((a, b) => sortBaj === 'az' ? a.name.localeCompare(b.name)
+  const bajRows = A.rows.filter((r) => metric === 'vta' || !alloc.sinVta?.has(r.name)).sort((a, b) => sortBaj === 'az' ? a.name.localeCompare(b.name)
     : sortBaj === 'base' ? (b.baseShare || 0) - (a.baseShare || 0)
     : sortBaj === 'plan' ? b.planTot - a.planTot
     : vtaLyOf(b.name) - vtaLyOf(a.name));
@@ -663,7 +673,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
         <div className={`${card} overflow-x-auto`}>
           <table className="w-full">
             <thead><tr>
-              <th className={`${th} text-left sticky left-0 z-20`} style={solid}>{dim}</th>
+              <th className={`${thL} sticky left-0 z-20`} style={solid}>{dim}</th>
               <th className={th}>{baseLbl}</th><th className={th}>Share {baseLbl}</th>{isIS && <th className={th}>Modelo</th>}{isUt ? <><th className={th} title="Mg% que promete la marca (vacío = Mg implícito de la base)">Mg% prom.</th><th className={th} title="Bonificación por CMSI, % de la compra a costo">Boni % CMSI</th></> : <><th className={th}>Share manual</th><th className={th}>Estrategia %</th></>}
               <th className={th}>{isUt ? 'Mg% final' : 'Share final'}</th><th className={th}>Plan</th><th className={th}>Crec. vs {cmpLbl}</th>
               {isInv && <><th className={th} title="Rotación objetivo de la marca (vacío = la de la base)">Rot obj</th><th className={th}>Rot final</th><th className={th}>Rot {cmpLbl}</th></>}
@@ -702,7 +712,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
                       <td className={`${td} font-bold ${rotP != null && rotL != null ? (rotP >= rotL ? good : bad) : t.text}`}>{dec(rotP)}</td>
                       <td className={`${td} ${t.textMuted}`}>{dec(rotL)}</td>
                     </>}
-                    {KC.map((k) => (isInv && k > 0) || isCompra ? (
+                    {KC.map((k) => (isInv && k > 0 && k < 12) || isCompra ? (
                       <td key={k} className={`${td} ${t.text}`} title={isCompra ? 'Compra = Inv fin − Inv ini + Vta + Mkd + CMSI' : 'Inv objetivo por rotación y ciclicidad de la venta'}>{fmt(r.plan[k])}</td>
                     ) : (
                       <td key={k} className="px-0.5 py-0.5">
@@ -738,7 +748,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
           <p className={`mt-2 text-[10px] ${t.textMuted}`}>
             Pega bloques desde Excel (Cmd+V) sobre la primera celda: share, estrategia o meses. Share manual vacío = share de la base ({baseLbl}). Estrategia % multiplica el share (se renormaliza a 100%). Editar/pegar un mes lo fija (amarillo); el resto se reacomoda para cuadrar el OTB mensual.
             {' LY = HIST (año en curso) hasta el corte + IS (pronóstico del resto del año con el modelo de mejor accuracy sobre LLY + HIST: Estacional YTD, Holt, Holt-Winters; backtest en los últimos ≤3 meses de HIST; filas FCST del Excel tienen prioridad). Base LY + LLY = promedio de ambos años para share y estacionalidad; si una marca tiene un año en 0 (nueva o de salida) usa solo el otro.'}
-            {isInv && ' Inventario: Ene (inv inicial) se reparte por share; Feb…Cierre = Vta anual ÷ Rot obj de la marca (capturada, o la de la base si está vacía) + (Vta del mes − Vta promedio), escalado al OTB del mes. Inventario en 0 es válido (marcas estacionales).'}
+            {isInv && ' Inventario: Ene (inv inicial) se reparte por share y Cierre (Ene siguiente) se puede fijar por marca (las demás reparten el resto del OTB); Feb…Dic = Vta anual ÷ Rot obj de la marca (capturada, o la de la base si está vacía) + (Vta del mes − Vta promedio), escalado al OTB del mes. Inventario en 0 es válido (marcas estacionales).'}
             {isUt && ' Utilidad = Vta × Mg − Mkd × (1 − Mg) − CMSI + Boni (Boni% × compra a costo). Los meses con más descuento dejan menos utilidad. Mg% vacío = Mg implícito de la base (en gris). Al final se cuadra al OTB de cada mes repartiendo la diferencia por venta; Mg% final ya incluye ese cuadre.'}
             {isCompra && ' Compra = Inv final − Inv inicial + Venta + Mkd + CMSI por marca. Si una marca quedaría con compra negativa se le deja más inventario y se descuenta de otras marcas ese mes (el OTB no cambia).'}
             {isCompra && alloc.compra.negativos && ' ⚠ Hay meses donde no alcanza para evitar compras negativas: revisa que el OTB (inv, venta, mkd, cmsi y compra) sea consistente.'}
@@ -818,7 +828,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
       <div className={`${card} overflow-x-auto`}>
         <p className={`text-xs font-bold mb-2 ${t.text}`}>Crecimiento por mes vs LY</p>
         <table className="w-full">
-          <thead><tr><th className={`${th} text-left`}>Ratio</th>{MONTHS.map((m) => <th key={m} className={th}>{m}</th>)}<th className={th}>Año</th></tr></thead>
+          <thead><tr><th className={`${thL}`}>Ratio</th>{MONTHS.map((m) => <th key={m} className={th}>{m}</th>)}<th className={th}>Año</th></tr></thead>
           <tbody>
             {[['Vta plan', sel.plan.vta], ['Vta LY', sel.hist.vta]].map(([l, a]) => (
               <tr key={l} className={t.tableRow}>
@@ -872,7 +882,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
           <p className={`text-xs font-bold mb-2 ${t.text}`}>Evaluación por {dim.toLowerCase()} (año)</p>
           <table className="w-full">
             <thead><tr>
-              <th className={`${th} text-left`}>{dim}</th>
+              <th className={`${thL}`}>{dim}</th>
               {['Vta plan', 'Crec.', 'Share vta', 'Share inv', 'Gap inv-vta', 'Margen', 'Mkd %', 'CMSI %', 'ST', 'MOS', 'Rotación', 'Vta/Compra'].map((h) => <th key={h} className={th}>{h}</th>)}
             </tr></thead>
             <tbody>
