@@ -925,10 +925,15 @@ function HOView({ team, ho, isAdmin, onSave, onNotice }) {
       <div className={`tt-resumen-banner tt-ho-bolsa ${lives === 0 ? 'is-empty' : ''}`}>
         <div>
           <span className="tt-tag">HO semanal · premio por desempeño</span>
-          <p className="tt-banner-big">{'❤️'.repeat(lives)}{'🖤'.repeat(Math.min(ho.strikes.length, ho.lives))}<span className="tt-banner-small"> {lives} de {ho.lives} vidas</span></p>
+          <div className="tt-hp">
+            <span className="tt-hp-label">HP</span>
+            <div className={`tt-hp-bar ${lives === 1 ? 'is-low' : ''}`}>
+              {Array.from({ length: ho.lives }, (_, i) => <span key={i} className={i < lives ? 'is-on' : ''} />)}
+            </div>
+            <span className="tt-hp-num">{lives}/{ho.lives}</span>
+          </div>
           <p className="tt-banner-small">{lives === 0 ? 'Se acabó el HO semanal para todos. Gracias a los que no contestaron 🙃' : `Cada incumplimiento en HO (no contestar, no entregar) quita una vida a todo el equipo. Con 0 se acaba el HO semanal${lives === 1 ? ' — queda la última 👀' : ''}.`}</p>
         </div>
-        <ProgressRing pct={Math.round((lives / ho.lives) * 100)} color={lives === 0 ? '#D98A8A' : lives === 1 ? '#E0BB3E' : '#8BC9A3'} />
       </div>
 
       <h4 className="tt-subhead">Incumplimientos</h4>
@@ -1164,7 +1169,16 @@ body { background: #14121a; }
 .tt-ho-grid tfoot td { color: #8BC9A3; font-weight: 700; border-bottom: none; }
 .tt-ho-grid .is-bad { color: #E0A0A0 !important; }
 .tt-ho-bolsa.is-empty { border-color: rgba(217,138,138,0.5); box-shadow: 0 0 40px -12px rgba(217,138,138,0.5); }
+.tt-ho-bolsa > div { flex: 1; }
 .tt-ho-bolsa .tt-banner-small { display: block; margin-top: 4px; }
+.tt-hp { display: flex; align-items: center; gap: 12px; margin: 12px 0 6px; }
+.tt-hp-label, .tt-hp-num { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 800; font-size: 14px; color: #B39DDB; letter-spacing: 1px; }
+.tt-hp-bar { flex: 1; max-width: 520px; display: flex; gap: 4px; padding: 4px; border: 2px solid rgba(179,157,219,0.45); border-radius: 6px; background: rgba(0,0,0,0.35); }
+.tt-hp-bar span { flex: 1; height: 18px; border-radius: 2px; background: rgba(255,255,255,0.06); transition: all .4s ease; }
+.tt-hp-bar span.is-on { background: linear-gradient(180deg, #D4C4F0 0%, #B39DDB 35%, #8A73AD 100%); box-shadow: 0 0 12px rgba(179,157,219,0.55), inset 0 2px 0 rgba(255,255,255,0.35); }
+.tt-hp-bar.is-low span.is-on { animation: ttHpPulse 1.1s ease-in-out infinite; }
+@keyframes ttHpPulse { 50% { opacity: .45; } }
+.tt-ho-bolsa.is-empty .tt-hp-label, .tt-ho-bolsa.is-empty .tt-hp-num { color: #948FA0; }
 .tt-ho-strike-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .tt-ho-strike-form input, .tt-ho-strike-form select { border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.05); border-radius: 7px; padding: 6px 8px; font-size: 12.5px; color: #EDEBF2; font-family: inherit; color-scheme: dark; }
 .tt-ho-strike-form select option { background: #1c1720; }
