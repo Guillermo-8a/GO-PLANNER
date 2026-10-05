@@ -479,16 +479,16 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
   // kind 'gop': plan legible + OTB + totales + hoja _estado (JSON) para volver a cargarlo (backup).
   // kind 'o9': mismo layout solo filas PLAN, sin OTB ni columna Total, valores × 1000 para pegar en O9.
   const [exportOpen, setExportOpen] = useState(false);
-  // Layout O9 (GC): M5 | Brand | Data | Ene-AA … Dic-AA; por marca 6 filas en el orden de O9; valores × 1000; inventario = BOP (inicial de cada mes)
-  const O9_DATA = [['vta', 'SPR Sales $'], ['mkd', 'SPR Tot Markdown $'], ['cmsi', 'SPR MSI Credit Card Promotions $'], ['inv', 'SPR BOP Inventory $'], ['compra', 'SPR Receipts $'], ['utilidad', 'SPR Planner Margin $']];
+  // Layout O9 (GC): Brand | Data | Ene-AA … Dic-AA; por marca 6 filas en el orden de O9; valores × 1000; inventario = BOP (inicial de cada mes)
+  const O9_DATA = [['vta', 'SPR Sales $'], ['mkd', 'SPR Tot Markdown $'], ['cmsi', 'SPR MSI Credit Card Promotions $'], ['compra', 'SPR Receipts $'], ['utilidad', 'SPR Planner Margin $'], ['inv', 'SPR BOP Inventory $']];
   const o9Year = new Date().getFullYear() + 1;
   const exportPlan = (kind, ext) => {
     const o9 = kind === 'o9';
     let aoa;
     if (o9) {
       const yy = String(o9Year).slice(-2);
-      aoa = [['M5', 'Brand', 'Data', ...MONTHS.map((m) => `${m}-${yy}`)]];
-      entities.forEach((e, i) => O9_DATA.forEach(([mk, lbl]) => aoa.push(['', e.name, lbl, ...R12.map((k) => Math.round((alloc[mk].rows[i]?.plan?.[k] || 0) * 1000))])));
+      aoa = [['Brand', 'Data', ...MONTHS.map((m) => `${m}-${yy}`)]];
+      entities.forEach((e, i) => O9_DATA.forEach(([mk, lbl]) => aoa.push([e.name, lbl, ...R12.map((k) => Math.round((alloc[mk].rows[i]?.plan?.[k] || 0) * 1000))])));
     } else {
       aoa = [['Tipo', dim, 'Ratio', ...MLABEL, 'Total']];
       const line = (tipo, name, m, arr) => [tipo, name, m.label.toUpperCase(), ...rng(13).map((k) => (k < arr.length ? Math.round(arr[k] || 0) : '')), Math.round(m.stock ? sum(arr) / arr.length : sum(arr))];
@@ -947,7 +947,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
             </div>
             {[
               { k: 'gop', title: 'Backup GO PLANNER', desc: 'Plan + OTB + columna Total. En .xlsx incluye el estado para volver a cargarlo y seguir donde te quedaste.' },
-              { k: 'o9', title: 'Para pegar en O9', desc: `Layout de O9: M5 · Brand · Data (SPR Sales, Tot Markdown, MSI, BOP Inventory, Receipts, Planner Margin) · Ene–Dic. Sin OTB ni totales, valores × 1,000.` },
+              { k: 'o9', title: 'Para pegar en O9', desc: `Layout de O9: Brand · Data (SPR Sales, Tot Markdown, MSI, Receipts, Planner Margin, BOP Inventory) · Ene–Dic. Sin OTB ni totales, valores × 1,000.` },
             ].map((o) => (
               <div key={o.k} className={`rounded-xl border p-3 ${t.cardInner}`}>
                 <p className={`text-xs font-bold ${t.text}`}>{o.title}</p>
