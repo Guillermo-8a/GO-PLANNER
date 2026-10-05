@@ -479,12 +479,22 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
   // kind 'gop': plan legible + OTB + totales + hoja _estado (JSON) para volver a cargarlo (backup).
   // kind 'o9': mismo layout solo filas PLAN, sin OTB ni columna Total, valores × 1000 para pegar en O9.
   const [exportOpen, setExportOpen] = useState(false);
+  // Layout O9 (GC): M5 | Brand | Data | Ene-AA … Dic-AA; por marca 6 filas en el orden de O9; valores × 1000; inventario = BOP (inicial de cada mes)
+  const O9_DATA = [['vta', 'SPR Sales $'], ['mkd', 'SPR Tot Markdown $'], ['cmsi', 'SPR MSI Credit Card Promotions $'], ['inv', 'SPR BOP Inventory $'], ['compra', 'SPR Receipts $'], ['utilidad', 'SPR Planner Margin $']];
+  const o9Year = st.o9Year ?? new Date().getFullYear() + 1;
   const exportPlan = (kind, ext) => {
-    const o9 = kind === 'o9', f = o9 ? 1000 : 1;
-    const aoa = [['Tipo', dim, 'Ratio', ...MLABEL, ...(o9 ? [] : ['Total'])]];
-    const line = (tipo, name, m, arr) => [tipo, name, m.label.toUpperCase(), ...rng(13).map((k) => (k < arr.length ? Math.round((arr[k] || 0) * f) : '')), ...(o9 ? [] : [Math.round(m.stock ? sum(arr) / arr.length : sum(arr))])];
-    if (!o9) METRICS.forEach((m) => aoa.push(line('OTB', '', m, otb[m.key] || zeros(nCols(m.key)))));
-    METRICS.forEach((m) => alloc[m.key].rows.forEach((r) => aoa.push(line('PLAN', r.name, m, r.plan))));
+    const o9 = kind === 'o9';
+    let aoa;
+    if (o9) {
+      const yy = String(o9Year).slice(-2);
+      aoa = [['M5', 'Brand', 'Data', ...MONTHS.map((m) => `${m}-${yy}`)]];
+      entities.forEach((e, i) => O9_DATA.forEach(([mk, lbl]) => aoa.push([st.m5 || '', e.name, lbl, ...R12.map((k) => Math.round((alloc[mk].rows[i]?.plan?.[k] || 0) * 1000))])));
+    } else {
+      aoa = [['Tipo', dim, 'Ratio', ...MLABEL, 'Total']];
+      const line = (tipo, name, m, arr) => [tipo, name, m.label.toUpperCase(), ...rng(13).map((k) => (k < arr.length ? Math.round(arr[k] || 0) : '')), Math.round(m.stock ? sum(arr) / arr.length : sum(arr))];
+      METRICS.forEach((m) => aoa.push(line('OTB', '', m, otb[m.key] || zeros(nCols(m.key)))));
+      METRICS.forEach((m) => alloc[m.key].rows.forEach((r) => aoa.push(line('PLAN', r.name, m, r.plan))));
+    }
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Plan');
     if (!o9 && ext === 'xlsx') {
@@ -937,11 +947,17 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
             </div>
             {[
               { k: 'gop', title: 'Backup GO PLANNER', desc: 'Plan + OTB + columna Total. En .xlsx incluye el estado para volver a cargarlo y seguir donde te quedaste.' },
-              { k: 'o9', title: 'Para pegar en O9', desc: 'Mismo formato, solo filas PLAN, sin OTB ni totales, valores × 1,000.' },
+              { k: 'o9', title: 'Para pegar en O9', desc: `Layout de O9: M5 · Brand · Data (SPR Sales, Tot Markdown, MSI, BOP Inventory, Receipts, Planner Margin) · Ene–Dic. Sin OTB ni totales, valores × 1,000.` },
             ].map((o) => (
               <div key={o.k} className={`rounded-xl border p-3 ${t.cardInner}`}>
                 <p className={`text-xs font-bold ${t.text}`}>{o.title}</p>
                 <p className={`text-[11px] mt-0.5 mb-2 ${t.textMuted}`}>{o.desc}</p>
+                {o.k === 'o9' && (
+                  <div className="flex gap-2 mb-2">
+                    <input value={st.m5 || ''} onChange={(e) => setSt((s) => ({ ...s, m5: e.target.value }))} placeholder="M5 (ej. 870-ZAPATOS M...)" className={`flex-1 px-2 py-1.5 text-xs rounded-lg border focus:outline-none ${t.input}`} />
+                    <input type="number" value={o9Year} onChange={(e) => setSt((s) => ({ ...s, o9Year: +e.target.value || o9Year }))} title="Año del plan" className={`w-20 px-2 py-1.5 text-xs rounded-lg border focus:outline-none ${t.input}`} />
+                  </div>
+                )}
                 <div className="flex gap-2">
                   {['xlsx', 'csv'].map((ext) => (
                     <button key={ext} onClick={() => exportPlan(o.k, ext)} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg font-bold ${ext === 'xlsx' ? t.btn : t.btnGhost}`}><Download size={12} />.{ext}</button>
