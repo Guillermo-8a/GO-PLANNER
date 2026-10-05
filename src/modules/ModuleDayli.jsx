@@ -234,10 +234,11 @@ const parseInvCSV = text => {
   const sep=text.includes('\t')?'\t':text.includes(';')?';':',';
   const rows=text.split('\n').map(r=>parseCSVRow(r,sep)); if(rows.length<2) return [];
   const H=rows[0].map(h=>h.toUpperCase().trim().replace(/\s+/g,'_').replace(/[#ÁÉÍÓÚ]/g,c=>({'#':'NUM',Á:'A',É:'E',Í:'I',Ó:'O',Ú:'U'}[c]||c)));
-  const idx=(...ns)=>ns.map(n=>H.findIndex(h=>h===n||h.includes(n))).find(i=>i>=0)??-1;
+  // exacto primero (OH no debe atrapar OH_PESOS), luego "contiene"
+  const idx=(...ns)=>{ const e=ns.map(n=>H.indexOf(n)).find(i=>i>=0); return e??(ns.map(n=>H.findIndex(h=>h.includes(n))).find(i=>i>=0)??-1); };
   const I={div:idx('DIVISION','DIV'),sec:idx('SECCION'),numSec:idx('NUMSECCION','NUM_SECCION','_SECCION'),goa:idx('GOA','FAMILIA'),marca:idx('MARCA','PROVEEDOR'),norma:idx('NORMA','TIPO_COMPRA'),
     ubic:idx('UBICACION','CENTRO','TIENDA','BODEGA'),tipo:idx('TIPO_UBICACION','TIPO_CENTRO','TIPO'),oh:idx('OH','ON_HAND','INVENTARIO'),
-    oo:idx('OO','ON_ORDER','PEDIDO'),cv:idx('COSTO_VENDIDO','COSTO'),uv:idx('UTILIDAD_VENDIDA','UTIL_VENDIDA'),comp:idx('COMPRADO','COMPRA_TOTAL'),
+    oo:idx('OO','ON_ORDER','PEDIDO'),ohP:idx('OH_PESOS','OH_$','OH$','OH_P','VALOR_OH'),ooP:idx('OO_PESOS','OO_$','OO$','OO_P','VALOR_OO'),cv:idx('COSTO_VENDIDO','COSTO'),uv:idx('UTILIDAD_VENDIDA','UTIL_VENDIDA'),comp:idx('COMPRADO','COMPRA_TOTAL'),
     nac:idx('NACIONAL','NAC'),imp:idx('IMPORTACION','IMP'),vref:idx('VENTA','VENTAS')};
   const out=[];
   for(let i=1;i<rows.length;i++){ const r=rows[i]; if(!r||r.every(c=>!c)) continue;
@@ -251,7 +252,7 @@ const parseInvCSV = text => {
     const seccion=(/^\d+$/.test(secRaw)&&secName&&!/^\d+$/.test(secName))?secName.toUpperCase():secRaw.toUpperCase();
     out.push({ division:I.div>=0?r[I.div].trim().toUpperCase():'', seccion,
       goa:I.goa>=0?r[I.goa].trim().toUpperCase():'', marca:I.marca>=0?r[I.marca].trim().toUpperCase():'', norma:I.norma>=0?r[I.norma].trim().toUpperCase():'',
-      ubicacion:ubicRaw, tipo, oh:num(I.oh>=0?r[I.oh]:0), oo:num(I.oo>=0?r[I.oo]:0), costoVendido:num(I.cv>=0?r[I.cv]:0),
+      ubicacion:ubicRaw, tipo, oh:num(I.oh>=0?r[I.oh]:0), oo:num(I.oo>=0?r[I.oo]:0), ohP:I.ohP>=0?num(r[I.ohP]):null, ooP:I.ooP>=0?num(r[I.ooP]):null, costoVendido:num(I.cv>=0?r[I.cv]:0),
       utilidadVendida:num(I.uv>=0?r[I.uv]:0), comprado:num(I.comp>=0?r[I.comp]:0), nacional:num(I.nac>=0?r[I.nac]:0),
       importacion:num(I.imp>=0?r[I.imp]:0), ventaRef:num(I.vref>=0?r[I.vref]:0) });
   }
@@ -587,13 +588,21 @@ export default function ModuleDaily(){
   },[tyData,lyData,tyYear,lyYear]);
 
   // ── Inventario ──
+  // $ de inventario: columnas OH_PESOS/OO_PESOS si vienen; si no, pzs × precio promedio de venta de la sección (estimado)
+  const invEst=useMemo(()=>filtInv.length>0&&filtInv.some(r=>r.ohP==null),[filtInv]);
+  const priceBySec=useMemo(()=>{ const m={}; tyData.forEach(r=>{ const k=r.seccion||'N/D'; if(!m[k])m[k]={p:0,u:0}; m[k].p+=r.ventaP; m[k].u+=r.ventaU; });
+    const tot=Object.values(m).reduce((a,x)=>({p:a.p+x.p,u:a.u+x.u}),{p:0,u:0}); const avg=tot.u>0?tot.p/tot.u:0;
+    return k=>m[k]?.u>0?m[k].p/m[k].u:avg; },[tyData]);
+  const invP=useCallback(r=>({oh:r.ohP??r.oh*priceBySec(r.seccion||'N/D'),oo:r.ooP??r.oo*priceBySec(r.seccion||'N/D')}),[priceBySec]);
   const invKPI=useMemo(()=>{ const oh=filtInv.reduce((s,r)=>s+r.oh,0),oo=filtInv.reduce((s,r)=>s+r.oo,0),
+    ohP=filtInv.reduce((s,r)=>s+invP(r).oh,0),ooP=filtInv.reduce((s,r)=>s+invP(r).oo,0),
     costoV=filtInv.reduce((s,r)=>s+r.costoVendido,0),utilV=filtInv.reduce((s,r)=>s+r.utilidadVendida,0),
     comprado=filtInv.reduce((s,r)=>s+r.comprado,0),nacional=filtInv.reduce((s,r)=>s+r.nacional,0),
     importacion=filtInv.reduce((s,r)=>s+r.importacion,0),ventaRef=filtInv.reduce((s,r)=>s+r.ventaRef,0)||kpiTY.ventaP;
     const hasInv=filtInv.length>0; const vu=kpiTY.ventaU;
-    return {oh,oo,total:oh+oo,costoV,utilV,comprado,nacional,importacion,ventaRef,
-      st:hasInv&&(oh+vu)>0?vu/(vu+oh)*100:null, cob:hasInv&&kpiTY.ventaU>0&&lastDateTY?oh/(kpiTY.ventaU/lastDateTY.getDate()):null}; },[filtInv,kpiTY,lastDateTY]);
+    const vp=kpiTY.ventaP;
+    return {oh,oo,total:oh+oo,ohP,ooP,totalP:ohP+ooP,stP:hasInv&&(ohP+vp)>0?vp/(vp+ohP)*100:null,costoV,utilV,comprado,nacional,importacion,ventaRef,
+      st:hasInv&&(oh+vu)>0?vu/(vu+oh)*100:null, cob:hasInv&&kpiTY.ventaU>0&&lastDateTY?oh/(kpiTY.ventaU/lastDateTY.getDate()):null}; },[filtInv,kpiTY,lastDateTY,invP]);
 
   const SCATTER_KEY=['seccion','goa','marca','norma'], SCATTER_LBL=['SECCIÓN','GOA','MARCA','NORMA'];
   const scatterData=useMemo(()=>{ const key=SCATTER_KEY[scatterLevel]; const sm={},im={};
@@ -1160,54 +1169,31 @@ export default function ModuleDaily(){
             <>
               {(invData.length>0)?(<>
                 <div className={`p-4 rounded-2xl border ${t.card}`}>
-                  <h3 className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} mb-3`}>Inventario Actual</h3>
+                  <h3 className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} mb-3`}>Inventario Actual{invEst&&<span className={`ml-2 normal-case tracking-normal font-bold ${t.textMuted}`}>· $ estimado con precio promedio de venta por sección (agrega OH_PESOS / OO_PESOS al CSV para el real)</span>}</h3>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-5">
-                    {[{label:'On Hand (OH)',val:fmt(invKPI.oh),sub:'disponibles',c:'text-violet-400'},
-                      {label:'On Order (OO)',val:fmt(invKPI.oo),sub:'en tránsito',c:'text-purple-400'},
-                      {label:'Total',val:fmt(invKPI.total),sub:'OH+OO',c:t.textAccent1},
-                      {label:'Sell Through',val:invKPI.st!=null?fmtP(invKPI.st):'N/D',sub:'pzs vend/(OH+vend)',c:invKPI.st==null?t.textMuted:invKPI.st>=60?'text-violet-400':invKPI.st>=40?'text-amber-400':'text-rose-400'}].map(({label,val,sub,c})=>(
-                      <div key={label} className={`p-4 rounded-xl border ${t.cardInner}`}><div className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} mb-1`}>{label}</div><div className={`text-xl font-black ${c}`}>{val}</div><div className={`text-[9px] ${t.textMuted}`}>{sub}</div></div>))}
+                    {[{label:'On Hand (OH)',val:fmt(invKPI.oh),valP:fmtM(invKPI.ohP),sub:'disponibles',c:'text-violet-400'},
+                      {label:'On Order (OO)',val:fmt(invKPI.oo),valP:fmtM(invKPI.ooP),sub:'en tránsito',c:'text-purple-400'},
+                      {label:'Total',val:fmt(invKPI.total),valP:fmtM(invKPI.totalP),sub:'OH+OO',c:t.textAccent1},
+                      {label:'Sell Through',val:invKPI.st!=null?fmtP(invKPI.st):'N/D',valP:invKPI.stP!=null?fmtP(invKPI.stP):'N/D',sub:'vend/(OH+vend) · pzs | $',c:invKPI.st==null?t.textMuted:invKPI.st>=60?'text-violet-400':invKPI.st>=40?'text-amber-400':'text-rose-400'}].map(({label,val,valP,sub,c})=>(
+                      <div key={label} className={`p-4 rounded-xl border ${t.cardInner}`}><div className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} mb-1`}>{label}</div>
+                        <div className="flex items-baseline gap-2 flex-wrap"><span className={`text-xl font-black ${c}`}>{val}</span><span className={`text-sm font-black ${t.textAccent2||c} opacity-90`}>{valP}</span></div>
+                        <div className={`text-[9px] ${t.textMuted}`}>{sub}</div></div>))}
                   </div>
                   {/* Por tipo ubicación */}
                   <h4 className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} mb-3`}>Inventario por Tipo de Ubicación</h4>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
                     {['LOGISTICO','BODEGA','PLAN','TIENDA'].map(tipo=>{ const rows=filtInv.filter(r=>r.tipo===tipo);
                       const oh=rows.reduce((s,r)=>s+r.oh,0),oo=rows.reduce((s,r)=>s+r.oo,0),n=new Set(rows.map(r=>r.ubicacion)).size;
+                      const ohP=rows.reduce((s,r)=>s+invP(r).oh,0),ooP=rows.reduce((s,r)=>s+invP(r).oo,0);
                       const col={LOGISTICO:'text-blue-400',BODEGA:'text-purple-400',PLAN:'text-amber-400',TIENDA:'text-violet-400'}[tipo];
                       const barc={LOGISTICO:'bg-blue-400',BODEGA:'bg-purple-400',PLAN:'bg-amber-400',TIENDA:'bg-violet-400'}[tipo];
                       return (<div key={tipo} className={`p-4 rounded-xl border ${isDark?'bg-white/[0.045] backdrop-blur-xl transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] border-white/10':'bg-white border-gray-200'}`}>
                         <div className="flex items-center justify-between mb-2"><span className={`text-[9px] font-black uppercase ${col}`}>{tipo}</span>{n>0&&<span className={`text-[9px] px-2 py-0.5 rounded-full border font-black ${t.badge}`}>{n} ub.</span>}</div>
-                        <div className={`text-xl font-black ${col}`}>{fmt(oh)}</div><div className={`text-[9px] ${t.textMuted}`}>OH · {fmt(oo)} OO</div>
+                        <div className="flex items-baseline gap-2 flex-wrap"><span className={`text-xl font-black ${col}`}>{fmt(oh)}</span><span className={`text-sm font-black ${col} opacity-80`}>{fmtM(ohP)}</span></div><div className={`text-[9px] ${t.textMuted}`}>OH · {fmt(oo)} OO · {fmtM(ooP)}</div>
                         {(oh+oo)>0&&invKPI.total>0&&<div className="mt-2"><MiniBar value={oh+oo} max={invKPI.total} color={barc} isDark={isDark}/></div>}
                       </div>); })}
                   </div>
-                  {/* Detalle ubicaciones */}
-                  {(()=>{ const u={}; filtInv.forEach(r=>{ if(!u[r.ubicacion])u[r.ubicacion]={ubicacion:r.ubicacion,tipo:r.tipo,oh:0,oo:0}; u[r.ubicacion].oh+=r.oh; u[r.ubicacion].oo+=r.oo; });
-                    const sorted=Object.values(u).sort((a,b)=>b.oh-a.oh); const mx=sorted[0]?.oh||1; if(!sorted.length) return null;
-                    const tc={LOGISTICO:'bg-blue-400',BODEGA:'bg-purple-400',PLAN:'bg-amber-400',TIENDA:'bg-violet-500'};
-                    const txc={LOGISTICO:'text-blue-400',BODEGA:'text-purple-400',PLAN:'text-amber-400',TIENDA:'text-violet-400'};
-                    return <div className="space-y-2"><h5 className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} mb-2`}>Detalle por Ubicación</h5>
-                      {sorted.map(x=>(<div key={x.ubicacion} className="flex items-center gap-3">
-                        <span className={`w-32 truncate text-[10px] font-bold text-right ${t.textMain}`} title={x.ubicacion}>{x.ubicacion}</span>
-                        <div className="flex-1 relative h-5 rounded-lg overflow-hidden bg-zinc-700/20">
-                          <div className={`absolute left-0 top-0 h-full rounded-lg ${tc[x.tipo]||'bg-gray-400'} opacity-70`} style={{width:`${(x.oh/mx)*100}%`}}/>
-                          <span className={`absolute left-2 top-0 h-full flex items-center text-[9px] font-black ${x.oh/mx>0.4?'text-white':t.textMain}`}>{fmt(x.oh)} OH{x.oo>0?` · ${fmt(x.oo)} OO`:''}</span></div>
-                        <span className={`w-16 text-[9px] font-black text-right ${txc[x.tipo]||t.textMuted}`}>{x.tipo}</span></div>))}
-                    </div>; })()}
                 </div>
-
-                {/* Compras */}
-                {invKPI.comprado>0&&(
-                  <div className={`p-4 rounded-2xl border ${t.card}`}>
-                    <h3 className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} mb-3`}>Compras</h3>
-                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                      {[{label:'Comprado Total',val:fmtM(invKPI.comprado),c:'text-blue-400'},
-                        {label:'Nacional',val:fmtM(invKPI.nacional),sub:fmtP(invKPI.nacional/invKPI.comprado*100),c:'text-violet-400'},
-                        {label:'Importación',val:fmtM(invKPI.importacion),sub:fmtP(invKPI.importacion/invKPI.comprado*100),c:'text-purple-400'},
-                        {label:'Cobertura',val:invKPI.cob>0?`${invKPI.cob.toFixed(0)} días`:'N/D',sub:'OH/run rate',c:invKPI.cob>60?'text-red-400':invKPI.cob>30?'text-amber-400':'text-violet-400'}].map(({label,val,sub,c})=>(
-                        <div key={label} className={`p-4 rounded-xl border ${t.cardInner}`}><div className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} mb-1`}>{label}</div><div className={`text-xl font-black ${c}`}>{val}</div>{sub&&<div className={`text-[9px] ${t.textMuted}`}>{sub}</div>}</div>))}
-                    </div>
-                  </div>)}
 
                 {/* Scatter */}
                 {scatterData.length>=2&&(
@@ -1254,6 +1240,32 @@ export default function ModuleDaily(){
                     <p className={`text-[9px] mt-3 ${t.textMuted}`}>&gt;12 sem = riesgo · &lt;4 sem = ok</p>
                   </div>
                 </div>
+                {/* Compras */}
+                {invKPI.comprado>0&&(
+                  <div className={`p-4 rounded-2xl border ${t.card}`}>
+                    <h3 className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} mb-3`}>Compras</h3>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                      {[{label:'Comprado Total',val:fmtM(invKPI.comprado),c:'text-blue-400'},
+                        {label:'Nacional',val:fmtM(invKPI.nacional),sub:fmtP(invKPI.nacional/invKPI.comprado*100),c:'text-violet-400'},
+                        {label:'Importación',val:fmtM(invKPI.importacion),sub:fmtP(invKPI.importacion/invKPI.comprado*100),c:'text-purple-400'},
+                        {label:'Cobertura',val:invKPI.cob>0?`${invKPI.cob.toFixed(0)} días`:'N/D',sub:'OH/run rate',c:invKPI.cob>60?'text-red-400':invKPI.cob>30?'text-amber-400':'text-violet-400'}].map(({label,val,sub,c})=>(
+                        <div key={label} className={`p-4 rounded-xl border ${t.cardInner}`}><div className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} mb-1`}>{label}</div><div className={`text-xl font-black ${c}`}>{val}</div>{sub&&<div className={`text-[9px] ${t.textMuted}`}>{sub}</div>}</div>))}
+                    </div>
+                  </div>)}
+
+                {/* Detalle ubicaciones */}
+                  {(()=>{ const u={}; filtInv.forEach(r=>{ if(!u[r.ubicacion])u[r.ubicacion]={ubicacion:r.ubicacion,tipo:r.tipo,oh:0,oo:0,ohP:0}; u[r.ubicacion].oh+=r.oh; u[r.ubicacion].oo+=r.oo; u[r.ubicacion].ohP+=invP(r).oh; });
+                    const sorted=Object.values(u).sort((a,b)=>b.oh-a.oh); const mx=sorted[0]?.oh||1; if(!sorted.length) return null;
+                    const tc={LOGISTICO:'bg-blue-400',BODEGA:'bg-purple-400',PLAN:'bg-amber-400',TIENDA:'bg-violet-500'};
+                    const txc={LOGISTICO:'text-blue-400',BODEGA:'text-purple-400',PLAN:'text-amber-400',TIENDA:'text-violet-400'};
+                    return <div className={`p-4 rounded-2xl border ${t.card}`}><h5 className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} mb-3`}>Detalle por Ubicación · {sorted.length}</h5><div className="space-y-2 max-h-[420px] overflow-y-auto pr-2 custom-scrollbar">
+                      {sorted.map(x=>(<div key={x.ubicacion} className="flex items-center gap-3">
+                        <span className={`w-32 truncate text-[10px] font-bold text-right ${t.textMain}`} title={x.ubicacion}>{x.ubicacion}</span>
+                        <div className="flex-1 relative h-5 rounded-lg overflow-hidden bg-zinc-700/20">
+                          <div className={`absolute left-0 top-0 h-full rounded-lg ${tc[x.tipo]||'bg-gray-400'} opacity-70`} style={{width:`${(x.oh/mx)*100}%`}}/>
+                          <span className={`absolute left-2 top-0 h-full flex items-center text-[9px] font-black ${x.oh/mx>0.4?'text-white':t.textMain}`}>{fmt(x.oh)} OH · {fmtM(x.ohP)}{x.oo>0?` · ${fmt(x.oo)} OO`:''}</span></div>
+                        <span className={`w-16 text-[9px] font-black text-right ${txc[x.tipo]||t.textMuted}`}>{x.tipo}</span></div>))}
+                    </div></div>; })()}
               </>):(
                 <div className={`p-4 rounded-2xl border ${t.card}`}><EmptyState icon={PkgIcon} t={t} title="Sin datos de inventario" sub="Carga el CSV de inventario o desmarca el check 'Inventario' en los filtros."/></div>
               )}

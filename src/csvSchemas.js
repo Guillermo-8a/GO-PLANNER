@@ -146,8 +146,8 @@ export const CSV_SCHEMAS = [
       },
       {
         title: 'Inventario',
-        desc: 'Foto de inventario por ubicación. Si no hay TIPO_UBICACION se deduce: S- = logístico, BODEGA/BDG = bodega, PLAN/P- = plan, lo demás tienda.',
-        columns: ['DIVISION', 'SECCION', '#SECCION', 'GOA', 'MARCA', 'NORMA', 'UBICACION', 'TIPO_UBICACION', 'OH', 'OO', 'COSTO_VENDIDO', 'UTILIDAD_VENDIDA', 'COMPRADO', 'NACIONAL', 'IMPORTACION', 'VENTA'],
+        desc: 'Foto de inventario por ubicación. Si no hay TIPO_UBICACION se deduce: S- = logístico, BODEGA/BDG = bodega, PLAN/P- = plan, lo demás tienda. OH_PESOS / OO_PESOS (opcionales) dan el inventario en $ real; sin ellas se estima con el precio promedio de venta por sección.',
+        columns: ['DIVISION', 'SECCION', '#SECCION', 'GOA', 'MARCA', 'NORMA', 'UBICACION', 'TIPO_UBICACION', 'OH', 'OO', 'OH_PESOS', 'OO_PESOS', 'COSTO_VENDIDO', 'UTILIDAD_VENDIDA', 'COMPRADO', 'NACIONAL', 'IMPORTACION', 'VENTA'],
       },
       {
         title: 'Calendario de promociones',
