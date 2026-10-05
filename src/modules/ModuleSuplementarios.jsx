@@ -476,18 +476,24 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
     } catch (err) { setMsg({ ok: false, text: `Error leyendo Excel: ${err.message}` }); }
   };
 
-  // Exporta plan legible + hoja _estado (JSON completo) para volver a cargarlo y seguir donde te quedaste
-  const exportPlan = () => {
-    const aoa = [['Tipo', dim, 'Ratio', ...MLABEL, 'Total']];
-    const line = (tipo, name, m, arr) => [tipo, name, m.label.toUpperCase(), ...rng(13).map((k) => (k < arr.length ? Math.round(arr[k] || 0) : '')), Math.round(m.stock ? sum(arr) / arr.length : sum(arr))];
-    METRICS.forEach((m) => aoa.push(line('OTB', '', m, otb[m.key] || zeros(nCols(m.key)))));
+  // kind 'gop': plan legible + OTB + totales + hoja _estado (JSON) para volver a cargarlo (backup).
+  // kind 'o9': mismo layout solo filas PLAN, sin OTB ni columna Total, valores × 1000 para pegar en O9.
+  const [exportOpen, setExportOpen] = useState(false);
+  const exportPlan = (kind, ext) => {
+    const o9 = kind === 'o9', f = o9 ? 1000 : 1;
+    const aoa = [['Tipo', dim, 'Ratio', ...MLABEL, ...(o9 ? [] : ['Total'])]];
+    const line = (tipo, name, m, arr) => [tipo, name, m.label.toUpperCase(), ...rng(13).map((k) => (k < arr.length ? Math.round((arr[k] || 0) * f) : '')), ...(o9 ? [] : [Math.round(m.stock ? sum(arr) / arr.length : sum(arr))])];
+    if (!o9) METRICS.forEach((m) => aoa.push(line('OTB', '', m, otb[m.key] || zeros(nCols(m.key)))));
     METRICS.forEach((m) => alloc[m.key].rows.forEach((r) => aoa.push(line('PLAN', r.name, m, r.plan))));
-    const json = JSON.stringify(st), chunks = [];
-    for (let i = 0; i < json.length; i += 30000) chunks.push([json.slice(i, i + 30000)]);
     const wb = XLSX.utils.book_new();
     XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(aoa), 'Plan');
-    XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(chunks), '_estado');
-    XLSX.writeFile(wb, `Suplementarios_${dim}.xlsx`);
+    if (!o9 && ext === 'xlsx') {
+      const json = JSON.stringify(st), chunks = [];
+      for (let i = 0; i < json.length; i += 30000) chunks.push([json.slice(i, i + 30000)]);
+      XLSX.utils.book_append_sheet(wb, XLSX.utils.aoa_to_sheet(chunks), '_estado');
+    }
+    XLSX.writeFile(wb, `Suplementarios_${dim}${o9 ? '_O9' : ''}.${ext}`, { bookType: ext });
+    setExportOpen(false);
   };
 
   const setOtb = (mk, k, v) => setSt((s) => ({ ...s, otb: { ...s.otb, [mk]: rng(nCols(mk)).map((i) => (i === k ? +v || 0 : +s.otb[mk]?.[i] || 0)) } }));
@@ -546,7 +552,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
         ))}
       </div>
       <button onClick={() => fileRef.current?.click()} className={`flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg font-bold ${t.btn}`}><Upload size={14} />Cargar Excel</button>
-      <button onClick={exportPlan} disabled={!entities.length} className={`flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg ${t.btnGhost} disabled:opacity-40`}><Download size={14} />Exportar</button>
+      <button onClick={() => setExportOpen(true)} disabled={!entities.length} className={`flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg ${t.btnGhost} disabled:opacity-40`}><Download size={14} />Exportar</button>
       <button onClick={clearAll} className={`p-2 rounded-lg border ${t.btnDanger}`} title="Borrar todo"><Trash2 size={14} /></button>
       <input ref={fileRef} type="file" accept=".xlsx,.xls,.csv" className="hidden" onChange={onFile} />
     </>
@@ -922,6 +928,31 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
   return (
     <div className="p-4 md:p-8 space-y-4">
       <ModuleHeader Icon={navIcon} label={navLabel} desc={navDesc} t={t} isDark={isDark} right={headerRight} />
+      {exportOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setExportOpen(false)}>
+          <div className={`w-full max-w-lg rounded-2xl border p-5 space-y-3 ${isDark ? 'bg-[#1c1720] border-white/10' : 'bg-white border-gray-200'}`} onClick={(e) => e.stopPropagation()}>
+            <div className="flex items-center justify-between">
+              <h3 className={`text-sm font-black ${t.text}`}>¿Cómo lo descargas?</h3>
+              <button onClick={() => setExportOpen(false)} className={t.textMuted}>✕</button>
+            </div>
+            {[
+              { k: 'gop', title: 'Backup GO PLANNER', desc: 'Plan + OTB + columna Total. En .xlsx incluye el estado para volver a cargarlo y seguir donde te quedaste.' },
+              { k: 'o9', title: 'Para pegar en O9', desc: 'Mismo formato, solo filas PLAN, sin OTB ni totales, valores × 1,000.' },
+            ].map((o) => (
+              <div key={o.k} className={`rounded-xl border p-3 ${t.cardInner}`}>
+                <p className={`text-xs font-bold ${t.text}`}>{o.title}</p>
+                <p className={`text-[11px] mt-0.5 mb-2 ${t.textMuted}`}>{o.desc}</p>
+                <div className="flex gap-2">
+                  {['xlsx', 'csv'].map((ext) => (
+                    <button key={ext} onClick={() => exportPlan(o.k, ext)} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg font-bold ${ext === 'xlsx' ? t.btn : t.btnGhost}`}><Download size={12} />.{ext}</button>
+                  ))}
+                </div>
+              </div>
+            ))}
+            <p className={`text-[10px] ${t.textMuted}`}>El backup en .csv no se puede volver a cargar como plan (no lleva el estado); para eso usa .xlsx.</p>
+          </div>
+        </div>
+      )}
       {msg && (
         <div className={`flex items-center justify-between px-3 py-2 rounded-lg border text-xs ${msg.ok ? t.successBg : t.dangerBg}`}>
           <span>{msg.text}</span><button onClick={() => setMsg(null)}>✕</button>
