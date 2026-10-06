@@ -64,7 +64,7 @@ const WORLDS = [
     desc: 'Movimiento de mercancía entre tiendas. Detecta excedentes y cubre necesidades por presupuesto con ayuda y como base la famosa Chequera.',
     accent: '#10b981', glow: 'rgba(16,185,129,0.15)',
     modules: [
-      { label: 'Traslados',    Icon: ArrowLeftRight, desc: 'Transferencias inter-tienda por clima y presupuesto.' },
+      { label: 'Traslados',    Icon: ArrowLeftRight, desc: 'Excedente de temporada por clima, aperturas por corrida completa y nivelación por MOS (misma zona, metro, todas u óptimo en cascada), con exclusión de bodegas y desglose a SKU.' },
       { label: 'Dispersión',    Icon: ArrowLeftRight, desc: 'Dispersión entre ventas e inventario por centro, goa, o el filtro que necesites.' },
       { label: 'Chequera',    Icon: ArrowLeftRight, desc: 'Información de modelos a nivel SKU, para organizar y administrar la compra.' },
     ],

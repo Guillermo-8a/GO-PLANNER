@@ -10,6 +10,9 @@ const parseCSVRow = (row, sep) =>
   row.split(new RegExp(`\\${sep}(?=(?:(?:[^"]*"){2})*[^"]*$)`))
      .map(c => c.replace(/^"|"$/g, '').trim());
 
+// Clima de centro: solo valores conocidos; "SIN ASIGNAR" u otro texto = desconocido ('') → no se mueve ni recibe por clima
+const CLIMAS = ['FRIO', 'CALOR', 'PLAYA', 'TEMPLADO', 'EXTREMOSO'];
+const normClima = (v) => { const u = String(v || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim(); return CLIMAS.includes(u) ? u : ''; };
 const num = v => parseFloat(String(v || '0').replace(/[^0-9.-]+/g, '')) || 0;
 
 // Regresión lineal + R² para scatter. points = [{x, y}]
@@ -194,9 +197,29 @@ export default function Traslados() {
   const matrizInputRef = useRef(null);
 
   const [rawData,    setRawData]    = useState([]);
-  const [ohEnPesos,  setOhEnPesos]  = useState(true); // true = OH/VTA vienen en pesos, convertir a pzs
+  const [ohEnPesos,  setOhEnPesos]  = useState(() => { try { return JSON.parse(localStorage.getItem('gop_traslados_cfg') || '{}').ohEnPesos ?? true; } catch { return true; } }); // true = OH/VTA vienen en pesos, convertir a pzs
   const [brandMatrix, setBrandMatrix] = useState({});
   const [climaMatrix, setClimaMatrix] = useState({});
+
+  // Centros excluidos de TODAS las pestañas (no salen ni reciben). Bodegas/PLAN/CEDIS se detectan por nombre.
+  const cfgIni = (() => { try { return JSON.parse(localStorage.getItem('gop_traslados_cfg') || '{}'); } catch { return {}; } })();
+  const [centrosExcluidos, setCentrosExcluidos] = useState(cfgIni.centrosExcluidos ?? '');
+  const [excluirBodegas,   setExcluirBodegas]   = useState(cfgIni.excluirBodegas ?? true);
+  const [excMosMax,        setExcMosMax]        = useState(cfgIni.excMosMax ?? 4); // Tab 1: tope de cobertura del receptor
+  const esBodega = (r) => /BODEGA|\bPLAN\b|CEDIS|ALMAC[EÉ]N|FULFILL|\bCD\b/i.test(`${r.nCentro || ''} ${r.tipoCentro || ''}`);
+  const excluidosSet = useMemo(() => new Set(centrosExcluidos.split(/[,\n;\s]+/).map(s => s.trim().toUpperCase()).filter(Boolean)), [centrosExcluidos]);
+  const dataOp = useMemo(() => rawData.filter(r =>
+    !(excluidosSet.has(String(r.centro).toUpperCase()) || excluidosSet.has(String(r.nCentro || '').toUpperCase()) || (excluirBodegas && esBodega(r)))
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  ), [rawData, excluidosSet, excluirBodegas]);
+  const centrosFuera = useMemo(() => {
+    const ok = new Set(dataOp.map(r => r.centro)), m = new Map();
+    rawData.forEach(r => { if (!ok.has(r.centro)) m.set(r.centro, r.nCentro || r.centro); });
+    return [...m.entries()];
+  }, [rawData, dataOp]);
+  useEffect(() => { try { localStorage.setItem('gop_traslados_cfg', JSON.stringify({ centrosExcluidos, excluirBodegas, excMosMax, ohEnPesos })); } catch {} },
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [centrosExcluidos, excluirBodegas, excMosMax, ohEnPesos]);
 
   // Panel configurable: { [goa]: 'FRIO' | 'CALOR' | 'PLAYA' | 'TODO' }
   // El usuario define qué GOAs son de temporada y qué clima requieren
@@ -224,7 +247,7 @@ export default function Traslados() {
 
   // Dashboard: artículos de temporada fuera de zona (antes de ejecutar traslados)
   const dashboardData = useMemo(() => {
-    if (!rawData.length || !Object.keys(goasTemporada).length) return null;
+    if (!dataOp.length || !Object.keys(goasTemporada).length) return null;
 
     const CLIMA_COMP = {
       FRIO:  (tc) => ['FRIO','EXTREMOSO','TEMPLADO',''].includes(tc),
@@ -232,12 +255,12 @@ export default function Traslados() {
       PLAYA: (tc) => ['PLAYA','CALOR'].includes(tc),
     };
 
-    const fuera = rawData.filter(r => {
+    const fuera = dataOp.filter(r => {
       const tipoClima = goasTemporada[r.goa];
       if (!tipoClima || tipoClima === 'TODO') return false;
       if (r.oh <= 0) return false;
-      const tc = (climaMatrix[r.centro] || r.tipoCentro || '').toUpperCase();
-      const ok = CLIMA_COMP[tipoClima]?.(tc) ?? true;
+      const tc = normClima(climaMatrix[r.centro] || r.tipoCentro);
+      const ok = !tc || (CLIMA_COMP[tipoClima]?.(tc) ?? true);
       return !ok;
     });
 
@@ -296,7 +319,7 @@ export default function Traslados() {
       .slice(0, 15);
 
     return { fuera, totalPzs, totalPesos, totalVta, mos, porGoa, porDesc, porCentro };
-  }, [rawData, goasTemporada, climaMatrix, mesActual]);
+  }, [dataOp, goasTemporada, climaMatrix, mesActual]);
 
   // Persistencia Tab 1
   useEffect(() => {
@@ -317,7 +340,7 @@ export default function Traslados() {
     try {
       localStorage.setItem('gop_traslados_exc', JSON.stringify({ rawData, brandMatrix, climaMatrix, goasTemporada, excResult }));
     } catch {}
-  }, [rawData, brandMatrix, climaMatrix, excResult]);
+  }, [rawData, brandMatrix, climaMatrix, goasTemporada, excResult]);
 
   // Leer CSV principal (excedente)
   const handleCSVUpload = (e) => {
@@ -369,6 +392,7 @@ export default function Traslados() {
         // Convertir pesos → piezas si aplica (OH_pzs = OH_pesos / precio)
         const conv = (v) => ohEnPesos && precioRow > 0 && v != null ? Math.round(v / precioRow) : v;
         extracted.push({
+          _raw:       { oh: ohRaw, vta: vtaRaw, vta3m: vta3mRaw, vtaMesAnt: vtaMaRaw },
           numSeccion: iSeccion   >= 0 ? r[iSeccion].trim()    : '',
           seccion:    iNomSec    >= 0 ? r[iNomSec].trim()     : 'GENERAL',
           goa:        r[iGoa].trim().toUpperCase(),
@@ -448,8 +472,9 @@ export default function Traslados() {
           if (!r[iGoaCol]) continue;
           newClima[r[iGoaCol].trim().toUpperCase()] = r[iClimaCol].trim().toUpperCase();
         }
-        setClimaMatrix(newClima);
-        alert(`Matriz clima cargada: ${Object.keys(newClima).length} GOAs.`);
+        // Es clima por GOA (no por centro): define qué GOAs son de temporada
+        setGoasTemporada(prev => ({ ...prev, ...Object.fromEntries(Object.entries(newClima).filter(([, v]) => ['FRIO', 'CALOR', 'PLAYA', 'TODO'].includes(v))) }));
+        alert(`Clima por GOA cargado: ${Object.keys(newClima).length} GOAs (se aplicó a "GOAs de temporada").`);
       } else {
         // ── Matriz de marca con clima integrado ──────────────────────────
         const iMarca    = H.findIndex(h => h === 'MARCA');
@@ -514,6 +539,21 @@ export default function Traslados() {
     reader.readAsText(file, 'ISO-8859-1');
   };
 
+  // Cambiar "OH en pesos/piezas" re-convierte lo ya cargado (antes solo aplicaba a la siguiente carga)
+  const unidadesRef = useRef(ohEnPesos);
+  useEffect(() => {
+    if (unidadesRef.current === ohEnPesos) return;
+    unidadesRef.current = ohEnPesos;
+    setRawData(rows => rows.map(r => {
+      if (!r._raw) return r;
+      const p = r.precio, conv = (v) => (ohEnPesos && p > 0 && v != null ? Math.round(v / p) : v);
+      return { ...r, oh: conv(r._raw.oh), ohPesos: ohEnPesos ? r._raw.oh : r._raw.oh * p, vta: conv(r._raw.vta),
+        vta3m: r._raw.vta3m != null ? conv(r._raw.vta3m) : null, vtaMesAnt: r._raw.vtaMesAnt != null ? conv(r._raw.vtaMesAnt) : null };
+    }));
+    setExcResult([]); setNivResult([]); setNivExecuted(false);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ohEnPesos]);
+
   // Opciones de filtros
   const opcionesGoa     = useMemo(() => ['ALL', ...new Set(rawData.map(r => r.goa).filter(Boolean))], [rawData]);
   const opcionesLetras  = useMemo(() => [...new Set(rawData.map(r => r.letraDesc).filter(Boolean))].sort(), [rawData]);
@@ -525,7 +565,7 @@ export default function Traslados() {
 
   // HERRAMIENTA EXCEDENTE
   const calcularExcedentes = useCallback(() => {
-    if (!rawData.length) return;
+    if (!dataOp.length) return;
     const goasActivos = Object.keys(goasTemporada).filter(g => goasTemporada[g] && goasTemporada[g] !== 'TODO');
     if (goasActivos.length === 0) {
       alert('Define al menos un GOA de temporada antes de ejecutar la herramienta.');
@@ -535,7 +575,7 @@ export default function Traslados() {
 
     setTimeout(() => {
       const centroPorSku = {};
-      rawData.forEach(r => {
+      dataOp.forEach(r => {
         // Excluir mercancía con letra de descuento seleccionada para no mover
         if (letrasExcluidas.size > 0 && r.letraDesc && letrasExcluidas.has(r.letraDesc)) return;
         const key = `${r.sku}|${r.goa}|${r.marca}|${r.seccion}|${r.numSeccion}`;
@@ -548,16 +588,23 @@ export default function Traslados() {
         };
       });
 
-      const zonaValida = (tipoClima, tipoCentro = '') => {
-        const tc = tipoCentro.toUpperCase().trim();
-        if (tipoClima === 'FRIO')  return ['FRIO','EXTREMOSO','TEMPLADO',''].includes(tc);
-        if (tipoClima === 'CALOR') return ['CALOR','PLAYA','EXTREMOSO','TEMPLADO',''].includes(tc);
+      // Clima desconocido = no se juzga (no sale por clima y no puede recibir)
+      const zonaValida = (tipoClima, tc) => {
+        if (!tc) return true;
+        if (tipoClima === 'FRIO')  return ['FRIO','EXTREMOSO','TEMPLADO'].includes(tc);
+        if (tipoClima === 'CALOR') return ['CALOR','PLAYA','EXTREMOSO','TEMPLADO'].includes(tc);
         if (tipoClima === 'PLAYA') return ['PLAYA','CALOR'].includes(tc);
         return true;
       };
+      const matrizCargada = Object.keys(brandMatrix).length > 0;
+      const permiso = (c, meta) => {
+        if (!matrizCargada) return true;
+        const combos = brandMatrix[c] || [];
+        return [`${meta.numSeccion}|${meta.marca}`, `${(meta.seccion || '').toUpperCase()}|${meta.marca}`, `GENERAL|${meta.marca}`].some(k => combos.includes(k));
+      };
 
       const resultado = [];
-      const sinReceptor = []; // SKUs donde no hay receptor válido → recomendar descuento
+      const sinReceptor = []; // pzs sin receptor válido → recomendar descuento
 
       Object.entries(centroPorSku).forEach(([, { meta, centros }]) => {
         const goa       = meta.goa;
@@ -569,86 +616,63 @@ export default function Traslados() {
         if (filterSku      !== 'ALL' && meta.sku     !== filterSku)     return;
         if (filterMarca    !== 'ALL' && marca        !== filterMarca)   return;
         if (filterSeccion  !== 'ALL' && meta.seccion !== filterSeccion) return;
-        if (filterZona     !== 'ALL' && meta.zona    !== filterZona)    return;
+
+        // Receptores válidos del SKU: clima conocido y compatible, permiso de marca y venta (no se manda a tiendas sin historia).
+        // Capacidad = venta mensual proyectada × MOS máx − OH actual; se reparte para no concentrar todo en una tienda.
+        const recibido = {};
+        const receptoresBase = Object.entries(centros).map(([c, d]) => {
+          const tc = normClima(climaMatrix[c] || d.tipoCentro);
+          const vtaMes = mesActual > 0 ? ((d.vta || 0) / mesActual) * estFactor : 0;
+          return { centro: c, data: d, tc, vtaMes, mos: vtaMes > 0 ? d.oh / vtaMes : 99,
+                   tienePermiso: permiso(c, meta), cap: Math.max(0, Math.floor(vtaMes * excMosMax) - d.oh) };
+        }).filter(r => r.tc && zonaValida(tipoClima, r.tc) && r.tienePermiso && r.vtaMes > 0 && r.cap > 0);
+        const maxVtaRec = Math.max(1, ...receptoresBase.map(r => r.vtaMes));
 
         Object.entries(centros).forEach(([centroOrigen, dataOrigen]) => {
           if (dataOrigen.oh <= 0) return;
           if (filterTipoCentro !== 'ALL' && dataOrigen.tipoCentro !== filterTipoCentro) return;
+          if (filterZona       !== 'ALL' && dataOrigen.zona       !== filterZona)       return;
 
           const zonaOrigen = dataOrigen.zona || '';
-          const tcOrigen   = climaMatrix[dataOrigen.centro] || dataOrigen.tipoCentro || '';
-          if (zonaValida(tipoClima, tcOrigen)) return; // ya está en zona correcta
+          const tcOrigen   = normClima(climaMatrix[dataOrigen.centro] || dataOrigen.tipoCentro);
+          if (zonaValida(tipoClima, tcOrigen)) return; // ya está en zona correcta (o clima desconocido)
 
-          // Score receptor: clima + zona (misma > adyacente > cualquiera) + permiso + vta + MOS
           const adyacentesOrigen = zonasAdyacentes[zonaOrigen] || new Set();
-          // Venta normalizada 0–100: antes se sumaba la venta cruda (miles de pzs) y aplastaba los pesos de zona/permiso
-          const maxVtaRec = Math.max(1, ...Object.entries(centros).filter(([c]) => c !== centroOrigen).map(([, d]) => d.vta || 0));
-          const allReceptores = Object.entries(centros)
-            .filter(([c]) => c !== centroOrigen)
-            .map(([c, d]) => {
-              const seccionMarca = `${meta.numSeccion}|${marca}`;
-              const tienePermiso = !brandMatrix[c] || brandMatrix[c].length === 0 || brandMatrix[c].includes(seccionMarca);
-              const tcRec        = climaMatrix[c] || d.tipoCentro || '';
-              const climaOK      = zonaValida(tipoClima, tcRec);
-              const mismaZona    = d.zona === zonaOrigen;
-              const zonaAdyacente = !mismaZona && adyacentesOrigen.has(d.zona || '');
-              const vtaMes       = mesActual > 0 ? ((d.vta || 0) / mesActual) * estFactor : 0;
-              const mos          = vtaMes > 0 ? d.oh / vtaMes : 99;
-              const score = (climaOK ? 1000 : 0)
-                          + (mismaZona ? 600 : zonaAdyacente ? 300 : 0)
-                          + (tienePermiso ? 200 : 0)
-                          + 100 * (d.vta || 0) / maxVtaRec
-                          - Math.min(mos, 12) * 8;
-              return { centro: c, data: d, tienePermiso, climaOK, mismaZona, zonaAdyacente, score, mos };
+          const ranking = receptoresBase
+            .filter(r => r.centro !== centroOrigen && r.cap - (recibido[r.centro] || 0) > 0)
+            .map(r => {
+              const mismaZona = r.data.zona === zonaOrigen, zonaAdyacente = !mismaZona && adyacentesOrigen.has(r.data.zona || '');
+              return { ...r, mismaZona, zonaAdyacente,
+                       score: (mismaZona ? 600 : zonaAdyacente ? 300 : 0) + 100 * r.vtaMes / maxVtaRec - Math.min(r.mos, 12) * 8 };
             })
-            .filter(r => r.climaOK)
             .sort((a, b) => b.score - a.score);
 
-          const receptor = allReceptores[0];
-
-          if (!receptor) {
-            // No hay receptor compatible — recomendar descuento
-            sinReceptor.push({
-              sku: meta.sku, goa, marca,
-              seccion: meta.seccion, numSeccion: meta.numSeccion,
-              centroOrigen, nombreOrigen: dataOrigen.nCentro || centroOrigen,
-              pzs: dataOrigen.oh, precio: dataOrigen.precio,
-              costoTraslado: dataOrigen.oh * costoPorPza,
+          let resto = dataOrigen.oh;
+          const precio = dataOrigen.precio || 0;
+          for (const rec of ranking) {
+            if (resto <= 0) break;
+            const pzs = Math.min(resto, rec.cap - (recibido[rec.centro] || 0));
+            if (pzs <= 0) continue;
+            if (minPzsTraslado > 0 && pzs < minPzsTraslado) continue;
+            if (minPesosTraslado > 0 && pzs * precio < minPesosTraslado) continue;
+            recibido[rec.centro] = (recibido[rec.centro] || 0) + pzs;
+            resto -= pzs;
+            const fueraZona = !rec.mismaZona, esFueraAdyacente = fueraZona && !rec.zonaAdyacente;
+            resultado.push({
+              seccion: meta.seccion, numSeccion: meta.numSeccion, sku: meta.sku, nsku: meta.nsku, modelo: meta.modelo, marca, goa,
+              centroSalida: centroOrigen, nombreSalida: dataOrigen.nCentro || centroOrigen,
+              centroReceptor: rec.centro, nombreReceptor: rec.data.nCentro || rec.centro,
+              zonaOrigen, zonaDestino: rec.data.zona || '',
+              ohOrigen: dataOrigen.oh, pzs, pesos: pzs * precio, precio,
+              costoTraslado: pzs * costoPorPza, fueraZona,
+              razon: `${goa} (${tipoClima}) en ${tcOrigen}${fueraZona ? (esFueraAdyacente ? ' ⚠️ zona no adyacente' : ' zona adyacente') : ''}`,
+              tipoCentroOrigen: dataOrigen.tipoCentro, tipoCentroReceptor: rec.data.tipoCentro, letraDesc: dataOrigen.letraDesc || '',
             });
-            return;
           }
-
-          const costoTraslado = dataOrigen.oh * costoPorPza;
-          const fueraZona     = !receptor.mismaZona;
-          const esFueraAdyacente = fueraZona && !receptor.zonaAdyacente;
-
-          // Filtro mínimo pzs y pesos
-          if (minPzsTraslado > 0 && dataOrigen.oh < minPzsTraslado) return;
-          if (minPesosTraslado > 0 && (dataOrigen.oh * dataOrigen.precio) < minPesosTraslado) return;
-
-          resultado.push({
-            seccion:            meta.seccion,
-            numSeccion:         meta.numSeccion,
-            sku:                meta.sku,
-            nsku:               meta.nsku,
-            modelo:             meta.modelo,
-            marca,
-            goa,
-            centroSalida:       centroOrigen,
-            nombreSalida:       dataOrigen.nCentro || centroOrigen,
-            centroReceptor:     receptor.centro,
-            nombreReceptor:     receptor.data.nCentro || receptor.centro,
-            zonaOrigen:         dataOrigen.zona || '',
-            zonaDestino:        receptor.data.zona || '',
-            pzs:                dataOrigen.oh,
-            pesos:              dataOrigen.oh * (dataOrigen.precio || 0),
-            precio:             dataOrigen.precio,
-            costoTraslado,
-            fueraZona,
-            razon:              `${goa} (${tipoClima}) en ${tcOrigen}${fueraZona ? (esFueraAdyacente ? ' ⚠️ zona no adyacente' : ' zona adyacente') : ''}`,
-            tipoCentroOrigen:   dataOrigen.tipoCentro,
-            tipoCentroReceptor: receptor.data.tipoCentro,
-            letraDesc:          dataOrigen.letraDesc || '',
+          if (resto > 0) sinReceptor.push({
+            sku: meta.sku, goa, marca, seccion: meta.seccion, numSeccion: meta.numSeccion,
+            centroOrigen, nombreOrigen: dataOrigen.nCentro || centroOrigen,
+            pzs: resto, precio: dataOrigen.precio, costoTraslado: resto * costoPorPza,
           });
         });
       });
@@ -657,16 +681,16 @@ export default function Traslados() {
       setSinReceptorData(sinReceptor);
       setExcLoading(false);
     }, 300);
-  }, [rawData, brandMatrix, climaMatrix, goasTemporada, filterGoa, filterSku, filterMarca,
+  }, [dataOp, brandMatrix, climaMatrix, goasTemporada, filterGoa, filterSku, filterMarca,
       filterSeccion, filterTipoCentro, filterZona, letrasExcluidas, costoPorPza, mesActual, estFactor,
-      minPzsTraslado, minPesosTraslado, zonasAdyacentes]);
+      minPzsTraslado, minPesosTraslado, zonasAdyacentes, excMosMax]);
 
   // Datos para gráfica excedente
   const chartDataExc = useMemo(() => {
     if (!excResult.length) return [];
     const byReceptor = {};
     const byOrigen   = {};
-    rawData.forEach(r => {
+    dataOp.forEach(r => {
       if (!byOrigen[r.centro]) byOrigen[r.centro] = 0;
       byOrigen[r.centro] += r.oh;
     });
@@ -681,7 +705,7 @@ export default function Traslados() {
     });
 
     const nombrePorCentro = {};
-    rawData.forEach(r => { if (r.centro) nombrePorCentro[r.centro] = r.nCentro || r.centro; });
+    dataOp.forEach(r => { if (r.centro) nombrePorCentro[r.centro] = r.nCentro || r.centro; });
     const centros = new Set([...Object.keys(byOrigen), ...Object.keys(byReceptor)]);
     return Array.from(centros).map(c => ({
       centro: c,
@@ -689,56 +713,30 @@ export default function Traslados() {
       antes:  byOrigen[c]   || 0,
       despues: Math.max(0, (byOrigen[c] || 0) - (salidas[c] || 0) + (byReceptor[c] || 0)),
     })).sort((a, b) => b.antes - a.antes).slice(0, 15);
-  }, [excResult, rawData]);
+  }, [excResult, dataOp]);
 
   // Resumen de movimientos entre zonas
   const zonaResumen = useMemo(() => {
     if (!excResult.length) return [];
     const map = {};
     excResult.forEach(r => {
-      const origen = rawData.find(d => d.centro === r.centroSalida)?.zona || r.centroSalida;
-      const destino = rawData.find(d => d.centro === r.centroReceptor)?.zona || r.centroReceptor;
+      const origen = r.zonaOrigen || r.centroSalida;
+      const destino = r.zonaDestino || r.centroReceptor;
       const key = `${origen} → ${destino}`;
       if (!map[key]) map[key] = { origen, destino, pzs: 0, pesos: 0, mismaZona: origen === destino };
       map[key].pzs   += r.pzs;
       map[key].pesos += r.pesos;
     });
     return Object.values(map).sort((a,b) => b.pzs - a.pzs);
-  }, [excResult, rawData]);
+  }, [excResult, dataOp]);
 
   // Scatter VTA vs OH — antes y después, con forecast basado en uplift de datos
   const scatterData = useMemo(() => {
-    if (!rawData.length) return [];
-
-    // Calcular uplift por GOA: ratio VTA/OH en centros con clima correcto vs incorrecto
-    const upliftPorGoa = {};
-    const CLIMA_COMP = {
-      FRIO:  (tc) => ['FRIO','EXTREMOSO','TEMPLADO',''].includes(tc),
-      CALOR: (tc) => ['CALOR','PLAYA','EXTREMOSO','TEMPLADO',''].includes(tc),
-      PLAYA: (tc) => ['PLAYA','CALOR'].includes(tc),
-    };
-    const byGoa = {};
-    rawData.forEach(r => {
-      const tc = (climaMatrix[r.centro] || r.tipoCentro || '').toUpperCase();
-      const tipoClima = goasTemporada[r.goa];
-      if (!tipoClima || tipoClima === 'TODO') return;
-      const enZonaCorrecta = CLIMA_COMP[tipoClima]?.(tc) ?? true;
-      if (!byGoa[r.goa]) byGoa[r.goa] = { vtaOK: 0, ohOK: 0, vtaKO: 0, ohKO: 0 };
-      if (enZonaCorrecta) {
-        byGoa[r.goa].vtaOK += r.vta; byGoa[r.goa].ohOK += r.oh;
-      } else {
-        byGoa[r.goa].vtaKO += r.vta; byGoa[r.goa].ohKO += r.oh;
-      }
-    });
-    Object.entries(byGoa).forEach(([goa, d]) => {
-      const ratioOK = d.ohOK > 0 ? d.vtaOK / d.ohOK : null;
-      const ratioKO = d.ohKO > 0 ? d.vtaKO / d.ohKO : null;
-      upliftPorGoa[goa] = ratioOK && ratioKO && ratioKO > 0 ? ratioOK / ratioKO : 1.0;
-    });
+    if (!dataOp.length) return [];
 
     // Agregar por centro
     const porCentro = {};
-    rawData.forEach(r => {
+    dataOp.forEach(r => {
       if (!porCentro[r.centro]) porCentro[r.centro] = { nombre: r.nCentro || r.centro, zona: r.zona, oh: 0, vta: 0, goas: {} };
       porCentro[r.centro].oh  += r.oh;
       porCentro[r.centro].vta += r.vta;
@@ -755,16 +753,8 @@ export default function Traslados() {
 
     return Object.entries(porCentro).map(([id, d]) => {
       const ohDespues = Math.max(0, d.oh - (salidas[id] || 0) + (entradas[id] || 0));
-      // Forecast VTA: aplica uplift a la VTA de cada GOA que recibió mercancía
-      let vtaFcst = d.vta;
-      if (entradas[id]) {
-        // Centro receptor — estimar uplift promedio de los GOAs que llegan
-        const upliftProm = excResult
-          .filter(r => r.centroReceptor === id)
-          .reduce((s, r) => s + (upliftPorGoa[r.goa] || 1), 0) /
-          Math.max(1, excResult.filter(r => r.centroReceptor === id).length);
-        vtaFcst = d.vta * upliftProm;
-      }
+      // Venta se queda igual: no se inventa uplift; el "después" solo mueve inventario
+      const vtaFcst = d.vta;
       return {
         id, nombre: d.nombre, zona: d.zona,
         ohAntes: d.oh, vtaAntes: d.vta,
@@ -772,7 +762,7 @@ export default function Traslados() {
         cambia: d.oh !== ohDespues,
       };
     }).filter(d => d.ohAntes > 0 || d.vtaAntes > 0);
-  }, [excResult, rawData, climaMatrix, goasTemporada]);
+  }, [excResult, dataOp]);
 
   const exportExcedente = () => {
     // Layout base + Costo Traslado + Razón
@@ -781,7 +771,7 @@ export default function Traslados() {
       '', r.numSeccion, r.seccion, r.marca, r.goa, r.modelo || '',
       r.sku, r.nsku || '', r.precio,
       r.centroSalida, r.nombreSalida,
-      r.pzs,               // Stock (OH origen)
+      r.ohOrigen ?? r.pzs, // Stock (OH origen)
       r.pzs,               // Piezas a trasladar
       r.centroReceptor, r.nombreReceptor,
       r.pesos,             // Monto a traspaso
@@ -854,7 +844,7 @@ export default function Traslados() {
     return null;
   }, []);
 
-  // Lookup de centro: busca por nombre o nCentro en rawData
+  // Lookup de centro: busca por nombre o nCentro en dataOp
   const lookupCentro = useCallback((input, datos) => {
     if (!input || !datos.length) return { nombre: input, nCentro: '', zona: '' };
     const q = input.trim().toUpperCase();
@@ -955,7 +945,7 @@ export default function Traslados() {
 
   // HERRAMIENTA NECESIDAD — corridas por modelo+talla
   const calcularNecesidad = useCallback(() => {
-    if (!chequeraText.trim() || !rawData.length) return;
+    if (!chequeraText.trim() || !dataOp.length) return;
     setNecesAvisos([]);
 
     // Validar campos obligatorios en cada línea
@@ -973,14 +963,14 @@ export default function Traslados() {
     });
     if (errores.length) { alert('Revisa la chequera:\n' + errores.join('\n')); return; }
 
-    const chequera       = parsearChequera(chequeraText, rawData);
+    const chequera       = parsearChequera(chequeraText, dataOp);
     const surtidoresList = centrosSurtidores
       ? centrosSurtidores.split(',').map(c => c.trim()).filter(Boolean)
       : null;
     const matchSurtidor  = buildMatchSurtidor(surtidoresList);
 
     // Detectar SKUs sin talla parseable que no estén en cache
-    const sinTalla = rawData.filter(r => {
+    const sinTalla = dataOp.filter(r => {
       if (!matchSurtidor(r)) return false;
       const t = extraerTalla(r.nsku, r.sku, tallasCache);
       return !t && r.oh > 0;
@@ -994,14 +984,14 @@ export default function Traslados() {
     }
 
     ejecutarCalculo(chequera, surtidoresList, matchSurtidor, tallasCache, minCorridasAlto, minCorridasResto);
-  }, [chequeraText, centrosSurtidores, rawData, tallasCache, minCorridasAlto, minCorridasResto, buildMatchSurtidor]);
+  }, [chequeraText, centrosSurtidores, dataOp, tallasCache, minCorridasAlto, minCorridasResto, buildMatchSurtidor]);
 
   const ejecutarCalculo = useCallback((chequera, surtidoresList, matchSurtidor, cache, minAlto, minResto) => {
     setNecesLoading(true);
     setTimeout(() => {
       // ── Inventario: centro → modeloKey → talla → [rows] ──────────────
       const inv = {};
-      rawData.forEach(r => {
+      dataOp.forEach(r => {
         if (!matchSurtidor(r)) return;
         if (r.oh <= 0) return;
         const talla = extraerTalla(r.nsku, r.sku, cache);
@@ -1015,7 +1005,7 @@ export default function Traslados() {
 
       // ── Venta por centro para clasificar alto/bajo volumen ───────────
       const vtaCentro = {};
-      rawData.forEach(r => {
+      dataOp.forEach(r => {
         if (surtidoresList) {
           const matchCentro = surtidoresList.some(s => {
             const sq = s.toUpperCase().trim();
@@ -1032,7 +1022,7 @@ export default function Traslados() {
 
       // ── Curva de tallas global por modelo: vta+oh por talla ─────────
       const curvaPorModelo = {}; // { modeloKey: { talla: vtaOh } }
-      rawData.forEach(r => {
+      dataOp.forEach(r => {
         const talla = extraerTalla(r.nsku, r.sku, cache);
         if (!talla) return;
         const mk = r.modelo || r.goa;
@@ -1045,22 +1035,23 @@ export default function Traslados() {
       const avisos = []; // mensajes de por qué no se pudo ejecutar algo
 
       chequera.forEach(item => {
-        const recInfo = lookupCentro(item.centroReceptor, rawData);
+        const recInfo = lookupCentro(item.centroReceptor, dataOp);
         const pptoTotal = item.pptoNeed || 0;
 
         // ── Cascada Marca → GOA → Modelo → Tallas ──────────────────────
         // 1. Filtrar rows del CSV que aplican al identificador
         let rowsAplicables = [];
         if (item.tipo === 'sku') {
-          rowsAplicables = rawData.filter(r => r.sku === item.valor);
+          rowsAplicables = dataOp.filter(r => r.sku === item.valor);
         } else if (item.tipo === 'modelo') {
-          rowsAplicables = rawData.filter(r => (r.modelo || r.goa).toUpperCase() === item.valor);
+          rowsAplicables = dataOp.filter(r => (r.modelo || r.goa).toUpperCase() === item.valor);
         } else if (item.tipo === 'goa') {
-          rowsAplicables = rawData.filter(r => r.goa === item.valor);
+          rowsAplicables = dataOp.filter(r => r.goa === item.valor);
         } else if (item.tipo === 'marca') {
-          rowsAplicables = rawData.filter(r => r.marca === item.valor);
+          rowsAplicables = dataOp.filter(r => r.marca === item.valor);
         }
-        if (!rowsAplicables.length) return;
+        if (!rowsAplicables.length) { avisos.push(`"${item.idRaw}": no se encontró como SKU, modelo, GOA ni marca en el CSV (o sus centros están excluidos).`); return; }
+        if (!recInfo.nCentro) avisos.push(`"${item.idRaw}": el centro receptor "${item.centroReceptor}" no existe en el CSV; el export saldrá sin número de centro destino.`);
 
         // 2. Calcular OH total por modelo (para ponderación)
         const ohPorModelo = {};
@@ -1086,7 +1077,7 @@ export default function Traslados() {
 
           // Precio corrida = suma precios de 1 SKU por talla (más representativo)
           const precioTalla = {}; // { talla: precio }
-          rawData.forEach(r => {
+          dataOp.forEach(r => {
             const t = extraerTalla(r.nsku, r.sku, cache);
             if (t && (r.modelo || r.goa) === modeloKey) {
               if (!precioTalla[t]) precioTalla[t] = r.precio || 0;
@@ -1096,16 +1087,11 @@ export default function Traslados() {
 
           // Precio de 1 corrida completa = suma de (precio_talla × pzs_curva_talla)
           // Primero calcular pzs por talla para 1 corrida según curva
+          // 1 corrida ≈ 2 pzs por talla repartidas según la curva, mínimo 1 por talla.
+          // (Antes: base 100 ÷ MCD; con curvas "no redondas" el MCD era 1 y la corrida quedaba de ~100 pzs.)
           const pzsCorrida1 = {}; // { talla: pzs para 1 corrida }
-          corrida.forEach(talla => {
-            const pct = (curva[talla] || 0) / totalCurva;
-            // Mínimo 1 pza por talla en la corrida base
-            pzsCorrida1[talla] = Math.max(1, Math.round(100 * pct)); // sobre base 100 para preservar proporción
-          });
-          // Normalizar: encontrar el GCD para que la corrida sea la más pequeña posible
-          const gcd = (a, b) => b === 0 ? a : gcd(b, a % b);
-          const gcdAll = Object.values(pzsCorrida1).reduce((g, v) => gcd(g, v), Object.values(pzsCorrida1)[0] || 1);
-          corrida.forEach(t => { pzsCorrida1[t] = Math.max(1, Math.floor(pzsCorrida1[t] / gcdAll)); });
+          const basePzs = corrida.length * 2;
+          corrida.forEach(talla => { pzsCorrida1[talla] = Math.max(1, Math.round(basePzs * (curva[talla] || 0) / totalCurva)); });
 
           // Precio de 1 corrida
           const precioCorrida = corrida.reduce((s, t) => s + (precioTalla[t]||0) * (pzsCorrida1[t]||1), 0);
@@ -1154,17 +1140,23 @@ export default function Traslados() {
             let falta = corridasPosibles * (pzsCorrida1[talla] || 1);
             for (const c of candPorTalla[talla]) {
               if (falta <= 0) break;
-              const pzsEnv = Math.min(falta, c.puedeEnviar);
-              falta -= pzsEnv;
-              const row = c.rows[0];
-              asignaciones.push({
-                talla, pzsEnv,
-                sku: row.sku, nsku: row.nsku,
-                centro: c.centro, nCentro: row.nCentro, nombreCentro: row.nCentro, zona: row.zona || '',
-                oh: c.ohTot, precio: precioTalla[talla]||row.precio,
-                seccion: row.seccion, numSeccion: row.numSeccion,
-                marca: row.marca, goa: row.goa, modelo: modeloKey,
-              });
+              let pzsCentro = Math.min(falta, c.puedeEnviar);
+              falta -= pzsCentro;
+              // Una fila por SKU real que sale (un modelo+talla puede tener varios SKUs, p. ej. colores)
+              for (const row of [...c.rows].sort((a, b) => b.ohDisp - a.ohDisp)) {
+                if (pzsCentro <= 0) break;
+                const pzsEnv = Math.min(pzsCentro, row.ohDisp);
+                if (pzsEnv <= 0) continue;
+                pzsCentro -= pzsEnv;
+                asignaciones.push({
+                  talla, pzsEnv, row,
+                  sku: row.sku, nsku: row.nsku,
+                  centro: c.centro, nCentro: row.nCentro, nombreCentro: row.nCentro, zona: row.zona || '',
+                  oh: row.ohDisp, precio: row.precio || precioTalla[talla] || 0,
+                  seccion: row.seccion, numSeccion: row.numSeccion,
+                  marca: row.marca, goa: row.goa, modelo: modeloKey,
+                });
+              }
             }
           });
 
@@ -1175,9 +1167,7 @@ export default function Traslados() {
 
           // Emitir filas y descontar
           asignaciones.forEach(a => {
-            const rows = invMut[a.centro]?.[modeloKey]?.[a.talla];
-            let restante = a.pzsEnv;
-            if (rows) rows.forEach(r => { const d = Math.min(r.ohDisp, restante); r.ohDisp -= d; restante -= d; });
+            a.row.ohDisp -= a.pzsEnv; // descuenta del SKU exacto que sale
 
             resultado.push({
               seccion: a.seccion, numSeccion: a.numSeccion,
@@ -1212,7 +1202,7 @@ export default function Traslados() {
       }
       setNecesLoading(false);
     }, 300);
-  }, [rawData, extraerTalla, lookupCentro]);
+  }, [dataOp, extraerTalla, lookupCentro]);
 
   // Confirmar talla manual en el modal
   const confirmarTallaModal = () => {
@@ -1229,7 +1219,7 @@ export default function Traslados() {
       setModalTallas(null);
       setModalInputVal('');
       // Reejecutar cálculo con cache completo
-      const chequera = parsearChequera(chequeraText, rawData);
+      const chequera = parsearChequera(chequeraText, dataOp);
       const surtidoresList = centrosSurtidores
         ? centrosSurtidores.split(',').map(c => c.trim()).filter(Boolean)
         : null;
@@ -1324,7 +1314,7 @@ export default function Traslados() {
   }, [nivNivel, nivZonaMode, nivMinPzs, nivMesesNuevo, nivSkusExcluir, nivResumen, mosObjetivoMin, mosObjetivoMax, pesoVelocidad, pesoRiesgo, pesoHistorico, nivResult, nivProblematicas, nivLiquidacion, nivCobertura]);
 
   const calcularNivelacion = useCallback(() => {
-    if (!rawData.length) return;
+    if (!dataOp.length) return;
     setNivLoading(true);
 
     setTimeout(() => {
@@ -1336,294 +1326,210 @@ export default function Traslados() {
         return r.sku; // sku
       };
 
-      // VTA 3 meses: usar campo vta3m si existe, sino estimar de vta acum
-      const getVta3m = (r) => r.vta3m != null && r.vta3m > 0 ? r.vta3m : (r.vta || 0) * (3 / Math.max(1, mesActual));
+      // VTA 3 meses: VTA_3M si la columna existe (0 = de verdad no vendió); solo si no viene se estima con la acumulada
+      const getVta3m = (r) => r.vta3m != null ? r.vta3m : (r.vta || 0) * (3 / Math.max(1, mesActual));
 
-      // Zona efectiva según modo: misma=zona real, todas=una sola bolsa, metro=agrupa todas las METRO
-      const zonaEfectiva = (z) => {
+      // Alcance: 'optimo' corre 3 fases sobre el mismo inventario: misma zona → metro entre sí → entre todas
+      const FASES = nivZonaMode === 'optimo' ? ['misma', 'metro', 'todas'] : [nivZonaMode];
+      const zonaEf = (fase, z) => {
         const zz = (z || 'SIN ZONA').toUpperCase();
-        if (nivZonaMode === 'todas') return 'GLOBAL';
-        if (nivZonaMode === 'metro' && zz.startsWith('METRO')) return 'METRO (todas)';
+        if (fase === 'todas') return 'GLOBAL';
+        if (fase === 'metro' && zz.startsWith('METRO')) return 'METRO (todas)';
         return zz;
       };
 
-      const porZonaClave = {};
-
-      // Set de SKUs/modelos a excluir manualmente (pegados por el usuario)
-      const skusExcluidos = new Set(
-        nivSkusExcluir.split(/[,\n;]+/).map(s => s.trim().toUpperCase()).filter(Boolean)
-      );
-      // ¿La fila es de un modelo recién llegado? (menos de nivMesesNuevo meses)
+      const skusExcluidos = new Set(nivSkusExcluir.split(/[,\n;]+/).map(s => s.trim().toUpperCase()).filter(Boolean));
       const esNuevo = (r) => {
         if (nivMesesNuevo <= 0) return false;
         if (r.mesesVida != null && r.mesesVida > 0) return r.mesesVida < nivMesesNuevo;
         if (r.fechaAlta) {
-          // dd/mm/aaaa (formato MX): new Date() lo leía como mm/dd y los "nuevos" salían mal
+          // dd/mm/aaaa (formato MX)
           const m = String(r.fechaAlta).trim().match(/^(\d{1,2})[\/.-](\d{1,2})[\/.-](\d{2,4})/);
           const d = m ? new Date(+(m[3].length === 2 ? '20' + m[3] : m[3]), +m[2] - 1, +m[1]) : new Date(r.fechaAlta);
-          if (!isNaN(d.getTime())) {
-            const meses = (Date.now() - d.getTime()) / (1000 * 60 * 60 * 24 * 30.44);
-            return meses < nivMesesNuevo;
-          }
+          if (!isNaN(d.getTime())) return (Date.now() - d.getTime()) / (1000 * 60 * 60 * 24 * 30.44) < nivMesesNuevo;
         }
         return false;
       };
 
-      // Separar: filas excluidas por letra de rebaja van a liquidación directa
-      const liquidacionPorLetra = {}; // clave|zona → { rebajado }
+      // ── Nodos clave × centro (con zona real) ──
+      const porClave = {};             // clave → { meta, nodos: { centro: nodo } }
+      const liquidacionPorLetra = {};  // zona||clave → rebajados
       let pzsNuevosExcluidos = 0;
-      rawData.forEach(r => {
-        const zona = zonaEfectiva(r.zona);
+      dataOp.forEach(r => {
         const clave = keyOf(r);
         if (!clave) return;
-        // Excluir modelos recién llegados (aún no dio tiempo de venderse)
         if (esNuevo(r)) { pzsNuevosExcluidos += r.oh; return; }
-        // Excluir SKUs/modelos marcados manualmente
-        if (skusExcluidos.size > 0 && (
-              skusExcluidos.has(String(r.sku).toUpperCase()) ||
-              skusExcluidos.has(String(r.modelo).toUpperCase())
-        )) { pzsNuevosExcluidos += r.oh; return; }
-        // Si la letra está excluida, no entra a nivelación (va a liquidación con su nivel)
+        if (skusExcluidos.size > 0 && (skusExcluidos.has(String(r.sku).toUpperCase()) || skusExcluidos.has(String(r.modelo).toUpperCase()))) { pzsNuevosExcluidos += r.oh; return; }
         if (letrasExcluidas.size > 0 && r.letraDesc && letrasExcluidas.has(r.letraDesc)) {
-          const lk = `${zona}||${clave}`;
-          if (!liquidacionPorLetra[lk]) liquidacionPorLetra[lk] = {
-            zona, clave, goa: r.goa, marca: r.marca, sku: r.sku, nsku: r.nsku, modelo: r.modelo,
-            oh: 0, importe: 0, letraDesc: r.letraDesc, tiendas: new Set(),
-          };
-          liquidacionPorLetra[lk].oh += r.oh;
-          liquidacionPorLetra[lk].importe += r.oh * (r.precio || 0);
-          liquidacionPorLetra[lk].tiendas.add(r.centro);
+          const zona = zonaEf(FASES[FASES.length - 1], r.zona), lk = `${zona}||${clave}`;
+          if (!liquidacionPorLetra[lk]) liquidacionPorLetra[lk] = { zona, clave, goa: r.goa, marca: r.marca, sku: r.sku, nsku: r.nsku, modelo: r.modelo,
+            oh: 0, importe: 0, vtaAcum: 0, vta3m: 0, letraDesc: r.letraDesc, tiendas: new Set() };
+          const l = liquidacionPorLetra[lk];
+          l.oh += r.oh; l.importe += r.oh * (r.precio || 0); l.vtaAcum += r.vta || 0; l.vta3m += getVta3m(r); l.tiendas.add(r.centro);
           return;
         }
-        if (!porZonaClave[zona]) porZonaClave[zona] = {};
-        if (!porZonaClave[zona][clave]) porZonaClave[zona][clave] = { centros: {}, meta: r };
-        const nodo = porZonaClave[zona][clave].centros;
-        if (!nodo[r.centro]) {
-          nodo[r.centro] = {
-            centro: r.centro, nCentro: r.nCentro || r.centro, zona,
-            oh: 0, vtaAcum: 0, vta3m: 0,
-            seccion: r.seccion, numSeccion: r.numSeccion,
-            marca: r.marca, goa: r.goa, modelo: r.modelo,
-            sku: r.sku, nsku: r.nsku, precio: r.precio,
-            rows: [],
-          };
-        }
-        nodo[r.centro].oh      += r.oh;
-        nodo[r.centro].vtaAcum += r.vta || 0;
-        nodo[r.centro].vta3m   += getVta3m(r);
-        nodo[r.centro].rows.push(r);
+        if (!porClave[clave]) porClave[clave] = { meta: r, nodos: {} };
+        const nodos = porClave[clave].nodos;
+        if (!nodos[r.centro]) nodos[r.centro] = {
+          centro: r.centro, nCentro: r.nCentro || r.centro, zonaReal: (r.zona || 'SIN ZONA').toUpperCase(), tipoCentro: r.tipoCentro,
+          oh: 0, vtaAcum: 0, vta3m: 0, seccion: r.seccion, numSeccion: r.numSeccion,
+          marca: r.marca, goa: r.goa, modelo: r.modelo, sku: r.sku, nsku: r.nsku, precio: r.precio, rows: [],
+        };
+        const n = nodos[r.centro];
+        n.oh += r.oh; n.vtaAcum += r.vta || 0; n.vta3m += getVta3m(r);
+        n.rows.push({ ...r, ohRest: r.oh });
       });
 
-      const resultado = [];
-      const problematicas = [];
-      const liquidacion = []; // claves sin venta en toda la zona → sugerir descuento
-      let rescatablePzs = 0, rescatableImp = 0; // lo que tiene receptor con beneficio
-      let sucioPzs = 0, sucioImp = 0;           // MOS > objetivo máx
-      let lentoPzs = 0, lentoImp = 0;           // sin venta en ningún centro
-      let totalPzs = 0, totalImp = 0;           // inventario total
+      // Receptor válido: si la GOA es de temporada, clima del centro compatible; y permiso de marca si hay matriz
+      const CLIMA_OK = { FRIO: ['FRIO','EXTREMOSO','TEMPLADO'], CALOR: ['CALOR','PLAYA','EXTREMOSO','TEMPLADO'], PLAYA: ['PLAYA','CALOR'] };
+      const matrizCargada = Object.keys(brandMatrix).length > 0;
+      const puedeRecibir = (n) => {
+        const tipo = goasTemporada[n.goa];
+        if (tipo && CLIMA_OK[tipo]) { const tc = normClima(climaMatrix[n.centro] || n.tipoCentro); if (!tc || !CLIMA_OK[tipo].includes(tc)) return false; }
+        if (!matrizCargada) return true;
+        const combos = brandMatrix[n.centro] || [];
+        return [`${n.numSeccion}|${n.marca}`, `${(n.seccion || '').toUpperCase()}|${n.marca}`, `GENERAL|${n.marca}`].some(k => combos.includes(k));
+      };
 
-      Object.entries(porZonaClave).forEach(([zona, claves]) => {
-        Object.entries(claves).forEach(([clave, { centros, meta }]) => {
-          const nodos = Object.values(centros).map(n => {
-            const vtaProyMes = (n.vta3m / 3) * estFactor; // ritmo 3M ajustado por estacionalidad próxima
-            const mos = vtaProyMes > 0 ? n.oh / vtaProyMes : (n.oh > 0 ? 99 : 0);
-            return { ...n, vtaProyMes, mos };
-          }).filter(n => n.oh > 0 || n.vtaProyMes > 0);
+      const resultado = [], problematicas = [], liquidacion = [];
+      let rescatablePzs = 0, rescatableImp = 0, sucioPzs = 0, sucioImp = 0, lentoPzs = 0, lentoImp = 0, totalPzs = 0, totalImp = 0;
+      const wTot = (pesoVelocidad + pesoRiesgo + pesoHistorico) || 1;
+      const mosTarget = (mosObjetivoMin + mosObjetivoMax) / 2;
 
-          if (nodos.length < 2) return;
+      Object.entries(porClave).forEach(([clave, { meta, nodos: nodoMap }]) => {
+        const nodos = Object.values(nodoMap).map(n => ({ ...n, vtaProyMes: (n.vta3m / 3) * estFactor })).filter(n => n.oh > 0 || n.vtaProyMes > 0);
+        if (!nodos.length) return;
+        const mosDe = (n, oh) => (n.vtaProyMes > 0 ? oh / n.vtaProyMes : (oh > 0 ? 99 : 0));
+        nodos.forEach(n => {
+          n.mos = mosDe(n, n.oh);
+          totalPzs += n.oh; totalImp += n.oh * (n.precio || 0);
+          if (n.mos > mosObjetivoMax) { sucioPzs += n.oh; sucioImp += n.oh * (n.precio || 0); }
+        });
+        const ohMut = Object.fromEntries(nodos.map(n => [n.centro, n.oh]));
+        const dono = new Set(), recibio = new Set(); // una tienda que donó esta clave no recibe y viceversa (evita ida y vuelta entre fases)
 
-          // Acumular inventario total y sucio (MOS > objetivo máx)
-          nodos.forEach(n => {
-            totalPzs += n.oh;
-            totalImp += n.oh * (n.precio || 0);
-            if (n.mos > mosObjetivoMax) {
-              sucioPzs += n.oh;
-              sucioImp += n.oh * (n.precio || 0);
-            }
-          });
-
-          // ¿Nadie vende esta clave en la zona? → liquidación, no traslado
-          const vtaZonaTotal = nodos.reduce((s,n) => s + n.vtaProyMes, 0);
-          const ohZonaTotal  = nodos.reduce((s,n) => s + n.oh, 0);
-          if (vtaZonaTotal <= 0.01 && ohZonaTotal > 0) {
-            lentoPzs += ohZonaTotal;
-            lentoImp += nodos.reduce((s,n) => s + n.oh * (n.precio||0), 0);
-            liquidacion.push({
-              zona, clave, nivel: nivNivel,
-              goa: meta.goa, marca: meta.marca, sku: meta.sku, nsku: meta.nsku, modelo: meta.modelo,
-              tiendas: nodos.length,
-              oh: ohZonaTotal,
-              importe: nodos.reduce((s,n) => s + n.oh * (n.precio||0), 0),
+        FASES.forEach(fase => {
+          const grupos = {};
+          nodos.forEach(n => { const z = zonaEf(fase, n.zonaReal); (grupos[z] = grupos[z] || []).push(n); });
+          Object.entries(grupos).forEach(([zona, gr]) => {
+            if (gr.length < 2) return;
+            if (gr.reduce((s, n) => s + n.vtaProyMes, 0) <= 0.01) return; // nadie vende en el grupo: va a liquidación (abajo)
+            const maxVel = Math.max(...gr.map(n => n.vtaProyMes), 0.01), maxHist = Math.max(...gr.map(n => n.vtaAcum), 0.01);
+            gr.forEach(n => {
+              const mos = mosDe(n, ohMut[n.centro]);
+              const sRiesgo = mos < mosObjetivoMin ? 1 : Math.max(0, 1 - (mos - mosObjetivoMin) / (mosObjetivoMax - mosObjetivoMin + 0.01));
+              n.potencial = (pesoVelocidad * (n.vtaProyMes / maxVel) + pesoRiesgo * sRiesgo + pesoHistorico * (n.vtaAcum / maxHist)) / wTot;
+              n.mosFase = mos;
             });
-            return; // no intentar nivelar
-          }
-
-          // Normalizadores para el score de potencial
-          const maxVel  = Math.max(...nodos.map(n => n.vtaProyMes), 0.01);
-          const maxHist = Math.max(...nodos.map(n => n.vtaAcum), 0.01);
-          const wTot = (pesoVelocidad + pesoRiesgo + pesoHistorico) || 1;
-
-          nodos.forEach(n => {
-            // velocidad: qué tan rápido vende (normalizado)
-            const sVel = n.vtaProyMes / maxVel;
-            // riesgo de quiebre: MOS bajo = alto potencial de recibir
-            const sRiesgo = n.mos < mosObjetivoMin ? 1 : Math.max(0, 1 - (n.mos - mosObjetivoMin) / (mosObjetivoMax - mosObjetivoMin + 0.01));
-            // histórico
-            const sHist = n.vtaAcum / maxHist;
-            n.potencial = ((pesoVelocidad*sVel + pesoRiesgo*sRiesgo + pesoHistorico*sHist) / wTot);
+            const donadores  = gr.filter(n => n.mosFase > mosObjetivoMax && !recibio.has(n.centro)).sort((a, b) => b.mosFase - a.mosFase);
+            const receptores = gr.filter(n => n.vtaProyMes > 0 && !dono.has(n.centro) && puedeRecibir(n) && (n.mosFase < mosObjetivoMin || n.potencial > 0.5))
+                                 .sort((a, b) => b.potencial - a.potencial || a.mosFase - b.mosFase);
+            receptores.forEach(rec => {
+              let faltante = Math.max(0, Math.round(rec.vtaProyMes * mosTarget) - ohMut[rec.centro]);
+              for (const don of donadores) {
+                if (faltante <= 0) break;
+                if (don.centro === rec.centro) continue;
+                const puedeDonar = Math.max(0, ohMut[don.centro] - Math.ceil(don.vtaProyMes * mosObjetivoMin));
+                const mover = Math.min(faltante, puedeDonar);
+                if (mover <= 0) continue;
+                rescatablePzs += mover; rescatableImp += mover * (don.precio || 0);
+                if (nivMinPzs > 0 && mover < nivMinPzs) continue;
+                const mosSalA = mosDe(don, ohMut[don.centro]), mosRecA = mosDe(rec, ohMut[rec.centro]);
+                ohMut[don.centro] -= mover; ohMut[rec.centro] += mover; faltante -= mover;
+                dono.add(don.centro); recibio.add(rec.centro);
+                // Desglose a SKU real: en GOA/Marca/Modelo el bloque sale de los SKUs con más OH del donador
+                let resta = mover;
+                for (const row of [...don.rows].sort((a, b) => b.ohRest - a.ohRest)) {
+                  if (resta <= 0) break;
+                  const pz = Math.min(resta, row.ohRest);
+                  if (pz <= 0) continue;
+                  row.ohRest -= pz; resta -= pz;
+                  resultado.push({
+                    zona, fase, nivel: nivNivel, clave,
+                    seccion: row.seccion, numSeccion: row.numSeccion, marca: row.marca, goa: row.goa, modelo: row.modelo,
+                    sku: row.sku, nsku: row.nsku,
+                    centroSalida: don.centro, nombreSalida: don.nCentro, centroReceptor: rec.centro, nombreReceptor: rec.nCentro,
+                    zonaOrigen: don.zonaReal, zonaDestino: rec.zonaReal,
+                    pzs: pz, ohSalidaAntes: row.oh, importe: pz * (row.precio || 0), precio: row.precio,
+                    mosSalidaAntes: +mosSalA.toFixed(1), mosReceptorAntes: +mosRecA.toFixed(1),
+                    mosSalidaDespues: +mosDe(don, ohMut[don.centro]).toFixed(1), mosReceptorDespues: +mosDe(rec, ohMut[rec.centro]).toFixed(1),
+                    potencialReceptor: +rec.potencial.toFixed(2),
+                  });
+                }
+              }
+            });
           });
+        });
 
-          // Donadores: MOS alto (sobreinventario) ordenado desc
-          // Receptores: mayor potencial + MOS bajo
-          let donadores  = [...nodos].filter(n => n.mos > mosObjetivoMax).sort((a,b) => b.mos - a.mos);
-          let receptores = [...nodos].filter(n => n.mos < mosObjetivoMin || n.potencial > 0.5)
-                                     .sort((a,b) => b.potencial - a.potencial || a.mos - b.mos);
+        // Liquidación: grupos (alcance final) donde nadie vende la clave
+        const gruposFin = {};
+        nodos.forEach(n => { const z = zonaEf(FASES[FASES.length - 1], n.zonaReal); (gruposFin[z] = gruposFin[z] || []).push(n); });
+        Object.entries(gruposFin).forEach(([zona, gr]) => {
+          const oh = gr.reduce((s, n) => s + ohMut[n.centro], 0);
+          if (gr.reduce((s, n) => s + n.vtaProyMes, 0) > 0.01 || oh <= 0) return;
+          const imp = gr.reduce((s, n) => s + ohMut[n.centro] * (n.precio || 0), 0);
+          lentoPzs += oh; lentoImp += imp;
+          liquidacion.push({ zona, clave, nivel: nivNivel, goa: meta.goa, marca: meta.marca, sku: meta.sku, nsku: meta.nsku, modelo: meta.modelo,
+            tiendas: gr.filter(n => ohMut[n.centro] > 0).length, oh, importe: imp,
+            vtaAcum: gr.reduce((s, n) => s + n.vtaAcum, 0), vta3m: gr.reduce((s, n) => s + n.vta3m, 0) });
+        });
 
-          // Trabajar sobre copia mutable de OH
-          const ohMut = {};
-          nodos.forEach(n => { ohMut[n.centro] = n.oh; });
-
-          const tieneTallas = nodos.some(n => n.rows.some(rr => {
-            const m = (rr.nsku||'').match(/,\s*([0-9]+)\s*(?:,|$)/);
-            return !!m;
-          }));
-
-          receptores.forEach(rec => {
-            // objetivo: llevar receptor a mosObjetivoMin (piso) idealmente al promedio del rango
-            const mosTarget = (mosObjetivoMin + mosObjetivoMax) / 2;
-            const ohObjetivo = Math.round(rec.vtaProyMes * mosTarget);
-            let faltante = Math.max(0, ohObjetivo - ohMut[rec.centro]);
-            if (faltante <= 0) return;
-
-            for (const don of donadores) {
-              if (faltante <= 0) break;
-              if (don.centro === rec.centro) continue;
-              // donador debe quedar >= mosObjetivoMin
-              const ohMinDon = Math.ceil(don.vtaProyMes * mosObjetivoMin);
-              const puedeDonar = Math.max(0, ohMut[don.centro] - ohMinDon);
-              if (puedeDonar <= 0) continue;
-
-              const mover = Math.min(faltante, puedeDonar);
-              if (mover <= 0) continue;
-              // Rescatable: lo que SÍ tiene receptor con beneficio (aunque no pase el mínimo)
-              rescatablePzs += mover;
-              rescatableImp += mover * (don.precio || 0);
-              // Filtro logístico: descartar traslados por debajo del mínimo
-              if (nivMinPzs > 0 && mover < nivMinPzs) continue;
-
-              ohMut[don.centro] -= mover;
-              ohMut[rec.centro] += mover;
-              faltante -= mover;
-
-              resultado.push({
-                zona, nivel: nivNivel, clave,
-                seccion: don.seccion, numSeccion: don.numSeccion,
-                marca: don.marca, goa: don.goa, modelo: don.modelo,
-                sku: don.sku, nsku: don.nsku,
-                centroSalida: don.centro, nombreSalida: don.nCentro,
-                centroReceptor: rec.centro, nombreReceptor: rec.nCentro,
-                zonaOrigen: don.zona, zonaDestino: rec.zona,
-                pzs: mover,
-                ohSalidaAntes: don.oh,
-                importe: mover * (don.precio || 0),
-                precio: don.precio,
-                mosSalidaAntes: +don.mos.toFixed(1),
-                mosReceptorAntes: +rec.mos.toFixed(1),
-                mosSalidaDespues: +(don.vtaProyMes > 0 ? ohMut[don.centro]/don.vtaProyMes : 0).toFixed(1),
-                mosReceptorDespues: +(rec.vtaProyMes > 0 ? ohMut[rec.centro]/rec.vtaProyMes : 0).toFixed(1),
-                potencialReceptor: +rec.potencial.toFixed(2),
-              });
-            }
-          });
-
-          // Detectar problemáticas: tiendas que siguen fuera de rango tras nivelar
-          nodos.forEach(n => {
-            const mosFinal = n.vtaProyMes > 0 ? ohMut[n.centro] / n.vtaProyMes : 99;
-            if (mosFinal > mosObjetivoMax * 1.5 && ohMut[n.centro] > 0) {
-              problematicas.push({
-                zona, clave, nivel: nivNivel,
-                centro: n.centro, nombre: n.nCentro,
-                goa: n.goa, marca: n.marca, sku: n.sku, nsku: n.nsku, modelo: n.modelo,
-                ohInicial: n.oh,
-                mosInicial: +n.mos.toFixed(1),
-                oh: ohMut[n.centro],
-                mosFinal: +mosFinal.toFixed(1),
-                vtaProyMes: +n.vtaProyMes.toFixed(1),
-                importe: ohMut[n.centro] * (n.precio || 0),
-              });
-            }
+        // Problemáticas: siguen > 1.5× MOS máx tras nivelar (solo donde sí hay venta en su grupo; sin venta = liquidación)
+        nodos.forEach(n => {
+          const mosFinal = mosDe(n, ohMut[n.centro]);
+          const grupoVende = (gruposFin[zonaEf(FASES[FASES.length - 1], n.zonaReal)] || []).some(x => x.vtaProyMes > 0.01);
+          if (grupoVende && mosFinal > mosObjetivoMax * 1.5 && ohMut[n.centro] > 0) problematicas.push({
+            zona: n.zonaReal, clave, nivel: nivNivel, centro: n.centro, nombre: n.nCentro,
+            goa: n.goa, marca: n.marca, sku: n.sku, nsku: n.nsku, modelo: n.modelo,
+            ohInicial: n.oh, mosInicial: +n.mos.toFixed(1), oh: ohMut[n.centro], mosFinal: +mosFinal.toFixed(1),
+            vtaProyMes: +n.vtaProyMes.toFixed(1), vtaAcum: n.vtaAcum, importe: ohMut[n.centro] * (n.precio || 0),
           });
         });
       });
 
-      // ── Resumen: min/max piezas por modelo (entrada y salida por tienda) ──
-      // Por cada modelo, cuánto se envía a UNA tienda y cuánto sale de UNA tienda
-      const porModeloDestino = {}; // modelo|centroDestino → pzs
-      const porModeloOrigen  = {}; // modelo|centroOrigen  → pzs
+      // ── Resumen ──
+      const porModeloDestino = {}, porModeloOrigen = {}, pares = new Set();
       resultado.forEach(r => {
         const mk = r.modelo || r.clave;
-        const kd = `${mk}||${r.centroReceptor}`;
-        const ko = `${mk}||${r.centroSalida}`;
-        porModeloDestino[kd] = (porModeloDestino[kd] || 0) + r.pzs;
-        porModeloOrigen[ko]  = (porModeloOrigen[ko]  || 0) + r.pzs;
+        porModeloDestino[`${mk}||${r.centroReceptor}`] = (porModeloDestino[`${mk}||${r.centroReceptor}`] || 0) + r.pzs;
+        porModeloOrigen[`${mk}||${r.centroSalida}`]   = (porModeloOrigen[`${mk}||${r.centroSalida}`]   || 0) + r.pzs;
+        pares.add(`${r.centroSalida}>${r.centroReceptor}`);
       });
-      const destArr = Object.values(porModeloDestino);
-      const origArr = Object.values(porModeloOrigen);
-      const transferPzs = resultado.reduce((s,r) => s + r.pzs, 0);
-      const transferImp = resultado.reduce((s,r) => s + r.importe, 0);
-
+      const cruces = [...pares].filter(p => { const [a, b] = p.split('>'); return a < b && pares.has(`${b}>${a}`); }).length;
+      const destArr = Object.values(porModeloDestino), origArr = Object.values(porModeloOrigen);
       setNivResumen({
-        totalPzs, totalImp,
-        sucioPzs, sucioImp,
-        lentoPzs, lentoImp,
-        rescatablePzs, rescatableImp,
-        transferPzs, transferImp,
-        nuevosExcluidos: pzsNuevosExcluidos,
-        minEnvioTienda: destArr.length ? Math.min(...destArr) : 0,
-        maxEnvioTienda: destArr.length ? Math.max(...destArr) : 0,
-        minSalidaTienda: origArr.length ? Math.min(...origArr) : 0,
-        maxSalidaTienda: origArr.length ? Math.max(...origArr) : 0,
-        promEnvio: destArr.length ? Math.round(destArr.reduce((s,v)=>s+v,0)/destArr.length) : 0,
-        promSalida: origArr.length ? Math.round(origArr.reduce((s,v)=>s+v,0)/origArr.length) : 0,
-        combosDestino: destArr.length,
-        combosOrigen: origArr.length,
+        totalPzs, totalImp, sucioPzs, sucioImp, lentoPzs, lentoImp, rescatablePzs, rescatableImp,
+        transferPzs: resultado.reduce((s, r) => s + r.pzs, 0), transferImp: resultado.reduce((s, r) => s + r.importe, 0),
+        nuevosExcluidos: pzsNuevosExcluidos, cruces,
+        minEnvioTienda: destArr.length ? Math.min(...destArr) : 0, maxEnvioTienda: destArr.length ? Math.max(...destArr) : 0,
+        minSalidaTienda: origArr.length ? Math.min(...origArr) : 0, maxSalidaTienda: origArr.length ? Math.max(...origArr) : 0,
+        promEnvio: destArr.length ? Math.round(destArr.reduce((s, v) => s + v, 0) / destArr.length) : 0,
+        promSalida: origArr.length ? Math.round(origArr.reduce((s, v) => s + v, 0) / origArr.length) : 0,
+        combosDestino: destArr.length, combosOrigen: origArr.length,
       });
 
-      // Agregar las excluidas por letra al array de liquidación, marcadas como "ya rebajado"
-      Object.values(liquidacionPorLetra).forEach(l => {
-        liquidacion.push({
-          zona: l.zona, clave: l.clave, nivel: nivNivel,
-          goa: l.goa, marca: l.marca, sku: l.sku, nsku: l.nsku, modelo: l.modelo,
-          tiendas: l.tiendas.size,
-          oh: l.oh, importe: l.importe,
-          motivo: 'rebajado', letraDesc: l.letraDesc,
-        });
-      });
-      // Marcar las de liquidación por-sin-venta como "sin rebaja aún"
-      liquidacion.forEach(l => { if (!l.motivo) l.motivo = 'sin_venta'; });
+      Object.values(liquidacionPorLetra).forEach(l => liquidacion.push({
+        zona: l.zona, clave: l.clave, nivel: nivNivel, goa: l.goa, marca: l.marca, sku: l.sku, nsku: l.nsku, modelo: l.modelo,
+        tiendas: l.tiendas.size, oh: l.oh, importe: l.importe, vtaAcum: l.vtaAcum, vta3m: l.vta3m, motivo: 'rebajado', letraDesc: l.letraDesc,
+      }));
+      // sin_venta = vendió antes pero no en 3M · nunca = sin venta acumulada (revisar si es nuevo / recién llegó)
+      liquidacion.forEach(l => { if (!l.motivo) l.motivo = l.vtaAcum > 0 ? 'sin_venta' : 'nunca'; });
 
-      problematicas.sort((a,b) => b.mosFinal - a.mosFinal);
-      liquidacion.sort((a,b) => b.importe - a.importe);
+      problematicas.sort((a, b) => b.importe - a.importe || b.mosFinal - a.mosFinal);
+      liquidacion.sort((a, b) => b.importe - a.importe);
       setNivResult(resultado);
-      setNivProblematicas(problematicas.slice(0, 10));
+      setNivProblematicas(problematicas.slice(0, 3000));
       setNivLiquidacion(liquidacion);
-      // Cobertura de VTA_3M
-      const totalRows = rawData.length;
-      const con3m = rawData.filter(r => r.vta3m != null && r.vta3m > 0).length;
-      const conVta = rawData.filter(r => (r.vta || 0) > 0).length;
-      setNivCobertura({
-        total: totalRows,
-        con3m, pct3m: totalRows ? (con3m/totalRows*100) : 0,
-        conVta, pctVta: totalRows ? (conVta/totalRows*100) : 0,
-        sinVenta: rawData.filter(r => (r.vta||0)===0 && (r.vta3m||0)===0).length,
-      });
+      const totalRows = dataOp.length, con3m = dataOp.filter(r => r.vta3m != null && r.vta3m > 0).length, conVta = dataOp.filter(r => (r.vta || 0) > 0).length;
+      setNivCobertura({ total: totalRows, con3m, pct3m: totalRows ? (con3m / totalRows * 100) : 0, conVta, pctVta: totalRows ? (conVta / totalRows * 100) : 0,
+        sinVenta: dataOp.filter(r => (r.vta || 0) === 0 && (r.vta3m || 0) === 0).length });
       setNivExecuted(true);
       setNivLoading(false);
     }, 400);
-  }, [rawData, nivNivel, nivZonaMode, mosObjetivoMin, mosObjetivoMax, pesoVelocidad, pesoRiesgo, pesoHistorico, mesActual, letrasExcluidas, nivMinPzs, nivMesesNuevo, nivSkusExcluir, estFactor]);
+  }, [dataOp, nivNivel, nivZonaMode, mosObjetivoMin, mosObjetivoMax, pesoVelocidad, pesoRiesgo, pesoHistorico, mesActual, letrasExcluidas, nivMinPzs, nivMesesNuevo, nivSkusExcluir, estFactor, goasTemporada, climaMatrix, brandMatrix]);
 
   const nivChartData = useMemo(() => {
-    if (!nivResult.length || !rawData.length)
+    if (!nivResult.length || !dataOp.length)
       return { porZona: [], zonaInvMos: [], topCentros: [], topSkus: [], topProblem: [], scatter: [] };
 
     // Por zona: pzs/importe movidos
@@ -1643,9 +1549,9 @@ export default function Traslados() {
     });
 
     // Base por centro: OH, VTA_3M, zona (para MOS antes/después y scatter)
-    const getVta3m = (r) => r.vta3m != null && r.vta3m > 0 ? r.vta3m : (r.vta || 0) * (3 / Math.max(1, mesActual));
+    const getVta3m = (r) => r.vta3m != null ? r.vta3m : (r.vta || 0) * (3 / Math.max(1, mesActual));
     const centros = {};
-    rawData.forEach(r => {
+    dataOp.forEach(r => {
       // Desglose por GOA si está filtrado
       if (nivGoaFiltro !== 'ALL' && r.goa !== nivGoaFiltro) return;
       if (!centros[r.centro]) centros[r.centro] = { centro: r.centro, nombre: r.nCentro || r.centro, zona: r.zona, oh: 0, vta3m: 0 };
@@ -1658,12 +1564,8 @@ export default function Traslados() {
     const centrosArr = Object.values(centros).map(c => {
       const vtaProyMes = (c.vta3m / 3) * estFactor;
       const ohDespues  = Math.max(0, c.oh - (salidas[c.centro]||0) + (entradas[c.centro]||0));
-      const recibio    = entradas[c.centro] || 0;
-      // uplift B: si recibió mercancía sana, proyecta hasta +uplift según cuánto recibió vs su venta
-      const upliftFactor = recibio > 0 && vtaProyMes > 0
-        ? 1 + Math.min(0.5, (recibio / (vtaProyMes * 3)) * 0.3) // máximo +50%
-        : 1;
-      const vtaFcst    = vtaProyMes * upliftFactor;
+      // Sin uplift inventado: la venta proyectada no cambia, solo el inventario
+      const vtaFcst    = vtaProyMes;
       const mosAntes   = vtaProyMes > 0 ? c.oh / vtaProyMes : (c.oh > 0 ? 99 : 0);
       const mosDespues = vtaFcst > 0 ? ohDespues / vtaFcst : (ohDespues > 0 ? 99 : 0);
       const modificado = (salidas[c.centro]||0) + (entradas[c.centro]||0) > 0;
@@ -1700,6 +1602,7 @@ export default function Traslados() {
       centro: c.centro, nombre: c.nombre, zona: c.zona,
       vtaAntes: c.vtaProyMes, ohAntes: c.oh,
       vtaDespues: c.vtaFcst,  ohDespues: c.ohDespues,
+      mosAntes: c.mosAntes, mosDespues: c.mosDespues,
       modificado: c.modificado,
     }));
 
@@ -1707,28 +1610,53 @@ export default function Traslados() {
       porZona: Object.values(porZona).sort((a,b) => b.pzs - a.pzs),
       zonaInvMos, topCentros, scatter,
     };
-  }, [nivResult, rawData, mesActual, nivGoaFiltro, estFactor]);
+  }, [nivResult, dataOp, mesActual, nivGoaFiltro, estFactor]);
+
+  // Tiendas problemáticas a nivel tienda: OH real y venta de TODA la tienda (no solo del SKU)
+  const [probVista, setProbVista] = useState('tienda'); // tienda | sku
+  const nivProbTiendas = useMemo(() => {
+    if (!nivProblematicas.length) return [];
+    const getVta3m = (r) => r.vta3m != null ? r.vta3m : (r.vta || 0) * (3 / Math.max(1, mesActual));
+    const tienda = {};
+    dataOp.forEach(r => {
+      const x = tienda[r.centro] || (tienda[r.centro] = { oh: 0, ohImp: 0, vtaAcum: 0, vta3m: 0 });
+      x.oh += r.oh; x.ohImp += r.oh * (r.precio || 0); x.vtaAcum += r.vta || 0; x.vta3m += getVta3m(r);
+    });
+    const m = {};
+    nivProblematicas.forEach(p => {
+      const x = m[p.centro] || (m[p.centro] = { centro: p.centro, nombre: p.nombre, zona: p.zona, claves: 0, ohProb: 0, impProb: 0 });
+      x.claves += 1; x.ohProb += p.oh; x.impProb += p.importe;
+    });
+    return Object.values(m).map(x => {
+      const tt = tienda[x.centro] || { oh: 0, ohImp: 0, vtaAcum: 0, vta3m: 0 };
+      const vtaMes = (tt.vta3m / 3) * estFactor;
+      return { ...x, ohTienda: tt.oh, ohImpTienda: tt.ohImp, vtaAcumTienda: tt.vtaAcum, vtaMesTienda: vtaMes,
+               mosTienda: vtaMes > 0 ? tt.oh / vtaMes : null };
+    }).sort((a, b) => b.impProb - a.impProb);
+  }, [nivProblematicas, dataOp, mesActual, estFactor]);
 
   // Top problemáticos por SKU y por Modelo (agregado de nivProblematicas)
   const nivTops = useMemo(() => {
     if (!nivProblematicas.length) return { skus: [], modelos: [], tiendas: [] };
-    const skuMap = {}, modMap = {};
+    // Card 1: la clave del nivel elegido (SKU real solo si el nivel es SKU). Card 2: modelo (si nivel SKU/Modelo) o marca.
+    const nivel = nivProblematicas[0].nivel;
+    const g2 = nivel === 'sku' || nivel === 'modelo' ? 'modelo' : 'marca';
+    const m1 = {}, m2 = {};
     nivProblematicas.forEach(p => {
-      const sk = p.sku || p.clave;
-      // SKU: mostrar descripción (nsku) + número
-      if (!skuMap[sk]) skuMap[sk] = { key: p.nsku || sk, sub: `SKU ${sk} · ${p.goa}`, oh: 0, importe: 0 };
-      skuMap[sk].oh += p.oh; skuMap[sk].importe += p.importe;
-      // Modelo: el modelo real
-      const mk = p.modelo || p.clave;
-      if (!modMap[mk]) modMap[mk] = { key: mk, sub: `${p.marca} · ${p.goa}`, oh: 0, importe: 0 };
-      modMap[mk].oh += p.oh; modMap[mk].importe += p.importe;
+      const k1 = p.clave;
+      if (!m1[k1]) m1[k1] = { key: nivel === 'sku' ? (p.nsku || k1) : k1, sub: nivel === 'sku' ? `SKU ${k1} · ${p.goa}` : `${nivel.toUpperCase()} · ${p.goa}`, oh: 0, importe: 0, tiendas: 0 };
+      m1[k1].oh += p.oh; m1[k1].importe += p.importe; m1[k1].tiendas += 1;
+      const k2 = (g2 === 'modelo' ? p.modelo : p.marca) || p.clave;
+      if (!m2[k2]) m2[k2] = { key: k2, sub: `${p.marca} · ${p.goa}`, oh: 0, importe: 0, tiendas: 0 };
+      m2[k2].oh += p.oh; m2[k2].importe += p.importe; m2[k2].tiendas += 1;
     });
     return {
-      skus: Object.values(skuMap).sort((a,b)=>b.importe-a.importe).slice(0,5),
-      modelos: Object.values(modMap).sort((a,b)=>b.importe-a.importe).slice(0,5),
-      tiendas: nivProblematicas.slice(0,5),
+      skus: Object.values(m1).sort((a,b)=>b.importe-a.importe).slice(0,5),
+      modelos: Object.values(m2).sort((a,b)=>b.importe-a.importe).slice(0,5),
+      g2,
+      tiendas: nivProbTiendas.slice(0,5),
     };
-  }, [nivProblematicas]);
+  }, [nivProblematicas, nivProbTiendas]);
 
   const exportNivelacion = () => {
     // Layout: Division | Seccion | Seccion(nom) | Marca | Grupo(GOA) | Modelo | Material(SKU) | Texto breve(NSKU) | PVP | #Centro Origen | Tienda Origen | Stock | Pzs a trasladar | #Centro Destino | Tienda Destino | Monto a Traspaso | Zona Origen | Zona Destino
@@ -1811,6 +1739,22 @@ export default function Traslados() {
             )}
           </div>
         </div>
+        {rawData.length > 0 && (
+          <div className={`mt-4 pt-3 border-t ${t.border} flex flex-wrap items-center gap-3`}>
+            <span className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted}`}>Centros fuera de traslados</span>
+            <label className={`flex items-center gap-1.5 text-[11px] font-bold cursor-pointer ${t.textMain}`}>
+              <input type="checkbox" checked={excluirBodegas} onChange={e => setExcluirBodegas(e.target.checked)} className="accent-violet-500" />
+              Bodegas / PLAN / CEDIS (por nombre)
+            </label>
+            <input value={centrosExcluidos} onChange={e => setCentrosExcluidos(e.target.value)}
+              placeholder="Excluir centros: 8955, 0670, TOREO…"
+              className={`flex-1 min-w-[220px] text-xs px-2 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`} />
+            <span className={`px-3 py-1 rounded-full text-[10px] font-black border ${centrosFuera.length ? t.badge : t.badgeTeal}`}
+              title={centrosFuera.map(([c, n]) => `${n} (${c})`).join('\n') || 'Ninguno'}>
+              {centrosFuera.length} centros excluidos · aplica a las 3 pestañas
+            </span>
+          </div>
+        )}
       </div>
 
       {/* ── TABS ── */}
@@ -1932,7 +1876,7 @@ export default function Traslados() {
                   )}
 
                   {/* Mínimos y costo */}
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
                     <div className="flex items-center gap-2">
                       <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} whitespace-nowrap`}>Mín. pzs</label>
                       <input type="number" min={0} value={minPzsTraslado}
@@ -1944,6 +1888,12 @@ export default function Traslados() {
                       <input type="number" min={0} value={minPesosTraslado}
                         onChange={e => setMinPesosTraslado(Number(e.target.value))}
                         className={`w-24 text-xs px-2 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`} />
+                    </div>
+                    <div className="flex items-center gap-2" title="Cada receptor recibe hasta quedar con este MOS (venta mensual × MOS − su OH). Evita mandar todo a una sola tienda.">
+                      <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} whitespace-nowrap`}>MOS máx receptor</label>
+                      <input type="number" min={1} step={0.5} value={excMosMax}
+                        onChange={e => setExcMosMax(Math.max(0.5, Number(e.target.value) || 4))}
+                        className={`w-20 text-xs px-2 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`} />
                     </div>
                     <div className="flex items-center gap-2">
                       <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} whitespace-nowrap`}>Costo/pza ($)</label>
@@ -2081,8 +2031,8 @@ export default function Traslados() {
 
                   {/* Scatter VTA vs OH: Antes y Después */}
                   <div className={`p-4 rounded-xl border ${t.cardInner}`}>
-                    <h4 className={`text-sm font-bold mb-1 ${t.textMain}`}>📊 VTA vs OH — Antes / Después + Forecast</h4>
-                    <p className={`text-[9px] mb-2 ${t.textMuted}`}>Eje X = OH · Eje Y = VTA. 🟡 Antes · 🟣 Después (con fcst de uplift por zona)</p>
+                    <h4 className={`text-sm font-bold mb-1 ${t.textMain}`}>📊 VTA vs OH — Antes / Después</h4>
+                    <p className={`text-[9px] mb-2 ${t.textMuted}`}>Eje X = OH · Eje Y = VTA acumulada (pzs). 🟡 Antes · 🟣 Después del traslado (misma venta, solo cambia el inventario)</p>
                     <svg viewBox="0 0 280 170" className="w-full">
                       {[0,1,2,3].map(i => (
                         <g key={i}>
@@ -2095,7 +2045,7 @@ export default function Traslados() {
                         const maxVTA = Math.max(...scatterData.map(d => Math.max(d.vtaAntes, d.vtaFcst)), 1);
                         const toX = v => 30 + (v/maxOH)  * 242;
                         const toY = v => 124 - (v/maxVTA) * 112;
-                        return scatterData.slice(0,100).map((d, i) => (
+                        return [...scatterData].sort((a, b) => (b.cambia - a.cambia) || (b.ohAntes - a.ohAntes)).slice(0, 150).map((d, i) => (
                           <g key={i}>
                             {/* Línea connecting antes→después */}
                             {d.cambia && (
@@ -2108,14 +2058,14 @@ export default function Traslados() {
                             <circle cx={toX(d.ohAntes)} cy={toY(d.vtaAntes)}
                               r={d.cambia ? 3 : 2} fill="#facc15"
                               opacity={d.cambia ? 0.9 : 0.35}>
-                              <title>{d.nombre} — Antes: OH {d.ohAntes} / VTA {d.vtaAntes}</title>
+                              <title>{d.nombre} — OH {fmt(d.ohAntes)} → {fmt(d.ohDespues)} pzs · VTA acum {fmt(d.vtaAntes)}</title>
                             </circle>
                             {/* Punto después (morado) solo si cambia */}
                             {d.cambia && (
                               <circle cx={toX(d.ohDespues)} cy={toY(d.vtaFcst)}
                                 r={3.5} fill="#a78bfa" opacity="0.9"
                                 stroke="#7c3aed" strokeWidth="0.5">
-                                <title>{d.nombre} — Después: OH {d.ohDespues} / VTA fcst {Math.round(d.vtaFcst)}</title>
+                                <title>{d.nombre} — OH {fmt(d.ohAntes)} → {fmt(d.ohDespues)} pzs · VTA acum {fmt(d.vtaAntes)}</title>
                               </circle>
                             )}
                           </g>
@@ -2126,7 +2076,7 @@ export default function Traslados() {
                     </svg>
                     <div className="flex gap-4 text-[9px] mt-1 flex-wrap">
                       <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-400 inline-block"/> Antes</span>
-                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-violet-400 inline-block"/> Después + fcst</span>
+                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-violet-400 inline-block"/> Después</span>
                       <span className={`${t.textMuted}`}>Líneas = centros que cambian</span>
                     </div>
                   </div>
@@ -2542,7 +2492,7 @@ export default function Traslados() {
                   <span className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${t.badge}`}>{nivNivel.toUpperCase()}</span>
                   <span className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${t.badgeTeal}`}>MOS {mosObjetivoMin}-{mosObjetivoMax}</span>
                   <span className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${t.badge}`}>
-                    {nivZonaMode === 'misma' ? 'Misma zona' : nivZonaMode === 'metro' ? 'Metro entre sí' : 'Entre todas'}
+                    {nivZonaMode === 'misma' ? 'Misma zona' : nivZonaMode === 'metro' ? 'Metro entre sí' : nivZonaMode === 'optimo' ? 'Óptimo' : 'Entre todas'}
                   </span>
                 </div>
                 <Icons.ChevronDown size={14} className={`${t.textMuted} transition-transform ${showPanelNiv ? 'rotate-180' : ''}`} />
@@ -2566,7 +2516,7 @@ export default function Traslados() {
                   ))}
                 </div>
                 <p className={`text-[9px] mt-1 ${t.textMuted}`}>
-                  {nivNivel === 'sku' ? 'Máxima precisión — respeta tallas si el SKU las tiene.' : `Agrupa por ${nivNivel} — mueve el bloque completo.`}
+                  {nivNivel === 'sku' ? 'Máxima precisión — respeta tallas si el SKU las tiene.' : `Calcula el desbalance por ${nivNivel}; el traslado se desglosa a los SKUs con más inventario del centro que envía.`}
                 </p>
               </div>
 
@@ -2578,6 +2528,7 @@ export default function Traslados() {
                     { id: 'misma', label: 'Solo misma zona', desc: 'Nivela dentro de cada zona' },
                     { id: 'metro', label: 'Metro entre sí', desc: 'Zonas METRO se nivelan entre ellas; resto solo su zona' },
                     { id: 'todas', label: 'Entre todas', desc: 'Sin restricción de zona' },
+                    { id: 'optimo', label: 'Óptimo', desc: '1) dentro de cada zona, 2) lo que reste entre METRO, 3) lo que reste entre todas' },
                   ].map(opt => (
                     <button key={opt.id} onClick={() => setNivZonaMode(opt.id)}
                       title={opt.desc}
@@ -2589,6 +2540,7 @@ export default function Traslados() {
                 <p className={`text-[9px] mt-1 ${t.textMuted}`}>
                   {nivZonaMode === 'misma' ? 'Cada tienda solo recibe de tiendas de su misma zona.' :
                    nivZonaMode === 'metro' ? 'Las zonas que empiezan con METRO se tratan como una sola bolsa.' :
+                   nivZonaMode === 'optimo' ? 'Primero nivela dentro de cada zona; con lo que sobre, METRO entre sí; al final, entre todas. Una tienda que envía una clave no la recibe en otra fase.' :
                    'Cualquier tienda puede recibir de cualquier otra, sin importar zona.'}
                 </p>
               </div>
@@ -2993,9 +2945,9 @@ export default function Traslados() {
                 {/* Tarjetas top problemáticos */}
                 <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
                   {[
-                    { title: '🔴 Top SKUs problemáticos', items: nivTops.skus, keyLabel: 'sku' },
-                    { title: '🟠 Top Modelos/Claves', items: nivTops.modelos, keyLabel: 'modelo' },
-                    { title: '🏬 Top Tiendas (mayor MOS)', items: nivTops.tiendas, keyLabel: 'tienda' },
+                    { title: `🔴 Top ${nivNivel === 'sku' ? 'SKUs' : nivNivel.toUpperCase()} con sobreinventario`, items: nivTops.skus, keyLabel: 'sku' },
+                    { title: `🟠 Top ${nivTops.g2 === 'marca' ? 'marcas' : 'modelos'} con sobreinventario`, items: nivTops.modelos, keyLabel: 'modelo' },
+                    { title: '🏬 Top tiendas con sobreinventario', items: nivTops.tiendas, keyLabel: 'tienda' },
                   ].map(({ title, items, keyLabel }) => (
                     <div key={title} className={`p-4 rounded-xl border ${t.cardInner}`}>
                       <h4 className={`text-xs font-black mb-2 ${t.textMain}`}>{title}</h4>
@@ -3008,12 +2960,12 @@ export default function Traslados() {
                                   {keyLabel === 'tienda' ? it.nombre : it.key}
                                 </div>
                                 <div className={`text-[9px] ${t.textMuted}`}>
-                                  {keyLabel === 'tienda' ? `${it.zona} · MOS ${it.mosFinal} (mayor sobreinv.)` : it.sub}
+                                  {keyLabel === 'tienda' ? `${it.zona} · MOS tienda ${it.mosTienda != null ? it.mosTienda.toFixed(1) : 'sin venta'} · ${it.claves} claves` : `${it.sub} · ${it.tiendas} tiendas`}
                                 </div>
                               </div>
                               <div className="text-right shrink-0 ml-2">
-                                <div className="font-black text-red-400">{fmt(it.oh)} pzs</div>
-                                <div className={`text-[9px] ${t.textMuted}`}>{fmtMXN(it.importe)}</div>
+                                <div className="font-black text-red-400">{fmt(keyLabel === 'tienda' ? it.ohProb : it.oh)} pzs</div>
+                                <div className={`text-[9px] ${t.textMuted}`}>{fmtMXN(keyLabel === 'tienda' ? it.impProb : it.importe)}</div>
                               </div>
                             </div>
                           ))}
@@ -3029,7 +2981,7 @@ export default function Traslados() {
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                   {[
                     { titulo: 'ANTES', xKey: 'vtaAntes', yKey: 'ohAntes', color: '#facc15', lineColor: '#eab308' },
-                    { titulo: 'DESPUÉS + FCST', xKey: 'vtaDespues', yKey: 'ohDespues', color: '#a78bfa', lineColor: '#7c3aed' },
+                    { titulo: 'DESPUÉS', xKey: 'vtaDespues', yKey: 'ohDespues', color: '#a78bfa', lineColor: '#7c3aed' },
                   ].map(({ titulo, xKey, yKey, color, lineColor }) => {
                     const pts = nivChartData.scatter.map(d => ({ x: d[xKey], y: d[yKey], ...d }));
                     const reg = linReg(pts.map(p => ({ x: p.x, y: p.y })));
@@ -3063,7 +3015,7 @@ export default function Traslados() {
                           {pts.filter(d => !d.modificado).map((d, i) => (
                             <circle key={'s'+i} cx={toX(d.x)} cy={toY(d.y)}
                               r={2} fill={color} opacity={0.25}>
-                              <title>{d.nombre} ({d.zona}) — Venta {Math.round(d.x)} / Inv {Math.round(d.y)}</title>
+                              <title>{`${d.nombre} (${d.zona})\nVenta proy./mes: ${fmt(d.vtaAntes, 1)}\nInv: ${fmt(d.ohAntes)} → ${fmt(d.ohDespues)} pzs\nMOS: ${d.mosAntes.toFixed(1)} → ${d.mosDespues.toFixed(1)}`}</title>
                             </circle>
                           ))}
                           {/* Puntos modificados encima, brillantes */}
@@ -3072,7 +3024,7 @@ export default function Traslados() {
                               <circle cx={toX(d.x)} cy={toY(d.y)} r={7} fill={color} opacity={0.25} />
                               <circle cx={toX(d.x)} cy={toY(d.y)} r={4.5} fill={color} opacity={1}
                                 stroke="#fff" strokeWidth="1.2">
-                                <title>{d.nombre} ({d.zona}) — Venta {Math.round(d.x)} / Inv {Math.round(d.y)}</title>
+                                <title>{`${d.nombre} (${d.zona})\nVenta proy./mes: ${fmt(d.vtaAntes, 1)}\nInv: ${fmt(d.ohAntes)} → ${fmt(d.ohDespues)} pzs (${d.ohDespues >= d.ohAntes ? '+' : ''}${fmt(d.ohDespues - d.ohAntes)})\nMOS: ${d.mosAntes.toFixed(1)} → ${d.mosDespues.toFixed(1)}`}</title>
                               </circle>
                             </g>
                           ))}
@@ -3080,7 +3032,7 @@ export default function Traslados() {
                           <line x1={toX(0)} y1={toY(Math.max(0,y0))} x2={toX(maxX)} y2={toY(Math.max(0,y1))}
                             stroke={lineColor} strokeWidth="2" opacity="0.9"/>
                           {/* Ejes labels */}
-                          <text x={215} y={234} textAnchor="middle" fontSize="9" fill={isDark?'#71717a':'#9ca3af'}>Venta</text>
+                          <text x={215} y={234} textAnchor="middle" fontSize="9" fill={isDark?'#71717a':'#9ca3af'}>Venta proyectada / mes (pzs)</text>
                           <text x={14} y={115} textAnchor="middle" fontSize="9" fill={isDark?'#71717a':'#9ca3af'} transform="rotate(-90,14,115)">Inventario</text>
                           <text x={45} y={228} fontSize="7" fill={isDark?'#52525b':'#9ca3af'}>0</text>
                           <text x={385} y={228} textAnchor="end" fontSize="7" fill={isDark?'#52525b':'#9ca3af'}>{fmt(maxX)}</text>
@@ -3097,31 +3049,57 @@ export default function Traslados() {
                   })}
                 </div>
 
-                {/* Top 10 problemáticas */}
+                {/* Tiendas problemáticas: por tienda (OH real y venta de toda la tienda) o por clave */}
                 {nivProblematicas.length > 0 && (
                   <div className={`p-4 rounded-xl border border-red-500/30 ${isDark ? 'bg-red-950/20' : 'bg-red-50'}`}>
-                    <h4 className="text-sm font-black text-red-400 mb-1 flex items-center gap-2">
-                      <Icons.AlertCircle size={15} /> Top {nivProblematicas.length} Tiendas Problemáticas
-                    </h4>
-                    <p className={`text-[10px] mb-3 ${t.textMuted}`}>Siguen con sobreinventario tras nivelar — ya no se pudo bajar más su MOS.</p>
-                    <div className="overflow-x-auto custom-scrollbar">
+                    <div className="flex items-center justify-between gap-3 flex-wrap mb-1">
+                      <h4 className="text-sm font-black text-red-400 flex items-center gap-2">
+                        <Icons.AlertCircle size={15} /> Tiendas problemáticas ({nivProbTiendas.length})
+                      </h4>
+                      <div className={`flex rounded-lg border p-0.5 ${isDark ? 'border-white/10 bg-white/5' : 'border-gray-200 bg-white'}`}>
+                        {[['tienda', 'Por tienda'], ['sku', nivNivel === 'sku' ? 'Por SKU' : `Por ${nivNivel}`]].map(([k, l]) => (
+                          <button key={k} onClick={() => setProbVista(k)} className={`px-3 py-1 rounded-md text-[10px] font-black ${probVista === k ? t.btnPrimary : t.textMuted}`}>{l}</button>
+                        ))}
+                      </div>
+                    </div>
+                    <p className={`text-[10px] mb-3 ${t.textMuted}`}>
+                      {probVista === 'tienda'
+                        ? 'OH, venta y MOS de TODA la tienda (todas sus claves). "OH en problema" = claves que siguen arriba de 1.5× el MOS máx después de nivelar y que no se pudieron mover porque nadie más las necesita.'
+                        : `Detalle por ${nivNivel === 'sku' ? 'SKU' : nivNivel} × tienda. MOS 99 = esa clave no vendió en la tienda en 3 meses (la tienda sí, por eso no va a liquidación).`}
+                    </p>
+                    <div className="overflow-auto custom-scrollbar max-h-80">
                       <table className="w-full text-left text-xs min-w-max">
                         <thead>
-                          <tr className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} border-b ${t.border}`}>
-                            {['Tienda','Zona',nivNivel==='sku'?'SKU':'Clave','OH Inicial','OH Final','MOS Inicial','MOS Final','VTA/mes','Importe'].map(h => <th key={h} className="p-2 whitespace-nowrap">{h}</th>)}
+                          <tr className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} border-b ${t.border} sticky top-0 ${isDark?'bg-[#2a1a1f]':'bg-red-50'}`}>
+                            {(probVista === 'tienda'
+                              ? ['Tienda','Zona','OH tienda','Vta acum tienda','Vta/mes tienda','MOS tienda','Claves en problema','OH en problema','Importe en problema']
+                              : ['Tienda','Zona',nivNivel==='sku'?'SKU':'Clave','OH inicial','OH final','Vta acum','Vta/mes','MOS inicial','MOS final','Importe']).map(h => <th key={h} className="p-2 whitespace-nowrap">{h}</th>)}
                           </tr>
                         </thead>
                         <tbody className={`divide-y ${isDark ? 'divide-zinc-800/50' : 'divide-gray-100'}`}>
-                          {nivProblematicas.map((p, i) => (
+                          {probVista === 'tienda' ? nivProbTiendas.slice(0, 100).map((p, i) => (
+                            <tr key={i} className="text-xs">
+                              <td className={`p-2 font-bold ${t.textMain}`}>{p.nombre} <span className={`text-[9px] ${t.textMuted}`}>({p.centro})</span></td>
+                              <td className={`p-2 ${t.textMuted}`}>{p.zona}</td>
+                              <td className={`p-2 font-mono ${t.textMain}`}>{fmt(p.ohTienda)}</td>
+                              <td className={`p-2 font-mono ${t.textMain}`}>{fmt(p.vtaAcumTienda)}</td>
+                              <td className={`p-2 font-mono ${t.textMuted}`}>{fmt(p.vtaMesTienda, 1)}</td>
+                              <td className={`p-2 font-black ${p.mosTienda == null ? 'text-red-400' : p.mosTienda > mosObjetivoMax ? 'text-amber-400' : 'text-emerald-400'}`}>{p.mosTienda == null ? 'sin venta' : `${p.mosTienda.toFixed(1)}m`}</td>
+                              <td className={`p-2 font-mono text-center ${t.textMuted}`}>{fmt(p.claves)}</td>
+                              <td className="p-2 font-black text-red-400">{fmt(p.ohProb)}</td>
+                              <td className={`p-2 font-mono text-emerald-400`}>{fmtMXN(p.impProb)}</td>
+                            </tr>
+                          )) : nivProblematicas.slice(0, 200).map((p, i) => (
                             <tr key={i} className="text-xs">
                               <td className={`p-2 font-bold ${t.textMain}`}>{p.nombre} <span className={`text-[9px] ${t.textMuted}`}>({p.centro})</span></td>
                               <td className={`p-2 ${t.textMuted}`}>{p.zona}</td>
                               <td className={`p-2 font-mono ${t.textMain}`}>{nivNivel==='sku'?p.sku:p.clave}</td>
                               <td className={`p-2 font-mono text-yellow-400`}>{fmt(p.ohInicial)}</td>
                               <td className={`p-2 font-black text-amber-400`}>{fmt(p.oh)}</td>
-                              <td className={`p-2 font-mono text-yellow-400`}>{p.mosInicial}m</td>
-                              <td className="p-2 font-black text-red-400">{p.mosFinal}m</td>
+                              <td className={`p-2 font-mono ${t.textMuted}`}>{fmt(p.vtaAcum ?? 0)}</td>
                               <td className={`p-2 font-mono ${t.textMuted}`}>{p.vtaProyMes}</td>
+                              <td className={`p-2 font-mono text-yellow-400`}>{p.mosInicial >= 99 ? 'sin vta' : `${p.mosInicial}m`}</td>
+                              <td className="p-2 font-black text-red-400">{p.mosFinal >= 99 ? 'sin vta' : `${p.mosFinal}m`}</td>
                               <td className={`p-2 font-mono text-emerald-400`}>{fmtMXN(p.importe)}</td>
                             </tr>
                           ))}
@@ -3138,13 +3116,13 @@ export default function Traslados() {
                       <Icons.Tag size={15} /> Sugeridos para Descuento / Liquidación ({nivLiquidacion.length})
                     </h4>
                     <p className={`text-[10px] mb-3 ${t.textMuted}`}>
-                      Naranja = ya rebajado (no se puede rebajar más, requiere outlet/remate/devolución). Ámbar = sin venta reciente pero aún sin rebaja (candidato a descuento).
+                      Nadie vende esta clave en {nivZonaMode === 'misma' ? 'su zona' : nivZonaMode === 'metro' ? 'su zona / METRO' : 'ninguna tienda'} en los últimos 3 meses. Naranja = ya rebajado (outlet/remate/devolución). Ámbar = vendió antes, no en 3M → descontar. Gris = nunca ha vendido → revisa si acaba de llegar antes de rebajar.
                     </p>
                     <div className="overflow-x-auto custom-scrollbar max-h-72">
                       <table className="w-full text-left text-xs min-w-max">
                         <thead>
                           <tr className={`text-[9px] uppercase font-black tracking-widest ${t.textMuted} border-b ${t.border} sticky top-0 ${isDark?'bg-[#1c1720]':'bg-white'}`}>
-                            {['Zona','Marca','GOA',nivNivel==='sku'?'SKU / Descripción':'Clave','Motivo','Tiendas','OH Total','Importe'].map(h => <th key={h} className="p-2 whitespace-nowrap">{h}</th>)}
+                            {['Zona','Marca','GOA',nivNivel==='sku'?'SKU / Descripción':'Clave','Motivo','Tiendas','Vta acum','Vta 3M','OH Total','Importe'].map(h => <th key={h} className="p-2 whitespace-nowrap">{h}</th>)}
                           </tr>
                         </thead>
                         <tbody className={`divide-y ${isDark ? 'divide-zinc-800/50' : 'divide-gray-100'}`}>
@@ -3159,13 +3137,19 @@ export default function Traslados() {
                                   <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-orange-500/20 text-orange-400 border border-orange-500/40" title="Ya está rebajado, no se puede rebajar más">
                                     {l.letraDesc || 'Rebajado'}
                                   </span>
+                                ) : l.motivo === 'nunca' ? (
+                                  <span className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${isDark ? 'bg-zinc-700/40 text-gray-300 border-zinc-500/40' : 'bg-gray-100 text-gray-600 border-gray-300'}`} title="Sin venta acumulada: puede ser recién llegado">
+                                    Nunca vendió · revisar
+                                  </span>
                                 ) : (
-                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-amber-500/10 text-amber-400 border border-amber-500/30" title="Sin venta reciente — candidato a descuento">
-                                    Sin venta · descontar
+                                  <span className="px-2 py-0.5 rounded-full text-[9px] font-black bg-amber-500/10 text-amber-400 border border-amber-500/30" title="Vendió antes pero no en los últimos 3 meses">
+                                    Sin venta 3M · descontar
                                   </span>
                                 )}
                               </td>
                               <td className={`p-2 text-center ${t.textMuted}`}>{l.tiendas}</td>
+                              <td className={`p-2 font-mono ${t.textMain}`}>{fmt(l.vtaAcum ?? 0)}</td>
+                              <td className={`p-2 font-mono ${t.textMuted}`}>{fmt(l.vta3m ?? 0)}</td>
                               <td className={`p-2 font-black text-orange-400`}>{fmt(l.oh)}</td>
                               <td className={`p-2 font-mono text-emerald-400`}>{fmtMXN(l.importe)}</td>
                             </tr>
@@ -3182,7 +3166,7 @@ export default function Traslados() {
                 {/* Tabla traslados */}
                 <div className={`rounded-xl border overflow-hidden ${t.cardInner}`}>
                   <div className={`flex items-center justify-between px-4 py-2 border-b ${t.border}`}>
-                    <span className={`text-[10px] font-black uppercase tracking-widest ${t.textMuted}`}>{nivResult.length} traslados de nivelación</span>
+                    <span className={`text-[10px] font-black uppercase tracking-widest ${t.textMuted}`}>{nivResult.length} traslados de nivelación{nivResumen?.cruces ? ` · ${nivResumen.cruces} pares de tiendas con envíos en ambos sentidos (claves distintas)` : ''}</span>
                     <button onClick={exportNivelacion} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black ${t.btnSecondary}`}>
                       <Icons.Download size={12} /> Exportar Excel
                     </button>
@@ -3197,7 +3181,7 @@ export default function Traslados() {
                       <tbody className={`divide-y ${isDark ? 'divide-zinc-800/50' : 'divide-gray-100'}`}>
                         {nivResult.map((r, i) => (
                           <tr key={i} className={`text-xs transition-colors ${isDark ? 'hover:bg-zinc-800/30' : 'hover:bg-violet-50/30'}`}>
-                            <td className={`p-2 font-bold ${t.textMuted}`}>{r.zona}</td>
+                            <td className={`p-2 font-bold ${t.textMuted}`}>{r.zonaOrigen === r.zonaDestino ? r.zonaOrigen : `${r.zonaOrigen} → ${r.zonaDestino}`}</td>
                             <td className={`p-2 ${t.textMuted}`}>{r.marca}</td>
                             <td className="p-2"><span className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${t.badge}`}>{r.goa}</span></td>
                             <td className={`p-2 font-mono text-[10px] ${t.textMain}`}>{r.sku}</td>
@@ -3205,7 +3189,7 @@ export default function Traslados() {
                             <td className={`p-2 font-bold text-emerald-400`}>{r.nombreReceptor} <span className={`text-[9px] font-mono ${t.textMuted}`}>({r.centroReceptor})</span></td>
                             <td className={`p-2 font-black ${t.textAccent1}`}>{fmt(r.pzs)}</td>
                             <td className={`p-2 font-mono text-emerald-400`}>{fmtMXN(r.importe)}</td>
-                            <td className={`p-2 font-mono text-[10px]`}><span className="text-yellow-400">{r.mosSalidaAntes}</span>→<span className="text-violet-400">{r.mosSalidaDespues}</span></td>
+                            <td className={`p-2 font-mono text-[10px]`}><span className="text-yellow-400">{r.mosSalidaAntes >= 99 ? 'sin vta' : r.mosSalidaAntes}</span>→<span className="text-violet-400">{r.mosSalidaDespues >= 99 ? 'sin vta' : r.mosSalidaDespues}</span></td>
                             <td className={`p-2 font-mono text-[10px]`}><span className="text-yellow-400">{r.mosReceptorAntes}</span>→<span className="text-violet-400">{r.mosReceptorDespues}</span></td>
                             <td className={`p-2 font-black text-center ${r.potencialReceptor > 0.6 ? 'text-emerald-400' : t.textMuted}`}>{(r.potencialReceptor*100).toFixed(0)}%</td>
                           </tr>

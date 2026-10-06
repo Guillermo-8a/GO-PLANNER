@@ -181,8 +181,8 @@ export const CSV_SCHEMAS = [
     formats: [
       {
         title: 'Base de artículos',
-        desc: 'Opcional: FECHA_ALTA o MESES_VIDA (si no vienen, usa la lista manual dentro del módulo).',
-        columns: ['GOA*', 'SKU*', 'CENTRO*', 'OH*', 'ZONA*', 'TIPO_CENTRO*', 'FECHA_ALTA (opcional)', 'MESES_VIDA (opcional)'],
+        desc: 'OH, VTA y VTA_3M en piezas o en pesos (botón "OH en pesos/piezas"; cambiarlo re-convierte lo cargado). VTA = acumulada del año (se divide entre el mes actual). VTA_3M en 0 = sin venta real en 3 meses. Clima de centro desconocido ("Sin asignar") = no sale ni recibe por clima; cárgalo con la matriz. Bodegas/PLAN/CEDIS se excluyen por nombre y puedes excluir centros a mano. Opcional: FECHA_ALTA o MESES_VIDA.',
+        columns: ['SECCION', 'NOMBRE', 'GOA*', 'CENTRO*', 'N_CENTRO', 'TIPO CENTRO', 'ZONA*', 'MARCA', 'MODELO', 'SKU*', 'NSKU', 'PRECIO*', 'VTA', 'OH*', 'VTA_3M', 'VTA_MES_ANT', 'LETRA_DESC', 'FECHA_ALTA (opcional)', 'MESES_VIDA (opcional)'],
       },
     ],
   },
