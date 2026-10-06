@@ -101,34 +101,6 @@ const BarCompare = ({ data, theme }) => {
   );
 };
 
-// ─── MINI-CHART: DONUT RESUMEN ───────────────────────────────────────────────
-
-// ─── MULTISELECT CON BÚSQUEDA (Solicitud) ─────────────────────────────────────
-const MultiPick = ({ label, options, value, onChange, t, isDark }) => {
-  const [q, setQ] = useState('');
-  const qq = q.trim().toUpperCase();
-  const vis = options.filter(o => !qq || o.toUpperCase().includes(qq)).slice(0, 300);
-  const toggle = (o) => onChange(value.includes(o) ? value.filter(x => x !== o) : [...value, o]);
-  return (
-    <div className={`rounded-lg border p-2 ${t.cardInner}`}>
-      <div className="flex items-center justify-between mb-1">
-        <span className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted}`}>{label} {value.length > 0 && <span className={t.textAccent1}>· {value.length}</span>}</span>
-        {value.length > 0 && <button onClick={() => onChange([])} className={`text-[9px] font-bold ${t.textMuted} hover:underline`}>limpiar</button>}
-      </div>
-      <input value={q} onChange={e => setQ(e.target.value)} placeholder={`Buscar (${options.length})`}
-        className={`w-full text-[11px] px-2 py-1 mb-1 rounded border ${t.input} focus:outline-none`} />
-      <div className="max-h-36 overflow-y-auto custom-scrollbar space-y-0.5">
-        {vis.map(o => (
-          <label key={o} className={`flex items-center gap-1.5 text-[11px] cursor-pointer px-1 rounded ${value.includes(o) ? (isDark ? 'bg-violet-500/20 text-white' : 'bg-violet-50 text-violet-700') : t.textMain}`}>
-            <input type="checkbox" checked={value.includes(o)} onChange={() => toggle(o)} className="accent-violet-500" />
-            <span className="truncate" title={o}>{o}</span>
-          </label>
-        ))}
-        {!vis.length && <p className={`text-[10px] ${t.textMuted}`}>Sin coincidencias</p>}
-      </div>
-    </div>
-  );
-};
 
 const DonutSummary = ({ items, theme }) => {
   const isDark = theme === 'dark';
@@ -1130,16 +1102,6 @@ export default function Traslados() {
     }
   };
 
-  const chartDataNec = useMemo(() => {
-    if (!necesResult.length) return [];
-    const byGoa = {};
-    necesResult.forEach(r => {
-      if (!byGoa[r.goa]) byGoa[r.goa] = { pzs: 0, pesos: 0 };
-      byGoa[r.goa].pzs   += r.pzs;
-      byGoa[r.goa].pesos += r.importe;
-    });
-    return Object.entries(byGoa).map(([label, v]) => ({ label, value: v.pzs }));
-  }, [necesResult]);
 
   const exportNecesidad = () => {
     // Layout base
@@ -2221,14 +2183,6 @@ export default function Traslados() {
                   </div>
                 </div>
 
-                <div className={`p-4 rounded-xl border ${t.cardInner}`}>
-                  <h3 className={`text-xs font-black uppercase tracking-widest mb-2 ${t.textMuted}`}>Resumen de Necesidad</h3>
-                  {necesResult.length > 0 ? (
-                    <DonutSummary items={chartDataNec} theme={theme} />
-                  ) : (
-                    <p className={`text-xs ${t.textMuted}`}>Sin resultados aún. Llena la chequera y ejecuta la herramienta.</p>
-                  )}
-                </div>
               </div>
             </div>
 
