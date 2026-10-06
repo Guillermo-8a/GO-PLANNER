@@ -871,339 +871,161 @@ export default function Traslados() {
     if (datos.some(r => (r.modelo || '').toUpperCase() === q)) return { tipo: 'modelo', valor: q };
     if (datos.some(r => r.goa === q))                          return { tipo: 'goa',    valor: q };
     if (datos.some(r => r.marca === q))                        return { tipo: 'marca',  valor: q };
-    return { tipo: 'modelo', valor: q }; // fallback
+    return { tipo: null, valor: q }; // no existe en el CSV
   }, []);
 
-  // Parsear chequera: Identificador | Ppto | CentroReceptor
+  // Parsear chequera: una línea = identificador(es) | meta ($ o pzs) | centro receptor.
+  // Separadores: | o tab (o coma si no hay ninguno). Varios identificadores: "A + B" o "A; B" (o varios campos de texto).
+  // Meta: "20000" o "$20,000" = presupuesto en pesos · "50 pzs" / "50 piezas" = piezas. El último texto = centro receptor.
   const parsearChequera = useCallback((texto, datos) => {
-    const lines = texto.split('\n').map(l => l.trim()).filter(Boolean);
-    const items = [];
-    lines.forEach(line => {
-      const sep   = line.includes('|') ? '|' : line.includes('\t') ? '\t' : ',';
-      const parts = line.split(sep).map(p => p.trim());
-      if (parts.length < 2) return;
-
-      const idRaw = parts[0] || '';
-
-      // Detección flexible del resto de campos — no importa orden ni si faltan
-      // Ppto = primer campo numérico después del identificador
-      // Centro = primer campo no-numérico después del identificador
-      let pptoNeed = 0;
-      let centroReceptor = 'DESTINO (definir)';
-      for (let pi = 1; pi < parts.length; pi++) {
-        const v = parts[pi].trim();
-        if (!v) continue;
-        const n = num(v);
-        if (n > 0 && pptoNeed === 0) {
-          pptoNeed = n; // primer número = ppto
-        } else if (isNaN(parseFloat(v.replace(/[$,]/g, ''))) || v.replace(/[$,\d.]/g, '').length > 2) {
-          // tiene letras suficientes = es un centro
-          if (centroReceptor === 'DESTINO (definir)') centroReceptor = v;
-        }
-      }
-
-      // Soporte de múltiples identificadores en el primer campo: "HARRY, WILSON-22, MODELO-X"
-      // Separados por coma (dentro del campo, antes del primer |)
-      const ids = idRaw.split(',').map(s => s.trim()).filter(Boolean);
-
-      if (ids.length === 1) {
-        // Una sola línea normal
-        const { tipo, valor } = detectarTipoId(idRaw, datos);
-        items.push({ idRaw, tipo, valor, pptoNeed, centroReceptor, multiIds: null });
-      } else {
-        // Múltiples identificadores — calcular OH total por id para distribuir ppto proporcionalmente
-        const resueltos = ids.map(id => {
-          const { tipo, valor } = detectarTipoId(id, datos);
-          // OH disponible total para este identificador
-          const ohTotal = datos
-            .filter(r => {
-              if (tipo === 'sku')    return (r.sku || '').toUpperCase() === valor; // antes un SKU en lista múltiple recibía $0
-              if (tipo === 'modelo') return (r.modelo || r.goa).toUpperCase() === valor;
-              if (tipo === 'goa')    return r.goa === valor;
-              if (tipo === 'marca')  return r.marca === valor;
-              return false;
-            })
-            .reduce((s, r) => s + r.oh, 0);
-          return { id, tipo, valor, ohTotal };
-        });
-
-        const ohTotalSum = resueltos.reduce((s, r) => s + r.ohTotal, 0) || 1;
-
-        resueltos.forEach(r => {
-          const ppto = pptoNeed > 0
-            ? Math.round((r.ohTotal / ohTotalSum) * pptoNeed)
-            : 0;
-          items.push({
-            idRaw: r.id, tipo: r.tipo, valor: r.valor,
-            pptoNeed: ppto, centroReceptor,
-            multiIds: ids, // para referencia
-          });
-        });
-      }
+    const items = [], errores = [];
+    texto.split('\n').map(l => l.trim()).filter(Boolean).forEach((line, li) => {
+      const sep = line.includes('|') ? '|' : line.includes('\t') ? '\t' : ',';
+      const tokens = line.split(sep).map(p => p.trim()).filter(Boolean);
+      let meta = 0, modo = '$';
+      const textos = [];
+      tokens.forEach(tk => {
+        const m = tk.match(/^\$?\s*([\d.,]+)\s*(pzs?|piezas?|pz\.?)?$/i);
+        if (m && !meta) { meta = parseFloat(m[1].replace(/,/g, '')) || 0; modo = m[2] ? 'pzs' : '$'; }
+        else if (!m) textos.push(tk);
+      });
+      const centroReceptor = textos.length >= 2 ? textos.pop() : '';
+      const ids = textos.flatMap(x => x.split(/[+;]|,(?=\s*\S)/).map(s => s.trim()).filter(Boolean));
+      if (!ids.length) errores.push(`Línea ${li + 1}: falta identificador (SKU, modelo, GOA o marca)`);
+      if (!(meta > 0)) errores.push(`Línea ${li + 1}: falta presupuesto ($) o piezas (ej. 50 pzs)`);
+      if (!centroReceptor) errores.push(`Línea ${li + 1}: falta centro receptor`);
+      items.push({ linea: li + 1, idRaw: ids.join(' + '), ids: ids.map(id => ({ id, ...detectarTipoId(id, datos) })), meta, modo, centroReceptor });
     });
-    return items;
+    return { items, errores };
   }, [detectarTipoId]);
 
   // HERRAMIENTA NECESIDAD — corridas por modelo+talla
   const calcularNecesidad = useCallback(() => {
     if (!chequeraText.trim() || !dataOp.length) return;
     setNecesAvisos([]);
-
-    // Validar campos obligatorios en cada línea
-    const lineasRaw = chequeraText.split('\n').map(l => l.trim()).filter(Boolean);
-    const errores = [];
-    lineasRaw.forEach((linea, i) => {
-      const sep = linea.includes('|') ? '|' : linea.includes('\t') ? '\t' : ',';
-      const parts = linea.split(sep).map(p => p.trim());
-      const id = parts[0]?.trim();
-      const hasPpto = parts.slice(1).some(p => num(p) > 0);
-      const hasCentro = parts.slice(1).some(p => p && isNaN(parseFloat(p.replace(/[$,]/g, ''))));
-      if (!id) errores.push(`Línea ${i+1}: falta identificador (marca, GOA, modelo o SKU)`);
-      if (!hasPpto) errores.push(`Línea ${i+1}: falta presupuesto (número > 0)`);
-      if (!hasCentro) errores.push(`Línea ${i+1}: falta centro receptor`);
-    });
+    const { items: chequera, errores } = parsearChequera(chequeraText, dataOp);
     if (errores.length) { alert('Revisa la chequera:\n' + errores.join('\n')); return; }
-
-    const chequera       = parsearChequera(chequeraText, dataOp);
-    const surtidoresList = centrosSurtidores
-      ? centrosSurtidores.split(',').map(c => c.trim()).filter(Boolean)
-      : null;
-    const matchSurtidor  = buildMatchSurtidor(surtidoresList);
-
-    // Detectar SKUs sin talla parseable que no estén en cache
-    const sinTalla = dataOp.filter(r => {
-      if (!matchSurtidor(r)) return false;
-      const t = extraerTalla(r.nsku, r.sku, tallasCache);
-      return !t && r.oh > 0;
-    });
-    const skusSinTalla = [...new Map(sinTalla.map(r => [r.sku, r])).values()];
-
-    if (skusSinTalla.length > 0) {
-      // Abrir modal con el primer SKU sin talla
-      setModalTallas({ skus: skusSinTalla, index: 0, pendingCalc: true });
-      return;
-    }
-
-    ejecutarCalculo(chequera, surtidoresList, matchSurtidor, tallasCache, minCorridasAlto, minCorridasResto);
-  }, [chequeraText, centrosSurtidores, dataOp, tallasCache, minCorridasAlto, minCorridasResto, buildMatchSurtidor]);
+    const surtidoresList = centrosSurtidores ? centrosSurtidores.split(',').map(c => c.trim()).filter(Boolean) : null;
+    ejecutarCalculo(chequera, surtidoresList, buildMatchSurtidor(surtidoresList), tallasCache, minCorridasAlto, minCorridasResto);
+  }, [chequeraText, centrosSurtidores, dataOp, tallasCache, minCorridasAlto, minCorridasResto, buildMatchSurtidor, parsearChequera]);
 
   const ejecutarCalculo = useCallback((chequera, surtidoresList, matchSurtidor, cache, minAlto, minResto) => {
     setNecesLoading(true);
     setTimeout(() => {
-      // ── Inventario: centro → modeloKey → talla → [rows] ──────────────
+      // ── Inventario de surtidores: centro → modelo → talla → [rows con ohDisp] (compartido entre líneas) ──
       const inv = {};
       dataOp.forEach(r => {
-        if (!matchSurtidor(r)) return;
-        if (r.oh <= 0) return;
-        const talla = extraerTalla(r.nsku, r.sku, cache);
-        if (!talla) return;
-        const mk = r.modelo || r.goa;
-        if (!inv[r.centro]) inv[r.centro] = {};
-        if (!inv[r.centro][mk]) inv[r.centro][mk] = {};
-        if (!inv[r.centro][mk][talla]) inv[r.centro][mk][talla] = [];
-        inv[r.centro][mk][talla].push({ ...r, ohDisp: r.oh });
+        if (!matchSurtidor(r) || r.oh <= 0) return;
+        const talla = extraerTalla(r.nsku, r.sku, cache), mk = r.modelo || r.goa;
+        ((inv[r.centro] = inv[r.centro] || {})[mk] = inv[r.centro][mk] || {});
+        (inv[r.centro][mk][talla] = inv[r.centro][mk][talla] || []).push({ ...r, ohDisp: r.oh });
       });
-
-      // ── Venta por centro para clasificar alto/bajo volumen ───────────
+      // Alto volumen = top 30% de venta entre surtidores (deja más corridas)
       const vtaCentro = {};
+      dataOp.forEach(r => { if (matchSurtidor(r)) vtaCentro[r.centro] = (vtaCentro[r.centro] || 0) + (r.vta || 0); });
+      const vtaVals = Object.values(vtaCentro).sort((a, b) => b - a);
+      const p70 = vtaVals[Math.floor(vtaVals.length * 0.3)] || 0;
+      const minGuarda = (c) => ((vtaCentro[c] || 0) >= p70 ? (minAlto || 2) : (minResto || 1));
+      // Curva de tallas, venta y precio por modelo (todo el CSV)
+      const curvaPorModelo = {}, vtaModelo = {}, precioTalla = {};
       dataOp.forEach(r => {
-        if (surtidoresList) {
-          const matchCentro = surtidoresList.some(s => {
-            const sq = s.toUpperCase().trim();
-            return r.centro.toUpperCase().trim() === sq ||
-                   r.nCentro.toUpperCase().trim() === sq;
-          });
-          if (!matchCentro) return;
-        }
-        vtaCentro[r.centro] = (vtaCentro[r.centro] || 0) + (r.vta || 0);
-      });
-      const vtaVals = Object.values(vtaCentro).sort((a,b) => b - a);
-      const p70 = vtaVals[Math.floor(vtaVals.length * 0.3)] || 0; // top 30% = alto
-      const esAltoVolumen = (centro) => (vtaCentro[centro] || 0) >= p70;
-
-      // ── Curva de tallas global por modelo: vta+oh por talla ─────────
-      const curvaPorModelo = {}; // { modeloKey: { talla: vtaOh } }
-      dataOp.forEach(r => {
-        const talla = extraerTalla(r.nsku, r.sku, cache);
-        if (!talla) return;
-        const mk = r.modelo || r.goa;
-        if (!curvaPorModelo[mk]) curvaPorModelo[mk] = {};
-        curvaPorModelo[mk][talla] = (curvaPorModelo[mk][talla] || 0) + (r.vta || 0) + (r.oh || 0);
+        const talla = extraerTalla(r.nsku, r.sku, cache), mk = r.modelo || r.goa;
+        (curvaPorModelo[mk] = curvaPorModelo[mk] || {})[talla] = (curvaPorModelo[mk][talla] || 0) + (r.vta || 0) + (r.oh || 0);
+        vtaModelo[mk] = (vtaModelo[mk] || 0) + (r.vta || 0);
+        if (!(precioTalla[mk] = precioTalla[mk] || {})[talla]) precioTalla[mk][talla] = r.precio || 0;
       });
 
-      const invMut = JSON.parse(JSON.stringify(inv));
-      const resultado = [];
-      const avisos = []; // mensajes de por qué no se pudo ejecutar algo
-
+      const resultado = [], avisos = [];
       chequera.forEach(item => {
         const recInfo = lookupCentro(item.centroReceptor, dataOp);
-        const pptoTotal = item.pptoNeed || 0;
+        const recNum = (recInfo.nCentro || '').trim().toUpperCase(), recNom = (recInfo.nombre || '').trim().toUpperCase();
+        if (!recInfo.nCentro) avisos.push(`Línea ${item.linea}: el centro receptor "${item.centroReceptor}" no existe en el CSV; el export saldrá sin número de centro destino.`);
+        const noEncontrados = item.ids.filter(x => !x.tipo).map(x => x.id);
+        if (noEncontrados.length) avisos.push(`Línea ${item.linea}: no encontré ${noEncontrados.map(x => `"${x}"`).join(', ')} como SKU, modelo, GOA ni marca (o sus centros están excluidos).`);
+        const match = (r) => item.ids.some(({ tipo, valor }) =>
+          tipo === 'sku' ? (r.sku || '').toUpperCase() === valor : tipo === 'modelo' ? (r.modelo || r.goa).toUpperCase() === valor : tipo === 'goa' ? r.goa === valor : tipo === 'marca' ? r.marca === valor : false);
+        const modelos = [...new Set(dataOp.filter(match).map(r => r.modelo || r.goa))];
+        if (!modelos.length) return;
 
-        // ── Cascada Marca → GOA → Modelo → Tallas ──────────────────────
-        // 1. Filtrar rows del CSV que aplican al identificador
-        let rowsAplicables = [];
-        if (item.tipo === 'sku') {
-          rowsAplicables = dataOp.filter(r => r.sku === item.valor);
-        } else if (item.tipo === 'modelo') {
-          rowsAplicables = dataOp.filter(r => (r.modelo || r.goa).toUpperCase() === item.valor);
-        } else if (item.tipo === 'goa') {
-          rowsAplicables = dataOp.filter(r => r.goa === item.valor);
-        } else if (item.tipo === 'marca') {
-          rowsAplicables = dataOp.filter(r => r.marca === item.valor);
-        }
-        if (!rowsAplicables.length) { avisos.push(`"${item.idRaw}": no se encontró como SKU, modelo, GOA ni marca en el CSV (o sus centros están excluidos).`); return; }
-        if (!recInfo.nCentro) avisos.push(`"${item.idRaw}": el centro receptor "${item.centroReceptor}" no existe en el CSV; el export saldrá sin número de centro destino.`);
+        // Modelos ordenados por venta: primero lo que más vende. Se asigna 1 corrida por modelo por vuelta (variedad)
+        // hasta agotar el presupuesto/piezas o el inventario. Antes el ppto se partía proporcional al OH entre todos
+        // los modelos y a cada uno le tocaban centavos (avisos "no alcanza") y sobraba presupuesto sin usar.
+        const info = modelos.map(mk => {
+          const curva = curvaPorModelo[mk] || {}, tot = Object.values(curva).reduce((s, v) => s + v, 0) || 1;
+          const corrida = Object.keys(curva).sort((a, b) => (parseFloat(a) || 0) - (parseFloat(b) || 0));
+          const base = corrida.length === 1 ? 1 : corrida.length * 2;
+          const pzs1 = Object.fromEntries(corrida.map(t => [t, Math.max(1, Math.round(base * (curva[t] || 0) / tot))]));
+          const costo = item.modo === 'pzs' ? corrida.reduce((s, t) => s + pzs1[t], 0) : corrida.reduce((s, t) => s + (precioTalla[mk][t] || 0) * pzs1[t], 0);
+          return { mk, corrida, pzs1, costo, vivo: costo > 0, corridas: 0 };
+        }).sort((a, b) => (vtaModelo[b.mk] || 0) - (vtaModelo[a.mk] || 0));
 
-        // 2. Calcular OH total por modelo (para ponderación)
-        const ohPorModelo = {};
-        rowsAplicables.forEach(r => {
-          const mk = r.modelo || r.goa;
-          ohPorModelo[mk] = (ohPorModelo[mk] || 0) + r.oh;
-        });
-        const ohTotalAll = Object.values(ohPorModelo).reduce((s,v) => s+v, 0) || 1;
+        const candidatos = (mk, talla) => Object.entries(inv)
+          .filter(([c]) => c.toUpperCase() !== recNum && c.toUpperCase() !== recNom)
+          .map(([c, mods]) => {
+            const rows = (mods[mk]?.[talla] || []).filter(r => r.ohDisp > 0);
+            const oh = rows.reduce((s, r) => s + r.ohDisp, 0);
+            return { centro: c, rows, puede: Math.max(0, oh - minGuarda(c)), vta: rows.reduce((s, r) => s + (r.vta || 0), 0) };
+          })
+          .filter(x => x.puede > 0 && (x.rows[0]?.nCentro || '').toUpperCase() !== recNom)
+          .sort((a, b) => b.vta - a.vta || b.puede - a.puede);
 
-        // 3. Distribuir ppto entre modelos proporcional a OH
-        const modelosAplicables = Object.keys(ohPorModelo);
-
-        modelosAplicables.forEach(modeloKey => {
-          const pptoPorModelo = Math.round((ohPorModelo[modeloKey] / ohTotalAll) * pptoTotal);
-          let pptoRestante = pptoPorModelo;
-          if (pptoRestante <= 0) return;
-
-          // Corrida = todas las tallas del modelo en el CSV
-          const curva = curvaPorModelo[modeloKey] || {};
-          const totalCurva = Object.values(curva).reduce((s,v) => s+v, 0) || 1;
-          const corrida = Object.keys(curva).sort((a,b) => parseFloat(a)-parseFloat(b));
-          if (!corrida.length) return;
-
-          // Precio corrida = suma precios de 1 SKU por talla (más representativo)
-          const precioTalla = {}; // { talla: precio }
-          dataOp.forEach(r => {
-            const t = extraerTalla(r.nsku, r.sku, cache);
-            if (t && (r.modelo || r.goa) === modeloKey) {
-              if (!precioTalla[t]) precioTalla[t] = r.precio || 0;
-            }
-          });
-          // precioCorrida calculado abajo con curva de tallas
-
-          // Precio de 1 corrida completa = suma de (precio_talla × pzs_curva_talla)
-          // Primero calcular pzs por talla para 1 corrida según curva
-          // 1 corrida ≈ 2 pzs por talla repartidas según la curva, mínimo 1 por talla.
-          // (Antes: base 100 ÷ MCD; con curvas "no redondas" el MCD era 1 y la corrida quedaba de ~100 pzs.)
-          const pzsCorrida1 = {}; // { talla: pzs para 1 corrida }
-          const basePzs = corrida.length === 1 ? 1 : corrida.length * 2; // talla única: 1 corrida = 1 pza
-          corrida.forEach(talla => { pzsCorrida1[talla] = Math.max(1, Math.round(basePzs * (curva[talla] || 0) / totalCurva)); });
-
-          // Precio de 1 corrida
-          const precioCorrida = corrida.reduce((s, t) => s + (precioTalla[t]||0) * (pzsCorrida1[t]||1), 0);
-          if (precioCorrida <= 0) return;
-
-          // Cuántas corridas caben con el ppto
-          const corridasMax = pptoRestante > 0 ? Math.floor(pptoRestante / precioCorrida) : 999;
-          if (corridasMax <= 0) {
-            avisos.push(`"${item.idRaw}" → modelo ${modeloKey}: el ppto asignado ($${Math.round(pptoRestante).toLocaleString('es-MX')}) no alcanza ni 1 corrida completa. Necesitas mínimo $${Math.round(precioCorrida).toLocaleString('es-MX')} por corrida (${corrida.length} tallas).`);
-            return;
-          }
-
-          // Centro receptor para excluirlo de surtidores
-          const receptorNombre = recInfo.nombre.toUpperCase().trim();
-          const receptorNCentro = recInfo.nCentro?.trim() || '';
-
-          // Candidatos por talla (varios surtidores, mejor venta primero, respetando mínimo a dejar)
-          const candPorTalla = {};
-          corrida.forEach(talla => {
-            candPorTalla[talla] = Object.entries(invMut)
-              .filter(([centro, mods]) => {
-                if (!mods[modeloKey]?.[talla]?.some(r => r.ohDisp > 0)) return false;
-                const cUp = centro.toUpperCase().trim();
-                if (receptorNCentro && cUp === receptorNCentro) return false;
-                if (cUp === receptorNombre) return false;
-                const firstRow = mods[modeloKey][talla][0];
-                if (receptorNCentro && firstRow?.nCentro?.trim() === receptorNCentro) return false;
-                return true;
-              })
-              .map(([centro, mods]) => {
-                const rows = mods[modeloKey][talla].filter(r => r.ohDisp > 0);
-                const ohTot = rows.reduce((s,r) => s + r.ohDisp, 0);
-                const vtaTot = rows.reduce((s,r) => s + (r.vta||0), 0);
-                const minGuarda = esAltoVolumen(centro) ? (minAlto||2) : (minResto||1);
-                return { centro, rows, ohTot, vtaTot, puedeEnviar: Math.max(0, ohTot - minGuarda) };
-              })
-              .filter(c => c.puedeEnviar > 0)
-              .sort((a,b) => b.vtaTot - a.vtaTot || b.ohTot - a.ohTot);
-          });
-          // Corridas completas posibles: antes cada talla salía de UN solo surtidor y si no alcanzaba se mandaban
-          // corridas rotas (tallas incompletas). Ahora se juntan varios surtidores y se recorta a corridas completas.
-          const corridasPosibles = Math.min(corridasMax, ...corrida.map(t =>
-            Math.floor(candPorTalla[t].reduce((s, c) => s + c.puedeEnviar, 0) / (pzsCorrida1[t] || 1))));
-          const asignaciones = [];
-          if (corridasPosibles > 0) corrida.forEach(talla => {
-            let falta = corridasPosibles * (pzsCorrida1[talla] || 1);
-            for (const c of candPorTalla[talla]) {
-              if (falta <= 0) break;
-              let pzsCentro = Math.min(falta, c.puedeEnviar);
-              falta -= pzsCentro;
-              // Una fila por SKU real que sale (un modelo+talla puede tener varios SKUs, p. ej. colores)
-              for (const row of [...c.rows].sort((a, b) => b.ohDisp - a.ohDisp)) {
-                if (pzsCentro <= 0) break;
-                const pzsEnv = Math.min(pzsCentro, row.ohDisp);
-                if (pzsEnv <= 0) continue;
-                pzsCentro -= pzsEnv;
-                asignaciones.push({
-                  talla, pzsEnv, row,
-                  sku: row.sku, nsku: row.nsku,
-                  centro: c.centro, nCentro: row.nCentro, nombreCentro: row.nCentro, zona: row.zona || '',
-                  oh: row.ohDisp, precio: row.precio || precioTalla[talla] || 0,
-                  seccion: row.seccion, numSeccion: row.numSeccion,
-                  marca: row.marca, goa: row.goa, modelo: modeloKey,
-                });
+        const agregado = {}; // sku|centro → fila (una sola fila por SKU y centro surtidor)
+        let restante = item.meta, sinStock = 0;
+        let avanzo = true;
+        while (avanzo && restante > 0) {
+          avanzo = false;
+          for (const m of info) {
+            if (!m.vivo || m.costo > restante) continue;
+            const cands = Object.fromEntries(m.corrida.map(t => [t, candidatos(m.mk, t)]));
+            if (m.corrida.some(t => cands[t].reduce((s, c) => s + c.puede, 0) < m.pzs1[t])) { m.vivo = false; sinStock++; continue; }
+            let gasto = 0;
+            m.corrida.forEach(t => {
+              let falta = m.pzs1[t];
+              for (const c of cands[t]) {
+                if (falta <= 0) break;
+                let delCentro = Math.min(falta, c.puede);
+                falta -= delCentro;
+                for (const row of [...c.rows].sort((a, b) => b.ohDisp - a.ohDisp)) {
+                  if (delCentro <= 0) break;
+                  const pz = Math.min(delCentro, row.ohDisp);
+                  if (pz <= 0) continue;
+                  delCentro -= pz; row.ohDisp -= pz;
+                  gasto += item.modo === 'pzs' ? pz : pz * (row.precio || 0);
+                  const k = `${row.sku}|${c.centro}`;
+                  const a = agregado[k] || (agregado[k] = {
+                    seccion: row.seccion, numSeccion: row.numSeccion, marca: row.marca, goa: row.goa, modelo: m.mk,
+                    sku: row.sku, nsku: row.nsku, talla: t,
+                    centroSalida: fmtCentro(row.nCentro, c.centro), centroReceptor: fmtCentro(recInfo.nombre, recInfo.nCentro),
+                    centroSalidaNum: c.centro, nombreSalida: row.nCentro, centroReceptorNum: recInfo.nCentro || '', nombreReceptor: recInfo.nombre,
+                    zonaOrigen: row.zona || '', zonaDestino: recInfo.zona || '',
+                    ohDisp: row.oh, pzs: 0, importe: 0, precio: row.precio, linea: item.linea,
+                  });
+                  a.pzs += pz; a.importe += pz * (row.precio || 0); a.ohQueda = row.ohDisp;
+                }
               }
-            }
-          });
-
-          if (!asignaciones.length) {
-            avisos.push(`"${item.idRaw}" → modelo ${modeloKey}: no hay stock suficiente entre los surtidores para armar ni 1 corrida completa (respetando mínimo a dejar).`);
-            return;
-          }
-
-          // Emitir filas y descontar
-          asignaciones.forEach(a => {
-            a.row.ohDisp -= a.pzsEnv; // descuenta del SKU exacto que sale
-
-            resultado.push({
-              seccion: a.seccion, numSeccion: a.numSeccion,
-              marca: a.marca, goa: a.goa, modelo: a.modelo,
-              sku: a.sku, nsku: a.nsku, talla: a.talla,
-              centroSalida:   fmtCentro(a.nombreCentro, a.nCentro),  // para tabla (display)
-              centroReceptor: fmtCentro(recInfo.nombre, recInfo.nCentro),
-              // campos separados para export
-              centroSalidaNum: a.centro || '',
-              nombreSalida:    a.nCentro || a.nombreCentro,
-              centroReceptorNum: recInfo.nCentro || '',
-              nombreReceptor:  recInfo.nombre,
-              zonaOrigen:      a.zona || '',
-              zonaDestino:     recInfo.zona || '',
-              ohDisp: a.oh, pzs: a.pzsEnv,
-              ohQueda: a.oh - a.pzsEnv,
-              importe: a.pzsEnv * (a.precio||0),
-              precio: a.precio,
-              corridasEnv: corridasPosibles,
             });
-          });
-
-          if (pptoRestante > 0) pptoRestante -= asignaciones.reduce((s,a) => s + a.pzsEnv*(a.precio||0), 0);
-        }); // end modelosAplicables
-      }); // end chequera
+            restante -= gasto; m.corridas++; avanzo = true;
+            if (restante <= 0) break;
+          }
+        }
+        const filas = Object.values(agregado);
+        const usados = info.filter(m => m.corridas > 0);
+        filas.forEach(f => { f.corridasEnv = usados.reduce((s, m) => s + m.corridas, 0); });
+        resultado.push(...filas);
+        const asignado = item.meta - restante;
+        const unidad = (v) => (item.modo === 'pzs' ? `${fmt(v)} pzs` : fmtMXN(v));
+        const masBarata = Math.min(...info.filter(m => m.vivo).map(m => m.costo));
+        avisos.push(`Línea ${item.linea} (${item.idRaw} → ${recInfo.nombre}): ${unidad(asignado)} de ${unidad(item.meta)} · ${usados.reduce((s, m) => s + m.corridas, 0)} corridas en ${usados.length} de ${info.length} modelos.` +
+          (restante > 0 ? ` Sobran ${unidad(restante)}: ${isFinite(masBarata) ? `la corrida más barata que queda cuesta ${unidad(masBarata)}` : 'ya no hay inventario disponible en los surtidores (respetando lo mínimo a dejar)'}.` : '') +
+          (sinStock ? ` ${sinStock} modelos sin stock suficiente para 1 corrida.` : ''));
+      });
 
       setNecesResult(resultado);
       setNecesAvisos(avisos);
-      // Si no hubo resultados pero sí avisos, mostrarlos
-      if (resultado.length === 0 && avisos.length > 0) {
-        alert('No se generaron traslados:\n\n' + avisos.join('\n\n'));
-      }
       setNecesLoading(false);
     }, 300);
   }, [dataOp, extraerTalla, lookupCentro]);
+
 
   // Confirmar talla manual en el modal
   const confirmarTallaModal = () => {
@@ -1220,7 +1042,7 @@ export default function Traslados() {
       setModalTallas(null);
       setModalInputVal('');
       // Reejecutar cálculo con cache completo
-      const chequera = parsearChequera(chequeraText, dataOp);
+      const { items: chequera } = parsearChequera(chequeraText, dataOp);
       const surtidoresList = centrosSurtidores
         ? centrosSurtidores.split(',').map(c => c.trim()).filter(Boolean)
         : null;
@@ -2237,13 +2059,13 @@ export default function Traslados() {
                   Chequera de Solicitud
                 </h3>
                 <p className={`text-[10px] mb-3 ${t.textMuted}`}>
-                  SKU / Modelo / GOA / Marca | Ppto ($) | Centro receptor — los 3 son obligatorios
+                  Identificador(es) | $ o pzs | Centro receptor. Varios: "MONEDERO + CARTERA". Piezas: "50 pzs". Se asigna 1 corrida por modelo por vuelta (los que más venden primero) hasta agotar la meta.
                 </p>
                 <textarea
                   value={chequeraText}
                   onChange={e => setChequeraText(e.target.value)}
                   rows={10}
-                  placeholder={"WILSON-22 | 22450 | SATELITE\nTENIS NIñA | 50000 | M A QUEVEDO\nBUBBLE GUMMERS | 30000 | BUENAVISTA"}
+                  placeholder={"WILSON-22 | 22450 | SATELITE\nMONEDERO + CARTERA | 50 pzs | M A QUEVEDO\nWEEKEND; TED LAPIDUS | 30000 | BUENAVISTA"}
                   className={`w-full text-xs font-mono px-3 py-2 rounded-lg border resize-y ${t.input} focus:outline-none focus:ring-1`}
                 />
                 {Object.keys(tallasCache).length > 0 && (
@@ -2338,7 +2160,7 @@ export default function Traslados() {
             {necesAvisos.length > 0 && (
               <div className={`p-4 rounded-xl border border-amber-500/30 ${isDark ? 'bg-amber-950/20' : 'bg-amber-50'}`}>
                 <h4 className="text-sm font-black text-amber-500 mb-2 flex items-center gap-2">
-                  <Icons.AlertCircle size={15} /> Avisos ({necesAvisos.length})
+                  <Icons.AlertCircle size={15} /> Resumen por línea y avisos ({necesAvisos.length})
                 </h4>
                 <ul className="space-y-1.5">
                   {necesAvisos.map((a, i) => (
@@ -2420,7 +2242,7 @@ export default function Traslados() {
                 <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                   {[
                     { label: 'L\u00edneas SKU', val: necesResult.length },
-                    { label: 'Corridas',    val: fmt(Math.max(...necesResult.map(r => r.corridasEnv || 0))) },
+                    { label: 'Corridas',    val: fmt(Object.values(necesResult.reduce((m, r) => (m[r.linea] = r.corridasEnv || 0, m), {})).reduce((s, v) => s + v, 0)) },
                     { label: 'Piezas',      val: fmt(necesResult.reduce((s, r) => s + r.pzs, 0)) },
                     { label: 'Importe',     val: fmtMXN(necesResult.reduce((s, r) => s + r.importe, 0)) },
                   ].map(({ label, val }) => (
