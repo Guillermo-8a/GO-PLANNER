@@ -10,6 +10,14 @@ import { bestForecast } from '../utils/fcstEngine';
 const toNum = (v) => parseFloat(String(v ?? '').replace(/[^0-9.-]+/g, '')) || 0;
 
 // --- FUNCIONES MATEMÁTICAS ---
+// Lee CSV respetando acentos y ñ: intenta UTF-8 (Sheets/BigQuery) y si no es válido usa Windows-1252 (Excel/SAP)
+const decodeCSV = (buf) => {
+    try { return new TextDecoder('utf-8', { fatal: true }).decode(buf).replace(/^\uFEFF/, ''); }
+    catch { return new TextDecoder('windows-1252').decode(buf); }
+};
+const MESES_C = ['Ene', 'Feb', 'Mar', 'Abr', 'May', 'Jun', 'Jul', 'Ago', 'Sep', 'Oct', 'Nov', 'Dic'];
+const isoWeek = (d = new Date()) => { const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); const day = t.getUTCDay() || 7; t.setUTCDate(t.getUTCDate() + 4 - day); const y0 = new Date(Date.UTC(t.getUTCFullYear(), 0, 1)); return Math.ceil(((t - y0) / 864e5 + 1) / 7); };
+
 const calculateRegression = (data) => {
     if (data.length < 2) return { m: 0, b: data[0]?.y || 0, r2: 1 };
     let sumX = 0, sumY = 0, sumXY = 0, sumX2 = 0;
@@ -218,13 +226,17 @@ export default function App() {
                 maxPeriod = Math.max(...processedData.map(d => Math.max(...d.monthlySales.map(ms => ms.period), 1)));
             }
 
+            // Horizonte por default = 26 semanas desde el periodo actual (mensual ≈ 6 meses). Puede cruzar de año.
             if (maxPeriod <= 1) {
                  setPeriodStart(1);
                  setPeriodEnd(1);
+            } else if (maxPeriod <= 12) {
+                 setPeriodStart(currentMonth);
+                 setPeriodEnd(currentMonth + 5);
             } else {
-                 setPeriodStart(Math.min(currentMonth, maxPeriod));
-                 // mensual: la ventana puede cruzar a enero (13 = Ene del año siguiente)
-                 setPeriodEnd(maxPeriod <= 12 ? currentMonth + 2 : Math.min(currentMonth + 2, maxPeriod));
+                 const w = Math.min(isoWeek(), maxPeriod);
+                 setPeriodStart(w);
+                 setPeriodEnd(w + 25);
             }
 
             setData(processedData);
@@ -285,14 +297,14 @@ export default function App() {
         setSyncSuccess(false);
         const reader = new FileReader();
         reader.onload = (evt) => {
-            processCSVData(evt.target.result);
+            processCSVData(decodeCSV(evt.target.result));
             e.target.value = null;
         };
         reader.onerror = () => {
             setError("Error al leer el archivo local.");
             setIsSyncing(false);
         };
-        reader.readAsText(file, 'ISO-8859-1');
+        reader.readAsArrayBuffer(file);
     };
 
     const handleSync = async () => {
@@ -311,6 +323,17 @@ export default function App() {
     // BASE DE DATOS PRE-FILTROS DE UI
     // Periodos del ciclo (12 mensual / 52 semanal) y ventana de pronóstico con cruce de año
     const nPer = useMemo(() => data.reduce((mx, d) => d.monthlySales.reduce((a, m) => Math.max(a, m.period), mx), 1), [data]);
+    // Etiqueta legible del periodo: mensual "Nov-26"; semanal "S45-26". wrapped = ya es del año siguiente
+    const perLabel = (period, wrapped) => {
+        const yy = String((new Date().getFullYear() + (wrapped ? 1 : 0)) % 100).padStart(2, '0');
+        return nPer <= 12 ? `${MESES_C[(period - 1) % 12]}-${yy}` : `S${period}-${yy}`;
+    };
+    const rangoTxt = useMemo(() => {
+        const n = periodEnd - periodStart + 1;
+        const a = perLabel(((periodStart - 1) % nPer) + 1, periodStart > nPer), b = perLabel(((periodEnd - 1) % nPer) + 1, periodEnd > nPer);
+        return `${a} a ${b} · ${n} ${nPer <= 12 ? (n === 1 ? 'mes' : 'meses') : 'semanas'}`;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [periodStart, periodEnd, nPer]);
     const windowPeriods = useMemo(() => {
         const out = [];
         for (let i = periodStart; i <= periodEnd; i++) out.push({ p: ((i - 1) % nPer) + 1, wrapped: i > nPer });
@@ -652,15 +675,17 @@ export default function App() {
             agg.oh += row.oh;
             agg.oo += row.oo;
             row.relevantPeriods.forEach(p => {
-                if (!periodMap[p.period]) periodMap[p.period] = { period: p.period, y1: 0, y2: 0, fcst: 0 };
+                if (!periodMap[p.period]) periodMap[p.period] = { period: p.period, wrapped: p.wrapped, y1: 0, y2: 0, fcst: 0 };
                 periodMap[p.period].y1 += p.y1;
                 periodMap[p.period].y2 += p.y2;
                 periodMap[p.period].fcst += p.fcst;
             });
         });
-        agg.relevantPeriods = Object.values(periodMap).sort((a,b) => a.period - b.period);
+        // Orden del rango (Oct, Nov, Dic, Ene…), no por número de periodo (antes Ene salía antes que Oct)
+        const orden = Object.fromEntries(windowPeriods.map((w, i) => [w.p, i]));
+        agg.relevantPeriods = Object.values(periodMap).sort((a,b) => (orden[a.period] ?? a.period) - (orden[b.period] ?? b.period));
         return agg;
-    }, [enrichedData, filterCentro, filterMarca]);
+    }, [enrichedData, filterCentro, filterMarca, windowPeriods]);
 
     // Item Activo para las gráficas
     const activeItem = selectedItem || globalAggregatedItem;
@@ -699,6 +724,7 @@ export default function App() {
     const periodColumnsArray = useMemo(() => {
         return windowPeriods.map(w => w.p);
     }, [windowPeriods]);
+    const wrapDe = useMemo(() => Object.fromEntries(windowPeriods.map(w => [w.p, w.wrapped])), [windowPeriods]);
 
     const getSummaryBy = (key) => {
         const groups = {};
@@ -773,7 +799,7 @@ export default function App() {
 
     const handleExportSkuPeriod = () => {
         if (skuPeriodSummary.length === 0) return;
-        const headers = ["SKU", "Marca", "Nombre", "Total Comprar", ...periodColumnsArray.map(p => `FCST P${p}`)];
+        const headers = ["SKU", "Marca", "Nombre", "Total Comprar", ...periodColumnsArray.map(p => `FCST ${perLabel(p, wrapDe[p])}`)];
         const csvRows = [headers.join(',')];
         
         skuPeriodSummary.forEach(row => {
@@ -988,7 +1014,7 @@ export default function App() {
                             </select>
                         </div>
                         <div className="flex flex-col gap-1 flex-[2] min-w-[150px]">
-                            <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1"><Calendar className="w-3 h-3"/> Rango</label>
+                            <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1" title={`Periodos ${nPer <= 12 ? 'mensuales (1 = Ene … 12 = Dic; 13 = Ene del año siguiente)' : 'semanales (1–52; 53 = S1 del año siguiente)'}`}><Calendar className="w-3 h-3"/> Rango · {rangoTxt}</label>
                             <div className="flex items-center gap-1">
                                 <div className="flex items-center gap-1 w-full bg-gray-50 dark:bg-white/[0.045] dark:backdrop-blur-xl transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] border border-gray-300 dark:border-[#333] rounded-lg p-1 px-2 transition-colors">
                                     <span className="text-xs text-gray-500 dark:text-gray-400">De:</span>
@@ -996,7 +1022,7 @@ export default function App() {
                                 </div>
                                 <div className="flex items-center gap-1 w-full bg-gray-50 dark:bg-white/[0.045] dark:backdrop-blur-xl transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] border border-gray-300 dark:border-[#333] rounded-lg p-1 px-2 transition-colors">
                                     <span className="text-xs text-gray-500 dark:text-gray-400">A:</span>
-                                    <input type="number" min={periodStart} max="52" value={periodEnd} onChange={(e) => setPeriodEnd(Number(e.target.value))} className="bg-transparent border-none text-gray-900 dark:text-white w-8 text-center outline-none font-bold text-xs" />
+                                    <input type="number" min={periodStart} max={nPer * 2} value={periodEnd} onChange={(e) => setPeriodEnd(Number(e.target.value))} className="bg-transparent border-none text-gray-900 dark:text-white w-8 text-center outline-none font-bold text-xs" />
                                 </div>
                             </div>
                         </div>
@@ -1007,7 +1033,7 @@ export default function App() {
                         <div className="bg-white border border-gray-200 dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] shadow-sm dark:shadow-none rounded-xl p-4 flex items-center gap-4 transition-colors">
                             <div className="bg-gray-100 dark:bg-gray-800 p-2.5 rounded-lg hidden sm:block"><BarChart2 className="w-5 h-5 text-gray-500 dark:text-gray-300" /></div>
                             <div>
-                                <p className="text-[10px] md:text-xs text-gray-500 uppercase font-semibold">Pronóstico (P{periodStart}-P{periodEnd})</p>
+                                <p className="text-[10px] md:text-xs text-gray-500 uppercase font-semibold">Pronóstico ({rangoTxt})</p>
                                 <p className="text-xl md:text-2xl font-bold text-gray-900 dark:text-white mt-0.5">{kpis.forecast.toLocaleString()} <span className="text-xs font-normal text-gray-400 dark:text-gray-500">PZS</span></p>
                             </div>
                         </div>
@@ -1174,7 +1200,7 @@ export default function App() {
 
                                     {/* Gráfica 1 - Ventas y Degradación de Inventario */}
                                     <div className="flex-none border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/[0.045] dark:backdrop-blur-xl transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] rounded-lg p-3 mb-4 flex flex-col min-h-[250px] transition-colors">
-                                        <h3 className="text-xs text-gray-500 dark:text-gray-400 uppercase font-bold mb-2">Ventas & Stockout (P{periodStart}-P{periodEnd})</h3>
+                                        <h3 className="text-xs text-gray-500 dark:text-gray-400 uppercase font-bold mb-2">Ventas & Stockout ({rangoTxt})</h3>
                                         <div className="flex-1 relative w-full h-full mt-2 pb-6">
                                             {(() => {
                                                 const periods = activeItem.relevantPeriods;
@@ -1246,12 +1272,12 @@ export default function App() {
                                                                 const inv = projectedInv[i];
                                                                 return (
                                                                     <React.Fragment key={i}>
-                                                                        <div className="absolute w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full" style={{ left: `calc(${x}% - 4px)`, top: `calc(${getY(p.y1)}% - 4px)` }} title={`Año 1 P${p.period}: ${p.y1.toFixed(1)}`}></div>
-                                                                        <div className="absolute w-2 h-2 bg-purple-500 dark:bg-purple-600 rounded-full" style={{ left: `calc(${x}% - 4px)`, top: `calc(${getY(p.y2)}% - 4px)` }} title={`Año 2 P${p.period}: ${p.y2.toFixed(1)}`}></div>
-                                                                        <div className="absolute w-2 h-2 bg-yellow-500 dark:bg-yellow-400 rounded-sm rotate-45 z-10" style={{ left: `calc(${x}% - 4px)`, top: `calc(${getY(p.fcst)}% - 4px)` }} title={`Forecast P${p.period}: ${p.fcst.toFixed(1)}`}></div>
+                                                                        <div className="absolute w-2 h-2 bg-gray-400 dark:bg-gray-500 rounded-full" style={{ left: `calc(${x}% - 4px)`, top: `calc(${getY(p.y1)}% - 4px)` }} title={`Año 1 ${perLabel(p.period, p.wrapped)}: ${p.y1.toFixed(1)}`}></div>
+                                                                        <div className="absolute w-2 h-2 bg-purple-500 dark:bg-purple-600 rounded-full" style={{ left: `calc(${x}% - 4px)`, top: `calc(${getY(p.y2)}% - 4px)` }} title={`Año 2 ${perLabel(p.period, p.wrapped)}: ${p.y2.toFixed(1)}`}></div>
+                                                                        <div className="absolute w-2 h-2 bg-yellow-500 dark:bg-yellow-400 rounded-sm rotate-45 z-10" style={{ left: `calc(${x}% - 4px)`, top: `calc(${getY(p.fcst)}% - 4px)` }} title={`Forecast ${perLabel(p.period, p.wrapped)}: ${p.fcst.toFixed(1)}`}></div>
                                                                         
                                                                         {/* Nodos del Inventario */}
-                                                                        <div className={`absolute w-2 h-2 ${inv < 0 ? 'bg-red-500' : 'bg-blue-500'} rounded-full z-20 border border-white dark:border-black shadow-sm`} style={{ left: `calc(${x}% - 4px)`, top: `calc(${getY(inv)}% - 4px)` }} title={`Inv. Proyectado P${p.period}: ${inv.toFixed(1)}`}></div>
+                                                                        <div className={`absolute w-2 h-2 ${inv < 0 ? 'bg-red-500' : 'bg-blue-500'} rounded-full z-20 border border-white dark:border-black shadow-sm`} style={{ left: `calc(${x}% - 4px)`, top: `calc(${getY(inv)}% - 4px)` }} title={`Inv. proyectado ${perLabel(p.period, p.wrapped)}: ${inv.toFixed(1)}`}></div>
                                                                     </React.Fragment>
                                                                 )
                                                             })}
@@ -1263,8 +1289,8 @@ export default function App() {
                                                         {/* EJE X (Etiquetas de Periodos) */}
                                                         <div className="absolute -bottom-6 left-0 w-full flex justify-between text-[9px] text-gray-500 font-bold">
                                                             {periods.map((p, i) => (
-                                                                <div key={i} className="absolute text-center w-8 -ml-4" style={{ left: `${getX(i)}%` }}>
-                                                                    P{p.period}
+                                                                <div key={i} className="absolute text-center w-10 -ml-5" style={{ left: `${getX(i)}%` }}>
+                                                                    {(periods.length <= 8 || i % Math.ceil(periods.length / 8) === 0) ? perLabel(p.period, p.wrapped) : ''}
                                                                 </div>
                                                             ))}
                                                         </div>
@@ -1280,93 +1306,59 @@ export default function App() {
                                         </div>
                                     </div>
 
-                                    {/* Gráficos de Dispersión (Antes y Después) LADO A LADO */}
+                                    {/* Dispersión por CENTRO (suma de las combinaciones que deja el filtro): demanda vs inventario, antes y después de comprar */}
                                     {(() => {
-                                        const scatterSourceData = enrichedData.slice(0, 3000); // Limitado a 3000 para no trabar el navegador si hay demasiados
-
-                                        const maxXBefore = Math.max(...scatterSourceData.map(d => d.vtaAcumAct), 1) * 1.1; 
-                                        const maxXAfter = Math.max(...scatterSourceData.map(d => d.forecast), 1) * 1.1; 
-                                        const maxYBefore = Math.max(...scatterSourceData.map(d => d.oh + d.oo), 1) * 1.1;
-                                        const maxYAfter = Math.max(...scatterSourceData.map(d => d.oh + d.oo + d.toBuy), 1) * 1.1;
-
-                                        const beforeData = scatterSourceData.map(d => ({ x: d.vtaAcumAct, y: d.oh + d.oo, label: `${d.centro} - ${d.sku}`, id: d.id }));
-                                        const afterData = scatterSourceData.map(d => ({ x: d.forecast, y: d.oh + d.oo + d.toBuy, label: `${d.centro} - ${d.sku}`, id: d.id }));
-
-                                        const regBefore = calculateRegression(beforeData);
-                                        const regAfter = calculateRegression(afterData);
-
-                                        const getXBefore = x => (x / maxXBefore) * 100;
-                                        const getYBefore = y => 100 - (y / maxYBefore) * 100;
-                                        const getXAfter = x => (x / maxXAfter) * 100;
-                                        const getYAfter = y => 100 - (y / maxYAfter) * 100;
-
+                                        const porCentro = {};
+                                        enrichedData.forEach(d => {
+                                            const c = porCentro[d.centro] || (porCentro[d.centro] = { centro: d.centro, fcst: 0, invA: 0, compra: 0, combos: 0 });
+                                            c.fcst += d.forecast || 0; c.invA += (d.oh || 0) + (d.oo || 0); c.compra += d.toBuy || 0; c.combos += 1;
+                                        });
+                                        const pts = Object.values(porCentro).map(c => ({ ...c, invD: c.invA + c.compra }));
+                                        const selC = selectedItem?.centro;
+                                        // Mismo eje X (demanda pronosticada) y misma escala en las dos para que el R² y la nube se comparen directo
+                                        const maxX = Math.max(...pts.map(p => p.fcst), 1) * 1.05;
+                                        const maxY = Math.max(...pts.map(p => Math.max(p.invA, p.invD)), 1) * 1.05;
+                                        const regA = calculateRegression(pts.map(p => ({ x: p.fcst, y: p.invA })));
+                                        const regD = calculateRegression(pts.map(p => ({ x: p.fcst, y: p.invD })));
+                                        const gx = x => (x / maxX) * 100, gy = y => 100 - (y / maxY) * 100;
+                                        const panel = (titulo, sub, yKey, reg, color) => (
+                                            <div className="flex-1 border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/[0.045] dark:backdrop-blur-xl rounded-lg p-3 flex flex-col relative overflow-hidden">
+                                                <div className="flex justify-between items-start z-10 mb-2">
+                                                    <div>
+                                                        <h3 className="text-[10px] text-gray-500 dark:text-gray-400 uppercase font-bold">{titulo}</h3>
+                                                        <p className="text-[8px] text-gray-400 italic">{sub}</p>
+                                                    </div>
+                                                    <span className="text-[9px] font-bold bg-white dark:bg-white/5 px-1.5 py-0.5 rounded border border-gray-200 dark:border-white/10" style={{ color }} title="Qué tanto el inventario de cada centro sigue a su demanda (1.0 = perfecto)">R² {reg.r2.toFixed(2)}</span>
+                                                </div>
+                                                <div className="flex-1 relative w-full h-full ml-4 mb-3">
+                                                    <div className="absolute top-0 bottom-0 left-0 border-l border-gray-400 dark:border-gray-600"></div>
+                                                    <div className="absolute bottom-0 left-0 right-0 border-b border-gray-400 dark:border-gray-600"></div>
+                                                    <svg className="absolute inset-0 w-full h-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
+                                                        <line x1={0} y1={gy(reg.b)} x2={100} y2={gy(reg.m * maxX + reg.b)} stroke={color} strokeWidth="1.5" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />
+                                                    </svg>
+                                                    {pts.map(p => {
+                                                        const sel = selC && selC === p.centro;
+                                                        return (
+                                                            <div key={p.centro} className={`absolute rounded-full transition-transform ${sel ? 'w-4 h-4 bg-yellow-400 border-2 border-black z-30 shadow-lg' : 'w-2.5 h-2.5 hover:scale-150 z-10'}`}
+                                                                style={{ left: `calc(${gx(p.fcst)}% - ${sel ? 8 : 5}px)`, top: `calc(${gy(p[yKey])}% - ${sel ? 8 : 5}px)`, background: sel ? undefined : color, opacity: sel ? 1 : 0.7 }}
+                                                                title={`${p.centro} · ${p.combos} combinaciones\nDemanda (fcst ${rangoTxt}): ${Math.round(p.fcst).toLocaleString('es-MX')}\nInv antes (OH+OO): ${Math.round(p.invA).toLocaleString('es-MX')}\nCompra sugerida: +${Math.round(p.compra).toLocaleString('es-MX')}\nInv después: ${Math.round(p.invD).toLocaleString('es-MX')}\nCobertura: ${p.fcst > 0 ? (p.invA / p.fcst * 100).toFixed(0) : '—'}% → ${p.fcst > 0 ? (p.invD / p.fcst * 100).toFixed(0) : '—'}%`}>
+                                                            </div>
+                                                        );
+                                                    })}
+                                                    <div className="absolute -bottom-3 left-0 text-[7px] text-gray-500">0</div>
+                                                    <div className="absolute -bottom-3 right-0 text-[7px] text-gray-500">{Math.round(maxX).toLocaleString('es-MX')}</div>
+                                                    <div className="absolute top-0 -left-4 text-[7px] text-gray-500">{Math.round(maxY).toLocaleString('es-MX')}</div>
+                                                </div>
+                                                <div className="absolute bottom-1 right-2 text-[8px] text-gray-500 dark:text-gray-400 font-bold">Demanda (fcst del rango)</div>
+                                                <div className="absolute top-[40%] -left-3 text-[8px] text-gray-500 dark:text-gray-400 -rotate-90 font-bold tracking-widest">Inventario</div>
+                                            </div>
+                                        );
                                         return (
-                                            <div className="flex-none flex flex-col sm:flex-row gap-4 min-h-[250px] mb-4">
-                                                
-                                                {/* Gráfico 1: Antes */}
-                                                <div className="flex-1 border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/[0.045] dark:backdrop-blur-xl transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] rounded-lg p-3 flex flex-col relative transition-colors overflow-hidden">
-                                                    <div className="flex justify-between items-start z-10 mb-2">
-                                                        <div>
-                                                            <h3 className="text-[10px] text-gray-500 dark:text-gray-400 uppercase font-bold">Antes (Inv. Inicial vs Vta Act)</h3>
-                                                            <p className="text-[8px] text-gray-400 italic">Dependiente de los filtros actuales</p>
-                                                        </div>
-                                                        <span className="text-[9px] text-red-600 dark:text-red-500 font-bold bg-white dark:bg-white/5 px-1.5 py-0.5 rounded border border-red-200 dark:border-red-900/50" title="1.0 = Distribución Perfecta">R²: {regBefore.r2.toFixed(4)}</span>
-                                                    </div>
-                                                    <div className="flex-1 relative w-full h-full ml-4 mb-3">
-                                                        <div className="absolute top-0 bottom-0 left-0 border-l border-gray-400 dark:border-gray-600"></div>
-                                                        <div className="absolute bottom-0 left-0 right-0 border-b border-gray-400 dark:border-gray-600"></div>
-                                                        
-                                                        <svg className="absolute inset-0 w-full h-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
-                                                            <line x1={0} y1={getYBefore(regBefore.b)} x2={100} y2={getYBefore(regBefore.m * maxXBefore + regBefore.b)} className="stroke-red-500" strokeWidth="1.5" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />
-                                                        </svg>
-                                                        
-                                                        {beforeData.map((p) => {
-                                                            const isSelected = selectedItem && selectedItem.id === p.id;
-                                                            return (
-                                                                <div key={p.id} 
-                                                                     className={`absolute rounded-full cursor-pointer transition-transform z-10 ${isSelected ? 'w-4 h-4 bg-yellow-400 border-2 border-black z-30 shadow-lg' : 'w-2.5 h-2.5 bg-blue-600/40 dark:bg-blue-400/50 hover:scale-150 hover:bg-blue-500 mix-blend-multiply dark:mix-blend-screen'}`} 
-                                                                     style={{ left: `calc(${getXBefore(p.x)}% - ${isSelected ? 8 : 5}px + ${getJitterX(p.id)}px)`, top: `calc(${getYBefore(p.y)}% - ${isSelected ? 8 : 5}px + ${getJitterY(p.id)}px)` }} 
-                                                                     title={`Combinación: ${p.label}\nVta Acum. Actual: ${p.x}\nInv Inicial (OH+OO): ${p.y}`}>
-                                                                </div>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                    <div className="absolute bottom-1 right-2 text-[8px] text-gray-500 dark:text-gray-400 font-bold">Vta Acumulada</div>
-                                                    <div className="absolute top-[40%] -left-3 text-[8px] text-gray-500 dark:text-gray-400 -rotate-90 font-bold tracking-widest">Inv. Inicial</div>
+                                            <div className="flex-none flex flex-col gap-1 mb-4">
+                                                <div className="flex flex-col sm:flex-row gap-4 min-h-[250px]">
+                                                    {panel('Antes · Inv. actual (OH+OO) vs demanda', `${pts.length} centros · combinaciones del filtro`, 'invA', regA, '#60a5fa')}
+                                                    {panel('Después · Inv. + compra vs demanda', 'Punto amarillo: centro de la combinación seleccionada', 'invD', regD, '#4ade80')}
                                                 </div>
-
-                                                {/* Gráfico 2: Después */}
-                                                <div className="flex-1 border border-gray-200 dark:border-white/10 bg-gray-50 dark:bg-white/[0.045] dark:backdrop-blur-xl transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] rounded-lg p-3 flex flex-col relative transition-colors overflow-hidden">
-                                                    <div className="flex justify-between items-start z-10 mb-2">
-                                                        <div>
-                                                            <h3 className="text-[10px] text-gray-500 dark:text-gray-400 uppercase font-bold">Después (Inv. Final vs Demanda)</h3>
-                                                            <p className="text-[8px] text-gray-400 italic">Punto amarillo: Selección actual</p>
-                                                        </div>
-                                                        <span className="text-[9px] text-red-600 dark:text-red-500 font-bold bg-white dark:bg-white/5 px-1.5 py-0.5 rounded border border-red-200 dark:border-red-900/50" title="1.0 = Distribución Perfecta">R²: {regAfter.r2.toFixed(4)}</span>
-                                                    </div>
-                                                    <div className="flex-1 relative w-full h-full ml-4 mb-3">
-                                                        <div className="absolute top-0 bottom-0 left-0 border-l border-gray-400 dark:border-gray-600"></div>
-                                                        <div className="absolute bottom-0 left-0 right-0 border-b border-gray-400 dark:border-gray-600"></div>
-
-                                                        <svg className="absolute inset-0 w-full h-full overflow-visible" viewBox="0 0 100 100" preserveAspectRatio="none">
-                                                            <line x1={0} y1={getYAfter(regAfter.b)} x2={100} y2={getYAfter(regAfter.m * maxXAfter + regAfter.b)} className="stroke-red-500" strokeWidth="1.5" strokeDasharray="4 4" vectorEffect="non-scaling-stroke" />
-                                                        </svg>
-                                                        
-                                                        {afterData.map((p) => {
-                                                            const isSelected = selectedItem && selectedItem.id === p.id;
-                                                            return (
-                                                                <div key={p.id} 
-                                                                     className={`absolute rounded-full cursor-pointer transition-transform z-10 ${isSelected ? 'w-4 h-4 bg-yellow-400 border-2 border-black z-30 shadow-lg' : 'w-2.5 h-2.5 bg-green-600/40 dark:bg-green-400/50 hover:scale-150 hover:bg-green-500 mix-blend-multiply dark:mix-blend-screen'}`} 
-                                                                     style={{ left: `calc(${getXAfter(p.x)}% - ${isSelected ? 8 : 5}px + ${getJitterX(p.id)}px)`, top: `calc(${getYAfter(p.y)}% - ${isSelected ? 8 : 5}px + ${getJitterY(p.id)}px)` }} 
-                                                                     title={`Combinación: ${p.label}\nDemanda (Fcst): ${p.x}\nInv Final: ${p.y}`}>
-                                                                </div>
-                                                            );
-                                                        })}
-                                                    </div>
-                                                    <div className="absolute bottom-1 right-2 text-[8px] text-gray-500 dark:text-gray-400 font-bold">Demanda (Fcst)</div>
-                                                    <div className="absolute top-[40%] -left-3 text-[8px] text-gray-500 dark:text-gray-400 -rotate-90 font-bold tracking-widest">Inv. Final</div>
-                                                </div>
-                                                
                                             </div>
                                         );
                                     })()}
@@ -1450,7 +1442,7 @@ export default function App() {
                                         <th className="px-3 py-3 font-semibold border-r border-gray-200 dark:border-[#262626]">Nombre</th>
                                         <th className="px-3 py-3 font-semibold text-yellow-600 dark:text-yellow-400 border-r border-gray-200 dark:border-[#262626]">Total a Comprar</th>
                                         {periodColumnsArray.map(p => (
-                                            <th key={p} className="px-3 py-3 font-semibold text-center border-r border-gray-200 dark:border-[#262626]">FCST P{p}</th>
+                                            <th key={p} className="px-3 py-3 font-semibold text-center border-r border-gray-200 dark:border-[#262626]">FCST {perLabel(p, wrapDe[p])}</th>
                                         ))}
                                     </tr>
                                 </thead>

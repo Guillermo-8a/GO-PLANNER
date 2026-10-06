@@ -16,6 +16,8 @@ const normClima = (v) => { const u = String(v || '').toUpperCase().normalize('NF
 // Centros con 4 dígitos: la matriz trae "491" y el CSV "0491"
 const padC = (c) => { const x = String(c ?? '').trim(); return /^\d{1,3}$/.test(x) ? x.padStart(4, '0') : x; };
 const padKeys = (o) => Object.fromEntries(Object.entries(o || {}).map(([k, v]) => [k.startsWith('__') ? k : padC(k), v]));
+// UTF-8 si es válido (BigQuery/Sheets), si no Windows-1252 (Excel/SAP) → ñ y acentos bien en ambos casos
+const decodeCSV = (buf) => { try { return new TextDecoder('utf-8', { fatal: true }).decode(buf).replace(/^\uFEFF/, ''); } catch { return new TextDecoder('windows-1252').decode(buf); } };
 const num = v => parseFloat(String(v || '0').replace(/[^0-9.-]+/g, '')) || 0;
 
 // Regresión lineal + R² para scatter. points = [{x, y}]
@@ -342,7 +344,7 @@ export default function Traslados() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
-      const text = ev.target.result;
+      const text = decodeCSV(ev.target.result);
       const sep = text.includes('\t') ? '\t' : text.includes(';') ? ';' : ',';
       const rows = text.split('\n').map(r => parseCSVRow(r, sep));
       if (rows.length < 2) return;
@@ -414,7 +416,7 @@ export default function Traslados() {
       setExcResult([]);
       if (csvInputRef.current) csvInputRef.current.value = '';
     };
-    reader.readAsText(file, 'ISO-8859-1');
+    reader.readAsArrayBuffer(file);
   };
 
   // Leer CSV matrices (marca + clima)
@@ -423,7 +425,7 @@ export default function Traslados() {
     if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
-      const text = ev.target.result;
+      const text = decodeCSV(ev.target.result);
       const sep = text.includes('\t') ? '\t' : text.includes(';') ? ';' : ',';
       const rows = text.split('\n').map(r => parseCSVRow(r, sep));
       if (rows.length < 2) return;
@@ -532,7 +534,7 @@ export default function Traslados() {
       }
       if (matrizInputRef.current) matrizInputRef.current.value = '';
     };
-    reader.readAsText(file, 'ISO-8859-1');
+    reader.readAsArrayBuffer(file);
   };
 
   // Permiso de marca: solo restringe sección·marca que la matriz define (p. ej. BOLSAS no está en la matriz → libre).
