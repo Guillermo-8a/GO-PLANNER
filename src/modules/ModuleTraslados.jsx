@@ -102,37 +102,28 @@ const BarCompare = ({ data, theme }) => {
 };
 
 
-const DonutSummary = ({ items, theme }) => {
-  const isDark = theme === 'dark';
-  const total = items.reduce((s, x) => s + x.value, 0) || 1;
-  let offset = 0;
-  const r = 40, cx = 50, cy = 50, circ = 2 * Math.PI * r;
-  const colors = ['#a78bfa', '#34d399', '#fbbf24', '#60a5fa', '#f87171', '#e879f9'];
+// ─── MULTISELECT CON BÚSQUEDA (Solicitud) ─────────────────────────────────────
+const MultiPick = ({ label, options, value, onChange, t, isDark }) => {
+  const [q, setQ] = useState('');
+  const qq = q.trim().toUpperCase();
+  const vis = options.filter(o => !qq || o.toUpperCase().includes(qq)).slice(0, 300);
+  const toggle = (o) => onChange(value.includes(o) ? value.filter(x => x !== o) : [...value, o]);
   return (
-    <div className="flex items-center gap-6">
-      <svg viewBox="0 0 100 100" className="w-28 h-28 -rotate-90">
-        {items.map((item, i) => {
-          const pct = item.value / total;
-          const dash = pct * circ;
-          const seg = (
-            <circle key={i} cx={cx} cy={cy} r={r}
-              fill="none" stroke={colors[i % colors.length]} strokeWidth="18"
-              strokeDasharray={`${dash} ${circ - dash}`}
-              strokeDashoffset={-offset * circ}
-              style={{ transition: 'stroke-dasharray 0.5s ease' }} />
-          );
-          offset += pct;
-          return seg;
-        })}
-      </svg>
-      <div className="flex flex-col gap-1">
-        {items.map((item, i) => (
-          <div key={i} className="flex items-center gap-2 text-[10px]">
-            <span className="w-2 h-2 rounded-full inline-block" style={{ background: colors[i % colors.length] }} />
-            <span className={isDark ? 'text-gray-300' : 'text-gray-600'}>{item.label}</span>
-            <span className="font-black ml-1" style={{ color: colors[i % colors.length] }}>{item.value}</span>
-          </div>
+    <div className={`rounded-lg border p-2 ${t.cardInner}`}>
+      <div className="flex items-center justify-between mb-1">
+        <span className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted}`}>{label} {value.length > 0 && <span className={t.textAccent1}>· {value.length}</span>}</span>
+        {value.length > 0 && <button onClick={() => onChange([])} className={`text-[9px] font-bold ${t.textMuted} hover:underline`}>limpiar</button>}
+      </div>
+      <input value={q} onChange={e => setQ(e.target.value)} placeholder={`Buscar (${options.length})`}
+        className={`w-full text-[11px] px-2 py-1 mb-1 rounded border ${t.input} focus:outline-none`} />
+      <div className="max-h-36 overflow-y-auto custom-scrollbar space-y-0.5">
+        {vis.map(o => (
+          <label key={o} className={`flex items-center gap-1.5 text-[11px] cursor-pointer px-1 rounded ${value.includes(o) ? (isDark ? 'bg-violet-500/20 text-white' : 'bg-violet-50 text-violet-700') : t.textMain}`}>
+            <input type="checkbox" checked={value.includes(o)} onChange={() => toggle(o)} className="accent-violet-500" />
+            <span className="truncate" title={o}>{o}</span>
+          </label>
         ))}
+        {!vis.length && <p className={`text-[10px] ${t.textMuted}`}>Sin coincidencias</p>}
       </div>
     </div>
   );
