@@ -206,6 +206,8 @@ export default function Traslados() {
   const [centrosExcluidos, setCentrosExcluidos] = useState(cfgIni.centrosExcluidos ?? '');
   const [excluirBodegas,   setExcluirBodegas]   = useState(cfgIni.excluirBodegas ?? true);
   const [excMosMax,        setExcMosMax]        = useState(cfgIni.excMosMax ?? 4); // Tab 1: tope de cobertura del receptor
+  // OH/VTA en pesos de BI vienen SIN IVA y PRECIO trae IVA: piezas = pesos ÷ (PRECIO ÷ 1.16)
+  const [pesosSinIva,      setPesosSinIva]      = useState(cfgIni.pesosSinIva ?? true);
   const esBodega = (r) => /BODEGA|\bPLAN\b|CEDIS|ALMAC[EÉ]N|FULFILL|\bCD\b/i.test(`${r.nCentro || ''} ${r.tipoCentro || ''}`);
   const excluidosSet = useMemo(() => new Set(centrosExcluidos.split(/[,\n;\s]+/).map(s => s.trim().toUpperCase()).filter(Boolean)), [centrosExcluidos]);
   const dataOp = useMemo(() => rawData.filter(r =>
@@ -217,9 +219,9 @@ export default function Traslados() {
     rawData.forEach(r => { if (!ok.has(r.centro)) m.set(r.centro, r.nCentro || r.centro); });
     return [...m.entries()];
   }, [rawData, dataOp]);
-  useEffect(() => { try { localStorage.setItem('gop_traslados_cfg', JSON.stringify({ centrosExcluidos, excluirBodegas, excMosMax, ohEnPesos })); } catch {} },
+  useEffect(() => { try { localStorage.setItem('gop_traslados_cfg', JSON.stringify({ centrosExcluidos, excluirBodegas, excMosMax, ohEnPesos, pesosSinIva })); } catch {} },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [centrosExcluidos, excluirBodegas, excMosMax, ohEnPesos]);
+    [centrosExcluidos, excluirBodegas, excMosMax, ohEnPesos, pesosSinIva]);
 
   // Panel configurable: { [goa]: 'FRIO' | 'CALOR' | 'PLAYA' | 'TODO' }
   // El usuario define qué GOAs son de temporada y qué clima requieren
@@ -390,7 +392,8 @@ export default function Traslados() {
         const vta3mRaw  = iVta3m     >= 0 ? num(r[iVta3m])     : null;
         const vtaMaRaw  = iVtaMesAnt >= 0 ? num(r[iVtaMesAnt]) : null;
         // Convertir pesos → piezas si aplica (OH_pzs = OH_pesos / precio)
-        const conv = (v) => ohEnPesos && precioRow > 0 && v != null ? Math.round(v / precioRow) : v;
+        const divisor = pesosSinIva ? precioRow / 1.16 : precioRow;
+        const conv = (v) => ohEnPesos && precioRow > 0 && v != null ? Math.round(v / divisor) : v;
         extracted.push({
           _raw:       { oh: ohRaw, vta: vtaRaw, vta3m: vta3mRaw, vtaMesAnt: vtaMaRaw },
           numSeccion: iSeccion   >= 0 ? r[iSeccion].trim()    : '',
@@ -540,19 +543,19 @@ export default function Traslados() {
   };
 
   // Cambiar "OH en pesos/piezas" re-convierte lo ya cargado (antes solo aplicaba a la siguiente carga)
-  const unidadesRef = useRef(ohEnPesos);
+  const unidadesRef = useRef(`${ohEnPesos}|${pesosSinIva}`);
   useEffect(() => {
-    if (unidadesRef.current === ohEnPesos) return;
-    unidadesRef.current = ohEnPesos;
+    if (unidadesRef.current === `${ohEnPesos}|${pesosSinIva}`) return;
+    unidadesRef.current = `${ohEnPesos}|${pesosSinIva}`;
     setRawData(rows => rows.map(r => {
       if (!r._raw) return r;
-      const p = r.precio, conv = (v) => (ohEnPesos && p > 0 && v != null ? Math.round(v / p) : v);
+      const p = r.precio, dv = pesosSinIva ? p / 1.16 : p, conv = (v) => (ohEnPesos && p > 0 && v != null ? Math.round(v / dv) : v);
       return { ...r, oh: conv(r._raw.oh), ohPesos: ohEnPesos ? r._raw.oh : r._raw.oh * p, vta: conv(r._raw.vta),
         vta3m: r._raw.vta3m != null ? conv(r._raw.vta3m) : null, vtaMesAnt: r._raw.vtaMesAnt != null ? conv(r._raw.vtaMesAnt) : null };
     }));
     setExcResult([]); setNivResult([]); setNivExecuted(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [ohEnPesos]);
+  }, [ohEnPesos, pesosSinIva]);
 
   // Opciones de filtros
   const opcionesGoa     = useMemo(() => ['ALL', ...new Set(rawData.map(r => r.goa).filter(Boolean))], [rawData]);
@@ -1727,6 +1730,13 @@ export default function Traslados() {
               title="Si tu CSV trae OH y VTA en pesos, actívalo para convertir a piezas">
               OH en {ohEnPesos ? 'pesos → pzs' : 'piezas'}
             </button>
+            {ohEnPesos && (
+              <button onClick={() => setPesosSinIva(v => !v)}
+                className={`px-3 py-1 rounded-full text-[10px] font-black border transition-all ${pesosSinIva ? t.badgeTeal : t.btnGhost}`}
+                title="Pesos de BI sin IVA: divide entre PRECIO ÷ 1.16. Apágalo si tus pesos ya traen IVA.">
+                Pesos {pesosSinIva ? 'sin IVA' : 'con IVA'}
+              </button>
+            )}
             {Object.keys(brandMatrix).length > 0 && (
               <span className={`px-3 py-1 rounded-full text-[10px] font-black border ${t.badgeTeal}`}>
                 Matriz marca ✓
