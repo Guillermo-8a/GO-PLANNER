@@ -713,7 +713,7 @@ export default function Traslados() {
               ohOrigen: dataOrigen.oh, pzs, pesos: pzs * precio, precio,
               costoTraslado: pzs * costoPorPza, fueraZona,
               razon: `${goa} (${tipoClima}) en ${tcOrigen}${fueraZona ? (esFueraAdyacente ? ' · otra zona' : ' · METRO') : ''}`,
-              tipoCentroOrigen: dataOrigen.tipoCentro, tipoCentroReceptor: rec.data.tipoCentro, letraDesc: dataOrigen.letraDesc || '',
+              tipoCentroOrigen: tcOrigen || dataOrigen.tipoCentro, tipoCentroReceptor: rec.tc || rec.data.tipoCentro, letraDesc: dataOrigen.letraDesc || '',
             });
           }
           if (resto > 0) sinReceptor.push({
@@ -782,9 +782,12 @@ export default function Traslados() {
   const scatterData = useMemo(() => {
     if (!dataOp.length) return [];
 
-    // Agregar por centro
+    // Solo GOAs de temporada (lo que esta herramienta mueve). Antes sumaba TODO el inventario de la tienda,
+    // así que unas cuantas piezas movidas no se notaban y los puntos antes/después quedaban encimados.
+    const activos = new Set(Object.keys(goasTemporada).filter(g => goasTemporada[g] && goasTemporada[g] !== 'TODO'));
     const porCentro = {};
     dataOp.forEach(r => {
+      if (!activos.has(r.goa)) return;
       if (!porCentro[r.centro]) porCentro[r.centro] = { nombre: r.nCentro || r.centro, zona: r.zona, oh: 0, vta: 0, goas: {} };
       porCentro[r.centro].oh  += r.oh;
       porCentro[r.centro].vta += r.vta;
@@ -810,7 +813,7 @@ export default function Traslados() {
         cambia: d.oh !== ohDespues,
       };
     }).filter(d => d.ohAntes > 0 || d.vtaAntes > 0);
-  }, [excResult, dataOp]);
+  }, [excResult, dataOp, goasTemporada]);
 
   const exportExcedente = () => {
     // Layout base + Costo Traslado + Razón
@@ -840,6 +843,7 @@ export default function Traslados() {
   const [solMeta, setSolMeta] = useState('');
   const [solModo, setSolModo] = useState('$');
   const [solRec, setSolRec] = useState('');
+  const [solColapsado, setSolColapsado] = useState(false);
   useEffect(() => { try { localStorage.setItem('gop_traslados_sol', JSON.stringify(solLineas)); } catch {} }, [solLineas]);
   const filtraSol = (r, f, skip) => ['marca', 'goa', 'modelo', 'sku'].every(k => k === skip || !f[k]?.length || f[k].includes(k === 'modelo' ? (r.modelo || r.goa) : r[k]));
   const solOpciones = useMemo(() => {
@@ -973,10 +977,11 @@ export default function Traslados() {
 
   // HERRAMIENTA NECESIDAD — corridas por modelo+talla
   const calcularNecesidad = useCallback(() => {
-    if ((!chequeraText.trim() && !solLineas.length) || !dataOp.length) return;
+    if (!solLineas.length || !dataOp.length) return;
     setNecesAvisos([]);
-    const { items: deTexto, errores } = chequeraText.trim() ? parsearChequera(chequeraText, dataOp) : { items: [], errores: [] };
+    const deTexto = [], errores = []; // la chequera escrita se quitó: todo entra por filtros
     if (errores.length) { alert('Revisa la chequera:\n' + errores.join('\n')); return; }
+    setSolColapsado(true);
     const chequera = [...solLineas.map((l, i) => ({ linea: `F${i + 1}`, idRaw: l.desc, ids: [], filtros: l.filtros, meta: l.meta, modo: l.modo, centroReceptor: l.centroReceptor })), ...deTexto];
     const surtidoresList = centrosSurtidores ? centrosSurtidores.split(',').map(c => c.trim()).filter(Boolean) : null;
     ejecutarCalculo(chequera, surtidoresList, buildMatchSurtidor(surtidoresList), tallasCache, minCorridasAlto, minCorridasResto);
@@ -1072,7 +1077,7 @@ export default function Traslados() {
                     centroSalida: fmtCentro(row.nCentro, c.centro), centroReceptor: fmtCentro(recInfo.nombre, recInfo.nCentro),
                     centroSalidaNum: c.centro, nombreSalida: row.nCentro, centroReceptorNum: recInfo.nCentro || '', nombreReceptor: recInfo.nombre,
                     zonaOrigen: row.zona || '', zonaDestino: recInfo.zona || '',
-                    ohDisp: row.oh, pzs: 0, importe: 0, precio: row.precio, linea: item.linea,
+                    ohDisp: row.oh, pzs: 0, importe: 0, precio: row.precio, linea: item.linea, desc: item.idRaw,
                   });
                   a.pzs += pz; a.importe += pz * (row.precio || 0); a.ohQueda = row.ohDisp;
                 }
@@ -1920,64 +1925,64 @@ export default function Traslados() {
                     </div>
                   </div>
 
-                  {/* Scatter VTA vs OH: Antes y Después */}
-                  <div className={`p-4 rounded-xl border ${t.cardInner}`}>
-                    <h4 className={`text-sm font-bold mb-1 ${t.textMain}`}>📊 VTA vs OH — Antes / Después</h4>
-                    <p className={`text-[9px] mb-2 ${t.textMuted}`}>Eje X = OH · Eje Y = VTA acumulada (pzs). 🟡 Antes · 🟣 Después del traslado (misma venta, solo cambia el inventario)</p>
-                    <svg viewBox="0 0 280 170" className="w-full">
-                      {[0,1,2,3].map(i => (
-                        <g key={i}>
-                          <line x1={30} y1={10+i*38} x2={275} y2={10+i*38} stroke={isDark?'#3f3f46':'#e5e7eb'} strokeWidth="0.5"/>
-                          <line x1={30+i*61} y1={10} x2={30+i*61} y2={124} stroke={isDark?'#3f3f46':'#e5e7eb'} strokeWidth="0.5"/>
-                        </g>
-                      ))}
-                      {(() => {
-                        const maxOH  = Math.max(...scatterData.map(d => Math.max(d.ohAntes, d.ohDespues)), 1);
-                        const maxVTA = Math.max(...scatterData.map(d => Math.max(d.vtaAntes, d.vtaFcst)), 1);
-                        const toX = v => 30 + (v/maxOH)  * 242;
-                        const toY = v => 124 - (v/maxVTA) * 112;
-                        return [...scatterData].sort((a, b) => (b.cambia - a.cambia) || (b.ohAntes - a.ohAntes)).slice(0, 150).map((d, i) => (
-                          <g key={i}>
-                            {/* Línea connecting antes→después */}
-                            {d.cambia && (
-                              <line
-                                x1={toX(d.ohAntes)}  y1={toY(d.vtaAntes)}
-                                x2={toX(d.ohDespues)} y2={toY(d.vtaFcst)}
-                                stroke="#a78bfa" strokeWidth="0.6" opacity="0.3"/>
-                            )}
-                            {/* Punto antes (amarillo) */}
-                            <circle cx={toX(d.ohAntes)} cy={toY(d.vtaAntes)}
-                              r={d.cambia ? 3 : 2} fill="#facc15"
-                              opacity={d.cambia ? 0.9 : 0.35}>
-                              <title>{d.nombre} — OH {fmt(d.ohAntes)} → {fmt(d.ohDespues)} pzs · VTA acum {fmt(d.vtaAntes)}</title>
+                  {/* Scatter: GOAs de temporada por tienda — venta acumulada vs inventario, antes → después */}
+                  {(() => {
+                    const pts = scatterData;
+                    const regA = linReg(pts.map(d => ({ x: d.vtaAntes, y: d.ohAntes })));
+                    const regD = linReg(pts.map(d => ({ x: d.vtaAntes, y: d.ohDespues })));
+                    const maxX = Math.max(...pts.map(d => d.vtaAntes), 1), maxY = Math.max(...pts.map(d => Math.max(d.ohAntes, d.ohDespues)), 1);
+                    const toX = v => 40 + (v / maxX) * 230, toY = v => 130 - (v / maxY) * 118;
+                    const cambian = pts.filter(d => d.cambia);
+                    return (
+                      <div className={`p-4 rounded-xl border ${t.cardInner}`}>
+                        <div className="flex items-center justify-between mb-1 gap-2 flex-wrap">
+                          <h4 className={`text-sm font-bold ${t.textMain}`}>📊 Venta vs Inventario — GOAs de temporada</h4>
+                          <div className="flex gap-1.5">
+                            <span className="px-2 py-0.5 rounded-full text-[9px] font-black border bg-yellow-500/10 border-yellow-500/40 text-yellow-400">R² antes {regA.r2.toFixed(2)}</span>
+                            <span className="px-2 py-0.5 rounded-full text-[9px] font-black border bg-violet-500/10 border-violet-500/40 text-violet-400">R² después {regD.r2.toFixed(2)}</span>
+                          </div>
+                        </div>
+                        <p className={`text-[9px] mb-2 ${t.textMuted}`}>Un punto por tienda, solo GOAs de temporada. X = venta acumulada · Y = OH. La flecha va del inventario antes al de después (la venta no cambia). {fmt(cambian.length)} de {fmt(pts.length)} tiendas cambian.</p>
+                        <svg viewBox="0 0 280 150" className="w-full">
+                          {[0, 1, 2, 3].map(i => <line key={'h' + i} x1={40} y1={12 + i * 39.3} x2={272} y2={12 + i * 39.3} stroke={isDark ? '#3f3f46' : '#e5e7eb'} strokeWidth="0.5" />)}
+                          <defs><marker id="arrExc" markerWidth="5" markerHeight="5" refX="4" refY="2.5" orient="auto"><path d="M0,0 L5,2.5 L0,5 z" fill="#a78bfa" /></marker></defs>
+                          {pts.filter(d => !d.cambia).map((d, i) => (
+                            <circle key={'s' + i} cx={toX(d.vtaAntes)} cy={toY(d.ohAntes)} r={1.6} fill={isDark ? '#71717a' : '#9ca3af'} opacity={0.5}>
+                              <title>{`${d.nombre}\nVta acum ${fmt(d.vtaAntes)} · OH ${fmt(d.ohAntes)} (sin cambio)`}</title>
                             </circle>
-                            {/* Punto después (morado) solo si cambia */}
-                            {d.cambia && (
-                              <circle cx={toX(d.ohDespues)} cy={toY(d.vtaFcst)}
-                                r={3.5} fill="#a78bfa" opacity="0.9"
-                                stroke="#7c3aed" strokeWidth="0.5">
-                                <title>{d.nombre} — OH {fmt(d.ohAntes)} → {fmt(d.ohDespues)} pzs · VTA acum {fmt(d.vtaAntes)}</title>
+                          ))}
+                          {cambian.map((d, i) => (
+                            <g key={'c' + i}>
+                              <line x1={toX(d.vtaAntes)} y1={toY(d.ohAntes)} x2={toX(d.vtaAntes)} y2={toY(d.ohDespues)} stroke="#a78bfa" strokeWidth="0.8" opacity="0.7" markerEnd="url(#arrExc)" />
+                              <circle cx={toX(d.vtaAntes)} cy={toY(d.ohAntes)} r={2.2} fill="#facc15" />
+                              <circle cx={toX(d.vtaAntes)} cy={toY(d.ohDespues)} r={2.6} fill="#a78bfa" stroke="#7c3aed" strokeWidth="0.5">
+                                <title>{`${d.nombre}\nVta acum ${fmt(d.vtaAntes)}\nOH ${fmt(d.ohAntes)} → ${fmt(d.ohDespues)} (${d.ohDespues >= d.ohAntes ? '+' : ''}${fmt(d.ohDespues - d.ohAntes)})`}</title>
                               </circle>
-                            )}
-                          </g>
-                        ));
-                      })()}
-                      <text x={152} y={158} textAnchor="middle" fontSize="7" fill={isDark?'#71717a':'#9ca3af'}>OH</text>
-                      <text x={12} y={67} textAnchor="middle" fontSize="7" fill={isDark?'#71717a':'#9ca3af'} transform="rotate(-90,12,67)">VTA</text>
-                    </svg>
-                    <div className="flex gap-4 text-[9px] mt-1 flex-wrap">
-                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-400 inline-block"/> Antes</span>
-                      <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-violet-400 inline-block"/> Después</span>
-                      <span className={`${t.textMuted}`}>Líneas = centros que cambian</span>
-                    </div>
-                  </div>
+                            </g>
+                          ))}
+                          <line x1={toX(0)} y1={toY(Math.max(0, regA.intercept))} x2={toX(maxX)} y2={toY(Math.max(0, regA.slope * maxX + regA.intercept))} stroke="#eab308" strokeWidth="1" strokeDasharray="3,2" opacity="0.8" />
+                          <line x1={toX(0)} y1={toY(Math.max(0, regD.intercept))} x2={toX(maxX)} y2={toY(Math.max(0, regD.slope * maxX + regD.intercept))} stroke="#7c3aed" strokeWidth="1" opacity="0.9" />
+                          <text x={156} y={146} textAnchor="middle" fontSize="7" fill={isDark ? '#71717a' : '#9ca3af'}>Venta acumulada (pzs)</text>
+                          <text x={10} y={72} textAnchor="middle" fontSize="7" fill={isDark ? '#71717a' : '#9ca3af'} transform="rotate(-90,10,72)">OH (pzs)</text>
+                          <text x={40} y={139} fontSize="6" fill={isDark ? '#52525b' : '#9ca3af'}>0</text>
+                          <text x={272} y={139} textAnchor="end" fontSize="6" fill={isDark ? '#52525b' : '#9ca3af'}>{fmt(maxX)}</text>
+                          <text x={37} y={15} textAnchor="end" fontSize="6" fill={isDark ? '#52525b' : '#9ca3af'}>{fmt(maxY)}</text>
+                        </svg>
+                        <div className="flex gap-4 text-[9px] mt-1 flex-wrap">
+                          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-yellow-400 inline-block" /> Antes</span>
+                          <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-violet-400 inline-block" /> Después</span>
+                          <span className={t.textMuted}>Gris = sin cambio · línea punteada = tendencia antes · sólida = después</span>
+                        </div>
+                      </div>
+                    );
+                  })()}
                 </div>
 
                 {/* Tabla de traslados */}
                 <div className={`rounded-xl border overflow-hidden ${t.cardInner}`}>
                   <div className={`flex items-center justify-between px-4 py-2 border-b ${t.border}`}>
                     <span className={`text-[10px] font-black uppercase tracking-widest ${t.textMuted}`}>
-                      {excResult.length} traslados · {excResult.filter(r=>r.fueraZona).length} fuera de zona ⚠️
+                      {excResult.length} traslados · {excResult.filter(r=>r.fueraZona).length} a otra zona geográfica ⚠️
                     </span>
                     <button onClick={exportExcedente}
                       className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[10px] font-black transition-all ${t.btnSecondary}`}>
@@ -1988,7 +1993,7 @@ export default function Traslados() {
                     <table className="w-full text-left min-w-max">
                       <thead>
                         <tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark ? 'bg-[#1c1720] text-gray-400 border-b border-white/10' : 'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
-                          {['Sección', 'Núm.', 'SKU', 'Marca', 'GOA', 'Centro Salida', 'Centro Receptor', 'Tipo Rec.', 'Pzs', 'Importe', 'Costo Traslado', 'Razón'].map(h => (
+                          {['Sección', 'Núm.', 'SKU', 'Marca', 'GOA', 'Centro Salida', 'Centro Receptor', 'Clima rec.', 'Pzs', 'Importe', 'Costo Traslado', 'Razón'].map(h => (
                             <th key={h} className="p-2 whitespace-nowrap">{h}</th>
                           ))}
                         </tr>
@@ -2003,7 +2008,7 @@ export default function Traslados() {
                             <td className="p-2"><span className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${t.badge}`}>{r.goa}</span></td>
                             <td className={`p-2 font-bold ${t.textMain}`}>{r.nombreSalida} <span className={`font-mono text-[9px] ${t.textMuted}`}>({r.centroSalida})</span></td>
                             <td className={`p-2 font-bold ${r.fueraZona ? 'text-amber-400' : 'text-emerald-400'}`}>
-                              {r.fueraZona && <span title="Receptor fuera de zona">⚠️ </span>}
+                              {r.fueraZona && <span title={`Receptor en otra zona: ${r.zonaOrigen} → ${r.zonaDestino}`}>⚠️ </span>}
                               {r.nombreReceptor} <span className={`font-mono text-[9px] ${t.textMuted}`}>({r.centroReceptor})</span>
                             </td>
                             <td className={`p-2 text-[10px] ${t.textMuted}`}>{r.tipoCentroReceptor}</td>
@@ -2022,10 +2027,10 @@ export default function Traslados() {
                 {sinReceptorData.length > 0 && (
                   <div className={`p-4 rounded-xl border border-red-500/30 ${isDark ? 'bg-red-950/20' : 'bg-red-50'}`}>
                     <h4 className="text-sm font-black text-red-400 mb-1 flex items-center gap-2">
-                      <Icons.AlertCircle size={15} /> Mejor descuentas estos SKUs — no encontramos receptor rentable
+                      <Icons.AlertCircle size={15} /> Sin receptor — mejor descuentar en su tienda
                     </h4>
                     <p className={`text-[10px] mb-3 ${t.textMuted}`}>
-                      No hay tienda compatible en clima con capacidad. Costo de trasladar &gt; beneficio estimado.
+                      Piezas fuera de clima sin ninguna tienda que las pueda recibir: clima compatible, permiso de marca, venta del SKU y espacio bajo el MOS máx, dentro del alcance elegido.
                     </p>
                     <div className="overflow-x-auto custom-scrollbar">
                       <table className="w-full text-left text-xs min-w-max">
@@ -2047,7 +2052,7 @@ export default function Traslados() {
                               <td className={`p-2 font-mono ${t.textMuted}`}>{fmtMXN(r.precio)}</td>
                               <td className="p-2 font-black text-red-400">{fmtMXN(r.costoTraslado)}</td>
                               <td className="p-2 text-red-400 text-[10px] font-bold">
-                                💸 Descuenta — traslado costaría {fmtMXN(r.costoTraslado)} para {fmt(r.pzs)} pzs
+                                💸 Descuento en tienda — no hay a dónde mandarlas
                               </td>
                             </tr>
                           ))}
@@ -2125,9 +2130,13 @@ export default function Traslados() {
             {/* Solicitud por filtros */}
             <div className={`p-4 rounded-xl border ${t.cardInner}`}>
               <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
-                <h3 className={`text-xs font-black uppercase tracking-widest ${t.textMuted}`}>Solicitud por filtros</h3>
-                <span className={`text-[10px] ${t.textMuted}`}>Se cruzan entre sí (Marca ∩ GOA ∩ Modelo ∩ SKU). Vacío = todos.</span>
+                <h3 className={`text-xs font-black uppercase tracking-widest ${t.textMuted}`}>Solicitud por filtros{solColapsado && solLineas.length ? ` · ${solLineas.length} líneas` : ''}</h3>
+                <div className="flex items-center gap-2">
+                  {!solColapsado && <span className={`text-[10px] ${t.textMuted}`}>Se cruzan entre sí (Marca ∩ GOA ∩ Modelo ∩ SKU). Vacío = todos.</span>}
+                  <button onClick={() => setSolColapsado(v => !v)} className={`text-[10px] font-bold px-3 py-1 rounded-lg border ${t.btnGhost}`}>{solColapsado ? 'Editar filtros' : 'Ocultar filtros'}</button>
+                </div>
               </div>
+              {!solColapsado && (<>
               <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
                 {[['marca', 'Marca'], ['goa', 'GOA'], ['modelo', 'Modelo'], ['sku', 'SKU']].map(([k, l]) => (
                   <MultiPick key={k} label={l} options={solOpciones[k]} value={solSel[k]} onChange={v => setSolSel(p => ({ ...p, [k]: v }))} t={t} isDark={isDark} />
@@ -2148,6 +2157,7 @@ export default function Traslados() {
                 <button onClick={agregarSol} className={`px-4 py-1.5 rounded-lg text-xs font-black ${t.btnSecondary}`}>+ Agregar línea</button>
                 {solPreview && <span className={`text-[10px] ${t.textMuted}`}>{fmt(solPreview.skus)} SKUs · {fmt(solPreview.modelos)} modelos · {fmt(solPreview.oh)} pzs en inventario</span>}
               </div>
+              </>)}
               {solLineas.length > 0 && (
                 <div className="mt-3 space-y-1">
                   {solLineas.map((l, i) => (
@@ -2164,34 +2174,6 @@ export default function Traslados() {
             </div>
 
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-              {/* Chequera */}
-              <div className={`p-4 rounded-xl border ${t.cardInner}`}>
-                <h3 className={`text-xs font-black uppercase tracking-widest mb-2 ${t.textMuted}`}>
-                  Chequera escrita (opcional)
-                </h3>
-                <p className={`text-[10px] mb-3 ${t.textMuted}`}>
-                  Identificador(es) | $ o pzs | Centro receptor. Varios: "MONEDERO + CARTERA". Piezas: "50 pzs". Se asigna 1 corrida por modelo por vuelta (los que más venden primero) hasta agotar la meta.
-                </p>
-                <textarea
-                  value={chequeraText}
-                  onChange={e => setChequeraText(e.target.value)}
-                  rows={10}
-                  placeholder={"WILSON-22 | 22450 | SATELITE\nMONEDERO + CARTERA | 50 pzs | M A QUEVEDO\nWEEKEND; TED LAPIDUS | 30000 | BUENAVISTA"}
-                  className={`w-full text-xs font-mono px-3 py-2 rounded-lg border resize-y ${t.input} focus:outline-none focus:ring-1`}
-                />
-                {Object.keys(tallasCache).length > 0 && (
-                  <div className="mt-2 flex items-center justify-between">
-                    <span className={`text-[10px] ${t.textMuted}`}>
-                      {Object.keys(tallasCache).length} tallas asignadas manualmente
-                    </span>
-                    <button onClick={() => setTallasCache({})}
-                      className={`text-[10px] px-2 py-0.5 rounded border font-bold ${t.btnGhost}`}>
-                      Limpiar cache
-                    </button>
-                  </div>
-                )}
-              </div>
-
               {/* Config */}
               <div className="space-y-4">
                 <div className={`p-4 rounded-xl border ${t.cardInner}`}>
@@ -2253,7 +2235,7 @@ export default function Traslados() {
             {/* Botones */}
             <div className="flex gap-3 flex-wrap">
               <button onClick={calcularNecesidad}
-                disabled={(!chequeraText.trim() && !solLineas.length) || !rawData.length || necesLoading}
+                disabled={!solLineas.length || !rawData.length || necesLoading}
                 className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black transition-all disabled:opacity-40 ${t.btnPrimary}`}>
                 {necesLoading
                   ? <><Icons.Loader size={15} className="animate-spin" /> Calculando…</>
@@ -2375,7 +2357,15 @@ export default function Traslados() {
                         </tr>
                       </thead>
                       <tbody className={`divide-y ${isDark ? 'divide-zinc-800/50' : 'divide-gray-100'}`}>
-                        {necesResult.map((r, i) => (
+                        {Object.entries(necesResult.reduce((m, r) => ((m[r.linea] = m[r.linea] || []).push(r), m), {})).map(([linea, filas]) => (<React.Fragment key={linea}>
+                          <tr className={`text-[10px] font-black ${isDark ? 'bg-violet-500/10' : 'bg-violet-50'}`}>
+                            <td colSpan={9} className={`p-2 ${t.textAccent1}`}>{linea} · <span className={t.textMain}>{filas[0].desc || ''}</span> <span className={t.textMuted}>→ {filas[0].nombreReceptor}</span></td>
+                            <td className={`p-2 ${t.textMuted}`}>{fmt(filas.length)} SKUs</td>
+                            <td className={`p-2 ${t.textAccent2}`}>{fmt(filas.reduce((s, r) => s + r.pzs, 0))}</td>
+                            <td />
+                            <td className="p-2 text-emerald-400">{fmtMXN(filas.reduce((s, r) => s + r.importe, 0))}</td>
+                          </tr>
+                          {filas.map((r, i) => (
                           <tr key={i} className={`text-xs transition-colors ${isDark ? 'hover:bg-zinc-800/30' : 'hover:bg-teal-50/30'}`}>
                             <td className={`p-2 ${t.textMuted}`}>{r.seccion}</td>
                             <td className={`p-2 font-mono text-[10px] ${t.textMuted}`}>{r.numSeccion}</td>
@@ -2393,7 +2383,8 @@ export default function Traslados() {
                             <td className={`p-2 font-mono ${r.ohQueda <= 0 ? 'text-red-400' : 'text-emerald-400'}`}>{fmt(r.ohQueda)}</td>
                             <td className={`p-2 font-mono text-emerald-400`}>{fmtMXN(r.importe)}</td>
                           </tr>
-                        ))}
+                          ))}
+                        </React.Fragment>))}
                       </tbody>
                     </table>
                   </div>
