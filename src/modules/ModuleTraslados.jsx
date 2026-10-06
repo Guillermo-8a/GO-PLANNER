@@ -208,6 +208,8 @@ export default function Traslados() {
   const [excMosMax,        setExcMosMax]        = useState(cfgIni.excMosMax ?? 4); // Tab 1: tope de cobertura del receptor
   // OH/VTA en pesos de BI vienen SIN IVA y PRECIO trae IVA: piezas = pesos ÷ (PRECIO ÷ 1.16)
   const [pesosSinIva,      setPesosSinIva]      = useState(cfgIni.pesosSinIva ?? true);
+  const [excZonaMode,      setExcZonaMode]      = useState(cfgIni.excZonaMode ?? 'optimo'); // Tab 1: misma | metro | todas | optimo
+  const [excDiag,          setExcDiag]          = useState(null); // por qué salió (o no) cada cosa
   const esBodega = (r) => /BODEGA|\bPLAN\b|CEDIS|ALMAC[EÉ]N|FULFILL|\bCD\b/i.test(`${r.nCentro || ''} ${r.tipoCentro || ''}`);
   const excluidosSet = useMemo(() => new Set(centrosExcluidos.split(/[,\n;\s]+/).map(s => s.trim().toUpperCase()).filter(Boolean)), [centrosExcluidos]);
   const dataOp = useMemo(() => rawData.filter(r =>
@@ -219,9 +221,9 @@ export default function Traslados() {
     rawData.forEach(r => { if (!ok.has(r.centro)) m.set(r.centro, r.nCentro || r.centro); });
     return [...m.entries()];
   }, [rawData, dataOp]);
-  useEffect(() => { try { localStorage.setItem('gop_traslados_cfg', JSON.stringify({ centrosExcluidos, excluirBodegas, excMosMax, ohEnPesos, pesosSinIva })); } catch {} },
+  useEffect(() => { try { localStorage.setItem('gop_traslados_cfg', JSON.stringify({ centrosExcluidos, excluirBodegas, excMosMax, ohEnPesos, pesosSinIva, excZonaMode })); } catch {} },
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [centrosExcluidos, excluirBodegas, excMosMax, ohEnPesos, pesosSinIva]);
+    [centrosExcluidos, excluirBodegas, excMosMax, ohEnPesos, pesosSinIva, excZonaMode]);
 
   // Panel configurable: { [goa]: 'FRIO' | 'CALOR' | 'PLAYA' | 'TODO' }
   // El usuario define qué GOAs son de temporada y qué clima requieren
@@ -238,9 +240,6 @@ export default function Traslados() {
   const [filterZona,         setFilterZona]         = useState('ALL');
   const [minPzsTraslado,     setMinPzsTraslado]     = useState(0);   // mínimo pzs para considerar traslado
   const [minPesosTraslado,   setMinPesosTraslado]   = useState(0);   // mínimo pesos para considerar traslado
-  // Zonas adyacentes: { ZONA: Set<ZONA> } — define qué zonas pueden recibir entre sí
-  const [zonasAdyacentes,    setZonasAdyacentes]    = useState({});
-  const [showPanelZonas,     setShowPanelZonas]     = useState(false);
   const [costoPorPza,        setCostoPorPza]        = useState(35); // costo logístico por pieza
 
   const [excResult, setExcResult] = useState([]);
@@ -608,6 +607,8 @@ export default function Traslados() {
 
       const resultado = [];
       const sinReceptor = []; // pzs sin receptor válido → recomendar descuento
+      const diag = { skus: 0, centrosSinClima: new Set(), centros: new Set(), origenes: 0, pzsFuera: 0, sinReceptorValido: 0 };
+      const esMetro = (z) => String(z || '').toUpperCase().startsWith('METRO');
 
       Object.entries(centroPorSku).forEach(([, { meta, centros }]) => {
         const goa       = meta.goa;
@@ -623,8 +624,10 @@ export default function Traslados() {
         // Receptores válidos del SKU: clima conocido y compatible, permiso de marca y venta (no se manda a tiendas sin historia).
         // Capacidad = venta mensual proyectada × MOS máx − OH actual; se reparte para no concentrar todo en una tienda.
         const recibido = {};
+        diag.skus++;
         const receptoresBase = Object.entries(centros).map(([c, d]) => {
           const tc = normClima(climaMatrix[c] || d.tipoCentro);
+          diag.centros.add(c); if (!tc) diag.centrosSinClima.add(c);
           const vtaMes = mesActual > 0 ? ((d.vta || 0) / mesActual) * estFactor : 0;
           return { centro: c, data: d, tc, vtaMes, mos: vtaMes > 0 ? d.oh / vtaMes : 99,
                    tienePermiso: permiso(c, meta), cap: Math.max(0, Math.floor(vtaMes * excMosMax) - d.oh) };
@@ -639,16 +642,19 @@ export default function Traslados() {
           const zonaOrigen = dataOrigen.zona || '';
           const tcOrigen   = normClima(climaMatrix[dataOrigen.centro] || dataOrigen.tipoCentro);
           if (zonaValida(tipoClima, tcOrigen)) return; // ya está en zona correcta (o clima desconocido)
+          diag.origenes++; diag.pzsFuera += dataOrigen.oh;
 
-          const adyacentesOrigen = zonasAdyacentes[zonaOrigen] || new Set();
+          // Alcance: misma zona · metro entre sí · todas · óptimo (misma zona primero, luego metro, luego el resto)
           const ranking = receptoresBase
             .filter(r => r.centro !== centroOrigen && r.cap - (recibido[r.centro] || 0) > 0)
             .map(r => {
-              const mismaZona = r.data.zona === zonaOrigen, zonaAdyacente = !mismaZona && adyacentesOrigen.has(r.data.zona || '');
+              const mismaZona = r.data.zona === zonaOrigen, zonaAdyacente = !mismaZona && esMetro(zonaOrigen) && esMetro(r.data.zona);
               return { ...r, mismaZona, zonaAdyacente,
                        score: (mismaZona ? 600 : zonaAdyacente ? 300 : 0) + 100 * r.vtaMes / maxVtaRec - Math.min(r.mos, 12) * 8 };
             })
+            .filter(r => excZonaMode === 'misma' ? r.mismaZona : excZonaMode === 'metro' ? (r.mismaZona || r.zonaAdyacente) : true)
             .sort((a, b) => b.score - a.score);
+          if (!ranking.length) diag.sinReceptorValido++;
 
           let resto = dataOrigen.oh;
           const precio = dataOrigen.precio || 0;
@@ -668,7 +674,7 @@ export default function Traslados() {
               zonaOrigen, zonaDestino: rec.data.zona || '',
               ohOrigen: dataOrigen.oh, pzs, pesos: pzs * precio, precio,
               costoTraslado: pzs * costoPorPza, fueraZona,
-              razon: `${goa} (${tipoClima}) en ${tcOrigen}${fueraZona ? (esFueraAdyacente ? ' ⚠️ zona no adyacente' : ' zona adyacente') : ''}`,
+              razon: `${goa} (${tipoClima}) en ${tcOrigen}${fueraZona ? (esFueraAdyacente ? ' · otra zona' : ' · METRO') : ''}`,
               tipoCentroOrigen: dataOrigen.tipoCentro, tipoCentroReceptor: rec.data.tipoCentro, letraDesc: dataOrigen.letraDesc || '',
             });
           }
@@ -682,11 +688,12 @@ export default function Traslados() {
 
       setExcResult(resultado);
       setSinReceptorData(sinReceptor);
+      setExcDiag({ ...diag, centrosSinClima: diag.centrosSinClima.size, centros: diag.centros.size, climaCargado: Object.keys(climaMatrix).length });
       setExcLoading(false);
     }, 300);
   }, [dataOp, brandMatrix, climaMatrix, goasTemporada, filterGoa, filterSku, filterMarca,
       filterSeccion, filterTipoCentro, filterZona, letrasExcluidas, costoPorPza, mesActual, estFactor,
-      minPzsTraslado, minPesosTraslado, zonasAdyacentes, excMosMax]);
+      minPzsTraslado, minPesosTraslado, excZonaMode, excMosMax]);
 
   // Datos para gráfica excedente
   const chartDataExc = useMemo(() => {
@@ -1206,9 +1213,14 @@ export default function Traslados() {
       // Receptor válido: si la GOA es de temporada, clima del centro compatible; y permiso de marca si hay matriz
       const CLIMA_OK = { FRIO: ['FRIO','EXTREMOSO','TEMPLADO'], CALOR: ['CALOR','PLAYA','EXTREMOSO','TEMPLADO'], PLAYA: ['PLAYA','CALOR'] };
       const matrizCargada = Object.keys(brandMatrix).length > 0;
+      const sinClimaBloq = new Set(), goasBloq = new Set();
       const puedeRecibir = (n) => {
         const tipo = goasTemporada[n.goa];
-        if (tipo && CLIMA_OK[tipo]) { const tc = normClima(climaMatrix[n.centro] || n.tipoCentro); if (!tc || !CLIMA_OK[tipo].includes(tc)) return false; }
+        if (tipo && CLIMA_OK[tipo]) {
+          const tc = normClima(climaMatrix[n.centro] || n.tipoCentro);
+          if (!tc) { sinClimaBloq.add(n.centro); goasBloq.add(n.goa); return false; }
+          if (!CLIMA_OK[tipo].includes(tc)) return false;
+        }
         if (!matrizCargada) return true;
         const combos = brandMatrix[n.centro] || [];
         return [`${n.numSeccion}|${n.marca}`, `${(n.seccion || '').toUpperCase()}|${n.marca}`, `GENERAL|${n.marca}`].some(k => combos.includes(k));
@@ -1323,7 +1335,7 @@ export default function Traslados() {
       setNivResumen({
         totalPzs, totalImp, sucioPzs, sucioImp, lentoPzs, lentoImp, rescatablePzs, rescatableImp,
         transferPzs: resultado.reduce((s, r) => s + r.pzs, 0), transferImp: resultado.reduce((s, r) => s + r.importe, 0),
-        nuevosExcluidos: pzsNuevosExcluidos, cruces,
+        nuevosExcluidos: pzsNuevosExcluidos, cruces, sinClimaBloq: sinClimaBloq.size, goasBloq: [...goasBloq],
         minEnvioTienda: destArr.length ? Math.min(...destArr) : 0, maxEnvioTienda: destArr.length ? Math.max(...destArr) : 0,
         minSalidaTienda: origArr.length ? Math.min(...origArr) : 0, maxSalidaTienda: origArr.length ? Math.max(...origArr) : 0,
         promEnvio: destArr.length ? Math.round(destArr.reduce((s, v) => s + v, 0) / destArr.length) : 0,
@@ -1508,7 +1520,7 @@ export default function Traslados() {
     }`;
 
   return (
-    <div className={`min-h-screen p-4 md:p-6 ${t.appBg} animate-fade-in-up`}>
+    <div className={`min-h-screen p-4 md:p-6 ${t.appBg} animate-fade-in-up ${isDark ? 'trs-dark' : ''}`}>
 
       {/* ── HEADER ── */}
       <div className={`p-5 rounded-2xl border mb-6 ${t.card}`}>
@@ -1615,7 +1627,7 @@ export default function Traslados() {
                   <span className={`text-xs font-black uppercase tracking-widest ${t.textMain}`}>Configuración</span>
                   {Object.keys(goasTemporada).filter(g => goasTemporada[g]).map(g => (
                     <span key={g} className={`px-2 py-0.5 rounded-full text-[9px] font-black border ${t.badge}`}>
-                      {g} {goasTemporada[g] === 'CALOR' ? '☀️' : goasTemporada[g] === 'PLAYA' ? '🏖️' : goasTemporada[g] === 'EXTREMOSO' ? '🌡️' : '🌤️'}
+                      {g} {goasTemporada[g] === 'CALOR' ? '☀️' : goasTemporada[g] === 'PLAYA' ? '🏖️' : goasTemporada[g] === 'FRIO' ? '❄️' : '·'}
                     </span>
                   ))}
                   {letrasExcluidas.size > 0 && (
@@ -1642,10 +1654,9 @@ export default function Traslados() {
                             onChange={e => setGoasTemporada(prev => ({ ...prev, [goa]: e.target.value || undefined }))}
                             className={`text-[10px] px-2 py-1 rounded border ${t.input} focus:outline-none focus:ring-1 w-32`}>
                             <option value="">— No aplica —</option>
+                            <option value="FRIO">❄️ Frío (invernal)</option>
                             <option value="CALOR">☀️ Calor</option>
                             <option value="PLAYA">🏖️ Playa</option>
-                            <option value="TEMPLADO">🌤️ Templado</option>
-                            <option value="EXTREMOSO">🌡️ Extremoso</option>
                           </select>
                         </div>
                       ))}
@@ -1733,42 +1744,28 @@ export default function Traslados() {
                     </div>
                   </div>
 
-                  {/* Zonas adyacentes */}
+                  {/* Alcance de traslados (igual que Nivelación) */}
                   <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted}`}>Zonas adyacentes</label>
-                      <button onClick={() => setShowPanelZonas(v => !v)}
-                        className={`text-[10px] font-bold px-3 py-1 rounded-lg border transition-all ${t.btnGhost}`}>
-                        {showPanelZonas ? 'Ocultar' : 'Configurar'}
-                      </button>
+                    <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} block mb-2`}>Alcance de traslados</label>
+                    <div className="flex gap-1.5 flex-wrap">
+                      {[
+                        { id: 'misma', label: 'Solo misma zona' },
+                        { id: 'metro', label: 'Metro entre sí' },
+                        { id: 'todas', label: 'Entre todas' },
+                        { id: 'optimo', label: 'Óptimo' },
+                      ].map(opt => (
+                        <button key={opt.id} onClick={() => setExcZonaMode(opt.id)}
+                          className={`px-4 py-2 rounded-lg text-xs font-black transition-all ${excZonaMode === opt.id ? t.btnPrimary : `${t.btnGhost} border border-transparent`}`}>
+                          {opt.label}
+                        </button>
+                      ))}
                     </div>
-                    {showPanelZonas && (
-                      <div className="space-y-2 max-h-64 overflow-y-auto custom-scrollbar pr-1">
-                        {[...opcionesZona].filter(z => z !== 'ALL').sort().map(zona => (
-                          <div key={zona} className="flex items-center gap-3 flex-wrap">
-                            <span className={`text-[10px] font-black w-28 truncate ${t.textMain}`}>{zona}</span>
-                            <span className={`text-[9px] ${t.textMuted}`}>→</span>
-                            <div className="flex flex-wrap gap-1.5">
-                              {[...opcionesZona].filter(z => z !== 'ALL' && z !== zona).sort().map(z2 => {
-                                const sel = zonasAdyacentes[zona]?.has(z2);
-                                return (
-                                  <button key={z2} onClick={() => setZonasAdyacentes(prev => {
-                                    const next = { ...prev };
-                                    if (!next[zona]) next[zona] = new Set();
-                                    else next[zona] = new Set(next[zona]);
-                                    sel ? next[zona].delete(z2) : next[zona].add(z2);
-                                    return next;
-                                  })}
-                                    className={`px-2 py-0.5 rounded-full text-[9px] font-bold border transition-all ${sel ? 'bg-violet-500/20 border-violet-500 text-violet-400' : isDark ? 'bg-zinc-800 border-zinc-600 text-gray-500' : 'bg-gray-100 border-gray-300 text-gray-400'}`}>
-                                    {z2}
-                                  </button>
-                                );
-                              })}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
+                    <p className={`text-[9px] mt-1 ${t.textMuted}`}>
+                      {excZonaMode === 'misma' ? 'Solo se manda a tiendas de la misma zona.' :
+                       excZonaMode === 'metro' ? 'Misma zona; las zonas METRO pueden mandarse entre ellas.' :
+                       excZonaMode === 'optimo' ? 'Primero tiendas de la misma zona, luego METRO entre sí y al final cualquier zona.' :
+                       'Cualquier tienda compatible, sin importar zona (la misma zona sigue teniendo prioridad).'}
+                    </p>
                   </div>
 
                   {/* Botones ejecutar */}
@@ -1999,8 +1996,17 @@ export default function Traslados() {
             ) : rawData.length > 0 ? (
               <div className={`p-8 rounded-xl border flex flex-col items-center justify-center text-center ${t.cardInner}`}>
                 <Icons.Zap size={32} className={`${isDark ? 'text-zinc-600' : 'text-gray-300'} mb-3`} />
-                <p className={`text-sm font-bold ${t.textMain}`}>Herramienta lista para analizar</p>
-                <p className={`text-xs mt-1 ${t.textMuted}`}>Aplica los filtros que necesites y presiona "Ejecutar herramienta"</p>
+                <p className={`text-sm font-bold ${t.textMain}`}>{excDiag ? 'Sin traslados con esta configuración' : 'Herramienta lista para analizar'}</p>
+                {excDiag ? (
+                  <div className={`text-xs mt-2 space-y-1 text-left ${t.textMuted}`}>
+                    <p>· {fmt(excDiag.skus)} SKUs de GOAs de temporada evaluados en {fmt(excDiag.centros)} centros.</p>
+                    {excDiag.centrosSinClima > 0 && <p className="text-amber-400">· {fmt(excDiag.centrosSinClima)} de {fmt(excDiag.centros)} centros sin clima conocido{excDiag.climaCargado ? '' : ' — no has cargado la matriz con clima'} (en tu CSV TIPO CENTRO = "Sin asignar"). Sin clima no se puede saber qué está fuera de zona ni a dónde mandarlo.</p>}
+                    <p>· {fmt(excDiag.origenes)} combinaciones SKU × tienda fuera de su clima ({fmt(excDiag.pzsFuera)} pzs).</p>
+                    {excDiag.sinReceptorValido > 0 && <p>· {fmt(excDiag.sinReceptorValido)} sin tienda receptora válida (clima compatible, permiso de marca, venta y espacio bajo el MOS máx, dentro del alcance) → van a "Mejor descuentas".</p>}
+                  </div>
+                ) : (
+                  <p className={`text-xs mt-1 ${t.textMuted}`}>Aplica los filtros que necesites y presiona "Ejecutar herramienta"</p>
+                )}
               </div>
             ) : (
               <div className={`p-8 rounded-xl border flex flex-col items-center justify-center text-center ${t.cardInner}`}>
@@ -3032,8 +3038,10 @@ export default function Traslados() {
             ) : nivExecuted ? (
               <div className={`p-8 rounded-xl border flex flex-col items-center justify-center text-center ${t.cardInner}`}>
                 <Icons.Check size={32} className="text-emerald-400 mb-3" />
-                <p className={`text-sm font-bold ${t.textMain}`}>Inventarios ya nivelados</p>
-                <p className={`text-xs mt-1 ${t.textMuted}`}>No se encontraron desbalances que ameriten traslado con el MOS objetivo actual.</p>
+                <p className={`text-sm font-bold ${t.textMain}`}>{nivResumen?.sinClimaBloq ? 'Sin traslados: faltan climas' : 'Inventarios ya nivelados'}</p>
+                <p className={`text-xs mt-1 ${t.textMuted}`}>{nivResumen?.sinClimaBloq
+                  ? `${nivResumen.goasBloq.join(', ')} está(n) marcados como GOA de temporada y ${fmt(nivResumen.sinClimaBloq)} centros no tienen clima conocido, así que no pueden recibir. Carga la matriz con clima o quita esos GOAs de "GOAs de temporada" (pestaña Excedente).`
+                  : 'No se encontraron desbalances que ameriten traslado con el MOS objetivo actual.'}</p>
               </div>
             ) : (
               <div className={`p-8 rounded-xl border flex flex-col items-center justify-center text-center ${t.cardInner}`}>
@@ -3057,6 +3065,8 @@ export default function Traslados() {
         .custom-scrollbar:hover::-webkit-scrollbar-thumb { background-color: rgba(156,163,175,0.5); }
         @keyframes fadeInUp { from { opacity:0; transform:translateY(10px); } to { opacity:1; transform:translateY(0); } }
         .animate-fade-in-up { animation: fadeInUp 0.4s ease-out forwards; }
+        .trs-dark select { color-scheme: dark; background-color: #241e29; color: #EDEBF2; }
+        .trs-dark select option { background-color: #1c1720; color: #EDEBF2; }
       `}} />
     </div>
   );
