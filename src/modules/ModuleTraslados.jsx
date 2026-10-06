@@ -13,6 +13,9 @@ const parseCSVRow = (row, sep) =>
 // Clima de centro: solo valores conocidos; "SIN ASIGNAR" u otro texto = desconocido ('') → no se mueve ni recibe por clima
 const CLIMAS = ['FRIO', 'CALOR', 'PLAYA', 'TEMPLADO', 'EXTREMOSO'];
 const normClima = (v) => { const u = String(v || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim(); return CLIMAS.includes(u) ? u : ''; };
+// Centros con 4 dígitos: la matriz trae "491" y el CSV "0491"
+const padC = (c) => { const x = String(c ?? '').trim(); return /^\d{1,3}$/.test(x) ? x.padStart(4, '0') : x; };
+const padKeys = (o) => Object.fromEntries(Object.entries(o || {}).map(([k, v]) => [k.startsWith('__') ? k : padC(k), v]));
 const num = v => parseFloat(String(v || '0').replace(/[^0-9.-]+/g, '')) || 0;
 
 // Regresión lineal + R² para scatter. points = [{x, y}]
@@ -99,6 +102,33 @@ const BarCompare = ({ data, theme }) => {
 };
 
 // ─── MINI-CHART: DONUT RESUMEN ───────────────────────────────────────────────
+
+// ─── MULTISELECT CON BÚSQUEDA (Solicitud) ─────────────────────────────────────
+const MultiPick = ({ label, options, value, onChange, t, isDark }) => {
+  const [q, setQ] = useState('');
+  const qq = q.trim().toUpperCase();
+  const vis = options.filter(o => !qq || o.toUpperCase().includes(qq)).slice(0, 300);
+  const toggle = (o) => onChange(value.includes(o) ? value.filter(x => x !== o) : [...value, o]);
+  return (
+    <div className={`rounded-lg border p-2 ${t.cardInner}`}>
+      <div className="flex items-center justify-between mb-1">
+        <span className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted}`}>{label} {value.length > 0 && <span className={t.textAccent1}>· {value.length}</span>}</span>
+        {value.length > 0 && <button onClick={() => onChange([])} className={`text-[9px] font-bold ${t.textMuted} hover:underline`}>limpiar</button>}
+      </div>
+      <input value={q} onChange={e => setQ(e.target.value)} placeholder={`Buscar (${options.length})`}
+        className={`w-full text-[11px] px-2 py-1 mb-1 rounded border ${t.input} focus:outline-none`} />
+      <div className="max-h-36 overflow-y-auto custom-scrollbar space-y-0.5">
+        {vis.map(o => (
+          <label key={o} className={`flex items-center gap-1.5 text-[11px] cursor-pointer px-1 rounded ${value.includes(o) ? (isDark ? 'bg-violet-500/20 text-white' : 'bg-violet-50 text-violet-700') : t.textMain}`}>
+            <input type="checkbox" checked={value.includes(o)} onChange={() => toggle(o)} className="accent-violet-500" />
+            <span className="truncate" title={o}>{o}</span>
+          </label>
+        ))}
+        {!vis.length && <p className={`text-[10px] ${t.textMuted}`}>Sin coincidencias</p>}
+      </div>
+    </div>
+  );
+};
 
 const DonutSummary = ({ items, theme }) => {
   const isDark = theme === 'dark';
@@ -329,8 +359,8 @@ export default function Traslados() {
       if (s) {
         const d = JSON.parse(s);
         if (d.rawData?.length)      setRawData(d.rawData);
-        if (d.brandMatrix)          setBrandMatrix(d.brandMatrix);
-        if (d.climaMatrix)          setClimaMatrix(d.climaMatrix);
+        if (d.brandMatrix)          setBrandMatrix(padKeys(d.brandMatrix));
+        if (d.climaMatrix)          setClimaMatrix(padKeys(d.climaMatrix));
         if (d.goasTemporada)        setGoasTemporada(d.goasTemporada);
         if (d.excResult?.length)    setExcResult(d.excResult);
       }
@@ -402,7 +432,7 @@ export default function Traslados() {
           nsku:       iNSku      >= 0 ? r[iNSku].trim()       : '',
           modelo:     iModelo    >= 0 ? r[iModelo].trim().toUpperCase()  : '',
           marca:      iMarca     >= 0 ? r[iMarca].trim().toUpperCase()   : '',
-          centro:     r[iCentro].trim(),
+          centro:     padC(r[iCentro]),
           nCentro:    iNCentro   >= 0 ? r[iNCentro].trim()    : '',
           oh:         conv(ohRaw),        // piezas
           ohPesos:    ohEnPesos ? ohRaw : ohRaw * precioRow, // valor en pesos
@@ -495,14 +525,14 @@ export default function Traslados() {
           const id = String(cell).trim();
           if (j > infoColsMax && /^\d{3,4}$/.test(id)) {
             const tipoClima = climaRef[j] ? String(climaRef[j]).trim().toUpperCase() : '';
-            storeCols.push({ colIndex: j, storeId: id, tipoClima });
+            storeCols.push({ colIndex: j, storeId: padC(id), tipoClima: normClima(tipoClima) });
           }
         });
 
         // Construir mapa climaMatrix desde la fila de clima de la matriz
         const newClima = {};
         storeCols.forEach(sc => {
-          if (sc.tipoClima && CLIMA_VALS.has(sc.tipoClima)) {
+          if (sc.tipoClima) {
             newClima[sc.storeId] = sc.tipoClima;
           }
         });
@@ -511,7 +541,7 @@ export default function Traslados() {
         }
 
         // Construir brandMatrix
-        const matrix = {};
+        const matrix = { __cobertura: [] }; // __cobertura: sección|marca que la matriz sí define (lo que no aparece no se restringe)
         for (let i = dataStartIdx; i < rows.length; i++) {
           const r = rows[i];
           const marca   = (iNomMarca >= 0 ? r[iNomMarca] : r[iMarca])?.trim().toUpperCase() || '';
@@ -521,6 +551,7 @@ export default function Traslados() {
               ? (r[iSeccion]?.trim().toUpperCase() || 'GENERAL')
               : 'GENERAL';
           if (!marca) continue;
+          if (!matrix.__cobertura.includes(`${seccion}|${marca}`)) matrix.__cobertura.push(`${seccion}|${marca}`);
           storeCols.forEach(sc => {
             const v = r[sc.colIndex]?.trim().toUpperCase();
             if (v && v !== 'NO' && v !== 'N' && v !== '0' && v !== '') {
@@ -534,12 +565,24 @@ export default function Traslados() {
         const climaMsg = Object.keys(newClima).length > 0
           ? ` · Clima de ${Object.keys(newClima).length} centros detectado automáticamente.`
           : '';
-        alert(`Matriz cargada: ${storeCols.length} centros, ${Object.keys(matrix).length} con permisos.${climaMsg}`);
+        alert(`Matriz cargada: ${storeCols.length} centros, ${Object.keys(matrix).length - 1} con permisos, ${matrix.__cobertura.length} sección·marca definidas (lo que no esté en la matriz no se restringe).${climaMsg}`);
       }
       if (matrizInputRef.current) matrizInputRef.current.value = '';
     };
     reader.readAsText(file, 'ISO-8859-1');
   };
+
+  // Permiso de marca: solo restringe sección·marca que la matriz define (p. ej. BOLSAS no está en la matriz → libre).
+  // Busca por nombre de sección, número de sección o solo marca.
+  const permisoMarca = useCallback((centro, n) => {
+    const cob = brandMatrix.__cobertura;
+    if (!cob || !cob.length) return true;
+    const marca = n.marca, sec = (n.seccion || '').toUpperCase();
+    const llaves = [`${sec}|${marca}`, `${n.numSeccion}|${marca}`, `GENERAL|${marca}`];
+    if (!llaves.some(k => cob.includes(k))) return true;
+    const combos = brandMatrix[padC(centro)] || [];
+    return llaves.some(k => combos.includes(k));
+  }, [brandMatrix]);
 
   // Cambiar "OH en pesos/piezas" re-convierte lo ya cargado (antes solo aplicaba a la siguiente carga)
   const unidadesRef = useRef(`${ohEnPesos}|${pesosSinIva}`);
@@ -598,12 +641,7 @@ export default function Traslados() {
         if (tipoClima === 'PLAYA') return ['PLAYA','CALOR'].includes(tc);
         return true;
       };
-      const matrizCargada = Object.keys(brandMatrix).length > 0;
-      const permiso = (c, meta) => {
-        if (!matrizCargada) return true;
-        const combos = brandMatrix[c] || [];
-        return [`${meta.numSeccion}|${meta.marca}`, `${(meta.seccion || '').toUpperCase()}|${meta.marca}`, `GENERAL|${meta.marca}`].some(k => combos.includes(k));
-      };
+      const permiso = (c, meta) => permisoMarca(c, meta);
 
       const resultado = [];
       const sinReceptor = []; // pzs sin receptor válido → recomendar descuento
@@ -693,7 +731,7 @@ export default function Traslados() {
     }, 300);
   }, [dataOp, brandMatrix, climaMatrix, goasTemporada, filterGoa, filterSku, filterMarca,
       filterSeccion, filterTipoCentro, filterZona, letrasExcluidas, costoPorPza, mesActual, estFactor,
-      minPzsTraslado, minPesosTraslado, excZonaMode, excMosMax]);
+      minPzsTraslado, minPesosTraslado, excZonaMode, excMosMax, permisoMarca]);
 
   // Datos para gráfica excedente
   const chartDataExc = useMemo(() => {
@@ -796,6 +834,33 @@ export default function Traslados() {
   // ══════════════════════════════════════════════════════════════════════
 
   const [chequeraText,      setChequeraText]      = useState('');
+  // Solicitud por filtros: cada línea = filtros (intersección Marca ∩ GOA ∩ Modelo ∩ SKU) + meta + receptor
+  const [solLineas, setSolLineas] = useState(() => { try { return JSON.parse(localStorage.getItem('gop_traslados_sol') || '[]'); } catch { return []; } });
+  const [solSel, setSolSel] = useState({ marca: [], goa: [], modelo: [], sku: [] });
+  const [solMeta, setSolMeta] = useState('');
+  const [solModo, setSolModo] = useState('$');
+  const [solRec, setSolRec] = useState('');
+  useEffect(() => { try { localStorage.setItem('gop_traslados_sol', JSON.stringify(solLineas)); } catch {} }, [solLineas]);
+  const filtraSol = (r, f, skip) => ['marca', 'goa', 'modelo', 'sku'].every(k => k === skip || !f[k]?.length || f[k].includes(k === 'modelo' ? (r.modelo || r.goa) : r[k]));
+  const solOpciones = useMemo(() => {
+    const uniq = (k, skip) => [...new Set(dataOp.filter(r => filtraSol(r, solSel, skip)).map(r => (k === 'modelo' ? (r.modelo || r.goa) : r[k])).filter(Boolean))].sort();
+    const centros = [...new Map(dataOp.map(r => [r.centro, r.nCentro || r.centro])).entries()].sort((a, b) => a[1].localeCompare(b[1]));
+    return { marca: uniq('marca', 'marca'), goa: uniq('goa', 'goa'), modelo: uniq('modelo', 'modelo'), sku: uniq('sku', 'sku'), centros };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataOp, solSel]);
+  const solPreview = useMemo(() => {
+    if (!['marca', 'goa', 'modelo', 'sku'].some(k => solSel[k].length)) return null;
+    const rows = dataOp.filter(r => filtraSol(r, solSel));
+    return { skus: new Set(rows.map(r => r.sku)).size, modelos: new Set(rows.map(r => r.modelo || r.goa)).size, oh: rows.reduce((s, r) => s + r.oh, 0) };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dataOp, solSel]);
+  const agregarSol = () => {
+    const meta = parseFloat(String(solMeta).replace(/[$,\s]/g, '')) || 0;
+    if (!solPreview || !meta || !solRec) { alert('Elige al menos un filtro, la meta y el centro receptor.'); return; }
+    const desc = ['marca', 'goa', 'modelo', 'sku'].filter(k => solSel[k].length).map(k => `${k.toUpperCase()}: ${solSel[k].length > 3 ? `${solSel[k].slice(0, 3).join(', ')} +${solSel[k].length - 3}` : solSel[k].join(', ')}`).join(' ∩ ');
+    setSolLineas(l => [...l, { filtros: solSel, meta, modo: solModo, centroReceptor: solRec, desc }]);
+    setSolSel({ marca: [], goa: [], modelo: [], sku: [] }); setSolMeta('');
+  };
   const [centrosSurtidores, setCentrosSurtidores] = useState('');
 
   // Helper: match centro por número o nombre, usado en tab 2
@@ -908,13 +973,15 @@ export default function Traslados() {
 
   // HERRAMIENTA NECESIDAD — corridas por modelo+talla
   const calcularNecesidad = useCallback(() => {
-    if (!chequeraText.trim() || !dataOp.length) return;
+    if ((!chequeraText.trim() && !solLineas.length) || !dataOp.length) return;
     setNecesAvisos([]);
-    const { items: chequera, errores } = parsearChequera(chequeraText, dataOp);
+    const { items: deTexto, errores } = chequeraText.trim() ? parsearChequera(chequeraText, dataOp) : { items: [], errores: [] };
     if (errores.length) { alert('Revisa la chequera:\n' + errores.join('\n')); return; }
+    const chequera = [...solLineas.map((l, i) => ({ linea: `F${i + 1}`, idRaw: l.desc, ids: [], filtros: l.filtros, meta: l.meta, modo: l.modo, centroReceptor: l.centroReceptor })), ...deTexto];
     const surtidoresList = centrosSurtidores ? centrosSurtidores.split(',').map(c => c.trim()).filter(Boolean) : null;
     ejecutarCalculo(chequera, surtidoresList, buildMatchSurtidor(surtidoresList), tallasCache, minCorridasAlto, minCorridasResto);
-  }, [chequeraText, centrosSurtidores, dataOp, tallasCache, minCorridasAlto, minCorridasResto, buildMatchSurtidor, parsearChequera]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [chequeraText, solLineas, centrosSurtidores, dataOp, tallasCache, minCorridasAlto, minCorridasResto, buildMatchSurtidor, parsearChequera]);
 
   const ejecutarCalculo = useCallback((chequera, surtidoresList, matchSurtidor, cache, minAlto, minResto) => {
     setNecesLoading(true);
@@ -949,7 +1016,7 @@ export default function Traslados() {
         if (!recInfo.nCentro) avisos.push(`Línea ${item.linea}: el centro receptor "${item.centroReceptor}" no existe en el CSV; el export saldrá sin número de centro destino.`);
         const noEncontrados = item.ids.filter(x => !x.tipo).map(x => x.id);
         if (noEncontrados.length) avisos.push(`Línea ${item.linea}: no encontré ${noEncontrados.map(x => `"${x}"`).join(', ')} como SKU, modelo, GOA ni marca (o sus centros están excluidos).`);
-        const match = (r) => item.ids.some(({ tipo, valor }) =>
+        const match = item.filtros ? (r) => filtraSol(r, item.filtros) : (r) => item.ids.some(({ tipo, valor }) =>
           tipo === 'sku' ? (r.sku || '').toUpperCase() === valor : tipo === 'modelo' ? (r.modelo || r.goa).toUpperCase() === valor : tipo === 'goa' ? r.goa === valor : tipo === 'marca' ? r.marca === valor : false);
         const modelos = [...new Set(dataOp.filter(match).map(r => r.modelo || r.goa))];
         if (!modelos.length) return;
@@ -1212,7 +1279,6 @@ export default function Traslados() {
 
       // Receptor válido: si la GOA es de temporada, clima del centro compatible; y permiso de marca si hay matriz
       const CLIMA_OK = { FRIO: ['FRIO','EXTREMOSO','TEMPLADO'], CALOR: ['CALOR','PLAYA','EXTREMOSO','TEMPLADO'], PLAYA: ['PLAYA','CALOR'] };
-      const matrizCargada = Object.keys(brandMatrix).length > 0;
       const sinClimaBloq = new Set(), goasBloq = new Set();
       const puedeRecibir = (n) => {
         const tipo = goasTemporada[n.goa];
@@ -1221,9 +1287,7 @@ export default function Traslados() {
           if (!tc) { sinClimaBloq.add(n.centro); goasBloq.add(n.goa); return false; }
           if (!CLIMA_OK[tipo].includes(tc)) return false;
         }
-        if (!matrizCargada) return true;
-        const combos = brandMatrix[n.centro] || [];
-        return [`${n.numSeccion}|${n.marca}`, `${(n.seccion || '').toUpperCase()}|${n.marca}`, `GENERAL|${n.marca}`].some(k => combos.includes(k));
+        return permisoMarca(n.centro, n);
       };
 
       const resultado = [], problematicas = [], liquidacion = [];
@@ -1361,7 +1425,7 @@ export default function Traslados() {
       setNivExecuted(true);
       setNivLoading(false);
     }, 400);
-  }, [dataOp, nivNivel, nivZonaMode, mosObjetivoMin, mosObjetivoMax, pesoVelocidad, pesoRiesgo, pesoHistorico, mesActual, letrasExcluidas, nivMinPzs, nivMesesNuevo, nivSkusExcluir, estFactor, goasTemporada, climaMatrix, brandMatrix]);
+  }, [dataOp, nivNivel, nivZonaMode, mosObjetivoMin, mosObjetivoMax, pesoVelocidad, pesoRiesgo, pesoHistorico, mesActual, letrasExcluidas, nivMinPzs, nivMesesNuevo, nivSkusExcluir, estFactor, goasTemporada, climaMatrix, permisoMarca]);
 
   const nivChartData = useMemo(() => {
     if (!nivResult.length || !dataOp.length)
@@ -2058,11 +2122,52 @@ export default function Traslados() {
               </div>
             )}
 
+            {/* Solicitud por filtros */}
+            <div className={`p-4 rounded-xl border ${t.cardInner}`}>
+              <div className="flex items-center justify-between mb-2 flex-wrap gap-2">
+                <h3 className={`text-xs font-black uppercase tracking-widest ${t.textMuted}`}>Solicitud por filtros</h3>
+                <span className={`text-[10px] ${t.textMuted}`}>Se cruzan entre sí (Marca ∩ GOA ∩ Modelo ∩ SKU). Vacío = todos.</span>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-4 gap-2">
+                {[['marca', 'Marca'], ['goa', 'GOA'], ['modelo', 'Modelo'], ['sku', 'SKU']].map(([k, l]) => (
+                  <MultiPick key={k} label={l} options={solOpciones[k]} value={solSel[k]} onChange={v => setSolSel(p => ({ ...p, [k]: v }))} t={t} isDark={isDark} />
+                ))}
+              </div>
+              <div className="flex flex-wrap items-center gap-2 mt-3">
+                <div className={`flex rounded-lg border p-0.5 ${isDark ? 'border-white/10 bg-white/5' : 'border-gray-200 bg-white'}`}>
+                  {[['$', '$ Ppto'], ['pzs', 'Piezas']].map(([k, l]) => (
+                    <button key={k} onClick={() => setSolModo(k)} className={`px-3 py-1 rounded-md text-[10px] font-black ${solModo === k ? t.btnPrimary : t.textMuted}`}>{l}</button>
+                  ))}
+                </div>
+                <input value={solMeta} onChange={e => setSolMeta(e.target.value)} placeholder={solModo === '$' ? 'Ej. 20000' : 'Ej. 50'}
+                  className={`w-28 text-xs px-2 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`} />
+                <select value={solRec} onChange={e => setSolRec(e.target.value)} className={`text-xs px-2 py-1.5 rounded-lg border ${t.input} focus:outline-none min-w-[200px]`}>
+                  <option value="">Centro receptor…</option>
+                  {solOpciones.centros.map(([c, n]) => <option key={c} value={c}>{n} ({c})</option>)}
+                </select>
+                <button onClick={agregarSol} className={`px-4 py-1.5 rounded-lg text-xs font-black ${t.btnSecondary}`}>+ Agregar línea</button>
+                {solPreview && <span className={`text-[10px] ${t.textMuted}`}>{fmt(solPreview.skus)} SKUs · {fmt(solPreview.modelos)} modelos · {fmt(solPreview.oh)} pzs en inventario</span>}
+              </div>
+              {solLineas.length > 0 && (
+                <div className="mt-3 space-y-1">
+                  {solLineas.map((l, i) => (
+                    <div key={i} className={`flex items-center gap-2 text-[11px] px-2 py-1.5 rounded-lg border ${isDark ? 'border-white/10 bg-white/5' : 'border-gray-200 bg-white'}`}>
+                      <span className={`font-black ${t.textAccent1}`}>F{i + 1}</span>
+                      <span className={`flex-1 truncate ${t.textMain}`} title={l.desc}>{l.desc}</span>
+                      <span className={`font-mono ${t.textMain}`}>{l.modo === 'pzs' ? `${fmt(l.meta)} pzs` : fmtMXN(l.meta)}</span>
+                      <span className={t.textMuted}>→ {(solOpciones.centros.find(([c]) => c === l.centroReceptor) || [, l.centroReceptor])[1]}</span>
+                      <button onClick={() => setSolLineas(x => x.filter((_, j) => j !== i))} className={`${t.textMuted} hover:text-red-400`}>✕</button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
             <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
               {/* Chequera */}
               <div className={`p-4 rounded-xl border ${t.cardInner}`}>
                 <h3 className={`text-xs font-black uppercase tracking-widest mb-2 ${t.textMuted}`}>
-                  Chequera de Solicitud
+                  Chequera escrita (opcional)
                 </h3>
                 <p className={`text-[10px] mb-3 ${t.textMuted}`}>
                   Identificador(es) | $ o pzs | Centro receptor. Varios: "MONEDERO + CARTERA". Piezas: "50 pzs". Se asigna 1 corrida por modelo por vuelta (los que más venden primero) hasta agotar la meta.
@@ -2148,7 +2253,7 @@ export default function Traslados() {
             {/* Botones */}
             <div className="flex gap-3 flex-wrap">
               <button onClick={calcularNecesidad}
-                disabled={!chequeraText.trim() || !rawData.length || necesLoading}
+                disabled={(!chequeraText.trim() && !solLineas.length) || !rawData.length || necesLoading}
                 className={`flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-black transition-all disabled:opacity-40 ${t.btnPrimary}`}>
                 {necesLoading
                   ? <><Icons.Loader size={15} className="animate-spin" /> Calculando…</>
