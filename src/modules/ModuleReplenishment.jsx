@@ -228,6 +228,7 @@ export default function App() {
                 const tend1Val = findCol(row, ['tend1']);
                 const tend2Val = findCol(row, ['tend2']);
                 const tend3Val = findCol(row, ['tend3']);
+                const nivelVal = findCol(row, ['nivel_fcst', 'nivel fcst', 'nivel', 'parametr']);
 
                 return {
                     id: index + 1,
@@ -247,6 +248,7 @@ export default function App() {
                     tend1: tend1Val !== undefined && tend1Val !== '' ? toNum(tend1Val) : null,
                     tend2: tend2Val !== undefined && tend2Val !== '' ? toNum(tend2Val) : null,
                     tend3: tend3Val !== undefined && tend3Val !== '' ? toNum(tend3Val) : null,
+                    nivel: nivelVal !== undefined && nivelVal !== '' ? toNum(nivelVal) : null, // 1 = combinación parametrizada (debe tener al menos el mínimo)
                     monthlySales: monthlySales.length > 0 ? monthlySales : [{period: 1, y1: 0, y2: 0}]
                 };
             });
@@ -556,7 +558,9 @@ export default function App() {
             const cl = clusterOf(row), cc = clusterCfg[cl] || {};
             const lead = cc.lead ?? leadDias, wos = cc.wos ?? wosDias, seg = cc.seg ?? safetyDias, minPz = cc.min ?? minStockRule;
             const demCob = demandaDia * (lead + wos); // lo que se vende mientras llega + lo que debe quedar
-            const targetTotalInventory = Math.max(Math.ceil(demCob + demandaDia * seg), forecast > 0 ? minPz : 0);
+            // Con columna NIVEL: solo las combinaciones nivel 1 llevan producto (mínimo garantizado aunque no tengan venta); nivel 0 se queda vacía
+            const parametrizada = row.nivel != null ? row.nivel >= 1 : forecast > 0;
+            const targetTotalInventory = parametrizada ? Math.max(Math.ceil(demCob + demandaDia * seg), minPz) : 0;
             const toBuy = Math.max(0, targetTotalInventory - totalInventory);
             // Cobertura en días de inventario actual (OH+OO) al ritmo pronosticado
             const coverage = demandaDia > 0 ? totalInventory / demandaDia : (totalInventory > 0 ? 999 : 0);
@@ -590,6 +594,7 @@ export default function App() {
                 demandaDia,
                 demCob,
                 clusterTienda: cl,
+                parametrizada,
                 diasObj: lead + wos,
                 relevantPeriods: periodsWithFcst
             };
@@ -688,8 +693,9 @@ export default function App() {
 
         enrichedData.forEach(row => {
             // Contabilizar stockouts antes y después
-            if (row.oh + row.oo === 0) beforeZeroes++;
-            if (row.oh + row.oo + row.toBuy === 0) afterZeroes++;
+            // Solo cuentan como stockout las combinaciones que deben tener producto (nivel 1, o con forecast si no hay columna NIVEL)
+            if (row.parametrizada && row.oh + row.oo === 0) beforeZeroes++;
+            if (row.parametrizada && row.oh + row.oo + row.toBuy === 0) afterZeroes++;
 
             // Sumar forecast por SKU para encontrar la "mejor apuesta"
             if (!skuScores[row.sku_nombre]) skuScores[row.sku_nombre] = 0;
