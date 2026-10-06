@@ -93,7 +93,11 @@ export default function App() {
     const [calcMode, setCalcMode] = useState('TDM'); 
     const [maxGrowth, setMaxGrowth] = useState(50);
     const [maxDecline, setMaxDecline] = useState(30);
-    const [safetyPer, setSafetyPer] = useState(0.5); // stock de seguridad en periodos de venta pronosticada
+    // Pedido RA: cubre lead time logístico + días de inventario objetivo (WOS) a ritmo de la demanda pronosticada.
+    // El forecast del rango solo da el ritmo diario; ya no se compra todo el rango.
+    const [leadDias, setLeadDias] = useState(15);
+    const [wosDias, setWosDias] = useState(45);
+    const [safetyDias, setSafetyDias] = useState(0);
     
     const [selectedItem, setSelectedItem] = useState(null);
     const [isSyncing, setIsSyncing] = useState(false);
@@ -283,7 +287,9 @@ export default function App() {
                 if (d.calcMode)     setCalcMode(d.calcMode);
                 if (d.maxGrowth)    setMaxGrowth(d.maxGrowth);
                 if (d.maxDecline)   setMaxDecline(d.maxDecline);
-                if (d.safetyPer != null) setSafetyPer(d.safetyPer);
+                if (d.leadDias != null) setLeadDias(d.leadDias);
+                if (d.wosDias != null) setWosDias(d.wosDias);
+                if (d.safetyDias != null) setSafetyDias(d.safetyDias);
                 if (d.periodStart)  setPeriodStart(d.periodStart);
                 if (d.periodEnd)    setPeriodEnd(d.periodEnd);
                 if (d.data?.length) setData(d.data.map(fixRow)); // repara acentos de datos guardados antes del arreglo
@@ -301,13 +307,13 @@ export default function App() {
         if (!data.length) return; // No guardar estado vacío
         try {
             localStorage.setItem('gop_resurtido', JSON.stringify({
-                sheetUrl, calcMode, maxGrowth, maxDecline, safetyPer,
+                sheetUrl, calcMode, maxGrowth, maxDecline, leadDias, wosDias, safetyDias,
                 periodStart, periodEnd, data,
                 filterCentro, filterSeccion, filterMarca,
                 filterGoa, filterModelo, filterNorma,
             }));
         } catch {}
-    }, [sheetUrl, calcMode, maxGrowth, maxDecline, safetyPer, periodStart, periodEnd, data,
+    }, [sheetUrl, calcMode, maxGrowth, maxDecline, leadDias, wosDias, safetyDias, periodStart, periodEnd, data,
         filterCentro, filterSeccion, filterMarca, filterGoa, filterModelo, filterNorma]);
     // ─────────────────────────────────────────────────────────────────
 
@@ -521,12 +527,14 @@ export default function App() {
             
             const isTop15 = top15Centros.has(row.centro);
             const minStockRule = isTop15 ? 2 : 1;
-            // Stock de seguridad = N periodos de la venta pronosticada promedio de la ventana
-            const safety = Math.ceil((forecast / Math.max(1, windowPeriods.length)) * safetyPer);
-            const targetTotalInventory = Math.max(forecast + safety, minStockRule);
+            // Demanda diaria = forecast del rango ÷ días del rango. Objetivo = demanda × (lead time + WOS + seguridad).
+            const diasRango = windowPeriods.length * (nPer <= 12 ? 30.44 : 7);
+            const demandaDia = forecast / Math.max(1, diasRango);
+            const demCob = demandaDia * (leadDias + wosDias); // lo que se vende mientras llega + lo que debe quedar
+            const targetTotalInventory = Math.max(Math.ceil(demCob + demandaDia * safetyDias), forecast > 0 ? minStockRule : 0);
             const toBuy = Math.max(0, targetTotalInventory - totalInventory);
-            
-            const coverage = forecast > 0 ? (totalInventory / forecast) * 100 : (totalInventory > 0 ? 999 : 0);
+            // Cobertura en días de inventario actual (OH+OO) al ritmo pronosticado
+            const coverage = demandaDia > 0 ? totalInventory / demandaDia : (totalInventory > 0 ? 999 : 0);
 
             const activeYears = (sumY1_base > 0 ? 1 : 0) + (sumY2_base > 0 ? 1 : 0);
 
@@ -554,10 +562,12 @@ export default function App() {
                 totalInventory,
                 toBuy,
                 coverage,
+                demandaDia,
+                demCob,
                 relevantPeriods: periodsWithFcst
             };
         });
-    }, [data, windowPeriods, nPer, calcMode, maxGrowth, maxDecline, safetyPer, goaFcst]);
+    }, [data, windowPeriods, nPer, calcMode, maxGrowth, maxDecline, leadDias, wosDias, safetyDias, goaFcst]);
 
     // LISTAS DE OPCIONES PARA FILTROS
     const optionsCentros = useMemo(() => [...new Set(computedData.map(d => d.centro))].sort(), [computedData]);
@@ -975,10 +985,17 @@ export default function App() {
                             <label className="text-xs text-gray-500 dark:text-gray-400">Tope Decremento (-%):</label>
                             <input type="number" value={maxDecline} onChange={e => setMaxDecline(Number(e.target.value))} className="bg-gray-50 dark:bg-white/5 border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs font-bold rounded-lg w-16 px-2 py-1 outline-none focus:border-purple-500 text-center transition-colors" />
                         </div>
-                        <div className="flex items-center gap-2" title="Colchón extra sobre el pronóstico, en periodos de venta promedio (0.5 = medio mes)">
-                            <label className="text-xs text-gray-500 dark:text-gray-400">Stock seguridad (periodos):</label>
-                            <input type="number" step="0.25" min="0" value={safetyPer} onChange={e => setSafetyPer(Math.max(0, Number(e.target.value)))} className="bg-gray-50 dark:bg-white/5 border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs font-bold rounded-lg w-16 px-2 py-1 outline-none focus:border-purple-500 text-center transition-colors" />
-                        </div>
+                        {[
+                            ['Lead time (días)', leadDias, setLeadDias, 'Días desde que se pide hasta que llega a tienda (logístico + proveedor)'],
+                            ['WOS objetivo (días)', wosDias, setWosDias, 'Días de inventario que debe quedar al llegar el pedido. RA ≈ 45'],
+                            ['Seguridad (días)', safetyDias, setSafetyDias, 'Colchón extra en días de venta'],
+                        ].map(([l, v, set, tip]) => (
+                            <div key={l} className="flex items-center gap-2" title={tip}>
+                                <label className="text-xs text-gray-500 dark:text-gray-400">{l}:</label>
+                                <input type="number" min="0" value={v} onChange={e => set(Math.max(0, Number(e.target.value)))} className="bg-gray-50 dark:bg-white/5 border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs font-bold rounded-lg w-14 px-2 py-1 outline-none focus:border-purple-500 text-center transition-colors" />
+                            </div>
+                        ))}
+                        <span className="text-[10px] text-gray-500">Pedido = demanda/día × {leadDias + wosDias + safetyDias} días − (OH+OO)</span>
                         {calcMode === 'TDM' && Object.keys(goaFcst).length > 0 && (
                             <div className="w-full flex flex-wrap gap-2 pt-2 border-t border-gray-200 dark:border-white/10">
                                 <span className="text-[10px] uppercase font-bold text-gray-500">Modelo por GOA:</span>
@@ -1191,8 +1208,8 @@ export default function App() {
                                                     <td className="px-3 py-2 text-right font-medium text-yellow-600 dark:text-yellow-500">{row.oh}</td>
                                                     <td className="px-3 py-2 text-right font-medium text-purple-600 dark:text-purple-400">{row.oo}</td>
                                                     <td className="px-3 py-2 text-right">
-                                                        <span className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${row.coverage >= 100 ? 'bg-green-100 text-green-700 dark:bg-green-500/10 dark:text-green-400' : row.coverage > 50 ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-500/10 dark:text-yellow-400' : 'bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400'}`}>
-                                                            {row.coverage === 999 ? '+100%' : `${row.coverage.toFixed(0)}%`}
+                                                        <span title="Días de inventario (OH+OO) al ritmo pronosticado" className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${row.coverage > (leadDias + wosDias) * 1.5 ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400' : row.coverage >= leadDias + wosDias ? 'bg-green-100 text-green-700 dark:bg-green-500/10 dark:text-green-400' : row.coverage > leadDias ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-500/10 dark:text-yellow-400' : 'bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400'}`}>
+                                                            {row.coverage === 999 ? 'sin vta' : `${row.coverage.toFixed(0)} d`}
                                                         </span>
                                                     </td>
                                                     <td className="px-3 py-2 text-right font-bold text-yellow-600 dark:text-yellow-400 bg-yellow-50 dark:bg-yellow-400/5">
@@ -1340,7 +1357,7 @@ export default function App() {
                                         const porCentro = {};
                                         enrichedData.forEach(d => {
                                             const c = porCentro[d.centro] || (porCentro[d.centro] = { centro: d.centro, fcst: 0, invA: 0, compra: 0, combos: 0 });
-                                            c.fcst += d.forecast || 0; c.invA += (d.oh || 0) + (d.oo || 0); c.compra += d.toBuy || 0; c.combos += 1;
+                                            c.fcst += d.demCob || 0; c.invA += (d.oh || 0) + (d.oo || 0); c.compra += d.toBuy || 0; c.combos += 1;
                                         });
                                         const pts = Object.values(porCentro).map(c => ({ ...c, invD: c.invA + c.compra }));
                                         const selC = selectedItem?.centro;
@@ -1370,7 +1387,7 @@ export default function App() {
                                                         return (
                                                             <div key={p.centro} className={`absolute rounded-full transition-transform ${sel ? 'w-4 h-4 bg-yellow-400 border-2 border-black z-30 shadow-lg' : 'w-2.5 h-2.5 hover:scale-150 z-10'}`}
                                                                 style={{ left: `calc(${gx(p.fcst)}% - ${sel ? 8 : 5}px)`, top: `calc(${gy(p[yKey])}% - ${sel ? 8 : 5}px)`, background: sel ? undefined : color, opacity: sel ? 1 : 0.7 }}
-                                                                title={`${p.centro} · ${p.combos} combinaciones\nDemanda (fcst ${rangoTxt}): ${Math.round(p.fcst).toLocaleString('es-MX')}\nInv antes (OH+OO): ${Math.round(p.invA).toLocaleString('es-MX')}\nCompra sugerida: +${Math.round(p.compra).toLocaleString('es-MX')}\nInv después: ${Math.round(p.invD).toLocaleString('es-MX')}\nCobertura: ${p.fcst > 0 ? (p.invA / p.fcst * 100).toFixed(0) : '—'}% → ${p.fcst > 0 ? (p.invD / p.fcst * 100).toFixed(0) : '—'}%`}>
+                                                                title={`${p.centro} · ${p.combos} combinaciones\nDemanda en ${leadDias + wosDias} días (lead time + WOS): ${Math.round(p.fcst).toLocaleString('es-MX')}\nInv antes (OH+OO): ${Math.round(p.invA).toLocaleString('es-MX')}\nCompra sugerida: +${Math.round(p.compra).toLocaleString('es-MX')}\nInv después: ${Math.round(p.invD).toLocaleString('es-MX')}\nDías de inventario: ${p.fcst > 0 ? Math.round(p.invA / p.fcst * (leadDias + wosDias)) : '—'} → ${p.fcst > 0 ? Math.round(p.invD / p.fcst * (leadDias + wosDias)) : '—'}`}>
                                                             </div>
                                                         );
                                                     })}
@@ -1378,7 +1395,7 @@ export default function App() {
                                                     <div className="absolute -bottom-3 right-0 text-[7px] text-gray-500">{Math.round(maxX).toLocaleString('es-MX')}</div>
                                                     <div className="absolute top-0 -left-4 text-[7px] text-gray-500">{Math.round(maxY).toLocaleString('es-MX')}</div>
                                                 </div>
-                                                <div className="absolute bottom-1 right-2 text-[8px] text-gray-500 dark:text-gray-400 font-bold">Demanda (fcst del rango)</div>
+                                                <div className="absolute bottom-1 right-2 text-[8px] text-gray-500 dark:text-gray-400 font-bold">Demanda en lead time + WOS</div>
                                                 <div className="absolute top-[40%] -left-3 text-[8px] text-gray-500 dark:text-gray-400 -rotate-90 font-bold tracking-widest">Inventario</div>
                                             </div>
                                         );
