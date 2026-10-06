@@ -841,10 +841,8 @@ export default function Traslados() {
     // Busca el primer segmento numérico tras una coma
     const match = nsku.match(/,\s*([0-9]+(?:\.[0-9]+)?)\s*(?:,|$)/);
     if (match) return match[1].trim();
-    // Fallback: busca número standalone en la cadena
-    const nums = nsku.match(/\b([0-9]{2,3})\b/g);
-    if (nums) return nums[0];
-    return null;
+    // Sin talla en el nombre (bolsas, monederos, accesorios) = talla única. Ya no se adivina con cualquier número del texto.
+    return 'UNI';
   }, []);
 
   // Lookup de centro: busca por nombre o nCentro en dataOp
@@ -1093,7 +1091,7 @@ export default function Traslados() {
           // 1 corrida ≈ 2 pzs por talla repartidas según la curva, mínimo 1 por talla.
           // (Antes: base 100 ÷ MCD; con curvas "no redondas" el MCD era 1 y la corrida quedaba de ~100 pzs.)
           const pzsCorrida1 = {}; // { talla: pzs para 1 corrida }
-          const basePzs = corrida.length * 2;
+          const basePzs = corrida.length === 1 ? 1 : corrida.length * 2; // talla única: 1 corrida = 1 pza
           corrida.forEach(talla => { pzsCorrida1[talla] = Math.max(1, Math.round(basePzs * (curva[talla] || 0) / totalCurva)); });
 
           // Precio de 1 corrida
