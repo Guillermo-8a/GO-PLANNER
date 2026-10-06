@@ -310,9 +310,6 @@ export default function ModuleDaily(){
   const [manualPromo,setManualPromo]=useState([]); // ISO strings (aplica a todo)
   const [defaultUplift,setDefaultUplift]=useState(20);
 
-  const years=useMemo(()=>[...new Set(allData.map(r=>r.year))].sort((a,b)=>b-a),[allData]);
-  const tyYear=useMemo(()=>years[0]||new Date().getFullYear(),[years]);
-  const lyYear=useMemo(()=>years[1]||tyYear-1,[years,tyYear]);
 
   // Filtros
   const [dateFrom,setDateFrom]=useState(''); const [dateTo,setDateTo]=useState('');
@@ -369,15 +366,27 @@ export default function ModuleDaily(){
   const dimsOk=useCallback(r=>inF(fCanal,r.canal)&&inF(fDiv,r.division)&&inF(fSec,r.seccion)&&
     inF(fMarca,r.marca)&&inF(fNorma,r.norma)&&inF(fPago,r.pago)&&inF(fGoa,r.goa),
     [fCanal,fDiv,fSec,fMarca,fNorma,fPago,fGoa]);
-  // Último día con data TY (global, ignora filtro de fecha) → tope para comparación justa
-  const lastTYAll=useMemo(()=>{ const d=allData.filter(r=>r.year===tyYear&&r.fecha).map(r=>r.fecha); return d.length?new Date(maxOf(d)):null; },[allData,tyYear]);
-  const applyFor=useCallback((year)=>{ const shift=iso=>iso?`${year}-${iso.slice(5)}`:'';
-    const from=shift(dateFrom),to=shift(dateTo);
-    const cut=lastTYAll?new Date(year,lastTYAll.getMonth(),lastTYAll.getDate(),23,59,59):null;
-    return allData.filter(r=>r.year===year&&dimsOk(r)&&
-      (!from||!r.fecha||r.fecha>=new Date(from+'T00:00:00'))&&(!to||!r.fecha||r.fecha<=new Date(to+'T23:59:59'))&&
-      (!cut||!r.fecha||r.fecha<=cut));
-  },[allData,dimsOk,dateFrom,dateTo,lastTYAll]);
+  // Último día con data (global, ignora filtros) → tope para comparación justa
+  const lastTYAll=useMemo(()=>{ const d=allData.filter(r=>r.fecha).map(r=>r.fecha); return d.length?new Date(maxOf(d)):null; },[allData]);
+  // TY = año del fin del rango (o del último dato si no hay rango); LY = mismo rango un año antes.
+  // El rango se toma literal (p.ej. dic-2025 se ve como TY 2025 vs LY 2024), ya no se traslada al último año.
+  const years=useMemo(()=>[...new Set(allData.map(r=>r.year))].sort((a,b)=>b-a),[allData]);
+  const tyYear=useMemo(()=>{ if(dateTo){ const d=new Date(dateTo+'T00:00:00'); return (lastTYAll&&d>lastTYAll?lastTYAll:d).getFullYear(); }
+    return years[0]||new Date().getFullYear(); },[dateTo,lastTYAll,years]);
+  const lyYear=tyYear-1;
+  const applyFor=useCallback((year)=>{ const off=tyYear-year;
+    const back=iso=>{ if(!iso) return null; const d=new Date(iso+'T00:00:00'); d.setFullYear(d.getFullYear()-off); return d; };
+    const from=back(dateFrom), toD=back(dateTo);
+    const to=toD?new Date(toD.getFullYear(),toD.getMonth(),toD.getDate(),23,59,59):null;
+    // Tope: fin efectivo del TY (fin del rango o último día con data, lo que ocurra primero) llevado al año del periodo
+    const toTY=dateTo?new Date(dateTo+'T00:00:00'):null;
+    const end=lastTYAll&&(!toTY||toTY>lastTYAll)?lastTYAll:null;
+    const cut=end?new Date(end.getFullYear()-off,end.getMonth(),end.getDate(),23,59,59):null;
+    const ranged=!!(dateFrom||dateTo);
+    return allData.filter(r=>(ranged?!!r.fecha:r.year===year)&&dimsOk(r)&&
+      (!ranged||r.fecha.getFullYear()<=year)&&
+      (!from||r.fecha>=from)&&(!to||r.fecha<=to)&&(!cut||!r.fecha||r.fecha<=cut));
+  },[allData,dimsOk,dateFrom,dateTo,lastTYAll,tyYear]);
   const applyInvF=useCallback(rows=>rows.filter(r=>inF(fDiv,r.division)&&inF(fSec,r.seccion)&&
     inF(fMarca,r.marca)&&inF(fNorma,r.norma)&&inF(fGoa,r.goa)),[fDiv,fSec,fMarca,fNorma,fGoa]);
 
