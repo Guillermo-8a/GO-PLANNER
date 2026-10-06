@@ -54,7 +54,7 @@ const WORLDS = [
     modules: [
       { label: 'Forecasting',    Icon: TrendingUp,   desc: 'Regresión lineal con ajuste estacional y 4 escenarios IS.' },
       { label: 'Assortment', Icon: ShoppingCart, desc: 'Presupuesto de compra, buckets por marca y OTB mensual.' },
-      { label: 'Resurtido',      Icon: RefreshCw,    desc: 'Reposición continua basada en cobertura y fill rate.' },
+      { label: 'Resurtido',      Icon: RefreshCw,    desc: 'Reposición por días de inventario: pedido = demanda/día × (lead time + WOS + seguridad) − (OH+OO), con ajustes editables por cluster de tienda (CSV o A/B/C automático) y forecast TDM por GOA.' },
       { label: 'Distribución', Icon: Map,            desc: 'Surtido inicial por cluster, curva de tallas y chequera.' },
     ],
    }, 

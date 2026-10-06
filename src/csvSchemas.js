@@ -121,8 +121,8 @@ export const CSV_SCHEMAS = [
     formats: [
       {
         title: 'Base de artículos',
-        desc: 'El motor usa GOA, centro, OH, OO e histórico de ventas/tendencia. Marca, modelo y sku_nombre son opcionales, solo para ver el detalle completo. Exporta tu Excel como CSV UTF-8 delimitado por comas.',
-        columns: ['GOA', 'Centro', 'OH', 'OO', 'marca (opcional)', 'modelo (opcional)', 'sku_nombre (opcional)'],
+        desc: 'Una fila por artículo × centro. Ventas mensuales m1_a1..m12_a1 (año anterior) y m1_a2..m12_a2 (año actual) o semanales s1..s52. Acepta coma, punto y coma o tabulador, UTF-8 o ANSI (ñ/acentos se corrigen). CLUSTER (opcional) agrupa tiendas para darles lead time, WOS, seguridad y mínimo distintos; sin él se arman A/B/C por venta (20/30/50%). Pedido = demanda/día × (lead + WOS + seguridad) − (OH+OO). La tabla muestra 300 filas a la vez; totales y gráficas usan toda la base.',
+        columns: ['Centro', 'CLUSTER (opcional)', 'Seccion', 'Marca', 'GOA', 'Modelo', 'SKU', 'Nombre', 'Norma', 'OH', 'OO', 'm1_a1..m12_a2 ó s1..s52'],
       },
     ],
   },

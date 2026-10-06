@@ -98,6 +98,11 @@ export default function App() {
     const [leadDias, setLeadDias] = useState(15);
     const [wosDias, setWosDias] = useState(45);
     const [safetyDias, setSafetyDias] = useState(0);
+    // Ajustes por cluster de tienda: { A: { lead, wos, seg, min }, ... } (campo vacío = usa el general)
+    const [clusterCfg, setClusterCfg] = useState(() => { try { return JSON.parse(localStorage.getItem('gop_resurtido_cluster') || '{}'); } catch { return {}; } });
+    const [showCluster, setShowCluster] = useState(false);
+    const [tablaLimite, setTablaLimite] = useState(300);
+    useEffect(() => { try { localStorage.setItem('gop_resurtido_cluster', JSON.stringify(clusterCfg)); } catch {} }, [clusterCfg]);
     
     const [selectedItem, setSelectedItem] = useState(null);
     const [isSyncing, setIsSyncing] = useState(false);
@@ -175,9 +180,13 @@ export default function App() {
         try {
             const { rawData, isHeaderRow } = parseCSV(csvText);
 
+            // La columna que corresponde a cada lista de nombres se resuelve una sola vez (antes, por cada fila)
+            const colCache = {};
+            const headersAll = Object.keys(rawData[0] || {});
             const findCol = (row, possibleNames) => {
-                const key = Object.keys(row).find(k => possibleNames.some(pn => k === pn || k.includes(pn)));
-                return key ? row[key] : undefined;
+                const ck = possibleNames.join('|');
+                if (!(ck in colCache)) colCache[ck] = headersAll.find(k => possibleNames.some(pn => k === pn || k.includes(pn))) ?? null;
+                return colCache[ck] ? row[colCache[ck]] : undefined;
             }
 
             const processedData = rawData.map((row, index) => {
@@ -229,6 +238,7 @@ export default function App() {
                     goa: row.goa || (isHeaderRow && findCol(row, ['goa', 'familia', 'subfamilia'])) || 'Sin GOA',
                     modelo: row.modelo || (isHeaderRow && findCol(row, ['modelo', 'estilo', 'generico', 'style'])) || 'Sin Modelo',
                     norma: row.norma || (isHeaderRow && findCol(row, ['norma', 'resurtido', 'tipo'])) || 'Sin Norma',
+                    cluster: String(row.cluster || (isHeaderRow && findCol(row, ['cluster', 'clasificacion tienda', 'clase tienda'])) || '').trim().toUpperCase(),
                     sku: row.sku || (isHeaderRow && findCol(row, ['sku', 'articulo', 'material', 'item', 'upc', 'ean', 'codigo'])) || `SKU-${index}`,
                     sku_nombre: row.sku_nombre || (isHeaderRow && findCol(row, ['sku_nombre', 'nombre', 'descripcion', 'desc', 'texto breve'])) || 'Sin Nombre',
                     oh: toNum(row.oh || (isHeaderRow && findCol(row, ['oh', 'inv', 'físico', 'stock']))),
@@ -303,16 +313,20 @@ export default function App() {
         } catch {}
     }, []);
 
+    // Guardado diferido (antes serializaba toda la base en cada clic de filtro y congelaba la página)
     useEffect(() => {
         if (!data.length) return; // No guardar estado vacío
-        try {
-            localStorage.setItem('gop_resurtido', JSON.stringify({
+        const tm = setTimeout(() => { try {
+            const json = JSON.stringify({
                 sheetUrl, calcMode, maxGrowth, maxDecline, leadDias, wosDias, safetyDias,
                 periodStart, periodEnd, data,
                 filterCentro, filterSeccion, filterMarca,
                 filterGoa, filterModelo, filterNorma,
-            }));
-        } catch {}
+            });
+            if (json.length < 4_500_000) localStorage.setItem('gop_resurtido', json);
+            else localStorage.setItem('gop_resurtido', JSON.stringify({ sheetUrl, calcMode, maxGrowth, maxDecline, leadDias, wosDias, safetyDias, periodStart, periodEnd })); // base muy grande: solo config
+        } catch {} }, 800);
+        return () => clearTimeout(tm);
     }, [sheetUrl, calcMode, maxGrowth, maxDecline, leadDias, wosDias, safetyDias, periodStart, periodEnd, data,
         filterCentro, filterSeccion, filterMarca, filterGoa, filterModelo, filterNorma]);
     // ─────────────────────────────────────────────────────────────────
@@ -399,9 +413,12 @@ export default function App() {
         // Base por periodo. Mensual: mes ya cerrado este año o del año siguiente → venta de este año (y2);
         // mes actual/futuro → mismo mes del año anterior (y1). Antes el mes en curso usaba la venta parcial de y2
         // y el pronóstico salía muy bajo. Semanal: regla anterior (y2 si hay, si no y1).
+        const winCache = new Map(); // se calcula una vez por fila (antes 3 veces, con búsqueda lineal por periodo)
         const winOf = (row) => {
+            if (winCache.has(row)) return winCache.get(row);
+            const byP = {}; row.monthlySales.forEach(x => { byP[x.period] = x; });
             const rel = windowPeriods.map(w => {
-                const m = row.monthlySales.find(x => x.period === w.p);
+                const m = byP[w.p];
                 return { period: w.p, y1: m?.y1 || 0, y2: m?.y2 || 0, wrapped: w.wrapped };
             });
             const sumY1 = rel.reduce((a, r) => a + r.y1, 0), sumY2 = rel.reduce((a, r) => a + r.y2, 0);
@@ -410,7 +427,9 @@ export default function App() {
                 else r.b = sumY2 > 0 ? r.y2 : r.y1;
             });
             if (rel.every(r => !r.b)) rel.forEach(r => { r.b = r.y2 || r.y1; }); // SKU sin historia en el año elegido
-            return { rel, sumY1, sumY2, base: rel.reduce((a, r) => a + r.b, 0) };
+            const out = { rel, sumY1, sumY2, base: rel.reduce((a, r) => a + r.b, 0) };
+            winCache.set(row, out);
+            return out;
         };
         
         const goaAgg = {};
@@ -428,6 +447,9 @@ export default function App() {
         
         const sortedCentros = Object.entries(centroSalesMap).sort((a, b) => b[1] - a[1]).map(e => e[0]);
         const top15Centros = new Set(sortedCentros.slice(0, 15));
+        // Cluster de tienda: columna CLUSTER del CSV; si no viene, A/B/C por venta (top 20% / siguiente 30% / resto)
+        const autoCl = {}; sortedCentros.forEach((c, i) => { const q = i / Math.max(1, sortedCentros.length); autoCl[c] = q < 0.2 ? 'A' : q < 0.5 ? 'B' : 'C'; });
+        const clusterOf = (row) => row.cluster || autoCl[row.centro] || 'C';
 
         if (calcMode === 'TD' || calcMode === 'TDM') {
             data.forEach(row => {
@@ -530,8 +552,11 @@ export default function App() {
             // Demanda diaria = forecast del rango ÷ días del rango. Objetivo = demanda × (lead time + WOS + seguridad).
             const diasRango = windowPeriods.length * (nPer <= 12 ? 30.44 : 7);
             const demandaDia = forecast / Math.max(1, diasRango);
-            const demCob = demandaDia * (leadDias + wosDias); // lo que se vende mientras llega + lo que debe quedar
-            const targetTotalInventory = Math.max(Math.ceil(demCob + demandaDia * safetyDias), forecast > 0 ? minStockRule : 0);
+            // Parámetros por cluster (editables); vacío = el general
+            const cl = clusterOf(row), cc = clusterCfg[cl] || {};
+            const lead = cc.lead ?? leadDias, wos = cc.wos ?? wosDias, seg = cc.seg ?? safetyDias, minPz = cc.min ?? minStockRule;
+            const demCob = demandaDia * (lead + wos); // lo que se vende mientras llega + lo que debe quedar
+            const targetTotalInventory = Math.max(Math.ceil(demCob + demandaDia * seg), forecast > 0 ? minPz : 0);
             const toBuy = Math.max(0, targetTotalInventory - totalInventory);
             // Cobertura en días de inventario actual (OH+OO) al ritmo pronosticado
             const coverage = demandaDia > 0 ? totalInventory / demandaDia : (totalInventory > 0 ? 999 : 0);
@@ -564,10 +589,23 @@ export default function App() {
                 coverage,
                 demandaDia,
                 demCob,
+                clusterTienda: cl,
+                diasObj: lead + wos,
                 relevantPeriods: periodsWithFcst
             };
         });
-    }, [data, windowPeriods, nPer, calcMode, maxGrowth, maxDecline, leadDias, wosDias, safetyDias, goaFcst]);
+    }, [data, windowPeriods, nPer, calcMode, maxGrowth, maxDecline, leadDias, wosDias, safetyDias, goaFcst, clusterCfg]);
+
+    // Resumen por cluster de tienda (para el panel editable)
+    const clusterResumen = useMemo(() => {
+        const m = {};
+        computedData.forEach(r => {
+            const c = r.clusterTienda; if (!m[c]) m[c] = { tiendas: new Set(), compra: 0, fcst: 0 };
+            m[c].tiendas.add(r.centro); m[c].compra += r.toBuy; m[c].fcst += r.forecast;
+        });
+        return Object.entries(m).sort((a, b) => a[0].localeCompare(b[0])).map(([c, v]) => ({ c, tiendas: v.tiendas.size, compra: v.compra, fcst: v.fcst }));
+    }, [computedData]);
+    const hayClusterCSV = useMemo(() => data.some(r => r.cluster), [data]);
 
     // LISTAS DE OPCIONES PARA FILTROS
     const optionsCentros = useMemo(() => [...new Set(computedData.map(d => d.centro))].sort(), [computedData]);
@@ -996,6 +1034,41 @@ export default function App() {
                             </div>
                         ))}
                         <span className="text-[10px] text-gray-500">Pedido = demanda/día × {leadDias + wosDias + safetyDias} días − (OH+OO)</span>
+                        {clusterResumen.length > 0 && (
+                            <button onClick={() => setShowCluster(v => !v)} className="text-[11px] font-bold px-3 py-1 rounded-lg border border-purple-300 dark:border-purple-500/40 text-purple-700 dark:text-purple-300 hover:bg-purple-50 dark:hover:bg-purple-500/10">
+                                {showCluster ? 'Ocultar' : 'Ajustes por cluster'} ({clusterResumen.length})
+                            </button>
+                        )}
+                        {showCluster && clusterResumen.length > 0 && (
+                            <div className="w-full pt-2 border-t border-gray-200 dark:border-white/10">
+                                <p className="text-[10px] text-gray-500 mb-2">
+                                    {hayClusterCSV ? 'Clusters tomados de la columna CLUSTER del CSV.' : 'Sin columna CLUSTER en el CSV: A = top 20% de tiendas por venta, B = siguiente 30%, C = resto.'} Campo vacío = usa el valor general.
+                                </p>
+                                <table className="text-xs">
+                                    <thead className="text-[10px] uppercase text-gray-500"><tr>
+                                        <th className="px-2 py-1 text-left">Cluster</th><th className="px-2 py-1">Tiendas</th><th className="px-2 py-1">Lead (d)</th><th className="px-2 py-1">WOS (d)</th><th className="px-2 py-1">Seg. (d)</th><th className="px-2 py-1">Mín pzs</th><th className="px-2 py-1 text-right">Fcst</th><th className="px-2 py-1 text-right">Comprar</th><th></th>
+                                    </tr></thead>
+                                    <tbody>
+                                        {clusterResumen.map(({ c, tiendas, compra, fcst }) => (
+                                            <tr key={c} className="border-t border-gray-100 dark:border-white/5">
+                                                <td className="px-2 py-1 font-bold text-gray-900 dark:text-white">{c}</td>
+                                                <td className="px-2 py-1 text-center text-gray-500">{tiendas}</td>
+                                                {[['lead', leadDias], ['wos', wosDias], ['seg', safetyDias], ['min', null]].map(([k, def]) => (
+                                                    <td key={k} className="px-1 py-1">
+                                                        <input type="number" min="0" placeholder={def != null ? String(def) : 'auto'} value={clusterCfg[c]?.[k] ?? ''}
+                                                            onChange={e => { const v = e.target.value; setClusterCfg(prev => { const n = { ...prev, [c]: { ...(prev[c] || {}) } }; if (v === '') delete n[c][k]; else n[c][k] = Math.max(0, Number(v)); return n; }); }}
+                                                            className="bg-gray-50 dark:bg-white/5 border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs font-bold rounded w-14 px-1 py-0.5 text-center outline-none focus:border-purple-500" />
+                                                    </td>
+                                                ))}
+                                                <td className="px-2 py-1 text-right text-gray-600 dark:text-gray-300">{fcst.toLocaleString()}</td>
+                                                <td className="px-2 py-1 text-right font-bold text-yellow-600 dark:text-yellow-400">{compra.toLocaleString()}</td>
+                                                <td className="px-2 py-1">{clusterCfg[c] && Object.keys(clusterCfg[c]).length > 0 && <button onClick={() => setClusterCfg(prev => { const n = { ...prev }; delete n[c]; return n; })} className="text-[10px] text-gray-400 hover:text-red-500">restablecer</button>}</td>
+                                            </tr>
+                                        ))}
+                                    </tbody>
+                                </table>
+                            </div>
+                        )}
                         {calcMode === 'TDM' && Object.keys(goaFcst).length > 0 && (
                             <div className="w-full flex flex-wrap gap-2 pt-2 border-t border-gray-200 dark:border-white/10">
                                 <span className="text-[10px] uppercase font-bold text-gray-500">Modelo por GOA:</span>
@@ -1161,6 +1234,7 @@ export default function App() {
                                     <thead className="text-[10px] text-gray-500 dark:text-gray-400 uppercase bg-gray-100 dark:bg-[#1c1720] sticky top-0 z-10 shadow-sm dark:shadow-md transition-colors">
                                         <tr>
                                             <th className="px-3 py-3 font-semibold">Centro</th>
+                                            <th className="px-2 py-3 font-semibold">Cl.</th>
                                             <th className="px-3 py-3 font-semibold">Marca</th>
                                             <th className="px-3 py-3 font-semibold">GOA</th>
                                             <th className="px-3 py-3 font-semibold">SKU (Nombre)</th>
@@ -1175,15 +1249,16 @@ export default function App() {
                                     </thead>
                                     <tbody className="divide-y divide-gray-200 dark:divide-[#262626]">
                                         {enrichedData.length === 0 ? (
-                                            <tr><td colSpan="11" className="text-center py-10 text-gray-500">No se encontraron resultados</td></tr>
+                                            <tr><td colSpan="12" className="text-center py-10 text-gray-500">No se encontraron resultados</td></tr>
                                         ) : (
-                                            enrichedData.map((row) => (
+                                            enrichedData.slice(0, tablaLimite).map((row) => (
                                                 <tr 
                                                     key={row.id} 
                                                     onClick={() => setSelectedItem(row)}
                                                     className={`cursor-pointer transition-colors text-xs ${selectedItem?.id === row.id ? 'bg-purple-50 dark:bg-[#2a2a2a] border-l-4 border-l-purple-500' : 'hover:bg-gray-50 dark:hover:bg-[#1f1f1f] border-l-4 border-l-transparent'}`}
                                                 >
                                                     <td className="px-3 py-2 text-gray-600 dark:text-gray-300">{row.centro}</td>
+                                                    <td className="px-2 py-2 text-[10px] font-bold text-purple-600 dark:text-purple-300" title={`Cluster ${row.clusterTienda} · objetivo ${row.diasObj} días`}>{row.clusterTienda}</td>
                                                     <td className="px-3 py-2 text-gray-500 dark:text-gray-400 truncate max-w-[80px]" title={row.marca}>{row.marca}</td>
                                                     <td className="px-3 py-2 font-medium text-gray-700 dark:text-gray-200 truncate max-w-[80px]" title={row.goa}>{row.goa}</td>
                                                     <td className="px-3 py-2">
@@ -1208,7 +1283,7 @@ export default function App() {
                                                     <td className="px-3 py-2 text-right font-medium text-yellow-600 dark:text-yellow-500">{row.oh}</td>
                                                     <td className="px-3 py-2 text-right font-medium text-purple-600 dark:text-purple-400">{row.oo}</td>
                                                     <td className="px-3 py-2 text-right">
-                                                        <span title="Días de inventario (OH+OO) al ritmo pronosticado" className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${row.coverage > (leadDias + wosDias) * 1.5 ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400' : row.coverage >= leadDias + wosDias ? 'bg-green-100 text-green-700 dark:bg-green-500/10 dark:text-green-400' : row.coverage > leadDias ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-500/10 dark:text-yellow-400' : 'bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400'}`}>
+                                                        <span title="Días de inventario (OH+OO) al ritmo pronosticado" className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${row.coverage > row.diasObj * 1.5 ? 'bg-amber-100 text-amber-700 dark:bg-amber-500/10 dark:text-amber-400' : row.coverage >= row.diasObj ? 'bg-green-100 text-green-700 dark:bg-green-500/10 dark:text-green-400' : row.coverage > leadDias ? 'bg-yellow-100 text-yellow-700 dark:bg-yellow-500/10 dark:text-yellow-400' : 'bg-red-100 text-red-700 dark:bg-red-500/10 dark:text-red-400'}`}>
                                                             {row.coverage === 999 ? 'sin vta' : `${row.coverage.toFixed(0)} d`}
                                                         </span>
                                                     </td>
@@ -1220,6 +1295,12 @@ export default function App() {
                                         )}
                                     </tbody>
                                 </table>
+                                {enrichedData.length > tablaLimite && (
+                                    <div className="text-center py-3 text-xs text-gray-500">
+                                        Mostrando {tablaLimite.toLocaleString()} de {enrichedData.length.toLocaleString()} filas (totales y gráficas usan todo) ·{' '}
+                                        <button onClick={() => setTablaLimite(l => l + 500)} className="font-bold text-purple-600 dark:text-purple-400 hover:underline">mostrar 500 más</button>
+                                    </div>
+                                )}
                             </div>
                         </div>
 
