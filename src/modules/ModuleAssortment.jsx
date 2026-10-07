@@ -8,6 +8,32 @@ import { scoreItems, assignClusters, DEFAULT_SCORE_WEIGHTS, DEFAULT_CLUSTER_STRA
 import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
 // --- MOTOR INTELIGENTE PARA LEER CSV (Ignora comas dentro de comillas) ---
+// Selector múltiple con búsqueda (mismo que Traslados)
+const MultiPick = ({ label, options, value, onChange, t, isDark }) => {
+  const [q, setQ] = useState('');
+  const qq = q.trim().toUpperCase();
+  const vis = options.filter(o => !qq || o.toUpperCase().includes(qq)).slice(0, 300);
+  const toggle = (o) => onChange(value.includes(o) ? value.filter(x => x !== o) : [...value, o]);
+  return (
+    <div className={`rounded-lg border p-2 min-w-[180px] ${t.cardInner}`}>
+      <div className="flex items-center justify-between mb-1">
+        <span className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted}`}>{label} {value.length > 0 && <span className={t.textAccent1}>· {value.length}</span>}</span>
+        {value.length > 0 && <button onClick={() => onChange([])} className={`text-[9px] font-bold ${t.textMuted} hover:underline`}>limpiar</button>}
+      </div>
+      <input value={q} onChange={e => setQ(e.target.value)} placeholder={`Buscar (${options.length})`} className={`w-full text-[11px] px-2 py-1 mb-1 rounded border ${t.input}`} />
+      <div className="max-h-32 overflow-y-auto custom-scrollbar space-y-0.5">
+        {vis.map(o => (
+          <label key={o} className={`flex items-center gap-1.5 text-[11px] cursor-pointer px-1 rounded ${value.includes(o) ? (isDark ? 'bg-violet-500/20 text-white' : 'bg-violet-50 text-violet-700') : t.textMain}`}>
+            <input type="checkbox" checked={value.includes(o)} onChange={() => toggle(o)} className="accent-violet-500" />
+            <span className="truncate" title={o}>{o}</span>
+          </label>
+        ))}
+        {!vis.length && <p className={`text-[10px] ${t.textMuted}`}>Sin coincidencias</p>}
+      </div>
+    </div>
+  );
+};
+
 const parseCSV = (text) => {
   const separator = text.indexOf(';') > -1 ? ';' : (text.indexOf('\t') > -1 ? '\t' : ',');
   const lines = text.split(/\r?\n/);
@@ -224,7 +250,7 @@ export default function App() {
   // --- MOTOR DE TEMAS ---
   const themes = {
     dark: {
-      appBg: "bg-transparent text-[#EDEBF2]", header: "bg-white/5 border-purple-900/50 shadow-md",
+      appBg: "bg-transparent text-[#EDEBF2]", header: "bg-[#15111b]/95 backdrop-blur-md border-purple-900/50 shadow-md",
       logoIcon: "bg-purple-600 text-white", logoAccent: "text-yellow-400",
       btnMenu: "bg-white/5 text-gray-300 hover:text-white hover:bg-zinc-800 border border-white/10",
       menuBg: "bg-[#1c1720] border border-white/10 shadow-xl", menuItem: "hover:bg-zinc-800 text-gray-200 border-white/10",
@@ -232,12 +258,12 @@ export default function App() {
       card: "bg-white/[0.045] backdrop-blur-xl border-white/10 shadow-lg shadow-black/40 transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)]", cardInner: "bg-white/5 border-white/10",
       textMain: "text-white", textMuted: "text-gray-400", textAccent1: "text-purple-400", textAccent2: "text-yellow-400",
       iconAccent1: "text-purple-400 bg-purple-900/30", iconAccent2: "text-yellow-400 bg-yellow-500/20",
-      border: "border-white/10", input: "bg-white/5 border-white/10 text-white focus:ring-purple-500 outline-none",
+      border: "border-white/10", input: "bg-[#1a1520] border-white/10 text-white focus:ring-purple-500 outline-none [color-scheme:dark] [&>option]:bg-[#1a1520] [&>option]:text-white",
       inputYellow: "bg-white/5 border-white/10 text-yellow-400 font-bold focus:ring-yellow-500 outline-none",
       btnPrimary: "bg-yellow-500 text-black hover:bg-yellow-400 shadow-[0_0_15px_rgba(234,179,8,0.2)]",
       btnSecondary: "bg-purple-600 text-white hover:bg-purple-500", btnDanger: "text-gray-400 hover:text-red-400 bg-white/5 hover:bg-zinc-800 border-white/10",
       btnEdit: "text-gray-400 hover:text-yellow-400 bg-white/5 hover:bg-zinc-800 border-white/10", btnGhost: "bg-zinc-800 text-gray-300 hover:text-white hover:bg-zinc-700",
-      tableHead: "bg-white/5 text-gray-500 border-white/10", tableRow: "hover:bg-zinc-800/50",
+      tableHead: "bg-[#1a1520] text-gray-400 border-white/10", tableRow: "hover:bg-zinc-800/50",
       badgeAA: "text-purple-400 bg-purple-900/30 border-purple-500/50", badgeA: "text-yellow-400 bg-yellow-900/30 border-yellow-500/50", badgeOther: "text-gray-300 bg-zinc-800 border-zinc-600",
       gradientCard: "bg-gradient-to-br from-indigo-900 to-zinc-900 border border-zinc-800",
       successText: "text-green-400", successBg: "bg-green-900/20 border-green-500/50 text-green-300",
@@ -1275,6 +1301,87 @@ export default function App() {
     return (stores || []).filter(s => Object.keys(s.clusters || {}).some(k => k.toUpperCase() === filterUpper));
   }, [stores, filterGoa]);
 
+  // % efectivo por bucket para un GOA: { bucketId: fracción } (apagados no aparecen)
+  const bucketShareFor = (g) => {
+    const act = (buckets || []).filter(b => !g.bkCfg?.[b.id]?.off);
+    const w = act.map(b => { const p = g.bkCfg?.[b.id]?.pct; return p !== undefined && p !== '' ? Number(p) || 0 : Number(b.sharePct) || 0; });
+    const tot = w.reduce((a, x) => a + x, 0);
+    const out = {}; act.forEach((b, i) => { out[b.id] = tot > 0 ? w[i] / tot : 1 / act.length; });
+    return out;
+  };
+  const setBkCfg = (goaIds, bucketIds, patch) => setGoas(prev => prev.map(g => {
+    if (!goaIds.includes(g.id)) return g;
+    const bk = { ...(g.bkCfg || {}) };
+    bucketIds.forEach(id => { bk[id] = { ...(bk[id] || {}), ...(typeof patch === 'function' ? patch(g, id) : patch) }; });
+    return { ...g, bkCfg: bk };
+  }));
+
+  // ── HISTÓRICO DE COMPRA (LY / LLY) → sugerido de mezcla por bucket ──
+  const [histSug, setHistSug] = useState(() => { try { return JSON.parse(localStorage.getItem('gop_assort_hist') || 'null'); } catch { return null; } });
+  const [selGoas, setSelGoas] = useState([]);
+  const [selBks, setSelBks] = useState([]);
+  const [bulkCurve, setBulkCurve] = useState('');
+  const [bulkRule, setBulkRule] = useState('');
+  const histInputRef = useRef(null);
+  const bucketOfPvp = (pvp) => {
+    let best = null, dist = Infinity;
+    (buckets || []).forEach(b => {
+      const m = String(b.pvpRange || '').replace(/[$,\s]/g, '').match(/(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)/);
+      if (!m) return;
+      const lo = Number(m[1]), hi = Number(m[2]);
+      const d = pvp < lo ? lo - pvp : pvp > hi ? pvp - hi : 0;
+      if (d < dist) { dist = d; best = b; }
+    });
+    return best;
+  };
+  const handleHistUpload = (e) => {
+    const file = e.target.files?.[0]; if (!file) return;
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      const arr = parseCSV(String(ev.target.result).replace(/^\uFEFF/, ''));
+      if (arr.length < 2) return;
+      const rows = arr.slice(1).map(r => Object.fromEntries(arr[0].map((h, i) => [h, r[i]])));
+      const norm = (k) => String(k).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+      const keys = Object.keys(rows[0]);
+      const col = (...names) => keys.find(k => names.some(n => norm(k) === n)) || keys.find(k => names.some(n => norm(k).includes(n)));
+      const cG = col('goa'), cP = col('pvp', 'precio'), cZ = col('piezas', 'pzs', 'unidades', 'cantidad'), cV = col('venta $', 'valor', 'importe', 'monto'), cB = col('bucket'), cA = col('ano', 'año', 'anio', 'temporada');
+      if (!cG || (!cP && !cB)) { alert('El histórico necesita GOA y PVP (o BUCKET).'); return; }
+      const acc = {}, sinBucket = new Set(), anios = new Set();
+      rows.forEach(r => {
+        const goa = String(r[cG] || '').trim().toUpperCase(); if (!goa) return;
+        const pvp = Number(String(r[cP] ?? '').replace(/[^0-9.-]/g, '')) || 0;
+        const pzs = Number(String(r[cZ] ?? '').replace(/[^0-9.-]/g, '')) || 0;
+        const val = cV ? Number(String(r[cV] ?? '').replace(/[^0-9.-]/g, '')) || 0 : pzs * pvp;
+        const b = cB && r[cB] ? (buckets || []).find(x => x.name.trim().toUpperCase() === String(r[cB]).trim().toUpperCase()) : bucketOfPvp(pvp);
+        if (cA && r[cA]) anios.add(String(r[cA]).trim());
+        if (!b) { sinBucket.add(goa); return; }
+        acc[goa] = acc[goa] || {}; acc[goa][b.id] = (acc[goa][b.id] || 0) + (val || pzs);
+      });
+      const sug = {};
+      Object.entries(acc).forEach(([goa, m]) => { const tot = Object.values(m).reduce((a, x) => a + x, 0); sug[goa] = {}; Object.entries(m).forEach(([id, v]) => { sug[goa][id] = Math.round(v / tot * 1000) / 10; }); });
+      const out = { sug, filas: rows.length, anios: [...anios], sinBucket: [...sinBucket] };
+      setHistSug(out); try { localStorage.setItem('gop_assort_hist', JSON.stringify(out)); } catch {}
+    };
+    reader.readAsText(file);
+    e.target.value = '';
+  };
+  // Aplica la mezcla histórica: bucket con <5% de la compra histórica se apaga; regla = la que lleve el nombre del bucket, si existe
+  const aplicarSugerido = () => {
+    if (!histSug) return;
+    const ids = selGoas.length ? (goas || []).filter(g => selGoas.includes(g.name)).map(g => g.id) : (goas || []).map(g => g.id);
+    setGoas(prev => prev.map(g => {
+      const h = histSug.sug[String(g.name).trim().toUpperCase()];
+      if (!ids.includes(g.id) || !h) return g;
+      const bk = { ...(g.bkCfg || {}) };
+      (buckets || []).forEach(b => {
+        const pct = h[b.id] || 0;
+        const regla = (calcRules || []).find(r => new RegExp(`\\b${b.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(r.name));
+        bk[b.id] = { ...(bk[b.id] || {}), off: pct < 5, pct: pct < 5 ? '' : pct, ...(regla && !bk[b.id]?.ruleId ? { ruleId: regla.id } : {}) };
+      });
+      return { ...g, bkCfg: bk };
+    }));
+  };
+
   // ── RESULTANTE AUTOMÁTICA: OTB → piezas por GOA × Bucket × Mes, y reparto a tiendas ──
   // OTB$ = presupuesto GOA × % del mes × % del bucket; Pzs = OTB$ / PVP (PVP del bucket en el GOA o default).
   // Reparto: tiendas con clúster en el GOA, en proporción a las corridas de la regla por clúster × curva de tallas.
@@ -1282,12 +1389,16 @@ export default function App() {
     const rows = [];
     const bks = (buckets || []).length ? buckets : [null];
     (goas || []).forEach(g => {
-      const curve = (sizeCurves || []).find(c => c.id === Number(g.autoCurveId)) || (sizeCurves || [])[0];
-      const rule = (calcRules || []).find(r => r.id === Number(g.autoRuleId)) || (calcRules || [])[0];
-      const pzsModelo = curve && rule ? getPiecesForOneModel(g.name, curve.id, rule.id) : 0;
+      // Mezcla de buckets del GOA: solo los activos, con su % (propio del GOA o el general del bucket), normalizada a 100%
+      const shareOf = bucketShareFor(g);
       bks.forEach(b => {
+        if (b && !shareOf[b.id]) return; // bucket apagado para este GOA
+        const cfg = (b && g.bkCfg?.[b.id]) || {};
+        const curve = (sizeCurves || []).find(c => c.id === Number(cfg.curveId || g.autoCurveId)) || (sizeCurves || [])[0];
+        const rule = (calcRules || []).find(r => r.id === Number(cfg.ruleId || g.autoRuleId)) || (calcRules || [])[0];
+        const pzsModelo = curve && rule ? getPiecesForOneModel(g.name, curve.id, rule.id) : 0;
         for (let m = 0; m < 6; m++) {
-          const otb = (Number(g.budget) || 0) * ((Number(g.months?.[m]) || 0) / 100) * (b ? (Number(b.sharePct) || 0) / 100 : 1);
+          const otb = (Number(g.budget) || 0) * ((Number(g.months?.[m]) || 0) / 100) * (b ? shareOf[b.id] : 1);
           if (otb <= 0) continue;
           const pvp = (b && Number(g.bucketPvps?.[b.id]) > 0) ? Number(g.bucketPvps[b.id]) : (Number(g.defaultPvp) || 0);
           const pzs = pvp > 0 ? Math.floor(otb / pvp) : 0;
@@ -2126,20 +2237,89 @@ export default function App() {
                     </button>
                     </div>
                   </div>
-                  <div className="flex flex-wrap gap-3 mb-4">
-                    {(goas || []).map(g => (
-                      <div key={g.id} className={`flex items-center gap-2 px-3 py-2 rounded-lg border text-[11px] ${t.cardInner}`}>
-                        <b className={t.textMain}>{g.name}</b>
-                        <select value={g.autoCurveId || ''} onChange={e => handleUpdateGoaField(g.id, 'autoCurveId', e.target.value)} className={`px-2 py-1 rounded border text-[11px] ${t.input}`}>
-                          <option value="">Curva: {(sizeCurves || [])[0]?.name || '—'}</option>
-                          {(sizeCurves || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
-                        </select>
-                        <select value={g.autoRuleId || ''} onChange={e => handleUpdateGoaField(g.id, 'autoRuleId', e.target.value)} className={`px-2 py-1 rounded border text-[11px] ${t.input}`}>
-                          <option value="">Regla: {(calcRules || [])[0]?.name || '—'}</option>
-                          {(calcRules || []).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
-                        </select>
+                  {/* Asignación GOA × Bucket: qué buckets lleva cada GOA, con qué % y con qué curva/regla */}
+                  <div className={`rounded-lg border p-3 mb-4 ${t.cardInner}`}>
+                    <div className="flex flex-wrap items-end gap-3 mb-3">
+                      <MultiPick label="GOAs" options={(goas || []).map(g => g.name)} value={selGoas} onChange={setSelGoas} t={t} isDark={theme === 'dark'} />
+                      <MultiPick label="Buckets" options={(buckets || []).map(b => b.name)} value={selBks} onChange={setSelBks} t={t} isDark={theme === 'dark'} />
+                      <div className="flex flex-col gap-2">
+                        <div className="flex gap-2">
+                          <select value={bulkCurve} onChange={e => setBulkCurve(e.target.value)} className={`px-2 py-1 rounded border text-[11px] ${t.input}`}>
+                            <option value="">Curva…</option>{(sizeCurves || []).map(c => <option key={c.id} value={c.id}>{c.name}</option>)}
+                          </select>
+                          <select value={bulkRule} onChange={e => setBulkRule(e.target.value)} className={`px-2 py-1 rounded border text-[11px] ${t.input}`}>
+                            <option value="">Regla…</option>{(calcRules || []).map(r => <option key={r.id} value={r.id}>{r.name}</option>)}
+                          </select>
+                        </div>
+                        {(() => {
+                          const gIds = (goas || []).filter(g => !selGoas.length || selGoas.includes(g.name)).map(g => g.id);
+                          const bIds = (buckets || []).filter(b => !selBks.length || selBks.includes(b.name)).map(b => b.id);
+                          const btn = `px-2.5 py-1 rounded text-[10px] font-black uppercase ${t.btnGhost}`;
+                          return (
+                            <div className="flex gap-1.5 flex-wrap">
+                              <button className={btn} onClick={() => setBkCfg(gIds, bIds, { off: false })}>Activar</button>
+                              <button className={btn} onClick={() => setBkCfg(gIds, bIds, { off: true })}>Quitar</button>
+                              <button className={btn} disabled={!bulkCurve && !bulkRule} onClick={() => setBkCfg(gIds, bIds, { ...(bulkCurve ? { curveId: Number(bulkCurve) } : {}), ...(bulkRule ? { ruleId: Number(bulkRule) } : {}) })}>Asignar curva/regla</button>
+                              <button className={btn} onClick={() => setBkCfg(gIds, bIds, { pct: '' })}>% general</button>
+                            </div>
+                          );
+                        })()}
+                        <p className={`text-[10px] ${t.textMuted}`}>Aplica a {selGoas.length || 'todos los'} GOA × {selBks.length || 'todos los'} buckets</p>
                       </div>
-                    ))}
+                      <div className="flex flex-col gap-1.5 ml-auto">
+                        <input ref={histInputRef} type="file" accept=".csv" onChange={handleHistUpload} className="hidden" />
+                        <button onClick={() => histInputRef.current?.click()} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase flex items-center ${t.btnGhost}`}><Upload size={12} className="mr-1.5" /> Histórico LY/LLY</button>
+                        <button onClick={aplicarSugerido} disabled={!histSug} className={`px-3 py-1.5 rounded-lg text-[10px] font-black uppercase flex items-center disabled:opacity-40 ${t.btnSecondary}`}><Wand2 size={12} className="mr-1.5" /> Aplicar sugerido</button>
+                        {histSug && <p className={`text-[10px] max-w-[220px] ${t.textMuted}`}>{histSug.filas.toLocaleString('es-MX')} filas{histSug.anios.length ? ` · ${histSug.anios.join(', ')}` : ''} · {Object.keys(histSug.sug).length} GOAs{histSug.sinBucket.length ? ` · sin rango de bucket: ${histSug.sinBucket.slice(0, 3).join(', ')}${histSug.sinBucket.length > 3 ? '…' : ''}` : ''}</p>}
+                      </div>
+                    </div>
+                    <div className="max-h-72 overflow-auto custom-scrollbar">
+                      <table className="text-[11px] w-full">
+                        <thead className={`sticky top-0 z-10 ${t.tableHead}`}>
+                          <tr className="text-[10px] uppercase">
+                            <th className="p-2 text-left">GOA</th>
+                            {(buckets || []).map(b => <th key={b.id} className="p-2 text-left" title={b.pvpRange ? `PVP ${b.pvpRange} · general ${b.sharePct || 0}%` : `general ${b.sharePct || 0}%`}>{b.name}</th>)}
+                          </tr>
+                        </thead>
+                        <tbody className={`divide-y ${t.border}`}>
+                          {(goas || []).filter(g => !selGoas.length || selGoas.includes(g.name)).map(g => {
+                            const sh = bucketShareFor(g);
+                            const h = histSug?.sug?.[String(g.name).trim().toUpperCase()];
+                            return (
+                              <tr key={g.id}>
+                                <td className={`p-2 font-bold whitespace-nowrap ${t.textMain}`}>{g.name}</td>
+                                {(buckets || []).map(b => {
+                                  const c = g.bkCfg?.[b.id] || {};
+                                  return (
+                                    <td key={b.id} className={`p-1.5 align-top ${c.off ? 'opacity-40' : ''}`}>
+                                      <div className="flex items-center gap-1 mb-1">
+                                        <input type="checkbox" checked={!c.off} onChange={() => setBkCfg([g.id], [b.id], { off: !c.off })} className="accent-violet-500" />
+                                        <input type="number" min="0" disabled={c.off} value={c.pct ?? ''} placeholder={String(b.sharePct || 0)} onChange={e => setBkCfg([g.id], [b.id], { pct: e.target.value })} className={`w-12 px-1 py-0.5 rounded border text-[11px] text-center ${t.input}`} />
+                                        <span className={`text-[10px] font-bold ${t.textAccent2}`}>{sh[b.id] ? `${(sh[b.id] * 100).toFixed(0)}%` : '—'}</span>
+                                        {h && <span className={`text-[9px] ${t.textMuted}`} title="% de la compra histórica (LY/LLY) en este bucket">H {h[b.id] || 0}%</span>}
+                                      </div>
+                                      {!c.off && (
+                                        <div className="flex gap-1">
+                                          <select value={c.curveId || ''} onChange={e => setBkCfg([g.id], [b.id], { curveId: e.target.value ? Number(e.target.value) : '' })} className={`w-24 px-1 py-0.5 rounded border text-[10px] ${t.input}`}>
+                                            <option value="">{(sizeCurves || []).find(x => x.id === Number(g.autoCurveId))?.name || (sizeCurves || [])[0]?.name || 'Curva'}</option>
+                                            {(sizeCurves || []).map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
+                                          </select>
+                                          <select value={c.ruleId || ''} onChange={e => setBkCfg([g.id], [b.id], { ruleId: e.target.value ? Number(e.target.value) : '' })} className={`w-24 px-1 py-0.5 rounded border text-[10px] ${t.input}`}>
+                                            <option value="">{(calcRules || []).find(x => x.id === Number(g.autoRuleId))?.name || (calcRules || [])[0]?.name || 'Regla'}</option>
+                                            {(calcRules || []).map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
+                                          </select>
+                                        </div>
+                                      )}
+                                    </td>
+                                  );
+                                })}
+                              </tr>
+                            );
+                          })}
+                        </tbody>
+                      </table>
+                    </div>
+                    <p className={`text-[10px] mt-2 ${t.textMuted}`}>Casilla = el GOA lleva ese bucket. El % que captures sustituye al general del bucket solo para ese GOA; amarillo = % real después de repartir el OTB del GOA entre sus buckets activos (siempre suma 100%). H = mezcla histórica.</p>
                   </div>
                   <div className="max-h-96 overflow-y-auto custom-scrollbar">
                     <table className="w-full text-xs">
@@ -2147,7 +2327,7 @@ export default function App() {
                         <tr className={`text-[10px] uppercase border-b ${t.border}`}>
                           <th className="p-2 text-left">GOA</th><th className="p-2 text-left">Bucket</th><th className="p-2 text-left">Mes</th>
                           <th className="p-2 text-right">OTB $</th><th className="p-2 text-right">PVP</th><th className="p-2 text-right">Piezas</th>
-                          <th className="p-2 text-right" title="Piezas ÷ piezas de 1 modelo con la regla y curva elegidas">Modelos equiv.</th><th className="p-2 text-left">Pendiente</th>
+                          <th className="p-2 text-right" title="Piezas ÷ piezas de 1 modelo con la regla y curva elegidas">Modelos equiv.</th><th className="p-2 text-left" title="Qué falta capturar para poder calcular piezas y repartir a tiendas (PVP, curva, regla o clústeres). ✓ = completo">Estatus</th>
                         </tr>
                       </thead>
                       <tbody className={`divide-y ${t.border}`}>
@@ -2165,10 +2345,11 @@ export default function App() {
                         ))}
                       </tbody>
                       <tfoot className={`sticky bottom-0 ${t.tableHead}`}>
-                        <tr className="font-black">
+                        <tr className={`font-black ${t.textMain}`}>
                           <td className="p-2" colSpan={3}>Total</td>
                           <td className="p-2 text-right">${Math.round(autoPlan.reduce((a, r) => a + r.otb, 0)).toLocaleString('es-MX')}</td><td />
-                          <td className="p-2 text-right">{autoPlan.reduce((a, r) => a + r.pzs, 0).toLocaleString('es-MX')}</td><td colSpan={2} />
+                          <td className="p-2 text-right">{autoPlan.reduce((a, r) => a + r.pzs, 0).toLocaleString('es-MX')}</td>
+                          <td className="p-2 text-right">{autoPlan.reduce((a, r) => a + (r.modelos || 0), 0).toFixed(1)}</td><td />
                         </tr>
                       </tfoot>
                     </table>

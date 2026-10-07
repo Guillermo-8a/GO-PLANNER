@@ -94,6 +94,11 @@ export const CSV_SCHEMAS = [
         desc: 'Se cruza contra la matriz para generar el archivo de allocation.',
         columns: ['GOA', 'Modelo', 'Curva', 'Regla'],
       },
+      {
+        title: 'Histórico de compra LY/LLY (Tab 4, sugerido de buckets)',
+        desc: 'Una fila por compra (modelo o resumen). Cada PVP se asigna al bucket cuyo "Rango PVP" lo contiene (o el más cercano); si traes BUCKET se usa directo. La mezcla se calcula en $ (piezas × PVP, o VALOR si viene). Buckets con <5% de la compra histórica se apagan para ese GOA; la regla se toma de la que lleve el nombre del bucket (ej. "BASICO | OPP").',
+        columns: ['GOA*', 'PVP*', 'PIEZAS', 'VALOR (opcional)', 'BUCKET (opcional)', 'AÑO (opcional)'],
+      },
     ],
   },
   {

@@ -53,7 +53,7 @@ const WORLDS = [
     accent: '#f59e0b', glow: 'rgba(245,158,11,0.15)',
     modules: [
       { label: 'Forecasting',    Icon: TrendingUp,   desc: 'Regresión lineal con ajuste estacional y 4 escenarios IS.' },
-      { label: 'Assortment', Icon: ShoppingCart, desc: 'Presupuesto de compra, buckets por marca y OTB mensual.' },
+      { label: 'Assortment', Icon: ShoppingCart, desc: 'Presupuesto de compra y OTB mensual. En la resultante cada GOA lleva solo los buckets que le asignes, con su % y su curva/regla (sugerido por mezcla histórica LY/LLY).' },
       { label: 'Resurtido',      Icon: RefreshCw,    desc: 'Reposición por días de inventario: pedido = demanda/día × (lead time + WOS + seguridad) − (OH+OO), con ajustes editables por cluster de tienda (CSV o A/B/C automático) y forecast TDM por GOA.' },
       { label: 'Distribución', Icon: Map,            desc: 'Surtido inicial por cluster, curva de tallas y chequera.' },
     ],
