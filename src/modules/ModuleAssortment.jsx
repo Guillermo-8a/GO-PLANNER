@@ -259,7 +259,7 @@ export default function App() {
       textMain: "text-white", textMuted: "text-gray-400", textAccent1: "text-purple-400", textAccent2: "text-yellow-400",
       iconAccent1: "text-purple-400 bg-purple-900/30", iconAccent2: "text-yellow-400 bg-yellow-500/20",
       border: "border-white/10", input: "bg-[#1a1520] border-white/10 text-white focus:ring-purple-500 outline-none [color-scheme:dark] [&>option]:bg-[#1a1520] [&>option]:text-white",
-      inputYellow: "bg-white/5 border-white/10 text-yellow-400 font-bold focus:ring-yellow-500 outline-none",
+      inputYellow: "bg-[#1a1520] border-white/10 text-yellow-400 font-bold focus:ring-yellow-500 outline-none [color-scheme:dark]",
       btnPrimary: "bg-yellow-500 text-black hover:bg-yellow-400 shadow-[0_0_15px_rgba(234,179,8,0.2)]",
       btnSecondary: "bg-purple-600 text-white hover:bg-purple-500", btnDanger: "text-gray-400 hover:text-red-400 bg-white/5 hover:bg-zinc-800 border-white/10",
       btnEdit: "text-gray-400 hover:text-yellow-400 bg-white/5 hover:bg-zinc-800 border-white/10", btnGhost: "bg-zinc-800 text-gray-300 hover:text-white hover:bg-zinc-700",
@@ -1317,7 +1317,7 @@ export default function App() {
   }));
 
   // ── HISTÓRICO DE COMPRA (LY / LLY) → sugerido de mezcla por bucket ──
-  const [histSug, setHistSug] = useState(() => { try { return JSON.parse(localStorage.getItem('gop_assort_hist') || 'null'); } catch { return null; } });
+  const [histSug, setHistSug] = useState(() => { try { const h = JSON.parse(localStorage.getItem('gop_assort_hist') || 'null'); return h?.v === 2 ? h : null; } catch { return null; } });
   const [selGoas, setSelGoas] = useState([]);
   const [selBks, setSelBks] = useState([]);
   const [bulkCurve, setBulkCurve] = useState('');
@@ -1334,49 +1334,85 @@ export default function App() {
     });
     return best;
   };
+  // Agrupa puntos de precio históricos en hasta 3 escalones (OPP / MID / MAX) con k-means 1D ponderado
+  const escalones = (pts) => { // pts: { pvp: { pzs, val } }
+    const arr = Object.entries(pts).map(([p, v]) => ({ pvp: Number(p), ...v })).filter(x => x.pvp > 0).sort((a, b) => a.pvp - b.pvp);
+    if (!arr.length) return [];
+    // Corta en los 2 saltos de precio más grandes (en %): 499/549 | 799 | 999/1099
+    const cortes = arr.slice(1).map((x, k) => ({ k: k + 1, gap: Math.log(x.pvp / arr[k].pvp) })).sort((a, b) => b.gap - a.gap).slice(0, 2).filter(c => c.gap > Math.log(1.12)).map(c => c.k).sort((a, b) => a - b);
+    const grupos = []; let ini = 0;
+    [...cortes, arr.length].forEach(c => { grupos.push(arr.slice(ini, c)); ini = c; });
+    const totV = arr.reduce((a, x) => a + x.val, 0) || 1;
+    // PVP del escalón = el precio con más piezas compradas dentro del grupo
+    return grupos.map(gg => ({ pvp: gg.reduce((a, x) => x.pzs > a.pzs ? x : a).pvp, pct: Math.round(gg.reduce((a, x) => a + x.val, 0) / totV * 1000) / 10, precios: gg.map(x => x.pvp) }));
+  };
   const handleHistUpload = (e) => {
     const file = e.target.files?.[0]; if (!file) return;
     const reader = new FileReader();
     reader.onload = (ev) => {
-      const arr = parseCSV(String(ev.target.result).replace(/^\uFEFF/, ''));
+      const arr = parseCSV(String(ev.target.result).replace(/^﻿/, ''));
       if (arr.length < 2) return;
       const rows = arr.slice(1).map(r => Object.fromEntries(arr[0].map((h, i) => [h, r[i]])));
-      const norm = (k) => String(k).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().trim();
+      const norm = (k) => String(k).normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
       const keys = Object.keys(rows[0]);
       const col = (...names) => keys.find(k => names.some(n => norm(k) === n)) || keys.find(k => names.some(n => norm(k).includes(n)));
-      const cG = col('goa'), cP = col('pvp', 'precio'), cZ = col('piezas', 'pzs', 'unidades', 'cantidad'), cV = col('venta $', 'valor', 'importe', 'monto'), cB = col('bucket'), cA = col('ano', 'año', 'anio', 'temporada');
-      if (!cG || (!cP && !cB)) { alert('El histórico necesita GOA y PVP (o BUCKET).'); return; }
-      const acc = {}, sinBucket = new Set(), anios = new Set();
+      const cG = col('goa'), cP = col('pvp', 'precio'), cZ = col('piezas', 'pzs', 'unidades', 'cantidad'), cV = col('valor', 'importe', 'monto'), cB = col('bucket'), cA = col('ano', 'anio', 'temporada');
+      if (!cG || !cP) { alert('El histórico necesita GOA y PVP.'); return; }
+      const num = (v) => Number(String(v ?? '').replace(/[^0-9.-]/g, '')) || 0;
+      const bAcc = {}, tAcc = {}, anios = new Set(), sinBucket = new Set();
+      const usaRangos = !cB && (buckets || []).some(b => /\d+\s*-\s*\d+/.test(String(b.pvpRange || '')));
       rows.forEach(r => {
         const goa = String(r[cG] || '').trim().toUpperCase(); if (!goa) return;
-        const pvp = Number(String(r[cP] ?? '').replace(/[^0-9.-]/g, '')) || 0;
-        const pzs = Number(String(r[cZ] ?? '').replace(/[^0-9.-]/g, '')) || 0;
-        const val = cV ? Number(String(r[cV] ?? '').replace(/[^0-9.-]/g, '')) || 0 : pzs * pvp;
-        const b = cB && r[cB] ? (buckets || []).find(x => x.name.trim().toUpperCase() === String(r[cB]).trim().toUpperCase()) : bucketOfPvp(pvp);
+        const pvp = num(r[cP]), pzs = num(r[cZ]) || 1, val = cV ? num(r[cV]) : pzs * pvp;
         if (cA && r[cA]) anios.add(String(r[cA]).trim());
-        if (!b) { sinBucket.add(goa); return; }
-        acc[goa] = acc[goa] || {}; acc[goa][b.id] = (acc[goa][b.id] || 0) + (val || pzs);
+        let b = null;
+        if (cB && r[cB]) b = (buckets || []).find(x => norm(x.name) === norm(r[cB]));
+        else if (usaRangos) b = bucketOfPvp(pvp);
+        if ((cB || usaRangos) && !b) sinBucket.add(goa);
+        const bk = b ? String(b.id) : '*';
+        if (b) { bAcc[goa] = bAcc[goa] || {}; bAcc[goa][b.id] = (bAcc[goa][b.id] || 0) + val; }
+        tAcc[goa] = tAcc[goa] || {}; tAcc[goa][bk] = tAcc[goa][bk] || {}; tAcc[goa]['*'] = tAcc[goa]['*'] || {};
+        const add = (k) => { const o = tAcc[goa][k][pvp] = tAcc[goa][k][pvp] || { pzs: 0, val: 0 }; o.pzs += pzs; o.val += val; };
+        add(bk); if (bk !== '*') add('*');
       });
       const sug = {};
-      Object.entries(acc).forEach(([goa, m]) => { const tot = Object.values(m).reduce((a, x) => a + x, 0); sug[goa] = {}; Object.entries(m).forEach(([id, v]) => { sug[goa][id] = Math.round(v / tot * 1000) / 10; }); });
-      const out = { sug, filas: rows.length, anios: [...anios], sinBucket: [...sinBucket] };
+      Object.keys(tAcc).forEach(goa => {
+        const bm = bAcc[goa] || {}, tot = Object.values(bm).reduce((a, x) => a + x, 0);
+        const buckets_ = {}; Object.entries(bm).forEach(([id, v]) => { buckets_[id] = Math.round(v / tot * 1000) / 10; });
+        const tiers = {}; Object.entries(tAcc[goa]).forEach(([k, pts]) => { tiers[k] = escalones(pts); });
+        sug[goa] = { buckets: buckets_, tiers };
+      });
+      const out = { v: 2, sug, filas: rows.length, anios: [...anios], sinBucket: [...sinBucket], porBucket: !!(cB || usaRangos) };
       setHistSug(out); try { localStorage.setItem('gop_assort_hist', JSON.stringify(out)); } catch {}
     };
     reader.readAsText(file);
     e.target.value = '';
   };
-  // Aplica la mezcla histórica: bucket con <5% de la compra histórica se apaga; regla = la que lleve el nombre del bucket, si existe
+  // Regla para un escalón: la que lleve el escalón (OPP/MID/MAX) en el nombre, de preferencia también el nombre del bucket
+  const reglaPara = (tier, bucket) => {
+    const N = (x) => String(x || '').normalize('NFD').replace(/[̀-ͯ]/g, '').toUpperCase();
+    const bw = N(bucket?.name).split(/\s+/)[0];
+    const cand = (calcRules || []).filter(r => new RegExp(`\\b${tier}\\b`).test(N(r.name)));
+    return cand.find(r => bw && N(r.name).includes(bw)) || cand[0] || null;
+  };
+  // Aplica el histórico: mezcla de buckets (si el histórico trae bucket o rangos) y, por bucket, reglas OPP/MID/MAX con su PVP y %
   const aplicarSugerido = () => {
-    if (!histSug) return;
+    if (!histSug?.sug) return;
     const ids = selGoas.length ? (goas || []).filter(g => selGoas.includes(g.name)).map(g => g.id) : (goas || []).map(g => g.id);
     setGoas(prev => prev.map(g => {
       const h = histSug.sug[String(g.name).trim().toUpperCase()];
       if (!ids.includes(g.id) || !h) return g;
       const bk = { ...(g.bkCfg || {}) };
       (buckets || []).forEach(b => {
-        const pct = h[b.id] || 0;
-        const regla = (calcRules || []).find(r => new RegExp(`\\b${b.name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\b`, 'i').test(r.name));
-        bk[b.id] = { ...(bk[b.id] || {}), off: pct < 5, pct: pct < 5 ? '' : pct, ...(regla && !bk[b.id]?.ruleId ? { ruleId: regla.id } : {}) };
+        const cur = { ...(bk[b.id] || {}) };
+        if (histSug.porBucket) { const pct = h.buckets?.[b.id] || 0; cur.off = pct < 5; cur.pct = pct < 5 ? '' : pct; }
+        const tiers = h.tiers?.[String(b.id)] || h.tiers?.['*'] || [];
+        if (tiers.length && !cur.off) {
+          const names = tiers.length === 3 ? ['OPP', 'MID', 'MAX'] : tiers.length === 2 ? ['OPP', 'MAX'] : ['MID'];
+          const base = rulesOf(g, b.id)[0]?.ruleId;
+          cur.rules = tiers.map((tr, k) => ({ ruleId: (reglaPara(names[k], b) || {}).id || base, pct: tiers.length > 1 ? Math.round(tr.pct) : '', pvp: tr.pvp }));
+        }
+        bk[b.id] = cur;
       });
       return { ...g, bkCfg: bk };
     }));
@@ -1385,31 +1421,64 @@ export default function App() {
   // ── RESULTANTE AUTOMÁTICA: OTB → piezas por GOA × Bucket × Mes, y reparto a tiendas ──
   // OTB$ = presupuesto GOA × % del mes × % del bucket; Pzs = OTB$ / PVP (PVP del bucket en el GOA o default).
   // Reparto: tiendas con clúster en el GOA, en proporción a las corridas de la regla por clúster × curva de tallas.
+  // Reglas de una combinación GOA×Bucket: [{ ruleId, pct, pvp }] (sin lista = la regla del GOA o la primera, 100%)
+  const rulesOf = (g, bId) => {
+    const cfg = (bId && g.bkCfg?.[bId]) || {};
+    const list = (cfg.rules || []).filter(r => r.ruleId);
+    return list.length ? list : [{ ruleId: cfg.ruleId || g.autoRuleId || (calcRules || [])[0]?.id, pct: '', pvp: '' }];
+  };
+  const mesesSuma = (g) => (g.months || []).slice(0, 6).reduce((a, x) => a + (Number(x) || 0), 0);
+  const [normMeses, setNormMeses] = useState(() => { try { return localStorage.getItem('gop_assort_normMeses') !== '0'; } catch { return true; } });
+  useEffect(() => { try { localStorage.setItem('gop_assort_normMeses', normMeses ? '1' : '0'); } catch {} }, [normMeses]);
+  // % de mes para reportes, con la misma regla que la resultante (reescalados a 100 si normMeses)
+  const mesesNorm = (g) => { const ms = (g.months || [16.6,16.6,16.6,16.6,16.6,17]).map(w => Number(w?.value ?? w) || 0); const sm = ms.slice(0, 6).reduce((a, x) => a + x, 0); return normMeses && sm > 0 ? ms.map(x => x * 100 / sm) : ms; };
+
   const autoPlan = useMemo(() => {
     const rows = [];
     const bks = (buckets || []).length ? buckets : [null];
     (goas || []).forEach(g => {
       // Mezcla de buckets del GOA: solo los activos, con su % (propio del GOA o el general del bucket), normalizada a 100%
       const shareOf = bucketShareFor(g);
+      // Si los % de mes no suman 100, se reescalan para que se use todo el presupuesto (opción normMeses)
+      const sm = mesesSuma(g), fm = normMeses && sm > 0 ? 100 / sm : 1;
       bks.forEach(b => {
         if (b && !shareOf[b.id]) return; // bucket apagado para este GOA
         const cfg = (b && g.bkCfg?.[b.id]) || {};
         const curve = (sizeCurves || []).find(c => c.id === Number(cfg.curveId || g.autoCurveId)) || (sizeCurves || [])[0];
-        const rule = (calcRules || []).find(r => r.id === Number(cfg.ruleId || g.autoRuleId)) || (calcRules || [])[0];
-        const pzsModelo = curve && rule ? getPiecesForOneModel(g.name, curve.id, rule.id) : 0;
-        for (let m = 0; m < 6; m++) {
-          const otb = (Number(g.budget) || 0) * ((Number(g.months?.[m]) || 0) / 100) * (b ? shareOf[b.id] : 1);
-          if (otb <= 0) continue;
-          const pvp = (b && Number(g.bucketPvps?.[b.id]) > 0) ? Number(g.bucketPvps[b.id]) : (Number(g.defaultPvp) || 0);
-          const pzs = pvp > 0 ? Math.floor(otb / pvp) : 0;
-          rows.push({ key: `${g.id}|${b?.id || ''}|${m}`, goa: g, bucket: b, mes: m, mesLabel: getMonthLabel(m), otb, pvp, pzs,
-            curve, rule, pzsModelo, modelos: pzsModelo > 0 ? pzs / pzsModelo : 0,
-            falta: !pvp ? 'PVP' : !curve ? 'Curva' : !rule ? 'Regla' : pzsModelo <= 0 ? 'Clústeres' : '' });
-        }
+        const rls = rulesOf(g, b?.id);
+        const wR = rls.map(r => r.pct !== '' && r.pct != null ? Number(r.pct) || 0 : null);
+        const conPct = wR.filter(x => x != null).reduce((a, x) => a + x, 0), sinPct = wR.filter(x => x == null).length;
+        // Reglas sin % se reparten lo que falte para 100 (o partes iguales si nadie trae %)
+        const shR = wR.map(x => x != null ? x : (sinPct ? Math.max(0, 100 - conPct) / sinPct : 0));
+        const totR = shR.reduce((a, x) => a + x, 0) || 1;
+        rls.forEach((rr, ri) => {
+          const rule = (calcRules || []).find(r => r.id === Number(rr.ruleId));
+          const pzsModelo = curve && rule ? getPiecesForOneModel(g.name, curve.id, rule.id) : 0;
+          const pvp = Number(rr.pvp) > 0 ? Number(rr.pvp) : (b && Number(g.bucketPvps?.[b.id]) > 0) ? Number(g.bucketPvps[b.id]) : (Number(g.defaultPvp) || 0);
+          for (let m = 0; m < 6; m++) {
+            const otb = (Number(g.budget) || 0) * ((Number(g.months?.[m]) || 0) * fm / 100) * (b ? shareOf[b.id] : 1) * (shR[ri] / totR);
+            if (otb <= 0) continue;
+            const pzs = pvp > 0 ? Math.floor(otb / pvp) : 0;
+            rows.push({ key: `${g.id}|${b?.id || ''}|${rr.ruleId}|${ri}|${m}`, combo: `${g.id}|${b?.id || ''}|${rr.ruleId}|${ri}`, goa: g, bucket: b, mes: m, mesLabel: getMonthLabel(m), otb, pvp, pzs,
+              curve, rule, pzsModelo, modelos: pzsModelo > 0 ? pzs / pzsModelo : 0,
+              falta: !pvp ? 'PVP' : !curve ? 'Curva' : !rule ? 'Regla' : pzsModelo <= 0 ? 'Clústeres' : '' });
+          }
+        });
       });
     });
     return rows;
-  }, [goas, buckets, sizeCurves, calcRules, stores, purchaseMonthBase]);
+  }, [goas, buckets, sizeCurves, calcRules, stores, purchaseMonthBase, normMeses]);
+
+  // Pivote GOA × Bucket × Regla con los 6 meses en columnas
+  const autoPivot = useMemo(() => {
+    const m = new Map();
+    autoPlan.forEach(r => {
+      if (!m.has(r.combo)) m.set(r.combo, { ...r, pzsM: Array(6).fill(0), modM: Array(6).fill(0), otbT: 0 });
+      const x = m.get(r.combo); x.pzsM[r.mes] += r.pzs; x.modM[r.mes] += r.modelos; x.otbT += r.otb; if (r.falta) x.falta = r.falta;
+    });
+    const bo = (b) => (buckets || []).findIndex(x => x.id === b?.id);
+    return [...m.values()].sort((a, b) => bo(a.bucket) - bo(b.bucket) || a.goa.name.localeCompare(b.goa.name));
+  }, [autoPlan, buckets]);
 
   const distribuirAutoPlan = (row) => {
     const { goa, curve, rule, pzs } = row;
@@ -1432,9 +1501,9 @@ export default function App() {
   };
 
   const exportAutoPlan = () => {
-    let csv = '\uFEFFGOA,Bucket,Mes,PVP,Centro,Tienda,Cluster,Talla,Piezas,Importe\r\n';
+    let csv = '\uFEFFGOA,Bucket,Regla,Mes,PVP,Centro,Tienda,Cluster,Talla,Piezas,Importe\r\n';
     autoPlan.forEach(row => distribuirAutoPlan(row).forEach(x => {
-      csv += `"${row.goa.name}","${row.bucket?.name || ''}","${row.mesLabel}",${row.pvp},"${x.st.centerCode}","${x.st.name}","${x.c}","${x.talla}",${x.pzs},${x.pzs * row.pvp}\r\n`;
+      csv += `"${row.goa.name}","${row.bucket?.name || ''}","${row.rule?.name || ''}","${row.mesLabel}",${row.pvp},"${x.st.centerCode}","${x.st.name}","${x.c}","${x.talla}",${x.pzs},${x.pzs * row.pvp}\r\n`;
     }));
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
@@ -2259,7 +2328,9 @@ export default function App() {
                             <div className="flex gap-1.5 flex-wrap">
                               <button className={btn} onClick={() => setBkCfg(gIds, bIds, { off: false })}>Activar</button>
                               <button className={btn} onClick={() => setBkCfg(gIds, bIds, { off: true })}>Quitar</button>
-                              <button className={btn} disabled={!bulkCurve && !bulkRule} onClick={() => setBkCfg(gIds, bIds, { ...(bulkCurve ? { curveId: Number(bulkCurve) } : {}), ...(bulkRule ? { ruleId: Number(bulkRule) } : {}) })}>Asignar curva/regla</button>
+                              <button className={btn} disabled={!bulkCurve} onClick={() => setBkCfg(gIds, bIds, { curveId: Number(bulkCurve) })}>Asignar curva</button>
+                              <button className={btn} disabled={!bulkRule} title="Agrega la regla a la combinación (si ya tenía otras, se reparten el % del bucket)" onClick={() => setBkCfg(gIds, bIds, (g, id) => { const cur = (g.bkCfg?.[id]?.rules || []).filter(r => r.ruleId); return cur.some(r => Number(r.ruleId) === Number(bulkRule)) ? {} : { rules: [...cur, { ruleId: Number(bulkRule), pct: '', pvp: '' }] }; })}>+ Regla</button>
+                              <button className={btn} disabled={!bulkRule} onClick={() => setBkCfg(gIds, bIds, { rules: [{ ruleId: Number(bulkRule), pct: '', pvp: '' }] })}>Solo esta regla</button>
                               <button className={btn} onClick={() => setBkCfg(gIds, bIds, { pct: '' })}>% general</button>
                             </div>
                           );
@@ -2278,7 +2349,7 @@ export default function App() {
                         <thead className={`sticky top-0 z-10 ${t.tableHead}`}>
                           <tr className="text-[10px] uppercase">
                             <th className="p-2 text-left">GOA</th>
-                            {(buckets || []).map(b => <th key={b.id} className="p-2 text-left" title={b.pvpRange ? `PVP ${b.pvpRange} · general ${b.sharePct || 0}%` : `general ${b.sharePct || 0}%`}>{b.name}</th>)}
+                            {(buckets || []).map(b => <th key={b.id} className="p-2 text-left min-w-[250px]" title={b.pvpRange ? `PVP ${b.pvpRange} · general ${b.sharePct || 0}%` : `general ${b.sharePct || 0}%`}>{b.name}</th>)}
                           </tr>
                         </thead>
                         <tbody className={`divide-y ${t.border}`}>
@@ -2287,7 +2358,9 @@ export default function App() {
                             const h = histSug?.sug?.[String(g.name).trim().toUpperCase()];
                             return (
                               <tr key={g.id}>
-                                <td className={`p-2 font-bold whitespace-nowrap ${t.textMain}`}>{g.name}</td>
+                                <td className={`p-2 font-bold whitespace-nowrap align-top ${t.textMain}`}>{g.name}
+                                  {Math.abs(mesesSuma(g) - 100) > 0.5 && <div className={`text-[9px] font-normal ${normMeses ? 'text-amber-400' : 'text-rose-400'}`} title="Suma de los % de los 6 meses del GOA (Tab 3)">meses {mesesSuma(g).toFixed(0)}%{normMeses ? ' → 100%' : ''}</div>}
+                                </td>
                                 {(buckets || []).map(b => {
                                   const c = g.bkCfg?.[b.id] || {};
                                   return (
@@ -2296,18 +2369,28 @@ export default function App() {
                                         <input type="checkbox" checked={!c.off} onChange={() => setBkCfg([g.id], [b.id], { off: !c.off })} className="accent-violet-500" />
                                         <input type="number" min="0" disabled={c.off} value={c.pct ?? ''} placeholder={String(b.sharePct || 0)} onChange={e => setBkCfg([g.id], [b.id], { pct: e.target.value })} className={`w-12 px-1 py-0.5 rounded border text-[11px] text-center ${t.input}`} />
                                         <span className={`text-[10px] font-bold ${t.textAccent2}`}>{sh[b.id] ? `${(sh[b.id] * 100).toFixed(0)}%` : '—'}</span>
-                                        {h && <span className={`text-[9px] ${t.textMuted}`} title="% de la compra histórica (LY/LLY) en este bucket">H {h[b.id] || 0}%</span>}
+                                        {h && (() => { const tr = h.tiers?.[String(b.id)] || h.tiers?.['*'] || []; return <span className={`text-[9px] ${t.textMuted}`} title={`Histórico LY/LLY${histSug.porBucket ? ` · ${h.buckets?.[b.id] || 0}% de la compra del GOA en este bucket` : ''}\nEscalones de precio: ${tr.map(x => `$${x.pvp} (${x.pct}%) [${x.precios.join(', ')}]`).join(' · ')}`}>H {histSug.porBucket ? `${h.buckets?.[b.id] || 0}%` : tr.map(x => `$${x.pvp}`).join('/')}</span>; })()}
                                       </div>
                                       {!c.off && (
-                                        <div className="flex gap-1">
-                                          <select value={c.curveId || ''} onChange={e => setBkCfg([g.id], [b.id], { curveId: e.target.value ? Number(e.target.value) : '' })} className={`w-24 px-1 py-0.5 rounded border text-[10px] ${t.input}`}>
-                                            <option value="">{(sizeCurves || []).find(x => x.id === Number(g.autoCurveId))?.name || (sizeCurves || [])[0]?.name || 'Curva'}</option>
-                                            {(sizeCurves || []).map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
+                                        <div className="space-y-1">
+                                          <select value={c.curveId || ''} title="Curva de tallas (solo para repartir piezas por centro)" onChange={e => setBkCfg([g.id], [b.id], { curveId: e.target.value ? Number(e.target.value) : '' })} className={`w-full px-1 py-0.5 rounded border text-[10px] ${t.input}`}>
+                                            <option value="">Curva: {(sizeCurves || []).find(x => x.id === Number(g.autoCurveId))?.name || (sizeCurves || [])[0]?.name || '—'}</option>
+                                            {(sizeCurves || []).map(x => <option key={x.id} value={x.id}>Curva: {x.name}</option>)}
                                           </select>
-                                          <select value={c.ruleId || ''} onChange={e => setBkCfg([g.id], [b.id], { ruleId: e.target.value ? Number(e.target.value) : '' })} className={`w-24 px-1 py-0.5 rounded border text-[10px] ${t.input}`}>
-                                            <option value="">{(calcRules || []).find(x => x.id === Number(g.autoRuleId))?.name || (calcRules || [])[0]?.name || 'Regla'}</option>
-                                            {(calcRules || []).map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
-                                          </select>
+                                          {rulesOf(g, b.id).map((rr, ri, arr) => {
+                                            const upd = (patch) => setBkCfg([g.id], [b.id], () => ({ rules: arr.map((x, k) => k === ri ? { ...x, ...patch } : x) }));
+                                            return (
+                                              <div key={ri} className="flex gap-1 items-center">
+                                                <select value={rr.ruleId || ''} onChange={e => upd({ ruleId: Number(e.target.value) })} className={`w-28 px-1 py-0.5 rounded border text-[10px] ${t.input}`}>
+                                                  {(calcRules || []).map(x => <option key={x.id} value={x.id}>{x.name}</option>)}
+                                                </select>
+                                                {arr.length > 1 && <input type="number" min="0" value={rr.pct ?? ''} placeholder="%" title="% del bucket para esta regla (vacío = reparte lo que falte)" onChange={e => upd({ pct: e.target.value })} className={`w-12 px-1 py-0.5 rounded border text-[10px] text-center ${t.input}`} />}
+                                                <input type="number" min="0" value={rr.pvp ?? ''} placeholder="PVP" title="PVP de esta regla (vacío = PVP del bucket o del GOA)" onChange={e => upd({ pvp: e.target.value })} className={`w-14 px-1 py-0.5 rounded border text-[10px] text-center ${t.input}`} />
+                                                {arr.length > 1 && <button onClick={() => setBkCfg([g.id], [b.id], () => ({ rules: arr.filter((_, k) => k !== ri) }))} className="text-[10px] text-gray-500 hover:text-rose-400">✕</button>}
+                                              </div>
+                                            );
+                                          })}
+                                          <button onClick={() => setBkCfg([g.id], [b.id], () => ({ rules: [...rulesOf(g, b.id), { ruleId: (calcRules || [])[0]?.id, pct: '', pvp: '' }] }))} className={`text-[10px] font-bold ${t.textAccent1} hover:underline`}>+ regla</button>
                                         </div>
                                       )}
                                     </td>
@@ -2319,37 +2402,55 @@ export default function App() {
                         </tbody>
                       </table>
                     </div>
-                    <p className={`text-[10px] mt-2 ${t.textMuted}`}>Casilla = el GOA lleva ese bucket. El % que captures sustituye al general del bucket solo para ese GOA; amarillo = % real después de repartir el OTB del GOA entre sus buckets activos (siempre suma 100%). H = mezcla histórica.</p>
+                    <label className={`flex items-center gap-2 text-[11px] mt-2 ${t.textMain}`}>
+                      <input type="checkbox" checked={normMeses} onChange={e => setNormMeses(e.target.checked)} className="accent-violet-500" />
+                      Usar el 100% del presupuesto en los 6 meses (si los % de mes de un GOA no suman 100 se reescalan; apágalo si tu presupuesto es anual y los % son del año)
+                    </label>
+                    <p className={`text-[10px] mt-1 ${t.textMuted}`}>Combinación = GOA × Bucket × Regla: cada una da sus piezas y modelos por mes. La regla define corridas por clúster (y con ello piezas por modelo); la curva solo reparte tallas por centro. Varias reglas en un bucket (ej. OPP / MID / MAX) se reparten el % del bucket. Casilla = el GOA lleva ese bucket. El % que captures sustituye al general del bucket solo para ese GOA; amarillo = % real después de repartir el OTB del GOA entre sus buckets activos (siempre suma 100%). H = mezcla histórica.</p>
                   </div>
-                  <div className="max-h-96 overflow-y-auto custom-scrollbar">
+                  <div className="max-h-[32rem] overflow-auto custom-scrollbar">
                     <table className="w-full text-xs">
-                      <thead className={`sticky top-0 ${t.tableHead}`}>
+                      <thead className={`sticky top-0 z-10 ${t.tableHead}`}>
                         <tr className={`text-[10px] uppercase border-b ${t.border}`}>
-                          <th className="p-2 text-left">GOA</th><th className="p-2 text-left">Bucket</th><th className="p-2 text-left">Mes</th>
-                          <th className="p-2 text-right">OTB $</th><th className="p-2 text-right">PVP</th><th className="p-2 text-right">Piezas</th>
-                          <th className="p-2 text-right" title="Piezas ÷ piezas de 1 modelo con la regla y curva elegidas">Modelos equiv.</th><th className="p-2 text-left" title="Qué falta capturar para poder calcular piezas y repartir a tiendas (PVP, curva, regla o clústeres). ✓ = completo">Estatus</th>
+                          <th className="p-2 text-left">Bucket</th><th className="p-2 text-left">GOA</th><th className="p-2 text-left">Regla</th><th className="p-2 text-right">PVP</th><th className="p-2 text-right">Pzs/modelo</th>
+                          {[0,1,2,3,4,5].map(m => <th key={m} className="p-2 text-right">{getMonthLabel(m)}</th>)}
+                          <th className="p-2 text-right">Total</th><th className="p-2 text-right">OTB $</th>
+                          <th className="p-2 text-left" title="Qué falta capturar para poder calcular piezas y repartir a tiendas (PVP, curva, regla o clústeres). ✓ = completo">Estatus</th>
                         </tr>
                       </thead>
                       <tbody className={`divide-y ${t.border}`}>
-                        {autoPlan.map(r => (
-                          <tr key={r.key} className={t.tableRow}>
-                            <td className={`p-2 font-bold ${t.textMain}`}>{r.goa.name}</td>
-                            <td className="p-2">{r.bucket?.name || '—'}</td>
-                            <td className="p-2">{r.mesLabel}</td>
-                            <td className="p-2 text-right">${Math.round(r.otb).toLocaleString('es-MX')}</td>
-                            <td className="p-2 text-right">{r.pvp ? `$${r.pvp.toLocaleString('es-MX')}` : '—'}</td>
-                            <td className={`p-2 text-right font-black ${t.textAccent2}`}>{r.pzs.toLocaleString('es-MX')}</td>
-                            <td className="p-2 text-right">{r.modelos ? r.modelos.toFixed(1) : '—'}</td>
-                            <td className={`p-2 ${r.falta ? 'text-rose-400 font-bold' : t.textMuted}`}>{r.falta ? `Falta ${r.falta}` : '✓'}</td>
-                          </tr>
-                        ))}
+                        {autoPivot.map((r, i) => {
+                          const pz = r.pzsM.reduce((a, x) => a + x, 0), md = r.modM.reduce((a, x) => a + x, 0);
+                          const first = i === 0 || autoPivot[i - 1].bucket?.id !== r.bucket?.id;
+                          return (
+                            <tr key={r.combo} className={`${t.tableRow} ${first ? `border-t-2 ${t.border}` : ''}`}>
+                              <td className={`p-2 font-bold ${t.textAccent1}`}>{first ? (r.bucket?.name || '—') : ''}</td>
+                              <td className={`p-2 font-bold ${t.textMain}`}>{r.goa.name}</td>
+                              <td className="p-2">{r.rule?.name || '—'}</td>
+                              <td className="p-2 text-right">{r.pvp ? `$${r.pvp.toLocaleString('es-MX')}` : '—'}</td>
+                              <td className={`p-2 text-right ${t.textMuted}`}>{r.pzsModelo || '—'}</td>
+                              {r.pzsM.map((x, m) => (
+                                <td key={m} className="p-2 text-right">
+                                  <div className={`font-black ${t.textAccent2}`}>{x.toLocaleString('es-MX')}</div>
+                                  <div className={`text-[10px] ${t.textMuted}`}>{r.modM[m] ? `${r.modM[m].toFixed(1)} mod` : ''}</div>
+                                </td>
+                              ))}
+                              <td className="p-2 text-right"><div className={`font-black ${t.textMain}`}>{pz.toLocaleString('es-MX')}</div><div className={`text-[10px] ${t.textMuted}`}>{md ? `${md.toFixed(1)} mod` : ''}</div></td>
+                              <td className="p-2 text-right">${Math.round(r.otbT).toLocaleString('es-MX')}</td>
+                              <td className={`p-2 ${r.falta ? 'text-rose-400 font-bold' : t.textMuted}`}>{r.falta ? `Falta ${r.falta}` : '✓'}</td>
+                            </tr>
+                          );
+                        })}
                       </tbody>
                       <tfoot className={`sticky bottom-0 ${t.tableHead}`}>
                         <tr className={`font-black ${t.textMain}`}>
-                          <td className="p-2" colSpan={3}>Total</td>
+                          <td className="p-2" colSpan={5}>Total</td>
+                          {[0,1,2,3,4,5].map(m => {
+                            const rs = autoPlan.filter(r => r.mes === m);
+                            return <td key={m} className="p-2 text-right"><div>{rs.reduce((a, r) => a + r.pzs, 0).toLocaleString('es-MX')}</div><div className={`text-[10px] ${t.textMuted}`}>{rs.reduce((a, r) => a + (r.modelos || 0), 0).toFixed(1)} mod</div></td>;
+                          })}
+                          <td className="p-2 text-right"><div>{autoPlan.reduce((a, r) => a + r.pzs, 0).toLocaleString('es-MX')}</div><div className={`text-[10px] ${t.textMuted}`}>{autoPlan.reduce((a, r) => a + (r.modelos || 0), 0).toFixed(1)} mod</div></td>
                           <td className="p-2 text-right">${Math.round(autoPlan.reduce((a, r) => a + r.otb, 0)).toLocaleString('es-MX')}</td><td />
-                          <td className="p-2 text-right">{autoPlan.reduce((a, r) => a + r.pzs, 0).toLocaleString('es-MX')}</td>
-                          <td className="p-2 text-right">{autoPlan.reduce((a, r) => a + (r.modelos || 0), 0).toFixed(1)}</td><td />
                         </tr>
                       </tfoot>
                     </table>
@@ -2878,7 +2979,7 @@ export default function App() {
                               realPzsByMonth[p.monthOffset] = (realPzsByMonth[p.monthOffset] || 0) + (p.totalPieces || 0);
                             });
                           }
-                          const monthsWeights = (g.months || [16.6,16.6,16.6,16.6,16.6,17]);
+                          const monthsWeights = mesesNorm(g);
                           return (
                           <tr key={g.id} className={`transition ${t.tableRow}`}>
                             <td className={`p-3 font-bold text-left border-r ${t.border} ${t.textMain}`}>
@@ -2928,7 +3029,7 @@ export default function App() {
                                if (useReal) {
                                  return s + goaPurchases.filter(p => p.monthOffset === o).reduce((ss, p) => ss + (p.totalPieces || 0), 0);
                                }
-                               const w = (g.months || [16.6,16.6,16.6,16.6,16.6,17])[o];
+                               const w = mesesNorm(g)[o];
                                return s + Math.round((g.boughtPzs || 0) * ((Number(w?.value ?? w) || 0) / 100));
                              }, 0);
                              const sumMesPesos = filtered.reduce((s, g) => {
@@ -2938,11 +3039,11 @@ export default function App() {
                                if (useReal) {
                                  return s + goaPurchases.filter(p => p.monthOffset === o).reduce((ss, p) => ss + (p.totalRetailValue || 0), 0);
                                }
-                               const w = (g.months || [16.6,16.6,16.6,16.6,16.6,17])[o];
+                               const w = mesesNorm(g)[o];
                                return s + Math.round((g.spentValue || 0) * ((Number(w?.value ?? w) || 0) / 100));
                              }, 0);
                              const sumMesBudget = filtered.reduce((s, g) => {
-                               const w = (g.months || [16.6,16.6,16.6,16.6,16.6,17])[o];
+                               const w = mesesNorm(g)[o];
                                return s + Math.round((g.budget || 0) * ((Number(w?.value ?? w) || 0) / 100));
                              }, 0);
                              const sumMesOtb = sumMesBudget - sumMesPesos;
@@ -3011,16 +3112,38 @@ export default function App() {
                               const pz = cells.reduce((a, x) => a + x.pzs, 0);
                               groups[key].byMonth[r.mes] += pz; groups[key].byMonthValue[r.mes] += pz * r.pvp;
                             });
-                            const rows = Object.values(groups);
+                            const bOrd = (id) => { const k = (buckets || []).findIndex(b => b.id === id); return k < 0 ? 999 : k; };
+                            const gName = (id) => goas.find(g => g.id === id)?.name || '';
+                            const rows = Object.values(groups).sort((a, b) => bOrd(a.bucketId) - bOrd(b.bucketId) || gName(a.goaId).localeCompare(gName(b.goaId)));
                             if (rows.length === 0) return <tr><td colSpan="9" className={`p-6 text-center ${t.textMuted}`}>Sin asignaciones de Bucket × Mes en esta vista.</td></tr>;
-                            return rows.map((row, idx) => {
+                            // Agrupado por bucket: el nombre una vez (rowSpan) y subtotal al final de cada bucket
+                            const out = [];
+                            rows.forEach((row, idx) => {
+                              const firstB = idx === 0 || rows[idx - 1].bucketId !== row.bucketId;
+                              const lastB = idx === rows.length - 1 || rows[idx + 1].bucketId !== row.bucketId;
+                              const span = rows.filter(r => r.bucketId === row.bucketId).length;
+                              out.push(renderBk(row, idx, firstB ? span : 0));
+                              if (lastB && span > 1) {
+                                const grp = rows.filter(r => r.bucketId === row.bucketId);
+                                const sm = (k, o) => grp.reduce((a, r) => a + (r[k][o] || 0), 0);
+                                out.push(
+                                  <tr key={`bk-sub-${idx}`} className={`font-black ${t.tableHead}`}>
+                                    <td className={`p-2 text-left border-r ${t.border} ${t.textAccent1}`} colSpan={2}>Subtotal {(buckets || []).find(b => b.id === row.bucketId)?.name || 'Sin bucket'}</td>
+                                    {[0,1,2,3,4,5].map(o => <td key={o} className={`p-2 border-r ${t.border}`}><div className={t.textMain}>{sm('byMonth', o).toLocaleString()}</div><div className={`text-[10px] ${t.textAccent2}`}>${Math.round(sm('byMonthValue', o)).toLocaleString()}</div></td>)}
+                                    <td className="p-2"><div className={t.textMain}>{[0,1,2,3,4,5].reduce((a, o) => a + sm('byMonth', o), 0).toLocaleString()}</div><div className={`text-[10px] ${t.textAccent2}`}>${Math.round([0,1,2,3,4,5].reduce((a, o) => a + sm('byMonthValue', o), 0)).toLocaleString()}</div></td>
+                                  </tr>
+                                );
+                              }
+                            });
+                            return out;
+                            function renderBk(row, idx, span) {
                               const bucket = row.bucketId ? (buckets || []).find(b => b.id === row.bucketId) : null;
                               const goa = goas.find(g => g.id === row.goaId);
                               const totalPzs = Object.values(row.byMonth).reduce((s,v) => s+v, 0);
                               const totalValue = Object.values(row.byMonthValue).reduce((s,v) => s+v, 0);
                               return (
                                 <tr key={`bk-row-${idx}`} className={`transition ${t.tableRow}`}>
-                                  <td className={`p-3 text-left border-r ${t.border} ${t.textMain}`}>{bucket ? bucket.name : <span className="opacity-40">Sin bucket</span>}</td>
+                                  {span > 0 && <td rowSpan={span} className={`p-3 text-left align-top font-bold border-r ${t.border} ${t.textMain}`}>{bucket ? bucket.name : <span className="opacity-40">Sin bucket</span>}</td>}
                                   <td className={`p-3 text-left border-r ${t.border} ${t.textMuted}`}>{goa ? goa.name : '?'}</td>
                                   {[0,1,2,3,4,5].map(o => (
                                     <td key={`bk-c-${idx}-${o}`} className={`p-3 border-r ${t.border}`}>
@@ -3034,7 +3157,7 @@ export default function App() {
                                   </td>
                                 </tr>
                               );
-                            });
+                            }
                           })()}
                         </tbody>
                       </table>

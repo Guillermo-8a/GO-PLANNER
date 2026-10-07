@@ -95,8 +95,8 @@ export const CSV_SCHEMAS = [
         columns: ['GOA', 'Modelo', 'Curva', 'Regla'],
       },
       {
-        title: 'Histórico de compra LY/LLY (Tab 4, sugerido de buckets)',
-        desc: 'Una fila por compra (modelo o resumen). Cada PVP se asigna al bucket cuyo "Rango PVP" lo contiene (o el más cercano); si traes BUCKET se usa directo. La mezcla se calcula en $ (piezas × PVP, o VALOR si viene). Buckets con <5% de la compra histórica se apagan para ese GOA; la regla se toma de la que lleve el nombre del bucket (ej. "BASICO | OPP").',
+        title: 'Histórico de compra LY/LLY (Tab 4, sugerido de reglas y buckets)',
+        desc: 'Una fila por compra. Por GOA (y por bucket si traes BUCKET) los precios se agrupan en hasta 3 escalones cortando en los saltos de precio más grandes (ej. 499/549 | 799 | 999): cada escalón se vuelve una regla OPP / MID / MAX (la que lleve ese texto y el nombre del bucket) con su PVP (el precio con más piezas) y su % (en $). Con BUCKET también sugiere la mezcla de buckets y apaga los de <5%.',
         columns: ['GOA*', 'PVP*', 'PIEZAS', 'VALOR (opcional)', 'BUCKET (opcional)', 'AÑO (opcional)'],
       },
     ],
