@@ -19,6 +19,7 @@ import { Home } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import AppHeader from './components/AppHeader';
 import { THEMES } from './App';
+import ProcesosFTEView, { FTE_DEFAULT } from './components/ProcesosFTEView';
 
 const STATUS_ORDER = ['pending', 'progress', 'done'];
 const STATUS = {
@@ -123,6 +124,11 @@ async function kvSet(key, value) {
 }
 
 const HO_DEFAULT = { lives: 3, days: {}, strikes: [] };
+function parseFte(raw) {
+  if (!raw) return FTE_DEFAULT;
+  const v = typeof raw === 'string' ? JSON.parse(raw) : raw;
+  return { ...FTE_DEFAULT, ...v, params: { ...FTE_DEFAULT.params, ...(v.params || {}) } };
+}
 const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', 'Agosto', 'Septiembre', 'Octubre', 'Noviembre', 'Diciembre'];
 const DOW = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
 
@@ -131,6 +137,7 @@ export default function TeamTrackerPage() {
   const [team, setTeam] = useState(null);
   const [adminPin, setAdminPin] = useState(null);
   const [ho, setHo] = useState(null);
+  const [fte, setFte] = useState(FTE_DEFAULT);
   const [isAdmin, setIsAdmin] = useState(false);
   const [tab, setTab] = useState('board');
   const [filter, setFilter] = useState('all');
@@ -177,6 +184,8 @@ export default function TeamTrackerPage() {
       setAdminPin(nextPin);
       const nextHo = all['ho-board'] ? { ...HO_DEFAULT, ...JSON.parse(all['ho-board']) } : HO_DEFAULT;
       setHo((prev) => (prev && JSON.stringify(prev) === JSON.stringify(nextHo) ? prev : nextHo));
+      const nextFte = parseFte(all['fte-board']);
+      setFte((prev) => (JSON.stringify(prev) === JSON.stringify(nextFte) ? prev : nextFte));
     } catch (e) {
       if (!silent) {
         setNotice('No se pudo conectar con el backend: ' + (e && e.message ? e.message : 'error desconocido'));
@@ -239,6 +248,18 @@ export default function TeamTrackerPage() {
     setHo(next);
     try { await kvSet('ho-board', JSON.stringify(next)); }
     catch (e) { setNotice('No se pudo guardar HO: ' + (e && e.message ? e.message : 'error desconocido')); }
+  }
+
+  // Lee lo último del Sheet antes de escribir, para no pisar lo que otro
+  // del equipo capturó en los últimos segundos.
+  async function saveFte(updater) {
+    setFte((prev) => updater(prev));
+    try {
+      const all = await kvLoadAll();
+      const next = updater(parseFte(all['fte-board']));
+      setFte(next);
+      await kvSet('fte-board', JSON.stringify(next));
+    } catch (e) { setNotice('No se pudo guardar la captura FTE: ' + (e && e.message ? e.message : 'error desconocido')); }
   }
 
   function toggleAdmin() {
@@ -433,6 +454,7 @@ export default function TeamTrackerPage() {
     { key: 'gantt', label: 'Gantt' },
     { key: 'resumen', label: 'Resumen semanal' },
     { key: 'ho', label: 'HO Comprometido' },
+    { key: 'fte', label: 'Procesos FTE' },
     ...(isAdmin ? [{ key: 'desempeno', label: 'Desempeño' }] : []),
   ];
 
@@ -540,6 +562,7 @@ export default function TeamTrackerPage() {
           {tab === 'gantt' && <GanttView tasks={visibleTasks} range={ganttRange} />}
           {tab === 'resumen' && <ResumenView week={week} totals={weekTotals} byMember={weekByMember} byPilar={weekByPilar} />}
           {tab === 'desempeno' && isAdmin && <DesempenoView data={historical} />}
+          {tab === 'fte' && <ProcesosFTEView fte={fte} isAdmin={isAdmin} onSave={saveFte} />}
           {tab === 'ho' && <HOView team={team} ho={ho || HO_DEFAULT} isAdmin={isAdmin} onSave={saveHo} onNotice={setNotice} />}
         </main>
 
