@@ -52,6 +52,23 @@ export const QUERIES = {
       WHERE anio >= @anio`,
   },
 
+  // Team Tracker · Procesos FTE: variables de complejidad por sección.
+  // Fuente: VEIL_TAB_VENTAS_MENSUALES_U_S (artículo × centro con OH, OO y venta 6 meses).
+  // Activo = tiene inventario, pedido o venta en los últimos 6 meses.
+  // TODO: confirmar nombres de columna en la vista y si se filtra por EMPRESA_ID de Suburbia.
+  fte_complejidad: {
+    sql: (DS) => `
+      SELECT DIRECCION, SECCION,
+             COUNT(DISTINCT MARCA) AS MARCAS,
+             COUNT(DISTINCT PROVEEDOR) AS PROVEEDORES,
+             COUNT(DISTINCT GRUPO_ARTICULOS) AS GOA,
+             COUNT(DISTINCT CONCAT(ARTICULO, '|', CENTRO)) AS COMBINACIONES_SKU_TIENDA
+      FROM \`${DS}.VEIL_TAB_VENTAS_MENSUALES_U_S\`
+      WHERE COALESCE(OH, 0) > 0 OR COALESCE(OO_TIENDAS, 0) > 0 OR COALESCE(VTA_6_MESES, 0) > 0
+      GROUP BY DIRECCION, SECCION
+      ORDER BY DIRECCION, SECCION`,
+  },
+
   // Traslados: base de artículos GOA × SKU × Centro.
   traslados: {
     sql: (DS) => `

@@ -6,6 +6,24 @@ import React, { useMemo, useState } from 'react';
 import { FTE_ACTIVIDADES, FTE_PROCESOS, FTE_FRECUENCIAS, FTE_PUESTOS } from '../data/procesosFTE';
 
 export const FTE_VARS = ['Marcas activas', 'Proveedores activos', 'Grupos de artículos', 'OTB', 'Pestañas de LR', 'Scorecards', 'Combinaciones SKU-Tienda'];
+// Las variables con columna en BI se actualizan desde /api/bq?source=fte_complejidad; las demás quedan fijas (1 por sección, editables).
+const VAR_BQ = { 0: 'MARCAS', 1: 'PROVEEDORES', 2: 'GOA', 6: 'COMBINACIONES_SKU_TIENDA' };
+const FIJO = 1;
+function parseCsv(text) {
+  const rows = [];
+  let row = [], cell = '', q = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (q) { if (ch === '"' && text[i + 1] === '"') { cell += '"'; i++; } else if (ch === '"') q = false; else cell += ch; }
+    else if (ch === '"') q = true;
+    else if (ch === ',') { row.push(cell); cell = ''; }
+    else if (ch === '\n') { row.push(cell); rows.push(row); row = []; cell = ''; }
+    else if (ch !== '\r') cell += ch;
+  }
+  if (cell || row.length) { row.push(cell); rows.push(row); }
+  const [head, ...body] = rows;
+  return body.filter((r) => r.length > 1).map((r) => Object.fromEntries(head.map((h, i) => [h.trim(), r[i]])));
+}
 export const FTE_DEFAULT = {
   caps: {},
   secciones: [],
@@ -161,6 +179,33 @@ export default function ProcesosFTEView({ fte, isAdmin, onSave }) {
 
 function SeccionesView({ fte, calc, isAdmin, onSave }) {
   const [drafts, setDrafts] = useState({});
+  const [token, setToken] = useState(() => { try { return localStorage.getItem('gop_api_token') || ''; } catch { return ''; } });
+  const [sync, setSync] = useState('');
+
+  async function syncBQ() {
+    if (!token) { setSync('Escribe el token de BI.'); return; }
+    try { localStorage.setItem('gop_api_token', token); } catch { /* sin storage */ }
+    setSync('Consultando BigQuery…');
+    try {
+      const res = await fetch('/api/bq?source=fte_complejidad', { headers: { 'x-gop-token': token } });
+      const text = await res.text();
+      if (!res.ok) throw new Error(text.slice(0, 160));
+      const rows = parseCsv(text);
+      if (!rows.length) throw new Error('La consulta no regresó secciones.');
+      const key = (d, n) => `${String(d || '').trim().toLowerCase()}|${String(n || '').trim().toLowerCase()}`;
+      onSave((cur) => {
+        const byKey = Object.fromEntries(cur.secciones.map((s) => [key(s.dir, s.nombre), s]));
+        rows.forEach((r, i) => {
+          const k = key(r.DIRECCION, r.SECCION);
+          const prev = byKey[k];
+          const v = FTE_VARS.map((_, j) => (VAR_BQ[j] ? Number(r[VAR_BQ[j]]) || 0 : prev?.v?.[j] ?? FIJO));
+          byKey[k] = prev ? { ...prev, v } : { id: `${Date.now().toString(36)}${i}`, dir: r.DIRECCION, nombre: r.SECCION, v };
+        });
+        return { ...cur, secciones: Object.values(byKey), bqSync: new Date().toISOString().slice(0, 10) };
+      });
+      setSync(`Listo: ${rows.length} secciones actualizadas.`);
+    } catch (e) { setSync('No se pudo leer BigQuery: ' + (e && e.message ? e.message : 'error')); }
+  }
   const p = fte.params;
   const sumPesos = p.pesos.reduce((a, b) => a + (Number(b) || 0), 0);
   const commit = (k, v, apply) => { setDrafts((d) => { const n = { ...d }; delete n[k]; return n; }); onSave(apply(v)); };
@@ -183,10 +228,17 @@ function SeccionesView({ fte, calc, isAdmin, onSave }) {
         ))}
       </div>
 
+      {isAdmin && (
+        <div className="fte-filters">
+          <input type="password" placeholder="Token BI" value={token} onChange={(e) => setToken(e.target.value)} />
+          <button className="tt-ghost-btn" onClick={syncBQ}>Actualizar desde BigQuery</button>
+          <span className="tt-tag">{sync || (fte.bqSync ? `Última actualización: ${fte.bqSync}` : 'Marcas, proveedores, GOA y combinaciones SKU-Tienda salen de BI; OTB, pestañas LR y scorecards quedan fijos.')}</span>
+        </div>
+      )}
       <div className="fte-table-wrap">
         <table className="fte-table">
           <thead>
-            <tr><th>Dirección</th><th>Sección</th>{FTE_VARS.map((v) => <th key={v} className="r">{v}</th>)}<th className="r">Índice</th><th>Nivel</th>
+            <tr><th>Dirección</th><th>Sección</th>{FTE_VARS.map((v, j) => <th key={v} className="r">{v}<small className="fte-src">{VAR_BQ[j] ? 'BI' : 'fijo'}</small></th>)}<th className="r">Índice</th><th>Nivel</th>
               {PUESTOS_SECCION.map((r) => <th key={r} className="r">FTE {r.replace(' de Planeación Comercial', '')}</th>)}{isAdmin && <th />}</tr>
             <tr className="fte-pesos"><td colSpan={2}>Peso {Math.abs(sumPesos - 1) > 0.001 && <b className="fte-warn">· suman {pct(sumPesos)}, deben sumar 100%</b>}</td>
               {p.pesos.map((w, i) => <td key={i} className="r">{field(`w${i}`, Math.round(w * 100), (v) => (cur) => ({ ...cur, params: { ...cur.params, pesos: cur.params.pesos.map((x, j) => (j === i ? (Number(v) || 0) / 100 : x)) } }))}%</td>)}
@@ -208,7 +260,7 @@ function SeccionesView({ fte, calc, isAdmin, onSave }) {
           </tbody>
         </table>
       </div>
-      {isAdmin && <button className="tt-ghost-btn fte-add" onClick={() => onSave((cur) => ({ ...cur, secciones: [...cur.secciones, { id: Date.now().toString(36), dir: '', nombre: '', v: [] }] }))}>+ Agregar sección</button>}
+      {isAdmin && <button className="tt-ghost-btn fte-add" onClick={() => onSave((cur) => ({ ...cur, secciones: [...cur.secciones, { id: Date.now().toString(36), dir: '', nombre: '', v: FTE_VARS.map((_, j) => (VAR_BQ[j] ? '' : FIJO)) }] }))}>+ Agregar sección manual</button>}
       <p className="tt-empty-hint">Índice = Σ peso × (valor ÷ promedio de las secciones). 1.00 = sección promedio · Alta ≥ 1.25 · Media 0.85–1.24 · Baja &lt; 0.85. FTE de la sección = FTE estándar del puesto × índice.</p>
     </div>
   );
@@ -277,6 +329,7 @@ const FTE_CSS = `
 .fte-pesos td { background: #1e1a24; position: sticky; top: 33px; font-size: 11px; color: #948FA0; }
 .fte-pesos .fte-num { width: 48px; }
 .fte-warn { color: #E58E8E; font-weight: 600; }
+.fte-src { display: block; font-size: 9.5px; font-weight: 500; color: #6E6A7A; text-transform: uppercase; letter-spacing: .06em; }
 .fte-params { display: flex; flex-wrap: wrap; gap: 10px; margin-bottom: 12px; }
 .fte-params > div { display: flex; flex-direction: column; gap: 4px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.09); border-radius: 10px; padding: 8px 10px; }
 .fte-params span { font-size: 11px; color: #948FA0; }
