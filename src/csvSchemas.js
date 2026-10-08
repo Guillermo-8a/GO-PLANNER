@@ -87,7 +87,7 @@ export const CSV_SCHEMAS = [
       {
         title: 'Base de tiendas',
         desc: 'Una fila por tienda.',
-        columns: ['Centro', 'Nombre', 'GOA / Familia', 'Ventas en unidades', 'Utilidad en $ (opcional)', 'Rotación (opcional)'],
+        columns: ['Centro o CENTRO_KEY', 'Nombre', 'GOA / Familia', 'Ventas en unidades (VENTAS o VENTA_U)', 'Utilidad en $ (opcional)', 'Rotación (opcional)', 'PVP + VENTA_P (opcional: mezcla de precio y descuento por bucket)'],
       },
       {
         title: 'CSV de preventa (para Allocation)',
@@ -110,7 +110,7 @@ export const CSV_SCHEMAS = [
         columns: ['CENTRO*', 'CAPACIDAD (pzs)', 'M2 / M2 Actuales'],
       },
       {
-        title: 'Mezcla PVP por tienda (Tab 1, opcional)',
+        title: 'Mezcla PVP por tienda (Tab 1, opcional si la base ya trae PVP)',
         desc: 'Venta por tienda × PVP inicial. Cada PVP cae en el bucket por su rango: da la afinidad de cada clúster por precio y el descuento histórico por bucket (el OTB está a venta neta).',
         columns: ['CENTRO_KEY*', 'GOA', 'PVP*', 'VENTA_U*', 'VENTA_P'],
       },

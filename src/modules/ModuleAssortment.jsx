@@ -626,11 +626,14 @@ export default function App() {
       if (rows.length < 2) { if(fileInputRef.current) fileInputRef.current.value = ''; return; }
 
       const headers = rows[0].map(h => h.replace(/^\uFEFF/, '').trim().toUpperCase());
-      const idxCentro = headers.findIndex(h => h === 'CENTRO' || h === 'ID');
-      const idxNombre = headers.findIndex(h => h === 'NOMBRE' || h === 'TIENDA' || h === 'DESC CENTRO');
+      // Acepta también la base de venta × PVP (CENTRO_KEY, CENTRO, GOA, PVP, VENTA_U, VENTA_P): la clave manda sobre el nombre
+      const idxKey = headers.findIndex(h => h === 'CENTRO_KEY' || h === 'CENTRO_ID');
+      const idxCentro = idxKey !== -1 ? idxKey : headers.findIndex(h => h === 'CENTRO' || h === 'ID');
+      const idxNombre = headers.findIndex((h, i) => i !== idxCentro && (h === 'NOMBRE' || h === 'TIENDA' || h === 'DESC CENTRO' || h === 'CENTRO'));
       const idxGoa = headers.findIndex(h => h === 'GOA' || h === 'FAMILIA');
       const idxMarca = headers.findIndex(h => h === 'MARCA' || h === 'BRAND');
-      const idxVentas = headers.findIndex(h => h === 'VENTAS' || h === 'VTA' || h.includes('VTAS. $') || h.includes('UNIDADES'));
+      const idxVentas = headers.findIndex(h => h === 'VENTAS' || h === 'VTA' || h === 'VENTA_U' || h === 'VENTA_U_12M' || h.includes('VTAS. $') || h.includes('UNIDADES'));
+      const idxVentaP = headers.findIndex(h => h === 'VENTA_P' || h === 'VENTA_P_12M');
       const idxMargen = headers.findIndex(h => h === 'MARGEN' || h === 'MG' || h.includes('%GM') || h.includes('UTILIDAD'));
       const idxRotacion = headers.findIndex(h => h === 'ROTACION' || h === 'ROT' || h.includes('SELL'));
       const idxPvp = headers.findIndex(h => h === 'PVP' || h === 'PRECIO');
@@ -657,6 +660,17 @@ export default function App() {
         });
       }
       
+      // Si la base trae PVP, de aquí mismo sale la mezcla de precio por tienda (no hace falta otro archivo)
+      if (idxPvp !== -1) {
+        const mix = {};
+        for (let i = 1; i < rows.length; i++) {
+          const r = rows[i]; if (!r || !r[idxCentro] || !r[idxGoa]) continue;
+          const g = String(r[idxGoa]).toUpperCase().trim(), c = ck(r[idxCentro]), pv = cleanNum(r[idxPvp]), u = cleanNum(r[idxVentas]);
+          if (!pv || !u) continue;
+          const x = ((mix[g] = mix[g] || {})[c] = mix[g][c] || {}); const cell = x[pv] = x[pv] || [0, 0]; cell[0] += u; cell[1] += idxVentaP !== -1 ? cleanNum(r[idxVentaP]) : 0;
+        }
+        if (Object.keys(mix).length) setPvpMix(mix);
+      }
       setGoas([]);
       setStores([]);
       setRawStoreData(extractedRawData);
@@ -2017,7 +2031,7 @@ export default function App() {
               <EmptyState 
                 icon={Store} title="Configura la Base de Tiendas" 
                 desc="Para comenzar a planear, necesitamos calificar tus sucursales."
-                rules={["Centro (Ej. 0953)", "Nombre (Ej. Tienda Norte)", "GOA / Familia (Ej. Chancla)", "Ventas en Unidades (Numérico)", "Utilidad en $ (Opcional)", "Rotacion (Opcional)"]}
+                rules={["Centro (Ej. 0953) o CENTRO_KEY", "Nombre (Ej. Tienda Norte)", "GOA / Familia (Ej. Chancla)", "Ventas en Unidades (VENTAS o VENTA_U)", "Utilidad en $ (Opcional)", "Rotacion (Opcional)", "PVP + VENTA_P (Opcional): con eso sale la mezcla de precio y el descuento por bucket sin otro archivo"]}
                 theme={theme} t={t}
                 action={
                   <label className={`cursor-pointer px-6 py-3.5 rounded-xl text-sm font-black tracking-wider uppercase transition shadow-lg flex items-center hover:scale-105 transform duration-200 ${t.btnPrimary}`}>
@@ -2047,7 +2061,7 @@ export default function App() {
                             <input type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleCapUpload} />
                           </label>
                           <label className={`flex items-center gap-2 cursor-pointer text-[11px] font-bold ${t.textAccent2}`}>
-                            <Upload size={14} /> {Object.keys(pvpMix || {}).length ? `Mezcla PVP: ${Object.keys(pvpMix).join(', ')}` : 'Subir mezcla PVP (tienda × precio)'}
+                            <Upload size={14} /> {Object.keys(pvpMix || {}).length ? `Mezcla PVP: ${Object.keys(pvpMix).length} GOA (de la base o archivo aparte)` : 'Mezcla PVP: viene en la base si trae PVP, o súbela aparte'}
                             <input type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handlePvpMixUpload} />
                           </label>
                           <div className="flex gap-2">
