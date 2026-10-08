@@ -53,7 +53,7 @@ const WORLDS = [
     accent: '#f59e0b', glow: 'rgba(245,158,11,0.15)',
     modules: [
       { label: 'Forecasting',    Icon: TrendingUp,   desc: 'Regresión lineal con ajuste estacional y 4 escenarios IS.' },
-      { label: 'Assortment', Icon: ShoppingCart, desc: 'Presupuesto de compra y OTB mensual. La resultante da piezas y modelos por mes por combinación GOA × Bucket × Regla (varias reglas por bucket, ej. OPP/MID/MAX con su PVP y %, sugeridas por los escalones de precio del histórico LY/LLY); la curva solo reparte tallas por centro. Tab Compra x Capacidad: corridas desde el OTB con cuadre exacto, clusters venta × capacidad, flujo mensual vs espacio (saldo en CEDIS) y buckets PVP que cuadran OTB pzs y $ neto.' },
+      { label: 'Assortment', Icon: ShoppingCart, desc: 'Presupuesto de compra y OTB mensual. La resultante da piezas y modelos por mes por combinación GOA × Bucket × Regla (varias reglas por bucket, ej. OPP/MID/MAX con su PVP y %, sugeridas por los escalones de precio del histórico LY/LLY); la curva solo reparte tallas por centro. Estrategia Venta × Capacidad: clústeres por venta y m²/espacio, corridas sugeridas desde la venta, reparto por venta de cada tienda con afinidad de precio por clúster, piezas al precio neto (OTB a venta neta) y prueba de espacio con o sin centralización por GOA.' },
       { label: 'Resurtido',      Icon: RefreshCw,    desc: 'Reposición por días de inventario: pedido = demanda/día × (lead time + WOS + seguridad) − (OH+OO), con ajustes editables por cluster de tienda (CSV o A/B/C automático) y forecast TDM por GOA.' },
       { label: 'Distribución', Icon: Map,            desc: 'Surtido inicial por cluster, curva de tallas y chequera.' },
     ],

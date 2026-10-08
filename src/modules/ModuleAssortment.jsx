@@ -1,12 +1,26 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useAltTabs } from '../utils/excelNav';
-import { Settings, Store, Package, Upload, ArrowUpDown, Sliders, Layers, MoreVertical, Sun, Moon, Info, Map as MapIcon, Database, ShoppingCart, BarChart3, Plus, Trash2, Save, Download, Zap, DollarSign, Target, FileSpreadsheet, Edit3, Lightbulb, CalendarDays, Compass, Activity, Wand2, RefreshCw, ClipboardList, Calculator, ChevronDown, ChevronRight, LayoutList, Gauge } from 'lucide-react';
-import AssortmentCapacidad from '../components/AssortmentCapacidad';
+import { Settings, Store, Package, Upload, ArrowUpDown, Sliders, Layers, MoreVertical, Sun, Moon, Info, Map as MapIcon, Database, ShoppingCart, BarChart3, Plus, Trash2, Save, Download, Zap, DollarSign, Target, FileSpreadsheet, Edit3, Lightbulb, CalendarDays, Compass, Activity, Wand2, RefreshCw, ClipboardList, Calculator, ChevronDown, ChevronRight, LayoutList } from 'lucide-react';
+import * as XLSX from 'xlsx';
 
 // =====================================================================
 // 1. IMPORT REAL (Descomenta esta línea en tu entorno local GO PLANNER)
 import { scoreItems, assignClusters, DEFAULT_SCORE_WEIGHTS, DEFAULT_CLUSTER_STRATEGY } from '../utils/clusterScore';
 import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
+
+// --- CLÚSTERES VENTA × CAPACIDAD ---
+const CAP_CLUSTERS = ['A-Alta', 'A-Media', 'A-Baja', 'B-Alta', 'B-Media', 'B-Baja', 'C-Alta', 'C-Media', 'C-Baja'];
+const ck = (c) => { const n = parseInt(String(c ?? '').trim(), 10); return isNaN(n) ? String(c ?? '').trim().toUpperCase() : String(n); };
+const pctlLin = (arr, p) => { if (!arr.length) return 0; const s = [...arr].sort((a, b) => a - b), i = p * (s.length - 1), lo = Math.floor(i), hi = Math.ceil(i); return s[lo] + (s[hi] - s[lo]) * (i - lo); };
+const normH = (h) => String(h ?? '').trim().toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').replace(/[^A-Z0-9$]+/g, '_').replace(/^_|_$/g, '');
+const numX = (v) => { const n = parseFloat(String(v ?? '').replace(/[$,\s]/g, '')); return isNaN(n) ? 0 : n; };
+// Lee CSV o Excel (primera hoja); encabezado = primera fila con 3+ celdas llenas
+const readTable = async (file) => {
+  const wb = XLSX.read(await file.arrayBuffer(), { type: 'array' });
+  const rows = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { header: 1, defval: '', raw: true });
+  const hi = rows.findIndex(r => r.filter(c => String(c).trim() !== '').length >= 3);
+  return hi < 0 ? { head: [], body: [] } : { head: rows[hi].map(normH), body: rows.slice(hi + 1).filter(r => r.some(c => String(c).trim() !== '')) };
+};
 
 // --- MOTOR INTELIGENTE PARA LEER CSV (Ignora comas dentro de comillas) ---
 // Selector múltiple con búsqueda (mismo que Traslados)
@@ -128,7 +142,7 @@ export default function App() {
   const budgetFileInputRef = useRef(null);
   const forecastFileInputRef = useRef(null);
   const [activeTab, setActiveTab] = useState('data');
-  useAltTabs(['data', 'calc', 'budget', 'assortment', 'reports', 'vsreal', 'chequeras', 'capacidad'], setActiveTab);
+  useAltTabs(['data', 'calc', 'budget', 'assortment', 'reports', 'vsreal', 'chequeras'], setActiveTab);
 
   // --- ESTADOS PARA GUARDAR SESIÓN ---
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
@@ -158,12 +172,17 @@ export default function App() {
   const [clusterStrategy, setClusterStrategy] = useState(initialState?.clusterStrategy ?? DEFAULT_CLUSTER_STRATEGY); 
   
   const activeClusters = useMemo(() => {
+    if (clusterStrategy === 'capacidad') return CAP_CLUSTERS;
     if (numClusters === 6) return ['AA', 'A', 'B', 'C', 'D', 'E'];
     const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
     return Array.from({length: numClusters}, (_, i) => alphabet[i]);
-  }, [numClusters]);
+  }, [numClusters, clusterStrategy]);
 
   const [rawStoreData, setRawStoreData] = useState(initialState?.rawStoreData ?? []);
+  const [capData, setCapData] = useState(initialState?.capData ?? {}); // { centro: { m2, cap } } capacidad real (pzs) manda sobre m²
+  const [capCfg, setCapCfg] = useState({ pctHi: 0.667, pctLo: 0.333, ...(initialState?.capCfg || {}) });
+  const [pvpMix, setPvpMix] = useState(() => { try { return JSON.parse(localStorage.getItem('gop_assort_pvpmix') || '{}'); } catch { return {}; } }); // { GOA: { centro: { pvp: [pzs, $neto] } } }
+  useEffect(() => { try { localStorage.setItem('gop_assort_pvpmix', JSON.stringify(pvpMix)); } catch (e) { console.warn('gop_assort_pvpmix', e.message); } }, [pvpMix]);
   const [scoreWeights, setScoreWeights] = useState(initialState?.scoreWeights ?? DEFAULT_SCORE_WEIGHTS);
   const [stores, setStores] = useState(initialState?.stores ?? []);
   const [goas, setGoas] = useState(initialState?.goas ?? []);
@@ -211,19 +230,19 @@ export default function App() {
   // --- AUTO-GUARDADO A LOCALSTORAGE ---
   // OJO: rawStoreData y brandMatrix se EXCLUYEN. Son grandes (miles de filas) y recargables desde CSV.
   useEffect(() => {
-    const stateToSave = { numClusters, clusterStrategy, scoreWeights, stores, goas, sizeCurves, calcRules, buckets, purchases, suggestedPlans, purchaseMonthBase, modelCatalog, actualPurchases };
+    const stateToSave = { numClusters, clusterStrategy, scoreWeights, capData, capCfg, stores, goas, sizeCurves, calcRules, buckets, purchases, suggestedPlans, purchaseMonthBase, modelCatalog, actualPurchases };
     try {
       localStorage.setItem('goplanner_assortment_state', JSON.stringify(stateToSave));
     } catch (err) {
       console.warn('LocalStorage autosave skipped:', err.message);
       try {
-        const lite = { numClusters, clusterStrategy, scoreWeights, stores, goas, sizeCurves, calcRules, buckets, purchases, suggestedPlans, purchaseMonthBase };
+        const lite = { numClusters, clusterStrategy, scoreWeights, capData, capCfg, stores, goas, sizeCurves, calcRules, buckets, purchases, suggestedPlans, purchaseMonthBase };
         localStorage.setItem('goplanner_assortment_state', JSON.stringify(lite));
       } catch (e2) {
         try { localStorage.removeItem('goplanner_assortment_state'); } catch (_) {}
       }
     }
-  }, [numClusters, clusterStrategy, scoreWeights, stores, goas, sizeCurves, calcRules, buckets, purchases, suggestedPlans, purchaseMonthBase, modelCatalog, actualPurchases]);
+  }, [numClusters, clusterStrategy, scoreWeights, capData, capCfg, stores, goas, sizeCurves, calcRules, buckets, purchases, suggestedPlans, purchaseMonthBase, modelCatalog, actualPurchases]);
 
   // --- PUBLICAR OTB AL GLOBAL CONTEXT ---
   useEffect(() => {
@@ -312,7 +331,7 @@ export default function App() {
   };
 
   const confirmExportProject = () => {
-    const data = { stores, goas, sizeCurves, calcRules, buckets, purchases, rawStoreData, scoreWeights, numClusters, clusterStrategy, suggestedPlans, purchaseMonthBase, modelCatalog, brandMatrix, actualPurchases };
+    const data = { stores, goas, sizeCurves, calcRules, buckets, purchases, rawStoreData, scoreWeights, numClusters, clusterStrategy, capData, capCfg, pvpMix, suggestedPlans, purchaseMonthBase, modelCatalog, brandMatrix, actualPurchases };
     const blob = new Blob([JSON.stringify(data, null, 2)], { type: "application/json" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -344,6 +363,9 @@ export default function App() {
         if(data.scoreWeights) setScoreWeights(data.scoreWeights);
         if(data.numClusters) setNumClusters(data.numClusters);
         if(data.clusterStrategy) setClusterStrategy(data.clusterStrategy);
+        if(data.capData) setCapData(data.capData);
+        if(data.capCfg) setCapCfg(data.capCfg);
+        if(data.pvpMix) setPvpMix(data.pvpMix);
         if(Array.isArray(data.suggestedPlans)) setSuggestedPlans(data.suggestedPlans);
         alert("¡Proyecto cargado con éxito!");
       } catch (err) { alert("Error al leer el archivo JSON."); }
@@ -385,6 +407,47 @@ export default function App() {
   };
 
   // --- LÓGICA DE CLUSTERIZACIÓN DINÁMICA ---
+  // Capacidad de una tienda: piezas reales si se cargaron, si no m² (para cortes); pzs = m² × densidad para el tope
+  const capUsaPzs = useMemo(() => Object.values(capData || {}).some(d => d.cap > 0), [capData]);
+  const capDens = useMemo(() => Number(capCfg.densidad) || 0, [capCfg]);
+  const capMedida = (centro) => { const d = (capData || {})[ck(centro)]; return d ? (capUsaPzs ? d.cap : d.m2) || 0 : 0; };
+  const capPzs = (centro) => { const d = (capData || {})[ck(centro)]; if (!d) return Infinity; if (d.cap > 0) return d.cap; return d.m2 > 0 && capDens > 0 ? d.m2 * capDens : Infinity; };
+  // Venta (terciles por percentil) × capacidad (terciles de m² o pzs de toda la sección) → A-Alta … C-Baja; sin dato de capacidad = Media
+  const capClusters = (items, keyField = 'centro') => {
+    const vs = items.map(i => Number(i.sales) || 0).filter(v => v > 0);
+    const cs = Object.keys(capData || {}).map(capMedida).filter(v => v > 0);
+    const vHi = pctlLin(vs, capCfg.pctHi), vLo = pctlLin(vs, capCfg.pctLo), cHi = pctlLin(cs, capCfg.pctHi), cLo = pctlLin(cs, capCfg.pctLo);
+    return [...items].sort((a, b) => (b.sales || 0) - (a.sales || 0)).map(it => {
+      const v = Number(it.sales) || 0, c = capMedida(it[keyField]);
+      const name = `${v >= vHi ? 'A' : v < vLo ? 'C' : 'B'}-${!c ? 'Media' : c >= cHi ? 'Alta' : c < cLo ? 'Baja' : 'Media'}`;
+      it.clusterIdx = CAP_CLUSTERS.indexOf(name); it.cluster = name; return it;
+    });
+  };
+  const handleCapUpload = async (e) => {
+    const f = e.target.files?.[0]; e.target.value = ''; if (!f) return;
+    const { head, body } = await readTable(f);
+    const kc = ['CENTRO_KEY', 'CENTRO_ID', 'CENTRO'].map(h => head.indexOf(h)).find(i => i >= 0) ?? -1;
+    const mc = head.findIndex(h => h === 'M2' || (h.startsWith('M2') && h.includes('ACTUAL')));
+    const cc = head.findIndex(h => h.includes('CAPACIDAD'));
+    if (kc < 0 || (mc < 0 && cc < 0)) { alert('El archivo de capacidad necesita CENTRO y M2 (M2 Actuales) o CAPACIDAD (pzs).'); return; }
+    const out = {}; body.forEach(r => { const c = ck(r[kc]); if (c) out[c] = { m2: mc >= 0 ? numX(r[mc]) : 0, cap: cc >= 0 ? numX(r[cc]) : 0 }; });
+    setCapData(out);
+    if (clusterStrategy !== 'capacidad') setClusterStrategy('capacidad');
+  };
+  const handlePvpMixUpload = async (e) => {
+    const f = e.target.files?.[0]; e.target.value = ''; if (!f) return;
+    const { head, body } = await readTable(f);
+    const ix = (...n) => n.map(h => head.indexOf(h)).find(i => i >= 0) ?? -1;
+    const kc = ix('CENTRO_KEY', 'CENTRO_ID', 'CENTRO'), gc = ix('GOA', 'FAMILIA'), vc = ix('PVP', 'PVP_INICIAL', 'PRECIO'), uc = ix('VENTA_U', 'PZS', 'PIEZAS'), pc = ix('VENTA_P', 'VENTA_$', 'VALOR');
+    if (kc < 0 || gc < 0 || vc < 0 || uc < 0) { alert('La mezcla PVP necesita CENTRO, GOA, PVP y VENTA_U (VENTA_P para el descuento).'); return; }
+    const out = {};
+    body.forEach(r => {
+      const c = ck(r[kc]), g = String(r[gc]).trim().toUpperCase(), pv = numX(r[vc]), u = numX(r[uc]); if (!c || !g || !pv || !u) return;
+      const x = ((out[g] = out[g] || {})[c] = out[g][c] || {}); const cell = x[pv] = x[pv] || [0, 0]; cell[0] += u; cell[1] += pc >= 0 ? numX(r[pc]) : 0;
+    });
+    setPvpMix(out);
+  };
+
   const recalculateClusters = (rawData, weights, currentClusters, strategy, matrixOverride = undefined) => {
     if(!rawData || rawData.length === 0) return;
     // matrixOverride permite recibir matriz fresca antes del setState; si no, usa la del state
@@ -474,7 +537,7 @@ export default function App() {
 
       // Lógica compartida con Distribución (utils/clusterScore.js)
       scoreItems(storesInGoa, weights);
-      assignClusters(storesInGoa, currentClusters, strategy).forEach(item => {
+      (strategy === 'capacidad' ? capClusters(storesInGoa) : assignClusters(storesInGoa, currentClusters, strategy)).forEach(item => {
         const clusterIndex = item.clusterIdx;
         const store = storeMap.get(item.centro);
         if(store) {
@@ -517,7 +580,7 @@ export default function App() {
     });
 
     // 3. CALCULAR CLÚSTER GLOBAL PARA LA TIENDA
-    const finalStores = assignClusters(Array.from(storeMap.values()), currentClusters, strategy);
+    const finalStores = strategy === 'capacidad' ? capClusters(Array.from(storeMap.values()), 'centerCode') : assignClusters(Array.from(storeMap.values()), currentClusters, strategy);
     finalStores.forEach(store => { store.globalCluster = store.cluster; delete store.cluster; delete store.clusterIdx; });
 
     setStores(finalStores);
@@ -525,7 +588,7 @@ export default function App() {
 
   useEffect(() => {
     if ((rawStoreData || []).length > 0) recalculateClusters(rawStoreData, scoreWeights, activeClusters, clusterStrategy);
-  }, [scoreWeights, activeClusters, clusterStrategy, brandMatrix]);
+  }, [scoreWeights, activeClusters, clusterStrategy, brandMatrix, capData, capCfg]);
 
   // --- CARGA DE DATOS DESDE CONTEXT GLOBAL ---
   const handleLoadForecastFromContext = () => {
@@ -826,6 +889,22 @@ export default function App() {
     const editObj = { name: r.name };
     (activeClusters || []).forEach(c => editObj[c] = (r.corridas || {})[c] || 0);
     setNewRule(editObj); setEditingRuleId(r.id); 
+  };
+  // Corridas por clúster proporcionales a la venta promedio por tienda del clúster (todas las tiendas × GOA).
+  // Conserva la escala de lo que ya está capturado (promedio ponderado); si está vacío, promedio = 2.
+  const sugerirCorridas = () => {
+    const acc = {}; let n = 0, tot = 0;
+    (stores || []).forEach(st => Object.entries(st.goaMetrics || {}).forEach(([, m]) => {
+      if (!m?.cluster || !(m.sales > 0)) return;
+      const a = acc[m.cluster] = acc[m.cluster] || { n: 0, v: 0 }; a.n++; a.v += m.sales; n++; tot += m.sales;
+    }));
+    if (!n) { alert('Primero carga tiendas con venta en el paso 1.'); return; }
+    const avgAll = tot / n;
+    const cur = (activeClusters || []).reduce((s_, c) => s_ + (Number(newRule[c]) || 0) * (acc[c]?.n || 0), 0) / n;
+    const escala = cur > 0 ? cur : 2;
+    const sug = { ...newRule };
+    (activeClusters || []).forEach(c => { const a = acc[c]; sug[c] = a ? Math.max(1, Math.round(escala * (a.v / a.n) / avgAll)) : 0; });
+    setNewRule(sug);
   };
 
   const handleBucketSubmit = (e) => {
@@ -1434,6 +1513,31 @@ export default function App() {
   // % de mes para reportes, con la misma regla que la resultante (reescalados a 100 si normMeses)
   const mesesNorm = (g) => { const ms = (g.months || [16.6,16.6,16.6,16.6,16.6,17]).map(w => Number(w?.value ?? w) || 0); const sm = ms.slice(0, 6).reduce((a, x) => a + x, 0); return normMeses && sm > 0 ? ms.map(x => x * 100 / sm) : ms; };
 
+  // Mezcla de precio real por GOA (base tienda × PVP): índice por clúster × bucket (participación del clúster en el bucket ÷ participación total)
+  // y descuento histórico por bucket (1 − venta neta ÷ venta a PVP inicial). Mapea cada PVP a su bucket por el rango del bucket.
+  const storeByCk = useMemo(() => { const m = {}; (stores || []).forEach(st => { m[ck(st.centerCode)] = st; }); return m; }, [stores]);
+  const mixIdx = useMemo(() => {
+    const idx = {}, desc = {};
+    Object.entries(pvpMix || {}).forEach(([G, cent]) => {
+      const tot = {}, byC = {}, d = {}; let T = 0;
+      Object.entries(cent).forEach(([c, pvs]) => {
+        const cl = storeByCk[c]?.clusters?.[G];
+        Object.entries(pvs).forEach(([pv, [u, p]]) => {
+          const b = bucketOfPvp(Number(pv)); if (!b || !(u > 0)) return;
+          tot[b.id] = (tot[b.id] || 0) + u; T += u;
+          const dd = d[b.id] = d[b.id] || [0, 0]; dd[0] += Number(pv) * u; dd[1] += p;
+          if (cl) { const x = byC[cl] = byC[cl] || {}; x[b.id] = (x[b.id] || 0) + u; }
+        });
+      });
+      if (!T) return;
+      idx[G] = {}; Object.entries(byC).forEach(([cl, x]) => { const n = Object.values(x).reduce((a, v) => a + v, 0) || 1; idx[G][cl] = {}; Object.keys(tot).forEach(bid => { idx[G][cl][bid] = ((x[bid] || 0) / n) / (tot[bid] / T); }); });
+      desc[G] = {}; Object.entries(d).forEach(([bid, [pi, pn]]) => { desc[G][bid] = pi > 0 && pn > 0 ? 1 - pn / pi : 0; });
+    });
+    return { idx, desc };
+  }, [pvpMix, storeByCk, buckets]);
+  // Descuento a usar en GOA × bucket: el capturado (%) o el histórico. El OTB está a venta neta: pzs = OTB ÷ (PVP × (1 − desc)).
+  const descOf = (g, bId) => { const v = g.bkCfg?.[bId]?.desc; return v !== undefined && v !== '' && v !== null ? (Number(v) || 0) / 100 : (mixIdx.desc[String(g.name).toUpperCase()]?.[bId] || 0); };
+
   const autoPlan = useMemo(() => {
     const rows = [];
     const bks = (buckets || []).length ? buckets : [null];
@@ -1456,11 +1560,12 @@ export default function App() {
           const rule = (calcRules || []).find(r => r.id === Number(rr.ruleId));
           const pzsModelo = curve && rule ? getPiecesForOneModel(g.name, curve.id, rule.id) : 0;
           const pvp = Number(rr.pvp) > 0 ? Number(rr.pvp) : (b && Number(g.bucketPvps?.[b.id]) > 0) ? Number(g.bucketPvps[b.id]) : (Number(g.defaultPvp) || 0);
+          const desc = b ? descOf(g, b.id) : 0, pvpNeto = pvp * (1 - desc);
           for (let m = 0; m < 6; m++) {
             const otb = (Number(g.budget) || 0) * ((Number(g.months?.[m]) || 0) * fm / 100) * (b ? shareOf[b.id] : 1) * (shR[ri] / totR);
             if (otb <= 0) continue;
-            const pzs = pvp > 0 ? Math.floor(otb / pvp) : 0;
-            rows.push({ key: `${g.id}|${b?.id || ''}|${rr.ruleId}|${ri}|${m}`, combo: `${g.id}|${b?.id || ''}|${rr.ruleId}|${ri}`, goa: g, bucket: b, mes: m, mesLabel: getMonthLabel(m), otb, pvp, pzs,
+            const pzs = pvpNeto > 0 ? Math.floor(otb / pvpNeto) : 0;
+            rows.push({ key: `${g.id}|${b?.id || ''}|${rr.ruleId}|${ri}|${m}`, combo: `${g.id}|${b?.id || ''}|${rr.ruleId}|${ri}`, goa: g, bucket: b, mes: m, mesLabel: getMonthLabel(m), otb, pvp, pvpNeto, desc, pzs,
               curve, rule, pzsModelo, modelos: pzsModelo > 0 ? pzs / pzsModelo : 0,
               falta: !pvp ? 'PVP' : !curve ? 'Curva' : !rule ? 'Regla' : pzsModelo <= 0 ? 'Clústeres' : '' });
           }
@@ -1468,7 +1573,39 @@ export default function App() {
       });
     });
     return rows;
-  }, [goas, buckets, sizeCurves, calcRules, stores, purchaseMonthBase, normMeses]);
+  }, [goas, buckets, sizeCurves, calcRules, stores, purchaseMonthBase, normMeses, mixIdx]);
+
+  // Reparto por venta de la tienda (estrategia Venta × Capacidad). Si el GOA NO permite centralizar, a cada tienda se le topa
+  // lo que absorbe en el horizonte (capacidad + venta de 6 meses) y lo que sobra pasa a tiendas del mismo clúster con espacio,
+  // luego a cualquier tienda con espacio; lo que ya no cabe en ninguna es excedente de compra.
+  const repartoCap = useMemo(() => {
+    if (clusterStrategy !== 'capacidad') return {};
+    const out = {};
+    (goas || []).forEach(g => {
+      const G = String(g.name).toUpperCase();
+      const T = autoPlan.filter(r => r.goa.id === g.id && !r.falta).reduce((a, r) => a + r.pzs, 0);
+      const ss = (stores || []).map(st => ({ id: st.id, c: st.clusters?.[G], v: Number(st.goaMetrics?.[G]?.sales) || 0, lim: capPzs(st.centerCode) })).filter(x => x.c && x.v > 0);
+      const V = ss.reduce((a, x) => a + x.v, 0); if (!V) return;
+      ss.forEach(x => { x.a = T * x.v / V; x.lim = x.lim === Infinity ? Infinity : x.lim + x.v * 0.5; });
+      let exced = 0;
+      if (g.centraliza === false && T > 0) {
+        const llenar = (grupo, extra) => { // reparte 'extra' entre el grupo con espacio, proporcional a venta
+          for (let k = 0; k < 20 && extra > 0.5; k++) {
+            const hay = grupo.filter(x => x.a < x.lim), vv = hay.reduce((a, x) => a + x.v, 0); if (!vv) break;
+            let sobra = 0; hay.forEach(x => { x.a += extra * x.v / vv; if (x.a > x.lim) { sobra += x.a - x.lim; x.a = x.lim; } }); extra = sobra;
+          }
+          return extra;
+        };
+        let sobra = 0; const porCl = {};
+        ss.forEach(x => { if (x.a > x.lim) { (porCl[x.c] = porCl[x.c] || []).push(x.a - x.lim); x.a = x.lim; } });
+        Object.entries(porCl).forEach(([c, xs]) => { sobra += llenar(ss.filter(x => x.c === c), xs.reduce((a, v) => a + v, 0)); });
+        exced = llenar(ss, sobra);
+        if (exced > 0.5) ss.forEach(x => { x.a += exced * x.v / V; }); // se compra igual (OTB), se marca como excedente
+      }
+      out[G] = { w: Object.fromEntries(ss.map(x => [x.id, T > 0 ? x.a / T : x.v / V])), exced: Math.round(exced), T };
+    });
+    return out;
+  }, [clusterStrategy, goas, stores, autoPlan, capData, capCfg]);
 
   // Pivote GOA × Bucket × Regla con los 6 meses en columnas
   const autoPivot = useMemo(() => {
@@ -1484,13 +1621,16 @@ export default function App() {
   const distribuirAutoPlan = (row) => {
     const { goa, curve, rule, pzs } = row;
     if (!curve || !rule || pzs <= 0) return [];
+    const G = String(goa.name).toUpperCase(), rep = repartoCap[G];
     const sizes = (curve.sizes || '').split(',').map(x => x.trim());
     const weights = (curve.weights || '').split(',').map(w => Number(w.trim()) || 0);
     const cells = [];
     (stores || []).forEach(st => {
       const c = (st.clusters || {})[goa.name] || (st.clusters || {})[String(goa.name).toUpperCase()];
       const runs = (rule.corridas || {})[c] || 0;
-      if (runs > 0) sizes.forEach((tz, i) => { if (weights[i] > 0) cells.push({ st, c, talla: tz, w: runs * weights[i] }); });
+      // Venta × Capacidad: peso = participación de venta de la tienda (topada por espacio) × afinidad del clúster al bucket de precio
+      const w0 = runs > 0 ? (rep ? (rep.w[st.id] || 0) * (mixIdx.idx[G]?.[c]?.[row.bucket?.id] ?? 1) : runs) : 0;
+      if (w0 > 0) sizes.forEach((tz, i) => { if (weights[i] > 0) cells.push({ st, c, talla: tz, w: w0 * weights[i] }); });
     });
     const W = cells.reduce((a, x) => a + x.w, 0);
     if (!W) return [];
@@ -1504,7 +1644,7 @@ export default function App() {
   const exportAutoPlan = () => {
     let csv = '\uFEFFGOA,Bucket,Regla,Mes,PVP,Centro,Tienda,Cluster,Talla,Piezas,Importe\r\n';
     autoPlan.forEach(row => distribuirAutoPlan(row).forEach(x => {
-      csv += `"${row.goa.name}","${row.bucket?.name || ''}","${row.rule?.name || ''}","${row.mesLabel}",${row.pvp},"${x.st.centerCode}","${x.st.name}","${x.c}","${x.talla}",${x.pzs},${x.pzs * row.pvp}\r\n`;
+      csv += `"${row.goa.name}","${row.bucket?.name || ''}","${row.rule?.name || ''}","${row.mesLabel}",${row.pvp},"${x.st.centerCode}","${x.st.name}","${x.c}","${x.talla}",${x.pzs},${Math.round(x.pzs * (row.pvpNeto || row.pvp))}\r\n`;
     }));
     const a = document.createElement('a');
     a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
@@ -1512,7 +1652,32 @@ export default function App() {
   };
 
   // Distribución de la resultante (para los resúmenes de Reportes, vista "Resultante Ppto")
-  const autoPlanDist = useMemo(() => autoPlan.filter(r => !r.falta && r.pzs > 0).map(r => ({ row: r, cells: distribuirAutoPlan(r) })), [autoPlan, stores]);
+  const autoPlanDist = useMemo(() => autoPlan.filter(r => !r.falta && r.pzs > 0).map(r => ({ row: r, cells: distribuirAutoPlan(r) })), [autoPlan, stores, repartoCap, mixIdx]);
+
+  // Prueba de espacio mes a mes por GOA (arranca en 0, venta = venta del archivo ÷ 12). Centraliza: a tienda va lo que cabe y el resto
+  // espera en CEDIS. No centraliza: llega todo a tienda y lo que pasa de la capacidad se cuenta como sobre-espacio.
+  const flujoCap = useMemo(() => {
+    if (clusterStrategy !== 'capacidad' || !Object.keys(capData || {}).length) return [];
+    const by = {};
+    autoPlanDist.forEach(({ row, cells }) => cells.forEach(x => {
+      const G = String(row.goa.name).toUpperCase(), g = by[G] = by[G] || { goa: row.goa, st: {} };
+      const s_ = g.st[x.st.id] = g.st[x.st.id] || { st: x.st, rec: Array(6).fill(0) }; s_.rec[row.mes] += x.pzs;
+    }));
+    return Object.entries(by).map(([G, g]) => {
+      const cen = g.goa.centraliza !== false, rec = Array(6).fill(0), env = Array(6).fill(0), sal = Array(6).fill(0); let noCaben = 0;
+      Object.values(g.st).forEach(({ st, rec: r }) => {
+        const cap = capPzs(st.centerCode), vm = (Number(st.goaMetrics?.[G]?.sales) || 0) / 12; let inv = 0, pool = 0, mal = false;
+        for (let m = 0; m < 6; m++) {
+          rec[m] += r[m]; pool += r[m];
+          const send = cen ? Math.min(pool, Math.max(0, cap - inv)) : pool;
+          pool -= send; inv = Math.max(0, inv + send - vm); env[m] += send; sal[m] += cen ? pool : Math.max(0, inv - cap);
+          if ((cen ? pool : inv - cap) >= 1) mal = true;
+        }
+        if (mal) noCaben++;
+      });
+      return { G, goa: g.goa, cen, rec, env, sal, noCaben, tiendas: Object.keys(g.st).length, exced: repartoCap[G]?.exced || 0 };
+    });
+  }, [clusterStrategy, capData, autoPlanDist, repartoCap]);
   const viewLabel = reportView === 'sugerido' ? 'Sugerido' : reportView === 'resultante' ? 'Resultante Ppto' : 'Real';
 
   const reportData = useMemo(() => {
@@ -1839,15 +2004,12 @@ export default function App() {
             <TabButton id="reports" label="5. Reportes / Plan OTB" icon={Compass} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
             <TabButton id="vsreal" label="6. VS Compra Real" icon={Activity} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
             <TabButton id="chequeras" label="7. Generador Chequeras" icon={FileSpreadsheet} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
-            <TabButton id="capacidad" label="8. Compra x Capacidad" icon={Gauge} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
           </div>
         </div>
       </header>
 
       <main className="w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 transition-colors duration-300">
         
-        {activeTab === 'capacidad' && <AssortmentCapacidad t={t} isDark={theme === 'dark'} />}
-
         {/* === PESTAÑA 1: BASE === */}
         {activeTab === 'data' && (
           <div className="space-y-6">
@@ -1875,12 +2037,33 @@ export default function App() {
                         <option value="piramide">Pirámide Retail (Concentrar en Top)</option>
                         <option value="lineal">Equitativa (Partes Iguales)</option>
                         <option value="valor">Absoluta (Por Valor del Score)</option>
+                        <option value="capacidad">Venta × Capacidad (m² / espacio)</option>
                       </select>
 
+                      {clusterStrategy === 'capacidad' ? (
+                        <div className="space-y-2">
+                          <label className={`flex items-center gap-2 cursor-pointer text-[11px] font-bold ${t.textAccent2}`}>
+                            <Upload size={14} /> {Object.keys(capData || {}).length ? `Capacidad: ${Object.keys(capData).length} tiendas (${capUsaPzs ? 'pzs' : 'm²'})` : 'Subir capacidad / m² por tienda'}
+                            <input type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handleCapUpload} />
+                          </label>
+                          <label className={`flex items-center gap-2 cursor-pointer text-[11px] font-bold ${t.textAccent2}`}>
+                            <Upload size={14} /> {Object.keys(pvpMix || {}).length ? `Mezcla PVP: ${Object.keys(pvpMix).join(', ')}` : 'Subir mezcla PVP (tienda × precio)'}
+                            <input type="file" accept=".csv,.xlsx,.xls" className="hidden" onChange={handlePvpMixUpload} />
+                          </label>
+                          <div className="flex gap-2">
+                            {[['pctHi', 'Corte alto'], ['pctLo', 'Corte bajo']].map(([k, l]) => (
+                              <div key={k} className="flex flex-col"><span className={`text-[9px] font-bold uppercase ${t.textMuted}`}>{l}</span><input type="number" step={0.05} value={capCfg[k]} onChange={e => setCapCfg({ ...capCfg, [k]: Number(e.target.value) })} className={`w-16 p-1 rounded text-xs ${t.inputYellow}`} /></div>
+                            ))}
+                            {!capUsaPzs && <div className="flex flex-col"><span className={`text-[9px] font-bold uppercase ${t.textMuted}`}>Pzs por m²</span><input type="number" step={0.5} value={capCfg.densidad} placeholder="sin tope" onChange={e => setCapCfg({ ...capCfg, densidad: e.target.value })} className={`w-20 p-1 rounded text-xs ${t.inputYellow}`} /></div>}
+                          </div>
+                          <p className={`text-[10px] max-w-[260px] ${t.textMuted}`}>Terciles de venta por GOA × terciles de capacidad de la sección. Sin capacidad = Media. El tope de espacio se usa en la resultante (paso 4).</p>
+                        </div>
+                      ) : (<>
                       <label className={`text-[10px] font-bold uppercase tracking-wider ${t.textMuted}`}>Cantidad de Clústeres</label>
                       <select value={numClusters} onChange={(e) => setNumClusters(Number(e.target.value))} className={`mt-1 p-1.5 rounded outline-none font-bold text-sm cursor-pointer ${t.inputYellow}`}>
                         {[3, 4, 5, 6, 7, 8, 9, 10].map(n => <option key={`opt-${n}`} value={n}>{n} Niveles ({n===6?'AA-E':'A-'+String.fromCharCode(64+n)})</option>)}
                       </select>
+                      </>)}
                     </div>
                   </div>
                   <div className="flex flex-col flex-1 w-full lg:w-auto">
@@ -2129,6 +2312,7 @@ export default function App() {
                       </div>
                     ))}
                   </div>
+                  <button type="button" onClick={sugerirCorridas} title="Corridas por clúster según la venta promedio por tienda; conserva la escala capturada" className={`w-full mb-3 py-2 rounded-lg text-[11px] font-black uppercase tracking-wider flex items-center justify-center transition ${t.btnGhost}`}><Wand2 size={14} className="mr-2" /> Sugerir desde venta</button>
                   <div className="flex space-x-3">
                     <button type="submit" className={`flex-1 py-2.5 rounded-lg text-sm font-black uppercase tracking-wider transition ${editingRuleId ? t.btnPrimary : t.btnSecondary}`}>
                       {editingRuleId ? 'Actualizar' : 'Guardar Regla'}
@@ -2363,6 +2547,7 @@ export default function App() {
                             return (
                               <tr key={g.id}>
                                 <td className={`p-2 font-bold whitespace-nowrap align-top ${t.textMain}`}>{g.name}
+                                  {clusterStrategy === 'capacidad' && <label className={`flex items-center gap-1 text-[9px] font-normal mt-1 ${t.textMuted}`} title="Si el GOA no se puede centralizar, lo que no cabe en una tienda se reasigna a tiendas con espacio"><input type="checkbox" checked={g.centraliza !== false} onChange={e => setGoas(prev => prev.map(x => x.id === g.id ? { ...x, centraliza: e.target.checked } : x))} className="accent-violet-500" />Centraliza en CEDIS</label>}
                                   {Math.abs(mesesSuma(g) - 100) > 0.5 && <div className={`text-[9px] font-normal ${normMeses ? 'text-amber-400' : 'text-rose-400'}`} title="Suma de los % de los 6 meses del GOA (Tab 3)">meses {mesesSuma(g).toFixed(0)}%{normMeses ? ' → 100%' : ''}</div>}
                                 </td>
                                 {(buckets || []).map(b => {
@@ -2373,6 +2558,7 @@ export default function App() {
                                         <input type="checkbox" checked={!c.off} onChange={() => setBkCfg([g.id], [b.id], { off: !c.off })} className="accent-violet-500" />
                                         <input type="number" min="0" disabled={c.off} value={c.pct ?? ''} placeholder={String(b.sharePct || 0)} onChange={e => setBkCfg([g.id], [b.id], { pct: e.target.value })} className={`w-12 px-1 py-0.5 rounded border text-[11px] text-center ${t.input}`} />
                                         <span className={`text-[10px] font-bold ${t.textAccent2}`}>{sh[b.id] ? `${(sh[b.id] * 100).toFixed(0)}%` : '—'}</span>
+                                        {!c.off && <input type="number" min="0" max="90" value={c.desc ?? ''} placeholder={`${Math.round((mixIdx.desc[String(g.name).toUpperCase()]?.[b.id] || 0) * 100)}`} title="% de descuento esperado (el OTB está a venta neta: piezas = OTB ÷ PVP neto). Vacío = histórico de la mezcla PVP" onChange={e => setBkCfg([g.id], [b.id], { desc: e.target.value })} className={`w-10 px-1 py-0.5 rounded border text-[10px] text-center ${t.input}`} />}
                                         {h && (() => { const tr = h.tiers?.[String(b.id)] || h.tiers?.['*'] || []; return <span className={`text-[9px] ${t.textMuted}`} title={`Histórico LY/LLY${histSug.porBucket ? ` · ${h.buckets?.[b.id] || 0}% de la compra del GOA en este bucket` : ''}\nEscalones de precio: ${tr.map(x => `$${x.pvp} (${x.pct}%) [${x.precios.join(', ')}]`).join(' · ')}`}>H {histSug.porBucket ? `${h.buckets?.[b.id] || 0}%` : tr.map(x => `$${x.pvp}`).join('/')}</span>; })()}
                                       </div>
                                       {!c.off && (
@@ -2431,7 +2617,7 @@ export default function App() {
                               <td className={`p-2 font-bold ${t.textAccent1}`}>{first ? (r.bucket?.name || '—') : ''}</td>
                               <td className={`p-2 font-bold ${t.textMain}`}>{r.goa.name}</td>
                               <td className="p-2">{r.rule?.name || '—'}</td>
-                              <td className="p-2 text-right">{r.pvp ? `$${r.pvp.toLocaleString('es-MX')}` : '—'}</td>
+                              <td className="p-2 text-right">{r.pvp ? `$${r.pvp.toLocaleString('es-MX')}` : '—'}{r.desc > 0 && <div className={`text-[10px] ${t.textMuted}`} title={`Descuento ${(r.desc * 100).toFixed(0)}%`}>neto ${Math.round(r.pvpNeto).toLocaleString('es-MX')}</div>}</td>
                               <td className={`p-2 text-right ${t.textMuted}`}>{r.pzsModelo || '—'}</td>
                               {r.pzsM.map((x, m) => (
                                 <td key={m} className="p-2 text-right">
@@ -2459,6 +2645,19 @@ export default function App() {
                       </tfoot>
                     </table>
                   </div>
+                  {flujoCap.length > 0 && (
+                    <div className={`rounded-lg border p-3 mt-4 ${t.cardInner}`}>
+                      <h3 className={`text-xs font-black uppercase tracking-wider mb-1 ${t.textMain}`}>Prueba de espacio (venta × capacidad)</h3>
+                      <p className={`text-[10px] mb-2 ${t.textMuted}`}>Arranca en 0, sin OH. Centraliza: a tienda va lo que cabe y el resto espera en CEDIS. No centraliza: el reparto ya topó cada tienda y lo que pasó de la capacidad se reasignó; excedente = lo que no cupo en ninguna.</p>
+                      <div className="overflow-x-auto"><table className="w-full text-[11px]">
+                        <thead className={t.tableHead}><tr><th className="p-1.5 text-left">GOA</th><th className="p-1.5 text-left">Concepto</th>{[0,1,2,3,4,5].map(m => <th key={m} className="p-1.5 text-right">{getMonthLabel(m)}</th>)}<th className="p-1.5 text-right">Tiendas</th></tr></thead>
+                        <tbody className={`divide-y ${t.border}`}>{flujoCap.map(f => [
+                          <tr key={`${f.G}r`}><td className={`p-1.5 font-bold ${t.textMain}`} rowSpan={2}>{f.goa.name}<div className={`text-[9px] font-normal ${t.textMuted}`}>{f.cen ? 'Centraliza' : 'No centraliza'}</div></td><td className={`p-1.5 ${t.textMuted}`}>Recibo</td>{f.rec.map((v, m) => <td key={m} className="p-1.5 text-right">{Math.round(v).toLocaleString('es-MX')}</td>)}<td className="p-1.5 text-right">{f.tiendas}</td></tr>,
+                          <tr key={`${f.G}s`}><td className={`p-1.5 font-bold ${t.warningText}`}>{f.cen ? 'Saldo CEDIS' : 'Sobre-espacio'}</td>{f.sal.map((v, m) => <td key={m} className={`p-1.5 text-right ${v >= 1 ? t.warningText : t.textMuted}`}>{Math.round(v).toLocaleString('es-MX')}</td>)}<td className={`p-1.5 text-right font-bold ${f.noCaben ? t.dangerText : t.successText}`} title="Tiendas donde en algún mes no cupo">{f.noCaben} no caben{f.exced ? ` · exced. ${f.exced.toLocaleString('es-MX')} pzs` : ''}</td></tr>
+                        ])}</tbody>
+                      </table></div>
+                    </div>
+                  )}
                 </div>
 
                 </>)}
