@@ -99,6 +99,21 @@ export const CSV_SCHEMAS = [
         desc: 'Una fila por compra. Por GOA (y por bucket si traes BUCKET) los precios se agrupan en hasta 3 escalones cortando en los saltos de precio más grandes (ej. 499/549 | 799 | 999): cada escalón se vuelve una regla OPP / MID / MAX (la que lleve ese texto y el nombre del bucket) con su PVP (el precio con más piezas) y su % (en $). Con BUCKET también sugiere la mezcla de buckets y apaga los de <5%.',
         columns: ['GOA*', 'PVP*', 'PIEZAS', 'VALOR (opcional)', 'BUCKET (opcional)', 'AÑO (opcional)'],
       },
+      {
+        title: 'Tab 8 · Compra x Capacidad: venta por tienda',
+        desc: 'Una fila por tienda (y GOA si traes varias). Meses U_AAAA_MM dan la estacionalidad; OH solo se usa para estimar pzs/m² si no hay capacidad real.',
+        columns: ['CENTRO_KEY / CENTRO*', 'CENTRO / TIENDA (nombre)', 'GOA (opcional)', 'VENTA_U_12M*', 'VENTA_P_12M (para reparto en $)', 'U_AAAA_MM (meses)', 'OH_U (opcional)'],
+      },
+      {
+        title: 'Tab 8 · Capacidad por tienda (opcional)',
+        desc: 'CAPACIDAD en piezas manda sobre m². Sin este archivo no hay tope de espacio.',
+        columns: ['CENTRO*', 'CAPACIDAD (pzs)', 'M2 / M2 Actuales'],
+      },
+      {
+        title: 'Tab 8 · Mezcla PVP (opcional)',
+        desc: 'Venta por tienda × PVP inicial. Se agrupa en los buckets (Hasta ≤) para sacar la mezcla de cada cluster y el descuento por bucket.',
+        columns: ['CENTRO_KEY*', 'GOA', 'PVP*', 'VENTA_U*', 'VENTA_P'],
+      },
     ],
   },
   {

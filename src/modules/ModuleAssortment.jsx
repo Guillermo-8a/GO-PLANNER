@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useAltTabs } from '../utils/excelNav';
-import { Settings, Store, Package, Upload, ArrowUpDown, Sliders, Layers, MoreVertical, Sun, Moon, Info, Map as MapIcon, Database, ShoppingCart, BarChart3, Plus, Trash2, Save, Download, Zap, DollarSign, Target, FileSpreadsheet, Edit3, Lightbulb, CalendarDays, Compass, Activity, Wand2, RefreshCw, ClipboardList, Calculator, ChevronDown, ChevronRight, LayoutList } from 'lucide-react';
+import { Settings, Store, Package, Upload, ArrowUpDown, Sliders, Layers, MoreVertical, Sun, Moon, Info, Map as MapIcon, Database, ShoppingCart, BarChart3, Plus, Trash2, Save, Download, Zap, DollarSign, Target, FileSpreadsheet, Edit3, Lightbulb, CalendarDays, Compass, Activity, Wand2, RefreshCw, ClipboardList, Calculator, ChevronDown, ChevronRight, LayoutList, Gauge } from 'lucide-react';
+import AssortmentCapacidad from '../components/AssortmentCapacidad';
 
 // =====================================================================
 // 1. IMPORT REAL (Descomenta esta línea en tu entorno local GO PLANNER)
@@ -127,7 +128,7 @@ export default function App() {
   const budgetFileInputRef = useRef(null);
   const forecastFileInputRef = useRef(null);
   const [activeTab, setActiveTab] = useState('data');
-  useAltTabs(['data', 'calc', 'budget', 'assortment', 'reports', 'vsreal', 'chequeras'], setActiveTab);
+  useAltTabs(['data', 'calc', 'budget', 'assortment', 'reports', 'vsreal', 'chequeras', 'capacidad'], setActiveTab);
 
   // --- ESTADOS PARA GUARDAR SESIÓN ---
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
@@ -1838,12 +1839,15 @@ export default function App() {
             <TabButton id="reports" label="5. Reportes / Plan OTB" icon={Compass} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
             <TabButton id="vsreal" label="6. VS Compra Real" icon={Activity} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
             <TabButton id="chequeras" label="7. Generador Chequeras" icon={FileSpreadsheet} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
+            <TabButton id="capacidad" label="8. Compra x Capacidad" icon={Gauge} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
           </div>
         </div>
       </header>
 
       <main className="w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 transition-colors duration-300">
         
+        {activeTab === 'capacidad' && <AssortmentCapacidad t={t} isDark={theme === 'dark'} />}
+
         {/* === PESTAÑA 1: BASE === */}
         {activeTab === 'data' && (
           <div className="space-y-6">
