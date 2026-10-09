@@ -11,6 +11,7 @@ import {
 } from 'recharts';
 import { useGlobal, useDispatch, globalActions } from '../context/GlobalContext';
 import { engines, getMetrics } from '../utils/fcstEngine';
+import ForecastNuevos from './ForecastNuevos';
 
 const PARAM_LABEL = { alpha: 'α', beta: 'β', gamma: 'γ' };
 const cycleOf = (b) => b.params?.hwPeriod || (b.unit === 'Semanas' ? 52 : 12);
@@ -51,6 +52,7 @@ export default function App() {
   const [copied, setCopied] = useState(false);
   const [isAssortmentModalOpen, setIsAssortmentModalOpen] = useState(false);
   const [assortmentForm, setAssortmentForm] = useState({ name: '', start: 1, end: 6, budget: 0, historyPzs: 0 });
+  const [vista, setVista] = useState('series');
 
   const gState = useGlobal();
   const dispatch = useDispatch();
@@ -215,6 +217,12 @@ export default function App() {
           </div>
         </div>
         <div className="flex flex-wrap gap-2 items-center">
+          <div className="flex bg-zinc-100 dark:bg-zinc-800 rounded-lg p-1 border border-zinc-200 dark:border-zinc-700">
+            {[['series', 'Series'], ['nuevos', 'Nuevos / Análogos']].map(([k, t]) => (
+              <button key={k} onClick={() => setVista(k)} className={`px-3 py-1.5 rounded-md text-xs font-bold ${vista === k ? 'bg-violet-600 text-white' : 'text-zinc-600 dark:text-zinc-300'}`}>{t}</button>
+            ))}
+          </div>
+          {vista === 'series' && <>
           <button
             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
             className="flex items-center gap-2 bg-zinc-100 dark:bg-zinc-800 hover:bg-zinc-200 dark:hover:bg-zinc-700 text-zinc-700 dark:text-zinc-300 px-3 py-2 rounded-lg text-xs font-bold border border-zinc-200 dark:border-zinc-700 transition-all"
@@ -238,11 +246,14 @@ export default function App() {
           >
             <Plus size={14} /> Nueva Marca
           </button>
+          </>}
         </div>
       </div>
 
+      {vista === 'nuevos' && <ForecastNuevos brands={brands} evals={evals} />}
+
       {/* CUERPO */}
-      <div className="flex gap-6 items-start text-left">
+      {vista === 'series' && <div className="flex gap-6 items-start text-left">
 
         {/* SIDEBAR PORTAFOLIO (en flujo) */}
         {isSidebarOpen && (
@@ -534,7 +545,7 @@ export default function App() {
             )}
           </div>
         </main>
-      </div>
+      </div>}
 
       {/* MODAL ASSORTMENT */}
       {isAssortmentModalOpen && (
