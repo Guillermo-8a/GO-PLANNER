@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import * as Icons from '../utils/icons';
 import { useGlobal } from '../context/GlobalContext';
+import DispersionHistorico from './DispersionHistorico';
 import {
   ScatterChart, Scatter, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
@@ -128,6 +129,7 @@ export default function ModuleDispersion(){
   const [history,setHistory]=useState([]);
   const [loading,setLoading]=useState(true);
   const [saveModal,setSaveModal]=useState(null); // {label, sug} cuando abierto
+  const [tab,setTab]=useState('disp');
 
   useEffect(()=>{ (async()=>{
     try{ const d=await idbGet('data'); if(Array.isArray(d)&&d.length){ setData(d); setCols(d._cols||[]); } }catch{}
@@ -241,17 +243,22 @@ export default function ModuleDispersion(){
             <p className={`text-xs mt-1 ml-10 ${t.textMuted}`}>R² multinivel · Venta vs Inventario · histórico mensual</p>
           </div>
           <div className="flex flex-wrap gap-2 items-center">
+            <div className={`flex rounded-lg p-1 border ${t.btnGhost}`}>
+              {[['disp','Dispersión'],['hist','Histórico LY vs TY']].map(([k,l])=><button key={k} onClick={()=>setTab(k)} className={`px-3 py-1 rounded-md text-xs font-bold ${tab===k?'bg-violet-600 text-white':''}`}>{l}</button>)}
+            </div>
+            {tab==='disp'&&<>
             {hasData&&<button onClick={openSaveModal} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${t.badge}`}><Icons.Save size={14}/> Guardar mes</button>}
             <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden" onChange={handleUpload}/>
             <button onClick={()=>fileRef.current?.click()} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${t.btnGhost}`}><Icons.Upload size={14}/> CSV Extracción</button>
             {hasData&&<span className={`px-3 py-1 rounded-full text-[10px] font-black border ${t.badge}`}>{data.length.toLocaleString()} filas</span>}
             {hasData&&<button onClick={clearData} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${t.btnGhost} opacity-40 hover:opacity-100`}><Icons.Trash2 size={14}/></button>}
+            </>}
           </div>
         </div>
-        {hasData&&cols.length>0&&<p className={`text-[9px] mt-3 ${t.textMuted}`}>Columnas detectadas: {cols.join(' · ')}</p>}
+        {tab==='disp'&&hasData&&cols.length>0&&<p className={`text-[9px] mt-3 ${t.textMuted}`}>Columnas detectadas: {cols.join(' · ')}</p>}
       </div>
 
-      {!hasData?(
+      {tab==='hist'?<DispersionHistorico t={t} isDark={isDark}/>:!hasData?(
         <div className={`p-12 rounded-xl border flex flex-col items-center justify-center text-center ${t.cardInner}`}>
           <Icons.Upload size={36} className="text-gray-400 mb-3"/>
           <p className={`text-sm font-bold ${t.textMain}`}>Carga tu CSV de extracción</p>
