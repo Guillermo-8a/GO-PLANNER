@@ -485,20 +485,17 @@ export default function ModuleDaily(){
       return {fecha:iso,dow:DOW_LBL[dow],ty:tyMap[iso],ly:lyv,crec:(lyv!=null&&lyv!==0)?((tyMap[iso]-lyv)/Math.abs(lyv))*100:null}; });
   },[tyData,allData,dimsOk,lyYear]);
 
-  // ── Métricas de tendencia (3 meses / acum / mes actual), LY topado a MTD ──
+  // ── Métricas de tendencia: se calculan sobre TODA la base (solo filtros de dimensión), no sobre el rango
+  //    de fechas, para que las 3 ventanas sean distintas. Corte = último día con venta; LY = mismas fechas un año antes.
   const trendStats=useMemo(()=>{
     if(!lastDateTY) return null;
-    const month=lastDateTY.getMonth(),diaActual=lastDateTY.getDate();
-    const sum=rows=>rows.reduce((s,r)=>s+r.ventaP,0);
-    // Mes actual MTD
-    const tyMes=sum(tyData.filter(r=>r.fecha&&r.fecha.getMonth()===month&&r.fecha.getFullYear()===tyYear));
-    const lyMes=sum(lyData.filter(r=>r.fecha&&r.fecha.getMonth()===month&&r.fecha.getFullYear()===lyYear&&r.fecha.getDate()<=diaActual));
-    // Últimos 3 meses (mes actual parcial + 2 previos completos)
-    const in3=(r,y)=>{ if(!r.fecha||r.fecha.getFullYear()!==y) return false; const m=r.fecha.getMonth();
-      if(m===month) return r.fecha.getDate()<=diaActual||y===tyYear; return m===month-1||m===month-2; };
-    const ty3=sum(tyData.filter(r=>in3(r,tyYear))), ly3=sum(lyData.filter(r=>in3(r,lyYear)));
-    return { acum:delta(kpiTY.ventaP,kpiLY.ventaP), mes:delta(tyMes,lyMes), tres:delta(ty3,ly3) };
-  },[tyData,lyData,lastDateTY,tyYear,lyYear,kpiTY,kpiLY]);
+    const ref=lastDateTY, y=ref.getFullYear(), m=ref.getMonth(), d=ref.getDate();
+    const sumR=(from,to)=>allData.reduce((s,r)=>r.fecha&&r.fecha>=from&&r.fecha<=to&&dimsOk(r)?s+r.ventaP:s,0);
+    const win=(from)=>{ const to=new Date(y,m,d,23,59,59);
+      const lyFrom=new Date(from); lyFrom.setFullYear(from.getFullYear()-1); const lyTo=new Date(y-1,m,d,23,59,59);
+      return delta(sumR(from,to),sumR(lyFrom,lyTo)); };
+    return { mes:win(new Date(y,m,1)), tres:win(new Date(y,m-2,1)), acum:win(new Date(y,0,1)) };
+  },[allData,dimsOk,lastDateTY]);
 
   // ── Heatmap: TODAS las semanas del rango ──
   const heatmap=useMemo(()=>{
@@ -957,8 +954,8 @@ export default function ModuleDaily(){
                 <h4 className={`text-sm font-bold ${t.textMain}`}>📈 Tendencia Diaria TY vs LY</h4>
                 {trendStats&&(
                   <div className="flex gap-2 flex-wrap">
-                    {[{l:'Últ. 3 meses',v:trendStats.tres},{l:'Mes actual',v:trendStats.mes},{l:'Acumulado',v:trendStats.acum}].map(({l,v})=>(
-                      <div key={l} className={`px-3 py-1.5 rounded-xl border ${t.cardInner}`}>
+                    {[{l:'Últ. 3 meses',v:trendStats.tres,tip:'Del día 1 de hace 2 meses al último día con venta, vs mismas fechas LY'},{l:'Mes actual',v:trendStats.mes,tip:'MTD: del día 1 del mes al último día con venta, vs mismas fechas LY'},{l:'Acumulado año',v:trendStats.acum,tip:'YTD: del 1 de enero al último día con venta, vs mismas fechas LY'}].map(({l,v,tip})=>(
+                      <div key={l} title={tip} className={`px-3 py-1.5 rounded-xl border ${t.cardInner}`}>
                         <span className={`text-[8px] font-black uppercase tracking-widest ${t.textMuted} block`}>{l}</span>
                         <span className={`text-sm font-black ${v==null?t.textMuted:v>=0?'text-violet-400':'text-rose-400'}`}>{v==null?'N/D':`${v>=0?'▲':'▼'} ${Math.abs(v).toFixed(1)}%`}</span>
                       </div>))}
