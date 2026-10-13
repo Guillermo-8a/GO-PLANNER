@@ -3,9 +3,8 @@
 // → bodegas regionales · fulfillment · foro fotográfico · ruta → tienda sin entrada → recibido.
 // Tres tipos de pedido con ruta propia: importación, nacional y directo a tienda.
 // Entrada: CSV con una fila por evento (OC, SKU, ETAPA, FECHA_EVENTO…) o fechas por etapa en columnas.
-import { useState, useEffect, useMemo, useRef } from 'react';
+import { createElement, useState, useEffect, useMemo, useRef } from 'react';
 import { Upload, Download, Trash2, Search, AlertTriangle, Truck, Package, Clock, CheckCircle2, ZoomIn, ZoomOut, RotateCcw, Play, Pause, Settings, X, Store, Wand2, Warehouse as WhIcon, Camera, ShoppingBag, Factory, Activity } from 'lucide-react';
-import ModuleHeader from '../components/ModuleHeader';
 import { lazy, Suspense } from 'react';
 import { siteOfKey } from './pedidos/layout';
 const Scene3D = lazy(() => import('./pedidos/Scene3D'));
@@ -49,7 +48,7 @@ const TIPOS = { IMP: { l: 'Importación', c: '#14B8A6' }, NAC: { l: 'Nacional', 
 // Centros que no son tienda: CRs (fulfillment) y CEDIS
 // Zonas de venta Suburbia: siempre visibles (aunque no tengan pedidos) para que el plano no se mueva
 const ZONAS_SBB = ['METRO CENTRO', 'METRO NORTE', 'METRO ORIENTE', 'METRO SUR', 'CENTRO NORTE', 'CENTRO SUR', 'BAJIO', 'OCCIDENTE', 'PACIFICO', 'NORTE', 'GOLFO', 'SUR'];
-const CENTROS = { '107S': 'CR ACAPULCO', '094S': 'CR LEON', '049S': 'CR MONTERREY', '147S': 'CR CULIACAN', '093S': 'CR VILLAHERMOSA', '155S': 'CR TAPACHULA', '185S': 'CR ZONA NORTE', '158S': 'CR LA PAZ', '108S': 'CR MORELIA', '151S': 'CR OAXACA', '171S': 'CR SALINA CRUZ', '119S': 'CR CANCUN', '148S': 'CR DURANGO', '032S': 'CR COATZACOALCOS', '880S': 'CEDIS SOFTLINE PLAN', '895S': 'PLAN SOFTLINE BODEGA', '0670': 'CEDIS TULTIPARK', '811S': 'PLAN BIG TICKET 2', '095S': 'CD NACIONAL BIG TICKET', '0681': 'SUBURBIA CEDIS MONTE' };
+const CENTROS = { '1007': 'FORO FOTOGRÁFICO', '107S': 'CR ACAPULCO', '094S': 'CR LEON', '049S': 'CR MONTERREY', '147S': 'CR CULIACAN', '093S': 'CR VILLAHERMOSA', '155S': 'CR TAPACHULA', '185S': 'CR ZONA NORTE', '158S': 'CR LA PAZ', '108S': 'CR MORELIA', '151S': 'CR OAXACA', '171S': 'CR SALINA CRUZ', '119S': 'CR CANCUN', '148S': 'CR DURANGO', '032S': 'CR COATZACOALCOS', '880S': 'CEDIS SOFTLINE PLAN', '895S': 'PLAN SOFTLINE BODEGA', '0670': 'CEDIS TULTIPARK', '811S': 'PLAN BIG TICKET 2', '095S': 'CD NACIONAL BIG TICKET', '0681': 'SUBURBIA CEDIS MONTE' };
 const DEF_UMBRAL = { PROVEEDOR: 0, TRANSITO_INT: 35, ADUANA: 7, ALMACEN: 15, CROSSDOCK: 3, BODEGA_REG: 20, FULFILLMENT: 30, FORO: 10, TRANSITO_TDA: 4, TIENDA: 2 };
 const BASE_ROUTE = { IMP: ['PROVEEDOR', 'TRANSITO_INT', 'ADUANA', 'CROSSDOCK', 'TRANSITO_TDA', 'TIENDA', 'RECIBIDO'], NAC: ['PROVEEDOR', 'CROSSDOCK', 'TRANSITO_TDA', 'TIENDA', 'RECIBIDO'], DIR: ['PROVEEDOR', 'TRANSITO_TDA', 'TIENDA', 'RECIBIDO'] };
 const FINALES = ['BODEGA_REG', 'FULFILLMENT', 'FORO'];
@@ -153,7 +152,7 @@ function parseEventos(text) {
     rows.slice(1).forEach((r) => {
       const oc = v(r, 'OC'); if (!oc) return;
       const cOc = v(r, 'CENTRO OC'), tienda = v(r, 'TIENDA') || cOc;
-      const origen = /IMP/.test(v(r, 'TIPO')) ? 'IMP' : /^\d{4}$/.test(cOc) ? 'DIR' : 'NAC';
+      const origen = /IMP/.test(v(r, 'TIPO')) ? 'IMP' : /^\d{4}$/.test(cOc) && !CENTROS[cOc] ? 'DIR' : 'NAC'; // un CEDIS (0670, 0681) no es tienda
       const asig = numv(v(r, 'PZS ASIG'));
       const comp = v(r, 'COMPROMISO');
       const base = {
@@ -166,7 +165,8 @@ function parseEventos(text) {
       if (v(r, 'CLASE DOC') === 'INV') {
         const es = v(r, 'ESTATUS');
         // 880S = cross dock de PLAN; 895S y demás CEDIS = bodega (almacén); CR = fulfillment
-        const etapa = es === 'EMBARCADA' ? 'TRANSITO_INT' : v(r, 'TIPO DESTINO') === 'CR' ? 'FULFILLMENT' : cOc === '880S' ? 'CROSSDOCK' : 'ALMACEN';
+        const etapa = es === 'EMBARCADA' ? 'TRANSITO_INT' : v(r, 'TIPO DESTINO') === 'CR' ? 'FULFILLMENT' : cOc === '1007' ? 'FORO' : cOc === '880S' ? 'CROSSDOCK' : 'ALMACEN';
+        base.inv = true; // inventario, no OC: no cuenta para atorados, lead ni a tiempo
         add(etapa, 'DT CEDIS', 0, es === 'EMBARCADA' ? cOc : `${CENTROS[cOc] || cOc} · ${es === 'INV ASIGNADO' ? 'con traslado' : 'sin traslado'}`);
         return;
       }
@@ -181,7 +181,7 @@ function parseEventos(text) {
       add('TRANSITO_TDA', 'DT SALIDA', numv(v(r, 'PZS SALIDA')), `${cOc} → T${tienda}`);
       // Destino: CR (fulfillment) → Fulfillment; CEDIS o TIPO_DESTINO BODEGA → bodega; lo demás es tienda
       const td = v(r, 'TIPO DESTINO'), cen = CENTROS[tienda] || CENTROS[ctr(tienda)];
-      add(td === 'CR' || cen?.startsWith('CR ') ? 'FULFILLMENT' : td === 'BODEGA' || cen ? 'BODEGA_REG' : 'RECIBIDO', 'DT TIENDA', numv(v(r, 'PZS TIENDA')), cen || `T${tienda}`);
+      add(cen === CENTROS['1007'] ? 'FORO' : td === 'CR' || cen?.startsWith('CR ') ? 'FULFILLMENT' : td === 'BODEGA' || cen ? 'BODEGA_REG' : 'RECIBIDO', 'DT TIENDA', numv(v(r, 'PZS TIENDA')), cen || `T${tienda}`);
     });
     return { ev, aviso: ev.length ? '' : 'No encontré eventos con fecha válida.' };
   }
@@ -304,7 +304,9 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
   const [sel, setSel] = useState(null); // { key, stages:[...], titulo, zona?, ciudad? }
   const [selUnit, setSelUnit] = useState(null);
   const [selTienda, setSelTienda] = useState('');
-  const [showCfg, setShowCfg] = useState(false);
+  const [showCfg, setShowCfg] = useState(false); const [showFil, setShowFil] = useState(false); const hdrRef = useRef(null);
+  // cerrar el menú de filtros al hacer clic fuera del header
+  useEffect(() => { if (!showFil) return; const f = (e) => { if (!hdrRef.current?.contains(e.target)) setShowFil(false); }; document.addEventListener('mousedown', f); return () => document.removeEventListener('mousedown', f); }, [showFil]);
   const [play, setPlay] = useState(() => !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches));
   const [zoomCmd, setZoomCmd] = useState({ n: 0, f: 1 });
   const [feedTab, setFeedTab] = useState('mov');
@@ -343,7 +345,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
   const zonaTraslados = useMemo(() => { try { const d = JSON.parse(localStorage.getItem('gop_traslados_exc') || 'null'); const m = {}; (d?.rawData || []).forEach((r) => { if (r.centro && r.zona) m[ctr(r.centro)] = norm(r.zona); }); return m; } catch { return {}; } }, []);
   const allUnits = useMemo(() => {
     const us = buildUnits(ev, cfg.umbral, hoy);
-    us.forEach((u) => { if (!u.zona && u.centro) u.zona = zonaTraslados[u.centro] || ''; if (u.valor && u.eventos[0]?.mon === 'USD') { u.valorUSD = u.valor; u.tc = tcDe(u.inicio) || cfg.tc || 18.5; u.valor *= u.tc; } });
+    us.forEach((u) => { if (u.eventos[0]?.inv) Object.assign(u, { inv: true, atorado: false, lead: null, aTiempo: null, vencido: false }); if (!u.zona && u.centro) u.zona = zonaTraslados[u.centro] || ''; if (u.valor && u.eventos[0]?.mon === 'USD') { u.valorUSD = u.valor; u.tc = tcDe(u.inicio) || cfg.tc || 18.5; u.valor *= u.tc; } });
     // Sin zona: se agrupan por número de tienda en hasta 6 bloques para que el mapa no quede en un solo edificio
     const sinZ = [...new Set(us.filter((u) => !u.zona && u.centro).map((u) => u.centro))].sort();
     if (sinZ.length && !us.some((u) => u.zona)) { const k = Math.min(6, Math.ceil(sinZ.length / 8)), tam = Math.ceil(sinZ.length / k), blk = {}; sinZ.forEach((c, i) => { const b = Math.floor(i / tam); blk[c] = `T${sinZ[b * tam]}–${sinZ[Math.min(sinZ.length - 1, b * tam + tam - 1)]}`; }); us.forEach((u) => { if (!u.zona && u.centro) u.zona = blk[u.centro]; }); }
@@ -488,8 +490,10 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
   // Frescura de la base: último registro que trae vs hoy
   const baseAl = useMemo(() => ev.reduce((m, e) => (e.fecha && new Date(e.fecha) > m ? new Date(e.fecha) : m), null), [ev]);
   const baseDias = baseAl ? Math.round((new Date(hoy).setHours(0, 0, 0, 0) - new Date(baseAl).setHours(0, 0, 0, 0)) / DAY) : null;
+  const nFil = [q, fSec, fProv, fMarca, fZona, fMes, fTipo, fSolo].filter(Boolean).length;
   const headerRight = (
     <>
+      {ev.length > 0 && <button onClick={() => setShowFil((v) => !v)} className={`px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 border ${showFil ? pill(true) : t.cardInner}`}><Search size={14} /> Filtros{nFil ? <span className="ml-0.5 px-1.5 rounded-full bg-rose-500 text-white text-[10px]">{nFil}</span> : ''}</button>}
       {baseAl && <span title="Fecha del registro más reciente de la base. Si tiene más de un día, los días en etapa y los atorados salen inflados." className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border flex items-center gap-1 ${baseDias > 1 ? 'bg-amber-500/15 border-amber-500/50 text-amber-500' : t.cardInner}`}><Clock size={12} /> Base al {fdate(baseAl)} · {baseDias <= 0 ? 'hoy' : baseDias === 1 ? 'ayer' : `hace ${baseDias} días`}</span>}
       <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden" onChange={onFile} />
       <button onClick={() => fileRef.current?.click()} className={`px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 ${isDark ? 'bg-violet-600 text-white hover:bg-violet-500' : 'bg-blue-600 text-white hover:bg-blue-500'}`}><Upload size={14} /> Cargar CSV</button>
@@ -501,30 +505,16 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
 
   return (
     <div className="p-4 md:p-8">
-      <ModuleHeader Icon={navIcon} label={navLabel} desc={navDesc} t={t} isDark={isDark} right={headerRight} />
-      {aviso && <div className="mb-4 px-4 py-2 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-500 text-xs">{aviso}</div>}
-
-      {!ev.length ? (
-        <div className={`rounded-2xl border p-10 text-center ${t.card}`}>
-          <Truck size={40} className={`mx-auto mb-3 ${t.textMuted}`} />
-          <p className={`font-bold ${t.text}`}>Carga el CSV de eventos de tus pedidos o usa los datos de prueba</p>
-          <p className={`text-xs mt-2 ${t.textMuted}`}>Una fila por evento: OC, SKU, PROVEEDOR, TIPO_PEDIDO (IMP / NAC / DIRECTO), PIEZAS, ETAPA, UBICACION, CENTRO, ZONA, FECHA_EVENTO, FECHA_COMPROMISO. También acepta fechas por etapa en columnas (FECHA_ADUANA, FECHA_PLAN, FECHA_TIENDA…).</p>
+      {/* Header (mismo formato que Eventos) con filtros en menú flotante */}
+      <div ref={hdrRef} className={`relative z-30 p-5 rounded-2xl border flex items-center justify-between flex-wrap gap-4 mb-4 ${t.card}`}>
+        <div className="flex items-center gap-3">
+          <span className={`p-2 rounded-xl ${isDark ? 'bg-violet-500/20 text-violet-400' : 'bg-violet-50 text-violet-600'}`}>{navIcon ? createElement(navIcon, { size: 22 }) : <Truck size={22} />}</span>
+          <div><h1 className={`text-2xl font-black tracking-tight leading-none ${t.text}`}>{navLabel || 'Pedidos'}</h1><p className={`text-xs mt-1 ${t.textMuted}`}>{navDesc || 'Rastreador de OCs: dónde está la mercancía'}</p></div>
         </div>
-      ) : (<>
-        {/* Buckets de inventario */}
-        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-2 mb-3">
-          {BUCKETS.map((b) => { const c = cnt(`B:${b.k}`); const on = selKey === BUCKET_SEL[b.k].key; return (
-            <button key={b.k} onClick={() => abrir(on ? null : BUCKET_SEL[b.k])} className={`text-left rounded-2xl border p-3 transition ${t.card} ${on ? 'ring-2 ring-violet-500' : ''}`}>
-              <div className="flex items-center gap-2"><span className="p-1.5 rounded-lg" style={{ background: `${b.c}22`, color: b.c }}><b.I size={14} /></span><span className={`text-[10px] font-black uppercase tracking-wider ${t.textMuted}`}>{b.l}</span></div>
-              <div className={`text-xl font-black mt-1 ${t.text}`}>{fmt(c.pzs)} <span className={`text-[10px] font-bold ${t.textMuted}`}>pzs</span></div>
-              <div className={`text-[10px] ${t.textMuted}`}>{c.ocs || 0} OCs · {fmt(c.n)} líneas{c.ator ? <span className="text-rose-500 font-bold"> · {c.ator} atorados</span> : ''}</div>
-              <div className="h-1 rounded-full mt-1.5" style={{ background: isDark ? '#ffffff14' : '#eef1f6' }}><div className="h-1 rounded-full" style={{ width: `${(c.pzs / totPipe) * 100}%`, background: b.c }} /></div>
-            </button>
-          ); })}
-        </div>
+        <div className="flex items-center gap-2 flex-wrap">{headerRight}</div>
+        {showFil && ev.length > 0 && (<>
+          <div className={`absolute right-5 top-full mt-2 z-40 w-[min(860px,calc(100vw-48px))] rounded-2xl border shadow-2xl p-3 flex flex-wrap items-center gap-2 backdrop-blur-md ${isDark ? 'bg-[#1a1520]/90 border-white/10' : 'bg-white/90 border-gray-200'}`}>
 
-        {/* Filtros */}
-        <div className={`rounded-2xl border p-3 mb-3 flex flex-wrap items-center gap-2 ${t.card}`}>
           <div className="relative"><Search size={13} className={`absolute left-2 top-2 ${t.textMuted}`} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="OC, SKU, centro, contenedor…" className={`${inCls} pl-7 w-56`} /></div>
           {[['Sección', fSec, setFSec, opts.seccion], ['Proveedor', fProv, setFProv, opts.prov], ['Marca', fMarca, setFMarca, opts.marca], ['Zona', fZona, setFZona, opts.zona]].map(([l, v, s, o]) => (
             <select key={l} value={v} onChange={(e) => s(e.target.value)} className={inCls} style={selStyle}><option value="">{l}: todas</option>{o.map((x) => <option key={x} value={x}>{x}</option>)}</select>
@@ -553,6 +543,29 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
               </label>
             </div>
           )}
+            {nFil > 0 && <button onClick={() => { setQ(''); setFSec(''); setFProv(''); setFMarca(''); setFZona(''); setFMes(''); setFTipo(''); setFSolo(''); }} className="text-[11px] font-bold text-rose-500 underline">Limpiar filtros</button>}
+          </div>
+        </>)}
+      </div>
+      {aviso && <div className="mb-4 px-4 py-2 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-500 text-xs">{aviso}</div>}
+
+      {!ev.length ? (
+        <div className={`rounded-2xl border p-10 text-center ${t.card}`}>
+          <Truck size={40} className={`mx-auto mb-3 ${t.textMuted}`} />
+          <p className={`font-bold ${t.text}`}>Carga el CSV de eventos de tus pedidos o usa los datos de prueba</p>
+          <p className={`text-xs mt-2 ${t.textMuted}`}>Una fila por evento: OC, SKU, PROVEEDOR, TIPO_PEDIDO (IMP / NAC / DIRECTO), PIEZAS, ETAPA, UBICACION, CENTRO, ZONA, FECHA_EVENTO, FECHA_COMPROMISO. También acepta fechas por etapa en columnas (FECHA_ADUANA, FECHA_PLAN, FECHA_TIENDA…).</p>
+        </div>
+      ) : (<>
+        {/* Buckets de inventario */}
+        <div className="grid grid-cols-2 md:grid-cols-4 xl:grid-cols-7 gap-2 mb-3">
+          {BUCKETS.map((b) => { const c = cnt(`B:${b.k}`); const on = selKey === BUCKET_SEL[b.k].key; return (
+            <button key={b.k} onClick={() => abrir(on ? null : BUCKET_SEL[b.k])} className={`text-left rounded-2xl border p-3 transition ${t.card} ${on ? 'ring-2 ring-violet-500' : ''}`}>
+              <div className="flex items-center gap-2"><span className="p-1.5 rounded-lg" style={{ background: `${b.c}22`, color: b.c }}><b.I size={14} /></span><span className={`text-[10px] font-black uppercase tracking-wider ${t.textMuted}`}>{b.l}</span></div>
+              <div className={`text-xl font-black mt-1 ${t.text}`}>{fmt(c.pzs)} <span className={`text-[10px] font-bold ${t.textMuted}`}>pzs</span></div>
+              <div className={`text-[10px] ${t.textMuted}`}>{c.ocs || 0} OCs · {fmt(c.n)} líneas{c.ator ? <span className="text-rose-500 font-bold"> · {c.ator} atorados</span> : ''}</div>
+              <div className="h-1 rounded-full mt-1.5" style={{ background: isDark ? '#ffffff14' : '#eef1f6' }}><div className="h-1 rounded-full" style={{ width: `${(c.pzs / totPipe) * 100}%`, background: b.c }} /></div>
+            </button>
+          ); })}
         </div>
 
         {/* Escena */}
@@ -563,7 +576,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
           <div className={`absolute bottom-3 right-3 text-[10px] pointer-events-none ${t.textMuted} ${sel || unit ? 'hidden' : ''}`}>Arrastra para mover · rueda para zoom · clic derecho para girar</div>
 
           {/* KPIs flotantes */}
-          <div data-hud className={`absolute top-3 left-3 flex flex-wrap gap-2 ${sel ? 'max-w-[calc(100%-470px)]' : 'max-w-[calc(100%-80px)]'}`}>
+          <div data-hud className="absolute top-3 left-3 right-16 z-10 flex gap-2 overflow-hidden">
             {(() => {
               const ot = kpi.onTime != null ? kpi.onTime * 100 : null;
               const otC = ot == null ? '#94A3B8' : ot >= SEMAFORO.aTiempo.ok ? '#22C55E' : ot >= SEMAFORO.aTiempo.riesgo ? '#F59E0B' : '#E5484D';
@@ -577,14 +590,14 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
                 { l: 'A tiempo', v: ot != null ? `${ot.toFixed(0)}%` : '—', s: `${kpi.vencidos} vencidos hoy`, I: ot != null && ot < SEMAFORO.aTiempo.riesgo ? AlertTriangle : CheckCircle2, f: 'vencido', c: otC, color: otC },
               ];
             })().map(({ l, v, s, I, bad, f, c, color, onClick }) => (
-              <button key={l} onClick={() => (onClick ? onClick() : f && setFSolo(fSolo === f ? '' : f))} className={`text-left ${sel ? 'px-2 py-1.5' : 'px-3 py-2'} rounded-xl border shadow-md flex items-center gap-2.5 ${glass} ${f && fSolo === f ? 'ring-2 ring-violet-500' : ''}`}>
+              <button key={l} onClick={() => (onClick ? onClick() : f && setFSolo(fSolo === f ? '' : f))} className={`shrink-0 text-left px-3 py-2 rounded-xl border shadow-md flex items-center gap-2.5 ${glass} ${f && fSolo === f ? 'ring-2 ring-violet-500' : ''}`}>
                 <span className="p-2 rounded-lg" style={{ background: `${c}1f`, color: c }}><I size={16} /></span>
                 <span><span className={`block text-[9px] font-black uppercase tracking-wider ${t.textMuted}`}>{l}</span><span className={`block text-lg font-black leading-tight ${bad ? 'text-rose-500' : t.text}`} style={color ? { color } : undefined}>{v}</span><span className={`block text-[10px] ${t.textMuted}`}>{s}</span></span>
               </button>
             ))}
           </div>
           {/* Leyenda de rutas */}
-          <div data-hud className={`absolute left-3 ${sel ? 'top-[150px]' : 'top-[100px]'} rounded-xl border px-3 py-2 shadow-md ${glass}`}>
+          <div data-hud className={`absolute left-3 top-[100px] rounded-xl border px-3 py-2 shadow-md ${glass}`}>
             <div className={`text-[9px] font-black uppercase tracking-wider mb-1 ${t.textMuted}`}>Rutas</div>
             {Object.entries(TIPOS).map(([k, v]) => <button key={k} onMouseEnter={() => setHoverTipo(k)} onMouseLeave={() => setHoverTipo('')} onClick={() => setFTipo(fTipo === k ? '' : k)} className={`flex items-center gap-2 text-[11px] font-bold py-0.5 ${fTipo && fTipo !== k ? 'opacity-40' : ''} ${t.text}`}><span className="w-5 h-1 rounded-full" style={{ background: v.c }} />{v.l} <span className={`font-semibold ${t.textMuted}`}>{(() => { const us = units.filter((u) => u.tipo === k && u.etapa !== 'RECIBIDO'); return `${new Set(us.map((u) => u.oc)).size} OCs · ${fmt(us.length)} líneas · ${fk(us.reduce((a, u) => a + u.pzs - u.pzsRec, 0))} pzs`; })()}</span></button>)}
             <div className={`flex items-center gap-2 text-[11px] font-bold py-0.5 ${t.text}`}><span className="w-5 h-1 rounded-full bg-violet-500" />PLAN → tiendas</div>
@@ -599,7 +612,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
 
           {/* Panel del nodo */}
           {sel && (
-            <div data-hud className={`absolute top-3 right-3 bottom-3 w-[380px] max-w-[calc(100%-24px)] rounded-2xl border shadow-xl flex flex-col ${glass}`}>
+            <div data-hud className={`absolute top-3 right-3 bottom-3 z-20 w-[380px] max-w-[calc(100%-24px)] rounded-2xl border shadow-xl flex flex-col ${glass}`}>
               <div className="p-4 pb-2 flex items-start justify-between">
                 <div>
                   <div className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted}`}>{sel.zona ? 'Zona de tiendas' : sel.ciudad ? 'Bodega regional' : 'Ubicación'}</div>

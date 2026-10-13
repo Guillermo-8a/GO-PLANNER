@@ -162,7 +162,7 @@ function factory(P, n = N.PROV, roofC) {
     const sh = new THREE.Shape(); sh.moveTo(0, 0); sh.lineTo(sw, 0); sh.lineTo(sw, 0.6); sh.closePath();
     const st = mesh(memo(`saw:${sw}:${n.d}`, () => new THREE.ExtrudeGeometry(sh, { depth: n.d, bevelEnabled: false })), mat(roofC || (P === PALETTE.dark ? '#7A6FA8' : '#8FA2C0'), { flatShading: true }));
     st.position.copy(W(x0, n.y, n.h)); g.add(st);
-    g.add(boxAt(x0 + sw - 0.03, n.y + 0.05, n.h + 0.04, 0.03, n.d - 0.1, 0.5, mat(P.glass, { emissive: P.glass, emissiveIntensity: P === PALETTE.dark ? 0.5 : 0.05, roughness: 0.1 }), 0.005));
+    g.add(boxAt(x0 + sw + 0.004, n.y + 0.05, n.h + 0.04, 0.03, n.d - 0.1, 0.5, mat(P.glass, { emissive: P.glass, emissiveIntensity: P === PALETTE.dark ? 0.5 : 0.05, roughness: 0.1 }), 0.005));
   }
   const ch = mesh(memo(`chim:${n.h}`, () => new THREE.CylinderGeometry(0.22, 0.28, n.h + 1.8, 16)), mat('#9AA4B6')); ch.position.copy(W(n.x + 0.55, n.y + 0.5, (n.h + 1.8) / 2)); g.add(ch);
   const band = mesh(memo('chimb', () => new THREE.CylinderGeometry(0.235, 0.235, 0.18, 16)), mat('#E5484D')); band.position.copy(W(n.x + 0.55, n.y + 0.5, n.h + 1.55)); g.add(band);
@@ -329,12 +329,21 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
         G.add(sb); addAnim((t) => { const a = t * 0.12 + ph; sb.position.copy(W(x + Math.cos(a) * 1.6, y + Math.sin(a) * 1.1, 0.16 + Math.sin(t * 1.4 + ph) * 0.04)); sb.rotation.y = -a - Math.PI / 2; });
       });
       [[-6, 8.6], [-4.6, 15.5], [-14, 10.5]].forEach(([x, y], i) => { const b = mesh(memo('buoy', () => new THREE.CylinderGeometry(0.1, 0.14, 0.3, 10)), mat(i % 2 ? '#F2B705' : '#E5484D', { emissive: i % 2 ? '#F2B705' : '#E5484D', emissiveIntensity: isDark ? 0.8 : 0 })); G.add(b); addAnim((t) => { b.position.copy(W(x, y, 0.25 + Math.sin(t * 2 + i) * 0.05)); }); });
-      // espectacular GO PLANNER
-      const bill = new THREE.Group(); [-2.6, 2.6].forEach((px) => { const p = mesh(memo('billP', () => new THREE.BoxGeometry(0.14, 1.6, 0.14)), mat('#4B5563', { metalness: 0.5 })); p.position.set(px, 0.8, 0); bill.add(p); });
-      // solo el logo (PNG transparente 2:1); al cargar se vuelve a dibujar la escena
-      const logo = memo('billLogo', () => new THREE.TextureLoader().load('/logov.png', (tx) => { tx.colorSpace = THREE.SRGBColorSpace; S.dirty = true; }));
-      const bb = new THREE.Mesh(memo('billG', () => new THREE.PlaneGeometry(5, 2.5)), new THREE.MeshStandardMaterial({ map: logo, transparent: true, alphaTest: 0.05, side: THREE.DoubleSide, roughness: 0.5, emissive: '#ffffff', emissiveMap: logo, emissiveIntensity: isDark ? 0.35 : 0 })); bb.position.y = 2.6; bill.add(bb);
-      bill.position.copy(W(12.5, 16, 0.05)); bill.rotation.y = Math.PI / 4; bill.scale.setScalar(1.5); G.add(bill);
+      // Letrero GO PLANNER: logo en relieve (capas apiladas que dan grosor y sombra) sobre base con luz
+      const logo = memo('billLogo', () => new THREE.TextureLoader().load('/logov.png', (tx) => { tx.colorSpace = THREE.SRGBColorSpace; tx.anisotropy = 8; S.dirty = true; }));
+      const sign = new THREE.Group();
+      const plinth = mesh(rbox(6.8, 0.55, 1.0, 0.12), mat(isDark ? '#2A2338' : '#ECE8F4', { roughness: 0.7 })); plinth.position.y = 0.275; sign.add(plinth);
+      const strip = mesh(memo('strip', () => new THREE.BoxGeometry(6.2, 0.04, 0.02)), mat('#E0BB3E', { emissive: '#E0BB3E', emissiveIntensity: isDark ? 0.9 : 0.1, roughness: 0.4 }), false); strip.position.set(0, 0.48, 0.505); sign.add(strip);
+      const plate = new THREE.Mesh(memo('plinthTxt', () => new THREE.PlaneGeometry(2.6, 0.38)), new THREE.MeshBasicMaterial({ map: signTex('GO PLANNER', isDark ? '#3A2F55' : '#FFFFFF', '#F2B705'), transparent: true })); plate.position.set(0, 0.27, 0.505); sign.add(plate);
+      const lg = memo('logoG', () => new THREE.PlaneGeometry(6, 3)), NL = 14;
+      for (let i = 0; i < NL; i++) {
+        const front = i === NL - 1;
+        const m = new THREE.MeshStandardMaterial({ map: logo, alphaTest: 0.5, side: THREE.DoubleSide, color: front ? '#ffffff' : isDark ? '#4A3A78' : '#7A68B8', roughness: front ? 0.3 : 0.55, metalness: front ? 0.15 : 0.25, ...(front && isDark ? { emissive: '#ffffff', emissiveMap: logo, emissiveIntensity: 0.5 } : {}) });
+        const p = new THREE.Mesh(lg, m); p.position.set(0, 2.12, -0.11 + i * 0.016); p.castShadow = true; p.receiveShadow = !front; sign.add(p);
+      }
+      [-2, 2].forEach((lx) => { const lamp = mesh(rbox(0.3, 0.16, 0.22, 0.04), mat('#2A2733'), false); lamp.position.set(lx, 0.08, 1.35); lamp.rotation.x = -0.5; sign.add(lamp); const lens = mesh(memo('lens', () => new THREE.CircleGeometry(0.08, 14)), mat('#FFF3C4', { emissive: '#FFE08A', emissiveIntensity: isDark ? 3 : 0.3 }), false); lens.position.set(lx, 0.14, 1.25); lens.rotation.x = -1.07; sign.add(lens); });
+      if (isDark) { const sp = new THREE.SpotLight('#FFE6B0', 30, 9, 0.75, 0.7, 1.4); sp.position.set(0, 0.3, 1.6); sp.target.position.set(0, 2.1, 0); sign.add(sp, sp.target); }
+      sign.position.copy(W(12.5, 16, 0.05)); sign.rotation.y = Math.PI / 4; sign.scale.setScalar(1.3); G.add(sign);
     }
     const quay = boxAt(-3.4, 6.2, -0.4, 8.6, 0.3, 0.47, mat(isDark ? '#3A3350' : '#B9C3D3'), 0.04); G.add(quay);
     // caminos + líneas
