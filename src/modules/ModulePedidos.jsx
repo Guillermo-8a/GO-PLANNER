@@ -6,7 +6,9 @@
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { Upload, Download, Trash2, Search, AlertTriangle, Truck, Package, Clock, CheckCircle2, ZoomIn, ZoomOut, RotateCcw, Play, Pause, Settings, X, Store, Wand2, Warehouse as WhIcon, Camera, ShoppingBag, Factory, Activity } from 'lucide-react';
 import ModuleHeader from '../components/ModuleHeader';
-import { P, pts, quad, Box, faceL, faceR, Warehouse, TruckSprite, Ship, Tree, Pallet, Forklift, MapPin } from './pedidos/iso';
+import { lazy, Suspense } from 'react';
+import { SITES, siteOfKey } from './pedidos/layout';
+const Scene3D = lazy(() => import('./pedidos/Scene3D'));
 
 const LS_KEY = 'gop_pedidos';
 const LS_CFG = 'gop_pedidos_cfg';
@@ -237,36 +239,7 @@ function buildUnits(ev, umbral, hoy) {
 }
 const bucketOf = (u) => STAGES[SIDX[u.etapa]].b;
 
-// ─── Escena: posiciones de mundo ──────────────────────────────────────────────
-const N = {
-  PROV: { x: -1, y: -9.2, w: 3.4, d: 2.6, h: 1.4 },
-  ADUANA: { x: -0.6, y: 1.8, w: 2.8, d: 2.1, h: 1.2 },
-  ALM: { x: 8.2, y: -2.8, w: 4.8, d: 4, h: 2.1 },
-  XD: { x: 13.8, y: -2.4, w: 3.4, d: 3.6, h: 1.35 },
-  FORO: { x: 8.4, y: -8.6, w: 2.4, d: 2, h: 1.25 },
-  FUL: { x: 12.6, y: -8.8, w: 3.6, d: 2.3, h: 1.45 },
-};
-const XV1 = 6, XV2 = 20.5, XDIR = 27.2, YTOP = -12, YFAC = -5.6, YLOW = 4.9;
-// Vistas de cámara (centro en mundo + zoom): "Red completa" o acercamiento a un sitio
-const SITES = {
-  RED: { l: 'Red completa', z: 1.3 },
-  PROV: { l: 'Proveedores', x: 0.5, y: -8, z: 2.7 },
-  PUERTO: { l: 'Puerto · Aduana', x: -1, y: 5, z: 2.3 },
-  PLAN: { l: 'PLAN · Almacén y cross dock', x: 12.8, y: 0.2, z: 2.3 },
-  NORTE: { l: 'Foro y fulfillment', x: 12.5, y: -8, z: 2.6 },
-  BOD: { l: 'Bodegas regionales', x: 23.5, y: -11, z: 2.3 },
-  TDAS: { l: 'Zonas de tiendas', x: 24.5, y: 8, z: 1.9 },
-};
-const siteOfKey = (k = '') => (k === 'PROV' ? 'PROV' : k === 'ADU' || k === 'MAR' ? 'PUERTO' : k === 'ALM' || k === 'XD' ? 'PLAN' : k === 'FORO' || k === 'FUL' ? 'NORTE' : k.startsWith('CIU|') ? 'BOD' : k.startsWith('Z|') ? 'TDAS' : null);
-const boundsFor = (yBot) => {
-  const c = [P(-16, -17), P(-16, yBot + 2), P(30, -17), P(30, yBot + 2), P(30, -17, 4), P(-16, -17, 4)];
-  return { minX: Math.min(...c.map((q) => q[0])) + 40, maxX: Math.max(...c.map((q) => q[0])) - 40, minY: Math.min(...c.map((q) => q[1])) + 60, maxY: Math.max(...c.map((q) => q[1])) - 40 };
-};
-
 export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc }) {
-  const C = isDark
-    ? { ground: '#17131F', plate: '#211B2C', grass: '#1F2B25', grass2: '#22332A', road: '#38314A', line: '#7D7594', pad: '#2A2337', padLine: '#E0BB3E', water: '#16324A', water2: '#1D4060', roof: '#6D4FD8', roof2: '#3B82F6', text: '#EDEBF2', sub: '#A9A2B8', card: '#241E2F', cardB: '#3B3350', tree: '#3E8E5A' }
-    : { ground: '#E9EEF7', plate: '#F3F6FB', grass: '#DDEBD8', grass2: '#D2E5CC', road: '#CFD8E6', line: '#FFFFFF', pad: '#E4E9F1', padLine: '#F2B705', water: '#BFDDF6', water2: '#A8D0F2', roof: '#2F6BE8', roof2: '#3B82F6', text: '#1E2A44', sub: '#5B6680', card: '#FFFFFF', cardB: '#D5DDEB', tree: '#5DBB7A' };
   const [ev, setEv] = useState(() => { try { const s = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); return s ? s.map((e) => ({ ...e, fecha: new Date(e.fecha), fechaOc: e.fechaOc ? new Date(e.fechaOc) : null, fechaComp: e.fechaComp ? new Date(e.fechaComp) : null })) : []; } catch { return []; } });
   const [cfg, setCfg] = useState(() => { try { const c = JSON.parse(localStorage.getItem(LS_CFG) || '{}'); return { ...c, umbral: { ...DEF_UMBRAL, ...(c.umbral || {}) } }; } catch { return { umbral: DEF_UMBRAL }; } });
   const [aviso, setAviso] = useState('');
@@ -276,26 +249,16 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
   const [selUnit, setSelUnit] = useState(null);
   const [selTienda, setSelTienda] = useState('');
   const [showCfg, setShowCfg] = useState(false);
-  const [zoom, setZoom] = useState(1.3); const [pan, setPan] = useState([0, 0]);
   const [play, setPlay] = useState(true);
-  const [tick, setTick] = useState(0);
+  const [zoomCmd, setZoomCmd] = useState({ n: 0, f: 1 });
   const [feedTab, setFeedTab] = useState('mov');
   const [feedOpen, setFeedOpen] = useState(false);
   const [site, setSite] = useState('RED');
-  const camAnim = useRef(null);
-  const fileRef = useRef(null); const drag = useRef(null);
+  const fileRef = useRef(null);
   const hoy = useMemo(() => new Date(), [ev]);
 
   useEffect(() => { try { localStorage.setItem(LS_KEY, JSON.stringify(ev)); } catch { /* base grande */ } }, [ev]);
   useEffect(() => { try { localStorage.setItem(LS_CFG, JSON.stringify(cfg)); } catch { /* sin espacio */ } }, [cfg]);
-  useEffect(() => {
-    if (!play) return undefined;
-    let raf, last = 0;
-    const loop = (ts) => { if (ts - last > 33) { setTick(ts / 1000); last = ts; } raf = requestAnimationFrame(loop); };
-    raf = requestAnimationFrame(loop);
-    return () => cancelAnimationFrame(raf);
-  }, [play]);
-
   const onFile = (e) => {
     const f = e.target.files?.[0]; if (!f) return;
     const rd = new FileReader();
@@ -386,20 +349,21 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
     return Object.values(m).sort((a, b) => a.c.localeCompare(b.c));
   }, [allUnits, sel, zonas]);
 
-  // Cámara: anima zoom/pan hacia la vista del sitio (como cambiar de bodega en un mapa)
-  const camTo = (k, conPanel = !!sel) => {
-    const st = SITES[k] || SITES.RED; setSite(k);
-    const yBot = -1.2 + (Math.max(1, zonas.length) - 1) * 4 + 3;
-    const b = boundsFor(yBot); const c0 = [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2];
-    // con el panel lateral abierto, el sitio se recorre a la izquierda para que no quede debajo del panel
-    const off = conPanel && st.x != null ? ((b.maxX - b.minX) / st.z) * 0.14 : 0;
-    const tgt = st.x == null ? [0, 0] : (() => { const sp = P(st.x, st.y, 1); return [c0[0] - sp[0] - off, c0[1] - sp[1]]; })();
-    const z0 = zoom, p0 = pan, t0 = performance.now();
-    cancelAnimationFrame(camAnim.current);
-    const step = (now) => { const f = Math.min(1, (now - t0) / 650), e = 1 - Math.pow(1 - f, 3); setZoom(z0 + (st.z - z0) * e); setPan([p0[0] + (tgt[0] - p0[0]) * e, p0[1] + (tgt[1] - p0[1]) * e]); if (f < 1) camAnim.current = requestAnimationFrame(step); };
-    camAnim.current = requestAnimationFrame(step);
+  const camTo = (k) => setSite(k);
+  const abrir = (s) => { setSel(s); setSelUnit(null); setSelTienda(''); const k = siteOfKey(s?.key); if (k) setSite(k); };
+  // Clic en la escena 3D → selección
+  const onPick = (k) => {
+    if (k === 'PROV') return abrir({ key: k, stages: ['PROVEEDOR'], titulo: 'Proveedores · On order' });
+    if (k === 'ADU') return abrir({ key: k, stages: ['ADUANA'], titulo: 'Aduana · Puerto' });
+    if (k === 'MAR') return abrir({ key: k, stages: ['TRANSITO_INT'], titulo: 'Tránsito internacional' });
+    if (k === 'ALM') return abrir({ key: k, stages: ['ALMACEN'], titulo: 'PLAN · Almacén' });
+    if (k === 'XD') return abrir(BUCKET_SEL.INP);
+    if (k === 'FORO') return abrir(BUCKET_SEL.FORO);
+    if (k === 'FUL') return abrir(BUCKET_SEL.FUL);
+    if (k.startsWith('CIU|')) { const c = k.slice(4); return abrir({ key: k, stages: ['BODEGA_REG'], ciudad: c, titulo: c === 'REGIONAL' ? 'Bodegas regionales' : `Bodega ${c}` }); }
+    if (k.startsWith('Z|') || k.startsWith('ZR|')) { const z = k.split('|')[1]; return abrir({ key: `Z|${z}`, stages: [k.startsWith('ZR|') ? 'TRANSITO_TDA' : 'TIENDA'], zona: z, titulo: z === 'TIENDAS' ? 'Tiendas' : `Zona ${z}` }); }
+    return null;
   };
-  const abrir = (s) => { setSel(s); setSelUnit(null); setSelTienda(''); const k = siteOfKey(s?.key); if (k && (k !== site || !sel)) camTo(k, !!s); };
   const abrirUnidad = (u) => { abrir({ key: '', stages: [u.etapa], titulo: SL[u.etapa], zona: ['TRANSITO_TDA', 'TIENDA', 'RECIBIDO'].includes(u.etapa) ? zonaDe(u) : undefined, ciudad: u.etapa === 'BODEGA_REG' ? ciudadDe(u) : undefined }); setSelUnit(u.key); };
   const exportar = () => {
     const H = ['OC', 'SKU', 'MODELO', 'PROVEEDOR', 'MARCA', 'TIPO', 'CENTRO', 'ZONA', 'PIEZAS', 'BUCKET', 'ETAPA_ACTUAL', 'ULTIMO_REGISTRO', 'UBICACION', 'DIAS_EN_ETAPA', 'ATORADO', 'FECHA_COMPROMISO', 'VENCIDO', ...STAGES.map((s) => `DIAS_${s.k}`)];
@@ -408,239 +372,9 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + L.join('\r\n')], { type: 'text/csv;charset=utf-8' })); a.download = 'Pedidos_rastreo.csv'; a.click();
   };
 
-  // ─── Escena ────────────────────────────────────────────────────────────────
-  const zs = zonas.map((z, i) => ({ z, x: 23.2, y: -1.2 + i * 4 }));
-  const cs = ciudades.map((c, i) => ({ c, x: 22.6, y: -15.2 + i * 2.8 }));
-  const yBot = Math.max(...zs.map((p) => p.y)) + 3;
-  const selKey = sel?.key || '';
-  const dim = (k) => (sel && selKey !== k ? 0.82 : 1);
-  const hl = (tp) => (!fTipo || fTipo === tp ? 1 : 0.15);
-
-  const pathAt = (path, f) => {
-    const seg = []; let L = 0;
-    for (let i = 0; i < path.length - 1; i++) { const l = Math.hypot(path[i + 1][0] - path[i][0], path[i + 1][1] - path[i][1]); seg.push(l); L += l; }
-    let d = f * L;
-    for (let i = 0; i < seg.length; i++) { if (d <= seg[i]) { const r = seg[i] ? d / seg[i] : 0; const a = path[i], b = path[i + 1]; return { x: a[0] + (b[0] - a[0]) * r, y: a[1] + (b[1] - a[1]) * r, dir: a[0] !== b[0] ? 'x' : 'y', rev: a[0] !== b[0] ? b[0] < a[0] : b[1] < a[1] }; } d -= seg[i]; }
-    const b = path[path.length - 1]; return { x: b[0], y: b[1], dir: 'x', rev: false };
-  };
-  const PATHS = {
-    NAC: [[1.2, YFAC], [XV1, YFAC], [XV1, 1.9], [8.4, 1.9]],
-    IMP: [[2.6, YLOW], [XV1, YLOW], [XV1, 1.9], [8.4, 1.9]],
-    SHIP: [[-15, 8.6], [-2.2, 8.6]],
-    DIR: (zy) => [[-0.4, YFAC], [-2.6, YFAC], [-2.6, YTOP], [XDIR, YTOP], [XDIR, zy + 1.0], [25.9, zy + 1.0]],
-    OUT: (zy) => [[15.6, 2.2], [15.6, YLOW], [XV2, YLOW], [XV2, zy + 1.0], [23.0, zy + 1.0]],
-    BOD: (cy) => [[15.6, 2.2], [15.6, YLOW], [XV2, YLOW], [XV2, cy + 0.9], [22.4, cy + 0.9]],
-    FORO: [[XV1, 1.9], [XV1, YFAC], [9.6, YFAC]],
-    FUL: [[XV1, 1.9], [XV1, YFAC], [14.4, YFAC]],
-  };
-  const roads = [
-    [[-2.6, YFAC], [XV1, YFAC]], [[XV1, YFAC], [XV2, YFAC]], [[XV1, YTOP], [XV1, YLOW]], [[1.2, YLOW], [XV2, YLOW]],
-    [[XV2, -16], [XV2, yBot]], [[-2.6, YTOP], [-2.6, YFAC]], [[-2.6, YTOP], [XDIR, YTOP]], [[XDIR, YTOP], [XDIR, yBot]],
-    [[15.6, 1.6], [15.6, YLOW]],
-    ...zs.flatMap((p) => [[[XV2, p.y + 1], [23.1, p.y + 1]], [[25.6, p.y + 1], [XDIR, p.y + 1]]]),
-    ...cs.map((p) => [[XV2, p.y + 0.9], [22.5, p.y + 0.9]]),
-  ];
-  const roadPoly = ([a, b], w = 1.05) => {
-    const [x1, y1] = a, [x2, y2] = b;
-    if (x1 === x2) { const y0 = Math.min(y1, y2) - w / 2, y3 = Math.max(y1, y2) + w / 2; return quad(x1 - w / 2, y0, x1 + w / 2, y3); }
-    const x0 = Math.min(x1, x2) - w / 2, x3 = Math.max(x1, x2) + w / 2; return quad(x0, y1 - w / 2, x3, y1 + w / 2);
-  };
-  const routeLine = (path, color, key, op = 1) => <polyline key={key} points={pts(path.map(([x, y]) => P(x, y, 0.02)))} fill="none" stroke={color} strokeWidth="3" strokeDasharray="2 7" strokeLinecap="round" strokeDashoffset={-tick * 14} opacity={0.85 * op} />;
-
-  const items = []; const overlay = [];
-  const push = (depth, el) => items.push({ depth, el });
-  const ks = Math.min(1, 1.8 / zoom); // etiquetas y pines a tamaño constante en pantalla al hacer zoom
-  const label = (key, x, y, z, txt, sub, onClick, active, color) => {
-    const [sx, sy] = P(x, y, z);
-    if (!active && zoom < 1.8) { // vista lejana: etiqueta compacta para no amontonar
-      const cnt0 = (sub || '').split(' · ')[0];
-      const w0 = txt.length * 5.6 + (cnt0 ? cnt0.length * 5 + 10 : 0) + 22;
-      overlay.push(
-        <g key={key} transform={`translate(${sx},${sy}) scale(${ks})`} onClick={onClick} style={{ cursor: 'pointer' }}>
-          <rect x={-w0 / 2} y={-24} width={w0} height={18} rx="9" fill={C.card} stroke={C.cardB} opacity="0.96" />
-          <circle cx={-w0 / 2 + 10} cy={-15} r="3.5" fill={color} />
-          <text x={-w0 / 2 + 17} y={-11.5} fontSize="9" fontWeight="800" fill={C.text}>{txt}{cnt0 && <tspan fill={C.sub} fontWeight="600">{`  ${cnt0}`}</tspan>}</text>
-        </g>,
-      );
-      return;
-    }
-    const w = Math.max(txt.length * 6.4, (sub || '').length * 5.2) + 26;
-    overlay.push(
-      <g key={key} transform={`translate(${sx},${sy}) scale(${ks})`} onClick={onClick} style={{ cursor: 'pointer' }}>
-        <rect x={-w / 2 + 1} y={-35} width={w} height={sub ? 33 : 22} rx="9" fill="#0F172A" opacity="0.08" />
-        <rect x={-w / 2} y={-37} width={w} height={sub ? 33 : 22} rx="9" fill={active ? (isDark ? '#3A2F55' : '#EEF3FF') : C.card} stroke={active ? color : C.cardB} strokeWidth={active ? 1.6 : 1} />
-        <circle cx={-w / 2 + 11} cy={sub ? -27 : -26} r="4" fill={color} />
-        <text x={-w / 2 + 19} y={sub ? -23.5 : -22.5} fontSize="10" fontWeight="800" fill={C.text}>{txt}</text>
-        {sub && <text x={-w / 2 + 11} y="-10" fontSize="8.5" fill={C.sub}>{sub}</text>}
-      </g>,
-    );
-  };
-  const palletsAt = (key, x0, y0, pzs, alert, cols = 3) => {
-    const n = pzs > 0 ? Math.min(14, Math.max(1, Math.round(Math.log2(pzs / 60 + 1) * 2.4))) : 0;
-    for (let i = 0; i < n; i++) { const c = i % cols, r = Math.floor(i / cols) % 2, l = Math.floor(i / (cols * 2)); const x = x0 + c * 0.66, y = y0 + r * 0.66; push(x + y + 0.6, <Pallet key={`${key}${i}`} x={x} y={y} z={l * 0.44} alert={alert} />); }
-  };
-  const pinIf = (key, c, x, y, z) => { if (!c.ator) return; const [sx, sy] = P(x, y, z); overlay.push(<g key={key} transform={`translate(${sx},${sy}) scale(${ks}) translate(${-sx},${-sy})`}><MapPin x={x} y={y} z={z} n={c.ator} color="#E5484D" t={tick} /></g>); };
-
-  // Suelo
-  const ground = [];
-  ground.push(<polygon key="plate" points={quad(-16, -17, 30, yBot + 2)} fill={C.plate} />);
-  ground.push(<polygon key="g1" points={quad(-5, -16.5, 5, -6.8)} fill={C.grass} />);
-  ground.push(<polygon key="g2" points={quad(7.2, -16.5, 19.6, -10)} fill={C.grass} />);
-  ground.push(<polygon key="g3" points={quad(7.2, 5.8, 19.6, yBot + 1)} fill={C.grass2} />);
-  ground.push(<polygon key="g4" points={quad(21.3, -16.5, 26.4, -4)} fill={C.grass} opacity="0.7" />);
-  ground.push(<polygon key="water" points={quad(-16, 6.4, 5.2, yBot + 2)} fill={C.water} />);
-  for (let i = 0; i < 7; i++) {
-    const yy = 7.4 + i * 1.3, off = ((tick * 0.6 + i * 0.37) % 1) * 3;
-    const [a, b] = [P(-14 + off + (i % 2) * 2, yy, 0), P(-11 + off + (i % 2) * 2, yy, 0)];
-    ground.push(<line key={`wv${i}`} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke={C.water2} strokeWidth="2" strokeLinecap="round" opacity="0.9" />);
-    const [c2, d2] = [P(-6 + off, yy + 0.5, 0), P(-3.5 + off, yy + 0.5, 0)];
-    ground.push(<line key={`wvb${i}`} x1={c2[0]} y1={c2[1]} x2={d2[0]} y2={d2[1]} stroke={C.water2} strokeWidth="2" strokeLinecap="round" opacity="0.7" />);
-  }
-  ground.push(<polygon key="quay" points={quad(-3.4, 0.6, 5.2, 6.4)} fill={C.pad} />);
-  ground.push(<polygon key="quayEdge" points={pts([P(-3.4, 6.4, 0), P(5.2, 6.4, 0), P(5.2, 6.4, -0.3), P(-3.4, 6.4, -0.3)])} fill={isDark ? '#3A3350' : '#B9C3D3'} />);
-  ground.push(<polygon key="padPlan" points={quad(7.2, -4, 19.4, 3.8)} fill={C.pad} />);
-  ground.push(<polygon key="padNorth" points={quad(7.6, -10, 17, -6.6)} fill={C.pad} />);
-  ground.push(<polygon key="padProv" points={quad(-2.4, -10.6, 3.6, -6.4)} fill={C.pad} />);
-  for (let i = 0; i < 10; i++) { const x = 8.4 + i * 1.05; const [a, b] = [P(x, 2.4, 0.01), P(x, 3.6, 0.01)]; ground.push(<line key={`pk${i}`} x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke={C.padLine} strokeWidth="1.4" opacity="0.8" />); }
-  { const [a, b] = [P(8.4, 2.4, 0.01), P(18.9, 2.4, 0.01)]; ground.push(<line key="pkl" x1={a[0]} y1={a[1]} x2={b[0]} y2={b[1]} stroke={C.padLine} strokeWidth="1.4" opacity="0.8" />); }
-  const shadow = (n, k) => ground.push(<polygon key={`sh${k}`} points={pts([P(n.x + n.w, n.y, 0), P(n.x + n.w + n.h * 0.9, n.y + n.h * 0.3, 0), P(n.x + n.w + n.h * 0.9, n.y + n.d + n.h * 0.3, 0), P(n.x + n.w, n.y + n.d, 0)])} fill="#0F172A" opacity="0.10" />);
-  Object.entries(N).forEach(([k, n]) => shadow(n, k));
-  zs.forEach((p, i) => shadow({ x: p.x, y: p.y, w: 2.4, d: 1.9, h: 1.1 }, `z${i}`));
-  cs.forEach((p, i) => shadow({ x: p.x, y: p.y, w: 2.4, d: 1.8, h: 1.1 }, `c${i}`));
-
-  // ── Proveedores (fábrica con techo dentado)
-  {
-    const n = N.PROV, c = cnt('PROVEEDOR'), key = 'PROV', click = () => abrir({ key, stages: ['PROVEEDOR'], titulo: 'Proveedores · On order' });
-    const g = [<Box key="b" x={n.x} y={n.y} w={n.w} d={n.d} h={n.h} c={isDark ? '#5A5470' : '#AEB8C9'} left={isDark ? '#3A3550' : '#C9D1DE'} right={isDark ? '#4A4462' : '#E3E8F0'} top={isDark ? '#6A6488' : '#B7C1D2'} />];
-    for (let i = 0; i < 4; i++) {
-      const x0 = n.x + i * (n.w / 4);
-      g.push(<polygon key={`st${i}`} points={pts([P(x0, n.y, n.h), P(x0, n.y + n.d, n.h), P(x0 + n.w / 4, n.y + n.d, n.h + 0.55), P(x0 + n.w / 4, n.y, n.h + 0.55)])} fill={isDark ? '#7A6FA8' : '#8FA2C0'} stroke="rgba(15,23,42,0.12)" />);
-      g.push(<polygon key={`sg${i}`} points={pts([P(x0 + n.w / 4, n.y, n.h), P(x0 + n.w / 4, n.y + n.d, n.h), P(x0 + n.w / 4, n.y + n.d, n.h + 0.55), P(x0 + n.w / 4, n.y, n.h + 0.55)])} fill={isDark ? '#E0BB3E' : '#D5E6FA'} opacity="0.85" />);
-    }
-    g.push(<Box key="ch" x={n.x + 0.3} y={n.y + 0.2} w={0.5} d={0.5} h={n.h + 1.6} c={isDark ? '#7B7090' : '#9AA4B6'} />);
-    g.push(<Box key="ch2" x={n.x + 0.28} y={n.y + 0.18} z={n.h + 1.45} w={0.54} d={0.54} h={0.15} c="#E5484D" />);
-    [0, 1, 2, 3].forEach((i) => { const ph = (tick * 0.35 + i / 4) % 1; const [sx, sy] = P(n.x + 0.55, n.y + 0.45, n.h + 1.7 + ph * 1.8); g.push(<circle key={`sm${i}`} cx={sx + ph * 14} cy={sy} r={4 + ph * 8} fill={isDark ? '#8C86A0' : '#D4D9E2'} opacity={0.8 * (1 - ph)} />); });
-    for (let i = 0; i < 3; i++) g.push(<polygon key={`w${i}`} points={faceL(n.y + n.d, n.x + 0.5 + i, n.x + 1.1 + i, 0.45, 0.95)} fill={isDark ? '#E0BB3E' : '#BFD6F6'} />);
-    push(n.x + n.y + n.w / 2 + n.d / 2, <g key={key} onClick={click} style={{ cursor: 'pointer' }} opacity={dim(key)}>{g}</g>);
-    palletsAt('pp', n.x + 0.2, n.y + n.d + 0.4, c.pzs, c.ator > 0, 4);
-    label('lprov', n.x + n.w / 2, n.y + n.d / 2, n.h + 2.3, 'Proveedores', c.n ? `${c.n} OCs · ${fk(c.pzs)} pzs on order` : 'Sin OCs abiertas', click, selKey === key, '#64748B');
-    pinIf('pinprov', c, n.x + n.w, n.y + n.d / 2, n.h + 0.6);
-  }
-  // ── Puerto / Aduana
-  {
-    const n = N.ADUANA, c = cnt('ADUANA'), key = 'ADU', click = () => abrir({ key, stages: ['ADUANA'], titulo: 'Aduana · Puerto' });
-    push(n.x + n.y + 1.8, <g key={key} onClick={click} style={{ cursor: 'pointer' }} opacity={dim(key)}><Warehouse x={n.x} y={n.y} w={n.w} d={n.d} h={n.h} roof="#E2A93B" doors={2} dark={isDark} logo="ADUANA" rh={0.4} windows={false} /></g>);
-    const cols = ['#2BB3A8', '#E5484D', '#3B6FE0', '#F2A900', '#7C5CF0', '#2BB3A8', '#3B6FE0', '#E5484D'];
-    for (let i = 0; i < 8; i++) { const r = i % 2, l = Math.floor(i / 4); const x = 2.7, y = 1.4 + r * 0.72 + (i % 4 >= 2 ? 1.6 : 0); push(x + y + 0.5 + l * 0.01, <Box key={`ct${i}`} x={x} y={y} z={l * 0.62} w={1.9} d={0.66} h={0.6} c={cols[i]} stroke="rgba(0,0,0,0.22)" />); }
-    const gx = -1.6, gy = 5.6; const legs = [[gx, gy], [gx + 2.6, gy], [gx, gy - 1.2], [gx + 2.6, gy - 1.2]];
-    push(gx + gy + 1.6, <g key="crane">{legs.map(([x, y], i) => <Box key={i} x={x} y={y} w={0.14} d={0.14} h={2.6} c="#F2A900" />)}<Box x={gx} y={gy - 1.2} z={2.6} w={2.74} d={1.34} h={0.18} c="#F2A900" /><Box x={gx + 0.8 + Math.sin(tick * 0.6) * 0.7} y={gy - 0.9} z={2.2} w={0.5} d={0.7} h={0.35} c="#3A3A44" /></g>);
-    palletsAt('pa', 3.2, 4.6, c.pzs * 0.4, c.ator > 0, 3);
-    label('ladu', n.x + n.w / 2, n.y + n.d / 2, n.h + 1.7, 'Aduana · Puerto', c.n ? `${c.n} OCs · ${fk(c.pzs)} pzs` : 'Sin OCs en aduana', click, selKey === key, '#E2A93B');
-    pinIf('pinadu', c, n.x + n.w, n.y + n.d / 2, n.h + 0.5);
-    const cT = cnt('TRANSITO_INT');
-    if (cT.n) label('lmar', -8, 9.2, 1.6, 'Tránsito marítimo', `${cT.n} OCs · ${fk(cT.pzs)} pzs`, () => abrir({ key: 'MAR', stages: ['TRANSITO_INT'], titulo: 'Tránsito internacional' }), selKey === 'MAR', '#14B8A6');
-    pinIf('pinmar', cT, -6, 9.2, 0.9);
-  }
-  // ── PLAN: almacén + cross dock
-  {
-    const a = N.ALM, x = N.XD, cA = cnt('ALMACEN'), cX = cnt('CROSSDOCK');
-    const clickA = () => abrir({ key: 'ALM', stages: ['ALMACEN'], titulo: 'PLAN · Almacén' });
-    const clickX = () => abrir(BUCKET_SEL.INP);
-    push(a.x + a.y + a.w / 2 + a.d / 2, <g key="ALM" onClick={clickA} style={{ cursor: 'pointer' }} opacity={dim('ALM')}><Warehouse x={a.x} y={a.y} w={a.w} d={a.d} h={a.h} roof={C.roof} doors={4} dark={isDark} logo="PLAN" /></g>);
-    push(x.x + x.y + x.w / 2 + x.d / 2, <g key="XD" onClick={clickX} style={{ cursor: 'pointer' }} opacity={dim('XD')}><Warehouse x={x.x} y={x.y} w={x.w} d={x.d} h={x.h} roof="#7C5CF0" doors={3} dark={isDark} rh={0.35} logo="XD" /></g>);
-    push(a.x + a.y + 0.2, <g key="rack">{[0, 1, 2].map((l) => <Box key={l} x={a.x + 0.2} y={a.y - 1.0} z={l * 0.55} w={2.2} d={0.6} h={0.06} c="#E5484D" />)}{[0, 1, 2].map((l) => [0, 1, 2].map((i) => <Box key={`${l}${i}`} x={a.x + 0.3 + i * 0.7} y={a.y - 0.95} z={l * 0.55 + 0.06} w={0.5} d={0.48} h={0.36} c={C.roof2} />))}</g>);
-    palletsAt('pal', a.x + 0.3, a.y + a.d + 0.35, cA.pzs, cA.ator > 0, 5);
-    palletsAt('pxd', x.x + 0.2, x.y + x.d + 0.35, cX.pzs, cX.ator > 0, 4);
-    const f1 = (Math.sin(tick * 0.9) + 1) / 2, f2 = (Math.sin(tick * 0.7 + 2) + 1) / 2;
-    push(a.x + 2 + a.y + a.d + 1.7, <Forklift key="fk1" x={a.x + 0.4 + f1 * 3} y={a.y + a.d + 1.55} carrying={f1 > 0.5} rev={Math.cos(tick * 0.9) < 0} />);
-    push(x.x + x.y + x.d + 1.9, <Forklift key="fk2" x={x.x + 0.2 + f2 * 2.2} y={x.y + x.d + 1.65} carrying={f2 < 0.5} rev={Math.cos(tick * 0.7 + 2) > 0} />);
-    [[9.2, 'NAC', cA.n > 0], [11.4, 'IMP', cA.n > 1], [14.5, 'NAC', cX.n > 0], [16.6, 'IMP', cX.n > 1]].forEach(([px, tp, on], i) => { if (on) push(px + 3.1, <TruckSprite key={`dock${i}`} x={px} y={3.05} dir="y" rev color={TIPOS[tp].c} dark={isDark} />); });
-    label('lalm', a.x + a.w / 2, a.y + a.d / 2, a.h + 1.9, 'PLAN · Almacén', cA.n ? `${cA.n} OCs · ${fk(cA.pzs)} pzs en bodega` : 'Sin inventario', clickA, selKey === 'ALM', C.roof);
-    label('lxd', x.x + x.w / 2, x.y + x.d / 2, x.h + 1.6, 'PLAN · Cross dock', cX.n ? `${cX.n} OCs · ${fk(cX.pzs)} pzs in process` : 'Sin proceso', clickX, selKey === 'XD', '#7C5CF0');
-    pinIf('pinalm', cA, a.x + a.w, a.y + a.d / 2, a.h + 0.7);
-    pinIf('pinxd', cX, x.x + x.w, x.y + x.d / 2, x.h + 0.5);
-  }
-  // ── Foro fotográfico
-  {
-    const n = N.FORO, c = cnt('FORO'), key = 'FORO', click = () => abrir(BUCKET_SEL.FORO);
-    const flash = Math.sin(tick * 2.3) > 0.92;
-    const [cx, cy] = P(n.x + 1.2, n.y + n.d, 0.8);
-    push(n.x + n.y + n.w / 2 + n.d / 2, <g key={key} onClick={click} style={{ cursor: 'pointer' }} opacity={dim(key)}>
-      <Box x={n.x} y={n.y} w={n.w} d={n.d} h={n.h} c="#F4F6FB" left={isDark ? '#2C2640' : '#E6EAF2'} right={isDark ? '#363050' : '#F4F6FB'} top={isDark ? '#5B3F6E' : '#F9A8D4'} />
-      <polygon points={faceL(n.y + n.d, n.x + 0.3, n.x + 2.1, 0.55, 1.05)} fill="#EC4899" />
-      <rect x={cx - 11} y={cy - 8} width="22" height="14" rx="3" fill="#fff" /><circle cx={cx} cy={cy - 1} r="4.5" fill="#EC4899" /><circle cx={cx} cy={cy - 1} r="2" fill="#fff" />
-      <polygon points={faceL(n.y + n.d, n.x + 1.6, n.x + 2.2, 0, 0.45)} fill={isDark ? '#3A3050' : '#BFD3F2'} />
-      {flash && (() => { const [fx, fy] = P(n.x + n.w / 2, n.y + n.d / 2, n.h + 0.3); return <circle cx={fx} cy={fy} r="18" fill="#fff" opacity="0.7" />; })()}
-    </g>);
-    [[n.x - 0.6, n.y + 0.4], [n.x - 0.6, n.y + 1.6]].forEach(([fx, fy], i) => push(fx + fy, <g key={`lamp${i}`}><Box x={fx} y={fy} w={0.06} d={0.06} h={0.9} c="#6B7280" /><Box x={fx - 0.12} y={fy - 0.12} z={0.9} w={0.3} d={0.3} h={0.22} c="#1F2430" /></g>));
-    label('lforo', n.x + n.w / 2, n.y + n.d / 2, n.h + 1.4, 'Foro fotográfico', c.n ? `${c.n} OCs · ${fk(c.pzs)} pzs` : 'Sin muestras', click, selKey === key, '#EC4899');
-    pinIf('pinforo', c, n.x + n.w, n.y + n.d / 2, n.h + 0.4);
-  }
-  // ── Fulfillment
-  {
-    const n = N.FUL, c = cnt('FULFILLMENT'), key = 'FUL', click = () => abrir(BUCKET_SEL.FUL);
-    push(n.x + n.y + n.w / 2 + n.d / 2, <g key={key} onClick={click} style={{ cursor: 'pointer' }} opacity={dim(key)}><Warehouse x={n.x} y={n.y} w={n.w} d={n.d} h={n.h} roof="#14B8A6" doors={2} dark={isDark} logo="E-COM" rh={0.4} /></g>);
-    const bx = n.x + n.w + 0.2, by = n.y + 0.6;
-    push(bx + by + 1.5, <g key="belt"><Box x={bx} y={by} w={2.4} d={0.5} h={0.35} c="#4B5563" />{[0, 1, 2, 3].map((i) => { const u = ((tick * 0.35 + i / 4) % 1) * 2.1; return <Box key={i} x={bx + u} y={by + 0.08} z={0.35} w={0.32} d={0.32} h={0.26} c="#E2B57A" />; })}</g>);
-    label('lful', n.x + n.w / 2, n.y + n.d / 2, n.h + 1.6, 'Fulfillment', c.n ? `${c.n} OCs · ${fk(c.pzs)} pzs` : 'Sin inventario', click, selKey === key, '#14B8A6');
-    pinIf('pinful', c, n.x + n.w, n.y + n.d / 2, n.h + 0.5);
-  }
-  // ── Bodegas regionales
-  cs.forEach(({ c: ciudad, x, y }, i) => {
-    const c = cnt(`BODEGA_REG|${ciudad}`), key = `CIU|${ciudad}`, click = () => abrir({ key, stages: ['BODEGA_REG'], ciudad, titulo: ciudad === 'REGIONAL' ? 'Bodegas regionales' : `Bodega ${ciudad}` });
-    push(x + y + 2, <g key={key} onClick={click} style={{ cursor: 'pointer' }} opacity={dim(key)}><Warehouse x={x} y={y} w={2.4} d={1.8} h={1.1} roof="#0EA5E9" doors={2} dark={isDark} rh={0.35} windows={false} /></g>);
-    palletsAt(`pc${i}`, x + 2.7, y + 0.2, c.pzs, c.ator > 0, 2);
-    label(`lc${i}`, x + 1.2, y + 0.9, 1.9, ciudad === 'REGIONAL' ? 'Bodegas regionales' : `Bodega ${ciudad[0]}${ciudad.slice(1).toLowerCase()}`, c.n ? `${c.n} OCs · ${fk(c.pzs)} pzs` : 'Sin inventario', click, selKey === key, '#0EA5E9');
-    pinIf(`pinc${i}`, c, x + 2.4, y + 0.9, 1.4);
-  });
-  // ── Zonas de tiendas
-  zs.forEach(({ z, x, y }, i) => {
-    const cT = cnt(`TIENDA|${z}`), cR = cnt(`RECIBIDO|${z}`), cRu = cnt(`TRANSITO_TDA|${z}`), key = `Z|${z}`;
-    const click = () => abrir({ key, stages: ['TIENDA'], zona: z, titulo: z === 'TIENDAS' ? 'Tiendas' : `Zona ${z}` });
-    const w = 2.4, d = 1.9, h = 1.05;
-    const stripes = [];
-    for (let k = 0; k < 6; k++) { const u0 = x + 0.1 + k * ((w - 0.2) / 6), u1 = u0 + (w - 0.2) / 6; stripes.push(<polygon key={k} points={pts([P(u0, y + d, h * 0.72), P(u1, y + d, h * 0.72), P(u1, y + d + 0.35, h * 0.5), P(u0, y + d + 0.35, h * 0.5)])} fill={k % 2 ? '#fff' : '#7C5CF0'} />); }
-    push(x + y + 2.2, <g key={key} onClick={click} style={{ cursor: 'pointer' }} opacity={dim(key)}>
-      <Box x={x} y={y} w={w} d={d} h={h} c="#F4F6FB" left={isDark ? '#2C2640' : '#E8ECF3'} right={isDark ? '#363050' : '#F7F9FC'} top={isDark ? '#4A4266' : '#DDE3EE'} />
-      <Box x={x - 0.05} y={y - 0.05} z={h} w={w + 0.1} d={d + 0.1} h={0.2} c="#E0BB3E" />
-      <polygon points={faceL(y + d, x + 0.25, x + 1.0, 0, 0.62)} fill={isDark ? '#3A3050' : '#BFD3F2'} />
-      <polygon points={faceL(y + d, x + 1.25, x + 2.15, 0.12, 0.62)} fill={isDark ? '#3A3050' : '#BFD3F2'} />
-      {stripes}
-      <polygon points={faceR(x + w, y + 0.3, y + 1.6, 0.55, 0.85)} fill="#7C5CF0" />
-    </g>);
-    palletsAt(`pz${i}`, x - 1.4, y + 0.1, cT.pzs, cT.ator > 0, 2);
-    label(`lz${i}`, x + w / 2, y + d / 2, h + 1.3, z === 'TIENDAS' ? 'Tiendas' : `Zona ${z}`, `${cRu.n} en ruta · ${fk(cT.pzs)} pzs sin entrada · ${cR.n} recibidos`, click, selKey === key, '#F59E0B');
-    pinIf(`pinz${i}`, cT, x + w, y + d / 2, h + 0.3);
-  });
-  // ── Decoración
-  [[-4, -14], [-3.6, -8], [3.8, -12.5], [4.2, -2.5], [2.8, -1.8], [8, -12.5], [11, -13.4], [15, -12.8], [18.5, -13.4], [9, 7.5], [12, 8.6], [16, 7.2], [18.6, 10.4], [24.6, -4.6], [-4.6, -3], [21.2, 15]].forEach(([x, y], i) => push(x + y, <Tree key={`tr${i}`} x={x} y={y} s={0.8 + ((i * 37) % 10) / 25} color={C.tree} />));
-  [[10.2, '#E5484D'], [12.3, '#F4F6FB'], [13.4, '#3B82F6']].forEach(([px, col], i) => push(px + 6.8, <Box key={`car${i}`} x={px} y={6.4} w={0.45} d={0.8} h={0.3} c={col} />));
-
-  // ── Rutas y vehículos
-  const routeOverlay = [routeLine(PATHS.SHIP, TIPOS.IMP.c, 'rship', hl('IMP')), routeLine(PATHS.IMP, TIPOS.IMP.c, 'rimp', hl('IMP')), routeLine(PATHS.NAC, TIPOS.NAC.c, 'rnac', hl('NAC'))];
-  zs.forEach((p, i) => { routeOverlay.push(routeLine(PATHS.DIR(p.y), TIPOS.DIR.c, `rdir${i}`, hl('DIR'))); routeOverlay.push(routeLine(PATHS.OUT(p.y), '#7C5CF0', `rout${i}`, fTipo === 'DIR' ? 0.15 : 0.8)); });
-  const nShip = Math.min(3, cnt('TRANSITO_INT').n);
-  for (let i = 0; i < nShip; i++) { const fr = ((tick * 0.025) + i / nShip) % 1; const p = pathAt(PATHS.SHIP, fr); push(p.x + p.y + 1, <g key={`ship${i}`} opacity={hl('IMP')} onClick={() => abrir({ key: 'MAR', stages: ['TRANSITO_INT'], titulo: 'Tránsito internacional' })} style={{ cursor: 'pointer' }}><Ship x={p.x - 2} y={p.y - 0.55} bob={Math.sin(tick * 1.5 + i)} /></g>); }
-  const lane = (key, path, n, speed, color, op, cont, onClick) => { for (let i = 0; i < n; i++) { const fr = ((tick * speed) + i / n) % 1; const p = pathAt(path, fr); push(p.x + p.y + 0.5, <g key={`${key}${i}`} opacity={op} onClick={onClick} style={onClick ? { cursor: 'pointer' } : undefined}><TruckSprite x={p.x} y={p.y} dir={p.dir} rev={p.rev} color={color} cont={cont} dark={isDark} /></g>); } };
-  lane('timp', PATHS.IMP, Math.min(3, cnt('ADUANA').n), 0.045, TIPOS.IMP.c, hl('IMP'), '#2BB3A8');
-  lane('tnac', PATHS.NAC, Math.min(3, Math.ceil(cnt('PROVEEDOR|NAC').n / 6)), 0.04, TIPOS.NAC.c, hl('NAC'));
-  if (cnt('FORO').n) lane('tforo', PATHS.FORO, 1, 0.05, '#EC4899', 1);
-  if (cnt('FULFILLMENT').n) lane('tful', PATHS.FUL, 1, 0.04, '#14B8A6', 1);
-  cs.forEach((p, i) => { if (cnt(`BODEGA_REG|${p.c}`).n) lane(`tb${i}`, PATHS.BOD(p.y), 1, 0.03 + i * 0.004, '#0EA5E9', 1); });
-  zs.forEach((p, i) => {
-    const ab = () => abrir({ key: `Z|${p.z}`, stages: ['TRANSITO_TDA'], zona: p.z, titulo: p.z === 'TIENDAS' ? 'Tiendas' : `Zona ${p.z}` });
-    lane(`to${i}`, PATHS.OUT(p.y), Math.min(3, cnt(`TRANSITO_TDA|${p.z}|PLAN`).n), 0.05 + i * 0.003, '#7C5CF0', fTipo === 'DIR' ? 0.15 : 1, undefined, ab);
-    lane(`td${i}`, PATHS.DIR(p.y), Math.min(2, cnt(`TRANSITO_TDA|${p.z}|DIR`).n), 0.025 + i * 0.002, TIPOS.DIR.c, hl('DIR'), undefined, ab);
-  });
-  items.sort((a, b) => a.depth - b.depth);
-
-  // viewBox
-  const { minX, maxX, minY, maxY } = boundsFor(yBot);
-  const vbW = (maxX - minX) / zoom, vbH = (maxY - minY) / zoom;
-  const vb = `${minX + (maxX - minX - vbW) / 2 - pan[0]} ${minY + (maxY - minY - vbH) / 2 - pan[1]} ${vbW} ${vbH}`;
-
   const inCls = `px-2 py-1.5 rounded-lg border text-xs ${isDark ? 'bg-[#1a1520] border-white/10 text-white' : 'bg-white border-gray-300 text-gray-900'}`;
   const selStyle = isDark ? { colorScheme: 'dark' } : undefined;
+  const selKey = sel?.key || '';
   const glass = isDark ? 'bg-[#1a1520]/95 border-white/10' : 'bg-white/95 border-gray-200';
   const unit = selUnit ? allUnits.find((u) => u.key === selUnit) : null;
   const pill = (on) => (on ? (isDark ? 'bg-violet-600 border-violet-500 text-white' : 'bg-blue-600 border-blue-600 text-white') : t.cardInner);
@@ -708,23 +442,10 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
 
         {/* Escena */}
         <div className={`relative rounded-2xl border overflow-hidden ${t.card}`} style={{ height: 720 }}>
-          <svg viewBox={vb} className="w-full h-full select-none" style={{ background: C.ground, cursor: drag.current ? 'grabbing' : 'grab' }}
-            onMouseDown={(e) => { drag.current = { x: e.clientX, y: e.clientY, p: pan }; }}
-            onMouseMove={(e) => { if (!drag.current) return; const k = vbW / e.currentTarget.clientWidth; setPan([drag.current.p[0] + (e.clientX - drag.current.x) * k, drag.current.p[1] + (e.clientY - drag.current.y) * k]); }}
-            onMouseUp={() => { drag.current = null; }} onMouseLeave={() => { drag.current = null; }}
-            onWheel={(e) => setZoom((z) => Math.min(3.5, Math.max(0.6, z * (e.deltaY < 0 ? 1.1 : 0.9))))}>
-            <defs>
-              <radialGradient id="pedVignette" cx="50%" cy="45%" r="70%"><stop offset="60%" stopColor={C.ground} stopOpacity="0" /><stop offset="100%" stopColor={isDark ? '#000' : '#9FB0CC'} stopOpacity={isDark ? 0.5 : 0.25} /></radialGradient>
-            </defs>
-            {ground}
-            {roads.map((r, i) => <polygon key={`rd${i}`} points={roadPoly(r)} fill={C.road} />)}
-            {roads.map((r, i) => { const [a, b] = r; const [x1, y1] = P(...a, 0.01), [x2, y2] = P(...b, 0.01); return <line key={`ln${i}`} x1={x1} y1={y1} x2={x2} y2={y2} stroke={C.line} strokeWidth="1.3" strokeDasharray="7 8" opacity="0.9" />; })}
-            {routeOverlay}
-            {items.map((it) => it.el)}
-            {overlay}
-            {!isDark && [0, 1, 2].map((i) => { const x = ((tick * 6 + i * 420) % 1600) - 600 + minX; const y = minY + 60 + i * 140; return <g key={`cl${i}`} opacity="0.55" style={{ pointerEvents: 'none' }}><ellipse cx={x} cy={y} rx="60" ry="16" fill="#fff" /><ellipse cx={x + 30} cy={y - 10} rx="34" ry="14" fill="#fff" /></g>; })}
-            <rect x={minX - 2000} y={minY - 2000} width="6000" height="6000" fill="url(#pedVignette)" style={{ pointerEvents: 'none' }} />
-          </svg>
+          <Suspense fallback={<div className={`absolute inset-0 flex items-center justify-center text-xs ${t.textMuted}`}>Cargando escena 3D…</div>}>
+            <Scene3D isDark={isDark} zonas={zonas} ciudades={ciudades} stats={agg} fTipo={fTipo} selKey={sel?.key || ''} site={site} panelOpen={!!sel} play={play} onPick={onPick} zoomCmd={zoomCmd} />
+          </Suspense>
+          <div className={`absolute bottom-3 right-3 text-[10px] pointer-events-none ${t.textMuted} ${sel || unit ? 'hidden' : ''}`}>Arrastra para mover · rueda para zoom · clic derecho para girar</div>
 
           {/* KPIs flotantes */}
           <div className="absolute top-3 left-3 flex flex-wrap gap-2 max-w-[60%]">
@@ -755,9 +476,9 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
           </div>
           {/* Controles */}
           <div className={`absolute top-3 right-3 flex flex-col gap-1 rounded-xl border p-1 shadow-md ${glass} ${sel ? 'lg:right-[394px]' : ''}`}>
-            <button onClick={() => setZoom((z) => Math.min(3.5, z * 1.2))} className="p-1.5"><ZoomIn size={15} /></button>
-            <button onClick={() => setZoom((z) => Math.max(0.6, z / 1.2))} className="p-1.5"><ZoomOut size={15} /></button>
-            <button onClick={() => camTo('RED')} className="p-1.5"><RotateCcw size={15} /></button>
+            <button onClick={() => setZoomCmd((z) => ({ n: z.n + 1, f: 1.25 }))} className="p-1.5"><ZoomIn size={15} /></button>
+            <button onClick={() => setZoomCmd((z) => ({ n: z.n + 1, f: 0.8 }))} className="p-1.5"><ZoomOut size={15} /></button>
+            <button onClick={() => { setSite('RED'); setZoomCmd((z) => ({ n: z.n + 1, f: 0, reset: true })); }} className="p-1.5" title="Vista completa"><RotateCcw size={15} /></button>
             <button onClick={() => setPlay((p) => !p)} className="p-1.5" title={play ? 'Pausar animación' : 'Reanudar'}>{play ? <Pause size={15} /> : <Play size={15} />}</button>
           </div>
 
