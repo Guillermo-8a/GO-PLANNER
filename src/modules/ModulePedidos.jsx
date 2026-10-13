@@ -195,7 +195,12 @@ function demoEventos() {
 // ─── Modelo ───────────────────────────────────────────────────────────────────
 function buildUnits(ev, umbral, hoy) {
   const m = new Map();
-  ev.forEach((e) => { const k = `${e.oc}|${e.sku}|${e.centro}`; if (!m.has(k)) m.set(k, []); m.get(k).push(e); });
+  ev.forEach((e) => {
+    // Etapas de versiones anteriores (CEDIS, PLAN…) se re-mapean; las que no se reconocen se ignoran
+    if (SIDX[e.etapa] == null) { const st = stageOf(e.etapa); if (!st) return; e = { ...e, etapa: st }; }
+    if (e.origen && !TIPOS[e.origen]) e = { ...e, origen: tipoOf(e.origen) };
+    const k = `${e.oc}|${e.sku}|${e.centro}`; if (!m.has(k)) m.set(k, []); m.get(k).push(e);
+  });
   const units = [];
   m.forEach((list, key) => {
     list.sort((a, b) => a.fecha - b.fecha || SIDX[a.etapa] - SIDX[b.etapa]);
