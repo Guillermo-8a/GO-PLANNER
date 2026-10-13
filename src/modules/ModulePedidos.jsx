@@ -154,7 +154,7 @@ function parseEventos(text) {
       const comp = v(r, 'COMPROMISO');
       const base = {
         oc, pos: '', sku: v(r, 'GOA'), modelo: '', prov: v(r, 'PROVEEDOR') || 'Sin proveedor', marca: v(r, 'MARCA') || '—', seccion: v(r, 'SECCION'), goa: v(r, 'GOA'), origen,
-        pzsPed: asig || numv(v(r, 'PZS PEDIDAS')), pzsEv: 0, valor: 0, ubic: '', centro: ctr(tienda), zona: norm(v(r, 'ZONA')), cont: '',
+        pzsPed: asig || numv(v(r, 'PZS PEDIDAS')), pzsEv: 0, valor: numv(v(r, 'COSTO ASIG')) || numv(v(r, 'COSTO PEDIDO')), ubic: '', centro: ctr(tienda), zona: norm(v(r, 'ZONA')), cont: '',
         fechaOc: toDate(v(r, 'FCH OC')), fechaComp: comp && !comp.startsWith('1900') ? toDate(comp) : null,
       };
       const add = (etapa, h, pzsEv, ubic) => { const f = toDate(v(r, h)); if (f) ev.push({ ...base, etapa, fecha: f, pzsEv, ubic }); };
@@ -167,7 +167,7 @@ function parseEventos(text) {
         if (fC && fP) ev.push({ ...base, etapa: 'CROSSDOCK', fecha: new Date(Math.max(fC, fP) + 1000), pzsEv: 0, ubic: `${cOc} · asignado` });
       }
       add('TRANSITO_TDA', 'DT SALIDA', numv(v(r, 'PZS SALIDA')), `${cOc} → T${tienda}`);
-      add('RECIBIDO', 'DT TIENDA', numv(v(r, 'PZS TIENDA')), `T${tienda}`);
+      add(v(r, 'TIPO DESTINO') === 'BODEGA' ? 'BODEGA_REG' : 'RECIBIDO', 'DT TIENDA', numv(v(r, 'PZS TIENDA')), `T${tienda}`);
     });
     return { ev, aviso: ev.length ? '' : 'No encontré eventos con fecha válida.' };
   }
