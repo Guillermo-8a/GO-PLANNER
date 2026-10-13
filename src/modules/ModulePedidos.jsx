@@ -333,6 +333,17 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
     // Sin zona: se agrupan por número de tienda en hasta 6 bloques para que el mapa no quede en un solo edificio
     const sinZ = [...new Set(us.filter((u) => !u.zona && u.centro).map((u) => u.centro))].sort();
     if (sinZ.length && !us.some((u) => u.zona)) { const k = Math.min(6, Math.ceil(sinZ.length / 8)), tam = Math.ceil(sinZ.length / k), blk = {}; sinZ.forEach((c, i) => { const b = Math.floor(i / tam); blk[c] = `T${sinZ[b * tam]}–${sinZ[Math.min(sinZ.length - 1, b * tam + tam - 1)]}`; }); us.forEach((u) => { if (!u.zona && u.centro) u.zona = blk[u.centro]; }); }
+    // Entrega típica por zona = p90 de salida→entrada en lo ya recibido (mín. 1 d). DT_TIENDA es la entrada (GR), no la llegada:
+    // lo que lleve en ruta más que lo típico ya llegó y está en tienda sin entrada (o se perdió en el camino)
+    const tr = {}; us.forEach((u) => { if (u.etapa === 'RECIBIDO' && u.tramos.TRANSITO_TDA != null) (tr[u.zona] = tr[u.zona] || []).push(u.tramos.TRANSITO_TDA); });
+    const p90 = (a) => { const x = [...a].sort((m, n) => m - n); return x[Math.floor((x.length - 1) * 0.9)]; };
+    const todos = Object.values(tr).flat();
+    const tip = (z) => Math.max(1, Math.ceil(tr[z]?.length >= 5 ? p90(tr[z]) : todos.length ? p90(todos) : (cfg.umbral.TRANSITO_TDA ?? 4)));
+    us.entrega = {}; Object.keys(tr).forEach((z) => { const t0 = tip(z); const x = [...tr[z]].sort((m, n) => m - n); us.entrega[z] = { tip: t0, med: x[Math.floor((x.length - 1) / 2)] }; });
+    us.forEach((u) => {
+      if (u.etapa !== 'TRANSITO_TDA') return; const t0 = tip(u.zona); if (u.enEtapa <= t0) return;
+      u.etapa = 'TIENDA'; u.estimado = true; u.enEtapa -= t0; u.desde = new Date(u.desde.getTime() + t0 * DAY); u.at = { ...u.at, TIENDA: u.desde }; u.atorado = u.enEtapa > (cfg.umbral.TIENDA ?? 2);
+    });
     return us;
   }, [ev, cfg.umbral, cfg.tc, hoy, zonaTraslados, tcDe]);
   const opts = useMemo(() => { const u = (k) => [...new Set(allUnits.map((x) => x[k]).filter(Boolean))].sort(); return { prov: u('prov'), marca: u('marca'), zona: u('zona'), seccion: u('seccion') }; }, [allUnits]);
@@ -420,8 +431,10 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
   const tiendasZona = useMemo(() => {
     if (!sel?.zona) return [];
     const m = {};
-    allUnits.filter((u) => zonaDe(u) === sel.zona && u.centro).forEach((u) => { const o = (m[u.centro] = m[u.centro] || { c: u.centro, ruta: 0, sin: 0, rec: 0, ator: 0, pzs: 0 }); if (u.etapa === 'TRANSITO_TDA') o.ruta++; if (u.etapa === 'TIENDA') { o.sin++; o.pzs += u.pzs; } if (u.etapa === 'RECIBIDO') o.rec++; if (u.atorado) o.ator++; });
-    return Object.values(m).sort((a, b) => a.c.localeCompare(b.c));
+    allUnits.filter((u) => zonaDe(u) === sel.zona && u.centro && ['TRANSITO_TDA', 'TIENDA', 'RECIBIDO'].includes(u.etapa)).forEach((u) => { const o = (m[u.centro] = m[u.centro] || { c: u.centro, ruta: 0, sin: 0, rec: 0, ator: 0, pzs: 0 }); if (u.etapa === 'TRANSITO_TDA') o.ruta++; if (u.etapa === 'TIENDA') { o.sin++; o.pzs += u.pzs; } if (u.etapa === 'RECIBIDO') o.rec++; if (u.atorado) o.ator++; });
+    // peor estado primero: atorado → sin entrada → en ruta → recibido
+    const rk = (o) => (o.ator ? 0 : o.sin ? 1 : o.ruta ? 2 : 3);
+    return Object.values(m).sort((a, b) => rk(a) - rk(b) || a.c.localeCompare(b.c));
   }, [allUnits, sel, zonas]);
 
   const camTo = (k) => setSite(k);
@@ -576,6 +589,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
               {sel.zona && (
                 <div className="px-4 flex gap-1 mb-2 flex-wrap">
                   {['TRANSITO_TDA', 'TIENDA', 'RECIBIDO'].map((k) => <button key={k} onClick={() => setSel({ ...sel, stages: [k] })} className={`px-2 py-1 rounded-lg text-[10px] font-bold border ${pill(sel.stages[0] === k)}`}>{STAGES[SIDX[k]].short} · {cnt(`${k}|${sel.zona}`).n}</button>)}
+                  {allUnits.entrega?.[sel.zona] && <p className={`w-full text-[10px] mt-1 ${t.textMuted}`}>Salida de CEDIS → entrada en tienda: mediana {allUnits.entrega[sel.zona].med.toFixed(1)} d, 9 de cada 10 en ≤ {allUnits.entrega[sel.zona].tip} d. Lo que lleva más de {allUnits.entrega[sel.zona].tip} d en ruta cuenta como <b>sin entrada</b> (ya debería estar en tienda).</p>}
                 </div>
               )}
               {(() => {
@@ -609,9 +623,9 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
               })()}
               {sel.zona && tiendasZona.length > 0 && (
                 <div className="px-4 mb-2">
-                  <div className={`text-[9px] font-black uppercase tracking-wider mb-1 flex justify-between ${t.textMuted}`}><span>Tiendas de la zona ({tiendasZona.length})</span>{selTienda && <button onClick={() => setSelTienda('')} className="underline">ver todas</button>}</div>
+                  <div className={`text-[9px] font-black uppercase tracking-wider mb-1 flex justify-between ${t.textMuted}`}><span>Tiendas de la zona ({tiendasZona.length}) · clic para ver sus OCs</span>{selTienda && <button onClick={() => setSelTienda('')} className="underline">ver todas</button>}</div>
                   <div className="flex flex-wrap gap-[3px] max-h-24 overflow-y-auto custom-scrollbar">
-                    {tiendasZona.map((s) => <button key={s.c} onClick={() => setSelTienda(selTienda === s.c ? '' : s.c)} title={`T${s.c} · ${s.ruta} en ruta · ${s.sin} sin entrada (${fmt(s.pzs)} pzs) · ${s.rec} recibidos${s.ator ? ` · ${s.ator} atorados` : ''}`} className={`w-[18px] h-[18px] rounded-[4px] ${selTienda === s.c ? 'ring-2 ring-offset-1 ring-violet-500' : ''}`} style={{ background: s.ator ? '#E5484D' : s.sin ? '#F59E0B' : s.ruta ? '#7C5CF0' : s.rec ? '#22C55E' : (isDark ? '#ffffff22' : '#E2E8F0') }} />)}
+                    {tiendasZona.map((s) => <button key={s.c} onClick={() => { if (selTienda === s.c) return setSelTienda(''); setSelTienda(s.c); setSel({ ...sel, stages: [s.ator ? (s.sin >= s.ruta ? 'TIENDA' : 'TRANSITO_TDA') : s.sin ? 'TIENDA' : s.ruta ? 'TRANSITO_TDA' : 'RECIBIDO'] }); }} title={`T${s.c} · ${s.ruta} en ruta · ${s.sin} sin entrada (${fmt(s.pzs)} pzs) · ${s.rec} recibidos${s.ator ? ` · ${s.ator} atorados` : ''}`} className={`w-[18px] h-[18px] rounded-[4px] ${selTienda === s.c ? 'ring-2 ring-offset-1 ring-violet-500' : ''}`} style={{ background: s.ator ? '#E5484D' : s.sin ? '#F59E0B' : s.ruta ? '#7C5CF0' : s.rec ? '#22C55E' : (isDark ? '#ffffff22' : '#E2E8F0') }} />)}
                   </div>
                   <div className={`flex gap-3 text-[9px] mt-1 ${t.textMuted}`}>{[['#E5484D', 'atorado'], ['#F59E0B', 'sin entrada'], ['#7C5CF0', 'en ruta'], ['#22C55E', 'recibido']].map(([c, l]) => <span key={l} className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm" style={{ background: c }} />{l}</span>)}</div>
                 </div>
@@ -651,7 +665,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
                       <span className={`text-xs font-black flex items-center gap-1.5 ${t.text}`}><span className="w-2 h-2 rounded-full" style={{ background: TIPOS[u.tipo].c }} />OC {u.oc}</span>
                       <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${u.atorado ? 'bg-rose-500/15 text-rose-500' : u.etapa === 'RECIBIDO' ? 'bg-emerald-500/15 text-emerald-500' : (isDark ? 'bg-white/10 text-gray-300' : 'bg-gray-100 text-gray-600')}`}>{u.etapa === 'RECIBIDO' ? `recibido ${fdate(u.fin)}` : `${(u.enEtapa || 0).toFixed(0)} d aquí`}</span>
                     </div>
-                    <div className={`text-[10px] ${t.textMuted}`}>{u.prov} · {u.modelo || u.sku} · {fmt(u.pzs)} pzs{u.centro ? ` · T${u.centro}` : ''}{sel.stages.length > 1 ? ` · ${STAGES[SIDX[u.etapa]].short}` : ''}{u.vencido ? ' · vencido' : ''}</div>
+                    <div className={`text-[10px] ${t.textMuted}`}>{u.prov} · {u.modelo || u.sku} · {fmt(u.pzs)} pzs{u.centro ? ` · T${u.centro}` : ''}{sel.stages.length > 1 ? ` · ${STAGES[SIDX[u.etapa]].short}` : ''}{u.vencido ? ' · vencido' : ''}{u.estimado ? ' · llegó sin entrada (estimado)' : ''}</div>
                   </button>
                 ))}
               </div>
@@ -690,7 +704,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
                   <div className={`text-sm font-black flex items-center gap-2 flex-wrap ${t.text}`}><Truck size={15} /> OC {unit.oc}
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: `${TIPOS[unit.tipo].c}22`, color: TIPOS[unit.tipo].c }}>{TIPOS[unit.tipo].l}</span>
                     <span className={`text-[10px] font-bold ${t.textMuted}`}>{unit.prov} · {unit.modelo || unit.sku} · {fmt(unit.pzs)} pzs{unit.cont ? ` · ${unit.cont}` : ''}{unit.centro ? ` · T${unit.centro}` : ''}</span></div>
-                  <div className={`text-[11px] ${t.textMuted}`}>Último registro: <b className={unit.atorado ? 'text-rose-500' : ''}>{SL[unit.etapa]}</b> · {fdate(unit.desde)}{unit.ubic ? ` · ${unit.ubic}` : ''}{unit.etapa !== 'RECIBIDO' ? ` · lleva ${(unit.enEtapa || 0).toFixed(1)} días` : ''}{unit.fechaComp ? ` · compromiso ${fdate(unit.fechaComp)}` : ''}{unit.vencido ? ' · vencido' : ''}</div>
+                  <div className={`text-[11px] ${t.textMuted}`}>Último registro: <b className={unit.atorado ? 'text-rose-500' : ''}>{SL[unit.etapa]}</b> · {fdate(unit.desde)}{unit.ubic ? ` · ${unit.ubic}` : ''}{unit.etapa !== 'RECIBIDO' ? ` · lleva ${(unit.enEtapa || 0).toFixed(1)} días` : ''}{unit.fechaComp ? ` · compromiso ${fdate(unit.fechaComp)}` : ''}{unit.vencido ? ' · vencido' : ''}{unit.estimado ? ' · llegó a tienda sin entrada (estimado por entrega típica de la zona)' : ''}</div>
                 </div>
                 <button onClick={() => setSelUnit(null)} className={t.textMuted}><X size={15} /></button>
               </div>
