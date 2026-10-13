@@ -62,7 +62,7 @@ function warehouse(P, { x, y, w, d, h, roof, doors = 3, logo, rh = 0.55, windows
     door.position.copy(W(u + dw / 2, y + d + 0.05, dh / 2)); g.add(door);
     g.add(boxAt(u - 0.1, y + d, dh + 0.12, dw + 0.2, 0.32, 0.07, mat(roof), 0.02));
   }
-  if (windows) for (let i = 0; i < Math.floor(d / 0.7); i++) g.add(boxAt(x + w - 0.01, y + 0.35 + i * 0.7, h * 0.58, 0.04, 0.42, h * 0.24, mat(P.glass, { emissive: P.glass, emissiveIntensity: P === PALETTE.dark ? 0.55 : 0.05, roughness: 0.15, metalness: 0.4 }), 0.01));
+  if (windows) for (let i = 0; i < Math.floor(d / 0.7); i++) g.add(boxAt(x + w - 0.01, y + 0.35 + i * 0.7, h * 0.58, 0.04, 0.42, h * 0.24, mat(P.glass, { emissive: P.glass, emissiveIntensity: P === PALETTE.dark ? 1.6 : 0.05, roughness: 0.15, metalness: 0.4 }), 0.01));
   if (w >= 3.3) { // equipos de aire y tragaluces en el techo
     for (let i = 0; i < Math.floor(w / 1.6); i++) { const ux = x + 0.6 + i * 1.6; const ac = boxAt(ux, y + 0.25, h + 0.12, 0.42, 0.36, 0.26, mat('#C9CED8', { metalness: 0.5, roughness: 0.35 }), 0.04); g.add(ac); const fan = mesh(memo('fan', () => new THREE.CylinderGeometry(0.11, 0.11, 0.03, 14)), mat('#3A3A44'), false); fan.position.copy(W(ux + 0.21, y + 0.43, h + 0.4)); g.add(fan); }
     for (let i = 0; i < Math.floor(w / 1.2); i++) { const sk = mesh(memo('sky', () => new THREE.BoxGeometry(0.5, 0.04, 0.3)), mat('#BFE3FF', { roughness: 0.05, metalness: 0.3, emissive: '#BFE3FF', emissiveIntensity: P === PALETTE.dark ? 0.35 : 0.05 }), false); sk.position.copy(W(x + 0.5 + i * 1.2, y + d * 0.72, h + rh * 0.45 + 0.03)); sk.rotation.x = Math.atan2(rh, d / 2 + 0.14); g.add(sk); }
@@ -204,7 +204,7 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     const fill = new THREE.DirectionalLight('#b9a8ff', 0.35); fill.position.set(40, 20, -30); scene.add(fill);
     const staticG = new THREE.Group(), dynG = new THREE.Group(); scene.add(staticG, dynG);
     composer.addPass(new RenderPass(scene, cam));
-    const bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.4, 0.45, 0.97); composer.addPass(bloom); composer.addPass(new OutputPass());
+    const bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.3, 0.4, 1.2); composer.addPass(bloom); composer.addPass(new OutputPass());
     Object.assign(S, { renderer, labels, scene, cam, controls, hemi, sun, staticG, dynG, anim: [], movers: [], t: 0, labelEls: [], detail: null, composer, bloom });
 
     const resize = () => { const w = el.clientWidth, h = el.clientHeight, a = w / h, vs = 30; cam.left = (-vs * a) / 2; cam.right = (vs * a) / 2; cam.top = vs / 2; cam.bottom = -vs / 2; cam.updateProjectionMatrix(); renderer.setSize(w, h); labels.setSize(w, h); S.composer?.setSize(w, h); };
@@ -240,8 +240,11 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
       const det = cam.zoom > 1.55; if (det !== S.detail) { S.detail = det; S.labelEls.forEach((l) => l.setDetail(det)); S.frame = 0; }
       // Etiquetas sin encimarse: por prioridad (seleccionada > con atorados > con más piezas); las que chocan se ocultan
       if ((S.frame = (S.frame || 0) + 1) % 12 === 1) {
-        const r = el.getBoundingClientRect(), placed = [], v = new THREE.Vector3();
+        const r = el.getBoundingClientRect(), v = new THREE.Vector3();
+        // los paneles del HUD (KPIs, rutas, controles, panel lateral) cuentan como ocupados
+        const placed = [...(el.parentElement?.querySelectorAll('[data-hud]') || [])].map((h) => { const b = h.getBoundingClientRect(); return { x: b.left - r.left, y: b.top - r.top, w: b.width, h: b.height }; });
         [...S.labelEls].sort((a, b) => b.pri - a.pri).forEach((l) => {
+          if (!l.obj.visible) return;
           v.copy(l.obj.position).project(cam); const w = l.el.offsetWidth || 80, h = l.el.offsetHeight || 22;
           const x = (v.x + 1) / 2 * r.width - w / 2, y = (1 - v.y) / 2 * r.height - h - 14;
           const hit = placed.some((p) => x < p.x + p.w + 4 && x + w + 4 > p.x && y < p.y + p.h + 3 && y + h + 3 > p.y);
@@ -279,7 +282,7 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     { const o = boxAt(8.4, 2.38, 0.07, 10.5, 0.05, 0.01, mat(P.padLine), 0); o.castShadow = false; G.add(o); }
     // agua con oleaje
     const wg = new THREE.PlaneGeometry(21.2, yBot - 4.4, 48, 36); wg.rotateX(-Math.PI / 2);
-    const water = new THREE.Mesh(wg, new THREE.MeshStandardMaterial({ color: P.water, roughness: 0.18, metalness: 0.25, flatShading: true, transparent: true, opacity: 0.96 }));
+    const water = new THREE.Mesh(wg, new THREE.MeshStandardMaterial({ color: P.water, roughness: 0.6, metalness: 0, envMapIntensity: 0.15, flatShading: true, transparent: true, opacity: 0.96 }));
     water.position.copy(W(-16 + 10.6, 6.4 + (yBot - 4.4) / 2, 0.16)); water.receiveShadow = true; G.add(water);
     const base = wg.attributes.position.array.slice();
     addAnim((t) => { const a = wg.attributes.position.array; for (let i = 0; i < a.length; i += 3) a[i + 1] = base[i + 1] + Math.sin(base[i] * 0.9 + t * 1.4) * 0.05 + Math.cos(base[i + 2] * 1.1 + t * 1.1) * 0.04; wg.attributes.position.needsUpdate = true; wg.computeVertexNormals(); });
@@ -343,7 +346,7 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     // árboles y autos
     [[-4, -14], [-3.6, -8], [3.8, -12.5], [4.2, -2.5], [2.8, -1.4], [8, -12.5], [11, -13.4], [15, -12.8], [18.5, -13.4], [9, 7.5], [12, 8.6], [16, 7.2], [18.6, 10.4], [24.6, -4.6], [-4.6, -3], [21.2, 15], [10.5, 12], [14.5, 14]].forEach(([x, y], i) => { const tr = tree(P, 0.85 + ((i * 37) % 10) / 22); tr.position.copy(W(x, y, 0.05)); tr.rotation.y = i; G.add(tr); });
     // postes de luz a lo largo de los caminos principales
-    const bulbM = mat('#FFE9A8', { emissive: '#FFD66B', emissiveIntensity: isDark ? 2.2 : 0.4 });
+    const bulbM = mat('#FFE9A8', { emissive: '#FFD66B', emissiveIntensity: isDark ? 4 : 0.4 });
     [[5.2, -9], [5.2, -2], [5.2, 3], [10, -4.9], [16, -4.9], [19.7, 0], [19.7, 6], [19.7, 12], [2.5, 5.7], [19.7, -9]].forEach(([lx, ly]) => {
       G.add(boxAt(lx, ly, 0, 0.07, 0.07, 1.5, mat('#4B5563', { metalness: 0.5 }), 0.01));
       G.add(boxAt(lx, ly, 1.45, 0.32, 0.07, 0.05, mat('#4B5563', { metalness: 0.5 }), 0.01));
@@ -366,15 +369,20 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     const zs = zonas.map((z, i) => ({ z, ...zonaPos(i) })), cs = ciudades.map((c, i) => ({ c, ...ciudadPos(i) }));
     const add = (o, k) => { if (k) o.userData.pick = k; G.add(o); return o; };
     const anim = (f) => S.anim.push(f);
-    const label = (key, x, y, z, title, sub, color, n = 1, ator = 0, pzs = 0) => {
+    const label = (key, x, y, z, title, sub, color, n = 1, ator = 0, pzs = 0, grp = '') => {
       const el = document.createElement('div'); const active = selKey === key; const idle = !n;
-      el.style.cssText = `pointer-events:auto;cursor:pointer;background:${active ? (isDark ? 'rgba(58,47,85,0.96)' : 'rgba(238,243,255,0.98)') : P.card};border:1px solid ${active ? color : P.cardB};border-radius:10px;padding:4px 9px;font-family:Inter,system-ui,sans-serif;box-shadow:0 6px 18px rgba(0,0,0,0.18);white-space:nowrap;transform:translateY(-14px);backdrop-filter:blur(6px);opacity:${idle && !active ? 0.55 : 1};`;
+      el.style.cssText = `pointer-events:auto;cursor:pointer;background:${active ? (isDark ? 'rgba(58,47,85,0.96)' : 'rgba(238,243,255,0.98)') : P.card};border:1px solid ${active ? color : P.cardB};border-radius:10px;padding:4px 9px;font-family:Inter,system-ui,sans-serif;box-shadow:0 6px 18px rgba(0,0,0,0.18);white-space:nowrap;transform:translateY(-14px);backdrop-filter:blur(6px);opacity:${idle && !active ? (isDark ? 0.72 : 1) : 1};`;
       const sh = (sub || '').split(' · ')[0];
-      el.innerHTML = `<div style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:800;color:${P.text}"><span style="width:7px;height:7px;border-radius:9px;background:${color}"></span>${title}<span class="sm" style="font-weight:600;color:${P.sub}">${sh}</span></div><div class="lg" style="font-size:9.5px;color:${P.sub};margin-top:1px">${sub || ''}</div>`;
+      el.innerHTML = `<div style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:800;color:${idle && !isDark ? '#374151' : P.text}"><span style="width:7px;height:7px;border-radius:9px;background:${color}"></span>${title}<span class="sm" style="font-weight:600;color:${P.sub}">${sh}</span></div><div class="lg" style="font-size:9.5px;color:${P.sub};margin-top:1px">${sub || ''}</div>`;
       el.onclick = (e) => { e.stopPropagation(); props.current.onPick?.(key); };
       const o = new CSS2DObject(el); o.position.copy(W(x, y, z)); G.add(o);
       const sm = el.querySelector('.sm'), lg = el.querySelector('.lg');
-      const setDetail = (d) => { const on = (d || active) && !idle; lg.style.display = on ? 'block' : 'none'; sm.style.display = on || idle ? 'none' : 'inline'; };
+      const setDetail = (d) => {
+        const on = (d || active) && !idle; lg.style.display = on ? 'block' : 'none'; sm.style.display = on || idle ? 'none' : 'inline';
+        // zonas: en vista general solo la etiqueta agrupada 'Tiendas'; con zoom o selección, una por zona
+        if (grp === 'zona') o.visible = !!(d || active || selKey.startsWith('Z|')); // CSS2DRenderer controla display según .visible
+        if (grp === 'agg') o.visible = !(d || selKey.startsWith('Z|'));
+      };
       S.labelEls.push({ setDetail, el, obj: o, pri: active ? 1e9 : idle ? -1 : ator * 1000 + pzs });
     };
     const pin = (n, x, y, z, key) => { if (!n) return; const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: pinTex(n), depthTest: false })); sp.scale.set(0.62, 0.83, 1); if (key) sp.userData.pick = key; sp.center.set(0.5, 0); sp.renderOrder = 10; G.add(sp); anim((t) => { sp.position.copy(W(x, y, z + 0.15 + Math.abs(Math.sin(t * 2.6 + x)) * 0.35)); }); };
@@ -411,10 +419,16 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     stack(N.FORO.x + N.FORO.w + 0.2, N.FORO.y + 0.2, cnt('FORO').pzs, cnt('FORO').ator > 0, 2);
     const cT = cnt('TRANSITO_INT');
     const cPI = cnt('PROVEEDOR|IMP');
-    if (cT.n || cPI.n) { label('MAR', -9, 9.6, 1.9, 'Importación', `${cPI.ocs || 0} OCs con proveedor · ${cT.ocs || 0} en tránsito (sin fecha de embarque/aduana en la base)`, TIPO_C.IMP, cT.n + cPI.n, cT.ator + cPI.ator, cT.pzs + cPI.pzs); pin(cT.ator + cPI.ator ? fk((cT.pzsAtor || 0) + (cPI.pzsAtor || 0)) : 0, -7, 9.7, 1.4, 'MAR'); }
+    // Importación en el mar solo cuenta OCs con embarque; las que siguen con proveedor están en el nodo Proveedores
+    label('MAR', -9, 9.6, 1.9, 'Importación', cT.n ? `${cT.ocs} OCs en tránsito · ${fk(cT.pzs)} pzs` : 'Sin datos de embarque', TIPO_C.IMP, cT.n, cT.ator, cT.pzs); pin(cT.ator ? fk(cT.pzsAtor || 0) : 0, -7, 9.7, 1.4, 'MAR');
     cs.forEach(({ c, x, y }) => { const k = `CIU|${c}`, s = cnt(`BODEGA_REG|${c}`); label(k, x + 1.2, y + 0.9, 2.1, c === 'REGIONAL' ? 'Bodegas regionales' : `Bodega ${c[0]}${c.slice(1).toLowerCase()}`, s.n ? `${s.ocs} OCs · ${fk(s.pzs)} pzs` : 'Sin inventario', '#0EA5E9', s.n, s.ator, s.pzs); pin(s.ator ? fk(s.pzsAtor || 0) : 0, x + 2.4, y + 0.9, 1.5, k); halo(x, y, 2.4, 1.8, s); stack(x + 2.75, y + 0.15, s.pzs, s.ator > 0, 2); if (selKey === k) ring(x, y, 2.4, 1.8); });
-    zs.forEach(({ z, x, y }) => { const k = `Z|${z}`, sT = cnt(`TIENDA|${z}`), sR = cnt(`RECIBIDO|${z}`), sRu = cnt(`TRANSITO_TDA|${z}`); label(k, x + 1.2, y + 0.95, 1.9, z === 'TIENDAS' ? 'Tiendas' : `Zona ${z}`, `${sRu.n} en ruta · ${fk(sT.pzs)} pzs sin entrada · ${sR.n} recibidos`, '#F59E0B', sT.n + sRu.n + sR.n, sT.ator + sRu.ator, sT.pzs + sRu.pzs); pin(sT.ator + sRu.ator ? fk((sT.pzsAtor || 0) + (sRu.pzsAtor || 0)) : 0, x + 2.4, y + 0.95, 1.4, k); halo(x - 1.45, y - 1.2, 3.85, 3.0, { n: sT.n + sRu.n, ator: sT.ator + sRu.ator }); stack(x - 1.5, y + 0.15, sT.pzs, sT.ator > 0, 2); if (selKey === k) ring(x, y, 2.4, 1.9); });
+    zs.forEach(({ z, x, y }) => { const k = `Z|${z}`, sT = cnt(`TIENDA|${z}`), sR = cnt(`RECIBIDO|${z}`), sRu = cnt(`TRANSITO_TDA|${z}`); label(k, x + 1.2, y + 0.95, 1.9, z === 'TIENDAS' ? 'Tiendas' : `Zona ${z}`, `${sRu.n} en ruta · ${fk(sT.pzs)} pzs sin entrada · ${sR.n} recibidos`, '#F59E0B', sT.n + sRu.n + sR.n, sT.ator + sRu.ator, sT.pzs + sRu.pzs, 'zona'); pin(sT.ator + sRu.ator ? fk((sT.pzsAtor || 0) + (sRu.pzsAtor || 0)) : 0, x + 2.4, y + 0.95, 1.4, k); halo(x - 1.45, y - 1.2, 3.85, 3.0, { n: sT.n + sRu.n, ator: sT.ator + sRu.ator }); stack(x - 1.5, y + 0.15, sT.pzs, sT.ator > 0, 2); if (selKey === k) ring(x, y, 2.4, 1.9); });
 
+    { // etiqueta agrupada de todas las zonas (vista general)
+      const tot = zs.reduce((a, { z }) => { const r = cnt(`TRANSITO_TDA|${z}`), ti = cnt(`TIENDA|${z}`), re = cnt(`RECIBIDO|${z}`); a.ru += r.n; a.ti += ti.pzs; a.re += re.n; a.at += r.ator + ti.ator; a.n += r.n + ti.n + re.n; return a; }, { ru: 0, ti: 0, re: 0, at: 0, n: 0 });
+      const mid = zs[Math.floor((zs.length - 1) / 2)] || { x: 23.2, y: 0 };
+      label('ZAGG', mid.x + 1.2, mid.y + 0.95, 2.6, `Tiendas · ${fmtN(tot.ru)} en ruta`, `${zs.length} zonas · ${fk(tot.ti)} pzs sin entrada · ${fmtN(tot.re)} recibidos`, '#F59E0B', tot.n, tot.at, tot.ru, 'agg');
+    }
     // rutas de color (tubo con flujo animado)
     const route = (path, color, op, vol = 0.3) => {
       const cp = new THREE.CurvePath(); for (let i = 0; i < path.length - 1; i++) cp.add(new THREE.LineCurve3(W(path[i][0], path[i][1], 0.1), W(path[i + 1][0], path[i + 1][1], 0.1)));

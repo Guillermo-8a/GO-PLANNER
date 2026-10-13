@@ -286,7 +286,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
   const [aviso, setAviso] = useState('');
   const [fProv, setFProv] = useState(''); const [fMarca, setFMarca] = useState(''); const [fTipo, setFTipo] = useState(''); const [fZona, setFZona] = useState('');
   const [fSolo, setFSolo] = useState(''); const [q, setQ] = useState(''); const [fSec, setFSec] = useState('');
-  const [hoverTipo, setHoverTipo] = useState(''); const [feedAge, setFeedAge] = useState('');
+  const [hoverTipo, setHoverTipo] = useState(''); const [feedAge, setFeedAge] = useState(''); const [expOC, setExpOC] = useState('');
   const [sel, setSel] = useState(null); // { key, stages:[...], titulo, zona?, ciudad? }
   const [selUnit, setSelUnit] = useState(null);
   const [selTienda, setSelTienda] = useState('');
@@ -392,7 +392,9 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
       lead7: (() => { const a = rec.filter((u) => dias(u.fin, hoy) <= 7); return a.length ? a.reduce((x, u) => x + u.lead, 0) / a.length : null; })(),
       leadPrev: (() => { const a = rec.filter((u) => { const d = dias(u.fin, hoy); return d > 7 && d <= 14; }); return a.length ? a.reduce((x, u) => x + u.lead, 0) / a.length : null; })(),
       pzsTransito: units.filter((u) => u.etapa === 'TRANSITO_TDA').reduce((a, u) => a + u.pzs, 0),
-      vencen7: new Set(units.filter((u) => u.fechaComp && !u.vencido && !(u.at.ALMACEN || u.at.CROSSDOCK || u.fin) && dias(hoy, u.fechaComp) <= 7).map((u) => u.oc)).size,
+      // fecha esperada entre hoy y hoy+7 (por día calendario) y aún sin llegar a CEDIS / destino
+      vencen7: (() => { const h0 = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()), h7 = new Date(h0.getTime() + 8 * DAY); return new Set(units.filter((u) => u.fechaComp && u.fechaComp >= h0 && u.fechaComp < h7 && !(u.at.ALMACEN || u.at.CROSSDOCK || u.fin)).map((u) => u.oc)).size; })(),
+      compFuturo: units.some((u) => u.fechaComp && u.fechaComp >= new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate())),
     };
   }, [units]);
   const leadTipo = useMemo(() => Object.keys(TIPOS).map((tp) => {
@@ -428,7 +430,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
   const onPick = (k) => {
     if (k === 'PROV') return abrir({ key: k, stages: ['PROVEEDOR'], titulo: 'Proveedores · On order' });
     if (k === 'ADU') return abrir({ key: k, stages: ['ADUANA'], titulo: 'Aduana · Puerto' });
-    if (k === 'MAR') return abrir({ key: k, stages: ['TRANSITO_INT', 'PROVEEDOR'], tipo: 'IMP', titulo: 'Importación (tránsito y con proveedor)' });
+    if (k === 'MAR') return abrir({ key: k, stages: ['TRANSITO_INT'], titulo: 'Importación en tránsito' });
     if (k === 'ALM') return abrir({ key: k, stages: ['ALMACEN'], titulo: 'PLAN · Almacén' });
     if (k === 'XD') return abrir(BUCKET_SEL.INP);
     if (k === 'FORO') return abrir(BUCKET_SEL.FORO);
@@ -524,7 +526,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
           <div className={`absolute bottom-3 right-3 text-[10px] pointer-events-none ${t.textMuted} ${sel || unit ? 'hidden' : ''}`}>Arrastra para mover · rueda para zoom · clic derecho para girar</div>
 
           {/* KPIs flotantes */}
-          <div className={`absolute top-3 left-3 flex flex-wrap gap-2 ${sel ? 'max-w-[calc(100%-470px)]' : 'max-w-[78%]'}`}>
+          <div data-hud className={`absolute top-3 left-3 flex flex-wrap gap-2 ${sel ? 'max-w-[calc(100%-470px)]' : 'max-w-[calc(100%-80px)]'}`}>
             {(() => {
               const ot = kpi.onTime != null ? kpi.onTime * 100 : null;
               const otC = ot == null ? '#94A3B8' : ot >= SEMAFORO.aTiempo.ok ? '#22C55E' : ot >= SEMAFORO.aTiempo.riesgo ? '#F59E0B' : '#E5484D';
@@ -532,26 +534,26 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
               const ldC = ld == null ? '#7C5CF0' : ld <= SEMAFORO.leadObjetivo ? '#22C55E' : ld <= SEMAFORO.leadObjetivo * 1.25 ? '#F59E0B' : '#E5484D';
               return [
                 { l: 'Atorados', v: fmt(kpi.ator), s: `${fmt(kpi.pzsAtor)} pzs · clic para ver`, I: AlertTriangle, bad: kpi.ator > 0, f: 'atorado', c: '#E5484D' },
-                { l: 'Vencen en 7 días', v: fmt(kpi.vencen7), s: 'OCs aún sin llegar a CEDIS', I: Clock, c: '#F59E0B', f: 'activo' },
+                { l: 'Vencen en 7 días', v: fmt(kpi.vencen7), s: kpi.compFuturo ? 'OCs aún sin llegar a CEDIS' : 'la base no trae compromisos futuros', I: Clock, c: '#F59E0B', f: 'activo' },
                 { l: 'En tránsito a tiendas', v: fk(kpi.pzsTransito), s: 'pzs', I: Truck, c: '#3B82F6', onClick: () => abrir(BUCKET_SEL.TRN) },
-                { l: 'Lead time', v: ld != null ? `${ld.toFixed(0)} d` : '—', s: `obj. ${SEMAFORO.leadObjetivo} d${dl != null ? ` · ${dl > 0 ? '▲' : '▼'} ${Math.abs(dl).toFixed(1)} vs sem. ant.` : ''}`, I: Clock, c: ldC },
+                { l: 'Lead time', v: ld != null ? `${ld.toFixed(0)} d` : '—', s: <>obj. {SEMAFORO.leadObjetivo} d{dl != null && <> · <span style={{ color: dl > 0 ? '#E5484D' : '#22C55E', fontWeight: 700 }}>{dl > 0 ? '▲' : '▼'} {Math.abs(dl).toFixed(1)}</span> vs sem. ant.</>}</>, I: Clock, c: ldC },
                 { l: 'A tiempo', v: ot != null ? `${ot.toFixed(0)}%` : '—', s: `${kpi.vencidos} vencidos hoy`, I: ot != null && ot < SEMAFORO.aTiempo.riesgo ? AlertTriangle : CheckCircle2, f: 'vencido', c: otC, color: otC },
               ];
             })().map(({ l, v, s, I, bad, f, c, color, onClick }) => (
-              <button key={l} onClick={() => (onClick ? onClick() : f && setFSolo(fSolo === f ? '' : f))} className={`text-left px-3 py-2 rounded-xl border shadow-md flex items-center gap-2.5 ${glass} ${f && fSolo === f ? 'ring-2 ring-violet-500' : ''}`}>
+              <button key={l} onClick={() => (onClick ? onClick() : f && setFSolo(fSolo === f ? '' : f))} className={`text-left ${sel ? 'px-2 py-1.5' : 'px-3 py-2'} rounded-xl border shadow-md flex items-center gap-2.5 ${glass} ${f && fSolo === f ? 'ring-2 ring-violet-500' : ''}`}>
                 <span className="p-2 rounded-lg" style={{ background: `${c}1f`, color: c }}><I size={16} /></span>
                 <span><span className={`block text-[9px] font-black uppercase tracking-wider ${t.textMuted}`}>{l}</span><span className={`block text-lg font-black leading-tight ${bad ? 'text-rose-500' : t.text}`} style={color ? { color } : undefined}>{v}</span><span className={`block text-[10px] ${t.textMuted}`}>{s}</span></span>
               </button>
             ))}
           </div>
           {/* Leyenda de rutas */}
-          <div className={`absolute left-3 top-[100px] rounded-xl border px-3 py-2 shadow-md ${glass}`}>
+          <div data-hud className={`absolute left-3 ${sel ? 'top-[150px]' : 'top-[100px]'} rounded-xl border px-3 py-2 shadow-md ${glass}`}>
             <div className={`text-[9px] font-black uppercase tracking-wider mb-1 ${t.textMuted}`}>Rutas</div>
-            {Object.entries(TIPOS).map(([k, v]) => <button key={k} onMouseEnter={() => setHoverTipo(k)} onMouseLeave={() => setHoverTipo('')} onClick={() => setFTipo(fTipo === k ? '' : k)} className={`flex items-center gap-2 text-[11px] font-bold py-0.5 ${fTipo && fTipo !== k ? 'opacity-40' : ''} ${t.text}`}><span className="w-5 h-1 rounded-full" style={{ background: v.c }} />{v.l} <span className={t.textMuted}>{units.filter((u) => u.tipo === k && u.etapa !== 'RECIBIDO').length}</span></button>)}
+            {Object.entries(TIPOS).map(([k, v]) => <button key={k} onMouseEnter={() => setHoverTipo(k)} onMouseLeave={() => setHoverTipo('')} onClick={() => setFTipo(fTipo === k ? '' : k)} className={`flex items-center gap-2 text-[11px] font-bold py-0.5 ${fTipo && fTipo !== k ? 'opacity-40' : ''} ${t.text}`}><span className="w-5 h-1 rounded-full" style={{ background: v.c }} />{v.l} <span className={`font-semibold ${t.textMuted}`}>{(() => { const us = units.filter((u) => u.tipo === k && u.etapa !== 'RECIBIDO'); return `${new Set(us.map((u) => u.oc)).size} OCs · ${fmt(us.length)} líneas · ${fk(us.reduce((a, u) => a + u.pzs - u.pzsRec, 0))} pzs`; })()}</span></button>)}
             <div className={`flex items-center gap-2 text-[11px] font-bold py-0.5 ${t.text}`}><span className="w-5 h-1 rounded-full bg-violet-500" />PLAN → tiendas</div>
           </div>
           {/* Controles */}
-          <div className={`absolute top-3 right-3 flex flex-col gap-1 rounded-xl border p-1 shadow-md ${glass} ${sel ? 'lg:right-[394px]' : ''}`}>
+          <div data-hud className={`absolute top-3 right-3 flex flex-col gap-1 rounded-xl border p-1 shadow-md ${glass} ${sel ? 'lg:right-[394px]' : ''}`}>
             <button onClick={() => setZoomCmd((z) => ({ n: z.n + 1, f: 1.25 }))} className="p-1.5"><ZoomIn size={15} /></button>
             <button onClick={() => setZoomCmd((z) => ({ n: z.n + 1, f: 0.8 }))} className="p-1.5"><ZoomOut size={15} /></button>
             <button onClick={() => { setSite('RED'); setZoomCmd((z) => ({ n: z.n + 1, f: 0, reset: true })); }} className="p-1.5" title="Vista completa"><RotateCcw size={15} /></button>
@@ -560,7 +562,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
 
           {/* Panel del nodo */}
           {sel && (
-            <div className={`absolute top-3 right-3 bottom-3 w-[380px] max-w-[calc(100%-24px)] rounded-2xl border shadow-xl flex flex-col ${glass}`}>
+            <div data-hud className={`absolute top-3 right-3 bottom-3 w-[380px] max-w-[calc(100%-24px)] rounded-2xl border shadow-xl flex flex-col ${glass}`}>
               <div className="p-4 pb-2 flex items-start justify-between">
                 <div>
                   <div className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted}`}>{sel.zona ? 'Zona de tiendas' : sel.ciudad ? 'Bodega regional' : 'Ubicación'}</div>
@@ -593,7 +595,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
                 const exp = () => { const H = ['OC', 'PROVEEDOR', 'SECCION', 'GOA', 'TIENDA', 'TIPO', 'ETAPA', 'PIEZAS', 'DIAS_EN_ETAPA', 'ATORADO', 'COMPROMISO']; const L = [H.join(',')]; nodeUnits.forEach((u) => L.push([u.oc, u.prov, u.seccion, u.goa, u.centro, TIPOS[u.tipo].l, SL[u.etapa], u.pzs, (u.enEtapa || 0).toFixed(1), u.atorado ? 'SI' : '', u.fechaComp ? u.fechaComp.toISOString().slice(0, 10) : ''].map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['\uFEFF' + L.join('\r\n')], { type: 'text/csv;charset=utf-8' })); a.download = `Pedidos_${(sel.titulo || 'nodo').replace(/[^\w]+/g, '_')}.csv`; a.click(); };
                 return (
                   <div className="px-4 mb-2">
-                    <div className={`text-[9px] font-black uppercase tracking-wider mb-1 flex justify-between items-center ${t.textMuted}`}><span>Top 10 OCs más atrasadas</span><button onClick={exp} className="flex items-center gap-1 normal-case font-bold hover:underline"><Download size={11} /> CSV del nodo</button></div>
+                    <div className={`text-[9px] font-black uppercase tracking-wider mb-1 flex justify-between items-center ${t.textMuted}`}><span title="Días de atraso contra la fecha esperada (compromiso); fuera de proveedor, días en el nodo por encima del SLA">Top 10 · atraso vs fecha esperada</span><button onClick={exp} className="flex items-center gap-1 normal-case font-bold hover:underline"><Download size={11} /> CSV del nodo</button></div>
                     {top.length === 0 ? <p className={`text-[10px] ${t.textMuted}`}>Sin OCs atrasadas aquí.</p> : (
                       <div className={`rounded-lg border max-h-40 overflow-y-auto custom-scrollbar ${t.cardInner}`}>
                         {top.map((o) => <button key={o.oc} onClick={() => setSelUnit(o.u.key)} className={`w-full grid grid-cols-[1fr_auto] gap-1 px-2 py-1 text-left border-b last:border-0 ${isDark ? 'border-white/5 hover:bg-white/5' : 'border-gray-100 hover:bg-gray-50'}`}><span className="min-w-0"><span className={`block text-[11px] font-bold truncate ${t.text}`}>{o.oc} · {o.prov}</span><span className={`block text-[9.5px] truncate ${t.textMuted}`}>{o.goa} · {fmt(o.pzs)} pzs{o.comp ? ` · esperada ${fdate(o.comp)}` : ''}</span></span><span className="text-[11px] font-black text-rose-500 self-center">+{Math.max(0, o.dias).toFixed(0)} d</span></button>)}
@@ -613,7 +615,34 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
               )}
               <div className="flex-1 overflow-y-auto px-2 pb-2 custom-scrollbar">
                 {nodeUnits.length === 0 && <p className={`text-xs text-center py-6 ${t.textMuted}`}>Sin pedidos aquí con los filtros actuales.</p>}
-                {nodeUnits.slice(0, 300).map((u) => (
+                {nodeUnits.length > 0 && <div className={`text-[9px] font-black uppercase tracking-wider px-2 pb-1 ${t.textMuted}`} title="Días desde el último registro de la OC en este nodo (máximo entre sus tiendas)">OCs · días en este nodo</div>}
+                {(() => {
+                  // Una fila por OC (tiendas, piezas y máximo de días); clic para ver sus tiendas
+                  const m = new Map();
+                  nodeUnits.forEach((u) => { if (!m.has(u.oc)) m.set(u.oc, { oc: u.oc, prov: u.prov, goa: u.goa || u.modelo || u.sku, tipo: u.tipo, us: [], pzs: 0, max: 0, ator: 0 }); const o = m.get(u.oc); o.us.push(u); o.pzs += u.pzs; o.max = Math.max(o.max, u.enEtapa || 0); if (u.atorado) o.ator++; });
+                  return [...m.values()].sort((a, b) => b.max - a.max).slice(0, 200).map((o) => (
+                    <div key={o.oc} className="mb-1">
+                      <button onClick={() => { setExpOC(expOC === o.oc ? '' : o.oc); if (o.us.length === 1) setSelUnit(o.us[0].key); }} className={`w-full text-left px-2.5 py-2 rounded-lg border ${expOC === o.oc ? (isDark ? 'border-violet-500 bg-violet-500/10' : 'border-blue-400 bg-blue-50') : `border-transparent ${isDark ? 'hover:bg-white/5' : 'hover:bg-gray-50'}`}`}>
+                        <div className="flex justify-between items-center">
+                          <span className={`text-xs font-black flex items-center gap-1.5 ${t.text}`}><span className="w-2 h-2 rounded-full" style={{ background: TIPOS[o.tipo].c }} />OC {o.oc}</span>
+                          <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${o.ator ? 'bg-rose-500/15 text-rose-500' : (isDark ? 'bg-white/10 text-gray-300' : 'bg-gray-100 text-gray-600')}`}>{o.max.toFixed(0)} d en nodo</span>
+                        </div>
+                        <div className={`text-[10px] ${t.textMuted}`}>{o.prov} · {o.goa} · {o.us.length} {o.us.length === 1 ? 'tienda' : 'tiendas'} · {fmt(o.pzs)} pzs{o.ator ? ` · ${o.ator} atoradas` : ''}</div>
+                      </button>
+                      {expOC === o.oc && o.us.length > 1 && (
+                        <div className={`ml-4 pl-2 border-l ${isDark ? 'border-white/10' : 'border-gray-200'}`}>
+                          {o.us.sort((a, b) => b.enEtapa - a.enEtapa).map((u) => (
+                            <button key={u.key} onClick={() => setSelUnit(u.key)} className={`w-full flex justify-between text-[10.5px] px-2 py-1 rounded ${selUnit === u.key ? (isDark ? 'bg-violet-500/15' : 'bg-blue-50') : (isDark ? 'hover:bg-white/5' : 'hover:bg-gray-50')}`}>
+                              <span className={t.text}>{u.centro ? `T${u.centro}` : '—'} · {fmt(u.pzs)} pzs</span>
+                              <span className={u.atorado ? 'text-rose-500 font-bold' : t.textMuted}>{u.etapa === 'RECIBIDO' ? `recibido ${fdate(u.fin)}` : `${(u.enEtapa || 0).toFixed(0)} d`}</span>
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                  ));
+                })()}
+                {false && nodeUnits.slice(0, 300).map((u) => (
                   <button key={u.key} onClick={() => setSelUnit(u.key)} className={`w-full text-left px-2.5 py-2 rounded-lg mb-1 border ${selUnit === u.key ? (isDark ? 'border-violet-500 bg-violet-500/10' : 'border-blue-400 bg-blue-50') : `border-transparent ${isDark ? 'hover:bg-white/5' : 'hover:bg-gray-50'}`}`}>
                     <div className="flex justify-between items-center">
                       <span className={`text-xs font-black flex items-center gap-1.5 ${t.text}`}><span className="w-2 h-2 rounded-full" style={{ background: TIPOS[u.tipo].c }} />OC {u.oc}</span>
@@ -628,10 +657,10 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
 
           {/* Movimientos recientes / atorados */}
           {!sel && !unit && !feedOpen && (
-            <button onClick={() => setFeedOpen(true)} className={`absolute left-3 bottom-3 px-3 py-2 rounded-xl border shadow-md text-[11px] font-bold flex items-center gap-2 ${glass} ${t.text}`}><Clock size={13} /> Movimientos{kpi.ator ? <span className="text-rose-500">· {kpi.ator} atorados</span> : ''}</button>
+            <button data-hud onClick={() => setFeedOpen(true)} className={`absolute left-3 bottom-3 px-3 py-2 rounded-xl border shadow-md text-[11px] font-bold flex items-center gap-2 ${glass} ${t.text}`}><Clock size={13} /> Movimientos{kpi.ator ? <span className="text-rose-500">· {kpi.ator} atorados</span> : ''}</button>
           )}
           {!sel && !unit && feedOpen && (
-            <div className={`absolute left-3 bottom-3 w-[330px] max-w-[calc(100%-24px)] rounded-2xl border shadow-xl p-3 ${glass}`}>
+            <div data-hud className={`absolute left-3 bottom-3 w-[330px] max-w-[calc(100%-24px)] rounded-2xl border shadow-xl p-3 ${glass}`}>
               <div className="flex gap-1 mb-2 items-center">
                 {[['mov', 'Movimientos recientes'], ['ator', `Atorados ${kpi.ator}`]].map(([k, l]) => <button key={k} onClick={() => setFeedTab(k)} className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border ${pill(feedTab === k)}`}>{l}</button>)}
                 <button onClick={() => setFeedOpen(false)} className={`ml-auto ${t.textMuted}`}><X size={14} /></button>
@@ -652,7 +681,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
 
           {/* Rastreo de la OC */}
           {unit && (
-            <div className={`absolute left-3 bottom-3 rounded-2xl border shadow-xl p-4 ${glass} ${sel ? 'right-[404px]' : 'right-3'} max-lg:right-3`}>
+            <div data-hud className={`absolute left-3 bottom-3 rounded-2xl border shadow-xl p-4 ${glass} ${sel ? 'right-[404px]' : 'right-3'} max-lg:right-3`}>
               <div className="flex items-start justify-between mb-3 gap-3">
                 <div>
                   <div className={`text-sm font-black flex items-center gap-2 flex-wrap ${t.text}`}><Truck size={15} /> OC {unit.oc}
