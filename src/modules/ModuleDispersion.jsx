@@ -1,7 +1,8 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import * as Icons from '../utils/icons';
 import { useGlobal } from '../context/GlobalContext';
-import DispersionHistorico from './DispersionHistorico';
+import DispersionHistorico, { parseHist, saveHist } from './DispersionHistorico';
+import * as XLSX from 'xlsx';
 import {
   ScatterChart, Scatter, LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
@@ -141,8 +142,17 @@ export default function ModuleDispersion(){
   })(); },[]);
   useEffect(()=>{ if(!loading) try{ localStorage.setItem('gop_dispersion',JSON.stringify({xKey,yKey,level,excludeZeros,filters,sortKey,sortDir})); }catch{} },[xKey,yKey,level,excludeZeros,filters,sortKey,sortDir,loading]);
 
+  const loadRows=rows=>{ setData(rows); setCols(rows._cols||[]); setFilters({}); idbSet('data',rows).catch(()=>{}); };
+  // Acepta CSV o un Excel con 2 hojas: la de dispersión (cualquier nombre) y "Historico_R2" (va a la pestaña Histórico)
   const handleUpload=e=>{ const file=e.target.files[0]; if(!file) return; const reader=new FileReader();
-    reader.onload=ev=>{ const rows=parseCSV(ev.target.result); setData(rows); setCols(rows._cols||[]); setFilters({}); idbSet('data',rows).catch(()=>{}); e.target.value=''; };
+    if(/\.xlsx?$/i.test(file.name)){
+      reader.onload=ev=>{ try{ const wb=XLSX.read(ev.target.result,{type:'array'}); let msg=[];
+        for(const n of wb.SheetNames){ const csv=XLSX.utils.sheet_to_csv(wb.Sheets[n]);
+          if(/HIST/i.test(n)){ const h=parseHist(csv); saveHist(h); msg.push(`Histórico: ${h.length} filas`); }
+          else if(!msg.some(m=>m.startsWith('Disp'))){ const rows=parseCSV(csv); loadRows(rows); msg.push(`Dispersión: ${rows.length} filas`); } }
+        alert(msg.join(' · ')||'El Excel no trae hojas reconocibles'); }catch(x){ alert('No se pudo leer el Excel: '+x.message); } e.target.value=''; };
+      reader.readAsArrayBuffer(file); return; }
+    reader.onload=ev=>{ loadRows(parseCSV(ev.target.result)); e.target.value=''; };
     reader.readAsText(file,'UTF-8'); };
   const clearData=()=>{ if(window.confirm('¿Borrar datos?')){ setData([]); setCols([]); idbSet('data',[]).catch(()=>{}); } };
 
@@ -250,8 +260,8 @@ export default function ModuleDispersion(){
             </div>
             {tab==='disp'&&<>
             {hasData&&<button onClick={openSaveModal} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${t.badge}`}><Icons.Save size={14}/> Guardar mes</button>}
-            <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden" onChange={handleUpload}/>
-            <button onClick={()=>fileRef.current?.click()} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${t.btnGhost}`}><Icons.Upload size={14}/> CSV Extracción</button>
+            <input ref={fileRef} type="file" accept=".csv,.txt,.xlsx" className="hidden" onChange={handleUpload}/>
+            <button onClick={()=>fileRef.current?.click()} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${t.btnGhost}`}><Icons.Upload size={14}/> CSV / Excel Extracción</button>
             {hasData&&periodo&&<span className={`px-3 py-1 rounded-full text-[10px] font-black border ${t.badgeAmber}`}>Info de: {periodo}</span>}
             {hasData&&<span className={`px-3 py-1 rounded-full text-[10px] font-black border ${t.badge}`}>{data.length.toLocaleString()} filas</span>}
             {hasData&&<button onClick={clearData} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${t.btnGhost} opacity-40 hover:opacity-100`}><Icons.Trash2 size={14}/></button>}

@@ -18,8 +18,16 @@ export const parseHist = (text) => {
   const i = (k) => H.indexOf(k);
   const I = { a: i('ANIO') >= 0 ? i('ANIO') : i('ANO'), m: i('MES'), d: i('DIVISION'), k: i('SECCION_KEY'), s: i('SECCION'), r: i('R2'), t: i('TIENDAS') };
   if (I.a < 0 || I.m < 0 || I.s < 0 || I.r < 0) throw new Error('Faltan columnas ANIO, MES, SECCION o R2');
-  return rows.slice(1).map((r) => ({ ano: n(r[I.a]), mes: n(r[I.m]), div: r[I.d] || '', key: I.k >= 0 ? r[I.k] : '', sec: r[I.s] || '', r2: n(r[I.r]), tiendas: I.t >= 0 ? n(r[I.t]) : null }));
+  const out = rows.slice(1).map((r) => ({ ano: n(r[I.a]), mes: n(r[I.m]), div: r[I.d] || '', key: I.k >= 0 ? r[I.k] : '', sec: r[I.s] || '', r2: n(r[I.r]), tiendas: I.t >= 0 ? n(r[I.t]) : null }))
+    .filter((r) => r.ano && r.mes);
+  // Con menos de 3 tiendas el R² no significa nada (2 puntos siempre dan 1); se deja en blanco
+  out.forEach((r) => { if (r.tiendas != null && r.tiendas < 3) r.r2 = null; });
+  // Algunos meses vienen sin división: se toma la de la misma sección en otro mes
+  const divOf = {}; out.forEach((r) => { if (r.div) divOf[r.key || r.sec] = r.div; });
+  out.forEach((r) => { if (!r.div) r.div = divOf[r.key || r.sec] || ''; });
+  return out;
 };
+export const saveHist = (rows) => { try { localStorage.setItem(KEY, JSON.stringify(rows)); } catch {} };
 
 export default function DispersionHistorico({ t, isDark }) {
   const [data, setData] = useState(() => { try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; } });
@@ -46,7 +54,7 @@ export default function DispersionHistorico({ t, isDark }) {
     const m = new Map();
     for (const r of data) {
       if (div && r.div !== div) continue;
-      const k = `${r.div}|${r.sec}`;
+      const k = `${r.div}|${r.key || r.sec}`;
       const o = m.get(k) || { div: r.div, key: r.key, sec: r.sec, ly: Array(12).fill(null), ty: Array(12).fill(null) };
       if (r.ano === LY) o.ly[r.mes - 1] = r.r2;
       if (r.ano === TY) o.ty[r.mes - 1] = r.r2;
