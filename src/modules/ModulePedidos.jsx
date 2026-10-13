@@ -46,6 +46,8 @@ const BUCKETS = [
   { k: 'TDA', l: 'Tienda sin entrada', I: Store, c: '#F59E0B' },
 ];
 const TIPOS = { IMP: { l: 'Importación', c: '#14B8A6' }, NAC: { l: 'Nacional', c: '#3B82F6' }, DIR: { l: 'Directo a tienda', c: '#F59E0B' } };
+// Centros que no son tienda: CRs (fulfillment) y CEDIS
+const CENTROS = { '107S': 'CR ACAPULCO', '094S': 'CR LEON', '049S': 'CR MONTERREY', '147S': 'CR CULIACAN', '093S': 'CR VILLAHERMOSA', '155S': 'CR TAPACHULA', '185S': 'CR ZONA NORTE', '158S': 'CR LA PAZ', '108S': 'CR MORELIA', '151S': 'CR OAXACA', '171S': 'CR SALINA CRUZ', '119S': 'CR CANCUN', '148S': 'CR DURANGO', '032S': 'CR COATZACOALCOS', '880S': 'CEDIS SOFTLINE PLAN', '895S': 'PLAN SOFTLINE BODEGA', '0670': 'CEDIS TULTIPARK', '811S': 'PLAN BIG TICKET 2', '095S': 'CD NACIONAL BIG TICKET', '0681': 'SUBURBIA CEDIS MONTE' };
 const DEF_UMBRAL = { PROVEEDOR: 0, TRANSITO_INT: 35, ADUANA: 7, ALMACEN: 15, CROSSDOCK: 3, BODEGA_REG: 20, FULFILLMENT: 30, FORO: 10, TRANSITO_TDA: 4, TIENDA: 2 };
 const BASE_ROUTE = { IMP: ['PROVEEDOR', 'TRANSITO_INT', 'ADUANA', 'CROSSDOCK', 'TRANSITO_TDA', 'TIENDA', 'RECIBIDO'], NAC: ['PROVEEDOR', 'CROSSDOCK', 'TRANSITO_TDA', 'TIENDA', 'RECIBIDO'], DIR: ['PROVEEDOR', 'TRANSITO_TDA', 'TIENDA', 'RECIBIDO'] };
 const FINALES = ['BODEGA_REG', 'FULFILLMENT', 'FORO'];
@@ -174,7 +176,9 @@ function parseEventos(text) {
         if (fC && fP) ev.push({ ...base, etapa: 'CROSSDOCK', fecha: new Date(Math.max(fC, fP) + 1000), pzsEv: 0, ubic: `${cOc} · asignado` });
       }
       add('TRANSITO_TDA', 'DT SALIDA', numv(v(r, 'PZS SALIDA')), `${cOc} → T${tienda}`);
-      add(v(r, 'TIPO DESTINO') === 'BODEGA' ? 'BODEGA_REG' : 'RECIBIDO', 'DT TIENDA', numv(v(r, 'PZS TIENDA')), `T${tienda}`);
+      // Destino: CR (fulfillment) → Fulfillment; CEDIS o TIPO_DESTINO BODEGA → bodega; lo demás es tienda
+      const td = v(r, 'TIPO DESTINO'), cen = CENTROS[tienda] || CENTROS[ctr(tienda)];
+      add(td === 'CR' || cen?.startsWith('CR ') ? 'FULFILLMENT' : td === 'BODEGA' || cen ? 'BODEGA_REG' : 'RECIBIDO', 'DT TIENDA', numv(v(r, 'PZS TIENDA')), cen || `T${tienda}`);
     });
     return { ev, aviso: ev.length ? '' : 'No encontré eventos con fecha válida.' };
   }
