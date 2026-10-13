@@ -163,14 +163,15 @@ function parseEventos(text) {
       // Inventario en CEDIS / CR (sin traslado, asignado) y mercancía embarcada: una sola foto fechada en la última entrada
       if (v(r, 'CLASE DOC') === 'INV') {
         const es = v(r, 'ESTATUS');
-        const etapa = es === 'EMBARCADA' ? 'TRANSITO_INT' : es === 'INV ASIGNADO' ? 'CROSSDOCK' : v(r, 'TIPO DESTINO') === 'CR' ? 'FULFILLMENT' : 'ALMACEN';
-        add(etapa, 'DT CEDIS', 0, cOc);
+        // 880S = cross dock de PLAN; 895S y demás CEDIS = bodega (almacén); CR = fulfillment
+        const etapa = es === 'EMBARCADA' ? 'TRANSITO_INT' : v(r, 'TIPO DESTINO') === 'CR' ? 'FULFILLMENT' : cOc === '880S' ? 'CROSSDOCK' : 'ALMACEN';
+        add(etapa, 'DT CEDIS', 0, es === 'EMBARCADA' ? cOc : `${cOc} · ${es === 'INV ASIGNADO' ? 'con traslado' : 'sin traslado'}`);
         return;
       }
       add('PROVEEDOR', 'FCH OC', 0, base.prov);
       if (origen === 'DIR') add('RECIBIDO', 'DT CEDIS', numv(v(r, 'PZS REC CEDIS')), `T${tienda}`);
       else {
-        add('ALMACEN', 'DT CEDIS', 0, cOc);
+        add(cOc === '880S' ? 'CROSSDOCK' : 'ALMACEN', 'DT CEDIS', 0, cOc); // la OC entra al cross dock (880S) o a bodega (895S)
         // Asignado en PLAN después (o antes) de recibir → se trabaja en cross dock desde la fecha más tardía
         const fC = toDate(v(r, 'DT CEDIS')), fP = toDate(v(r, 'DT PLAN'));
         if (fC && fP) ev.push({ ...base, etapa: 'CROSSDOCK', fecha: new Date(Math.max(fC, fP) + 1000), pzsEv: 0, ubic: `${cOc} · asignado` });
