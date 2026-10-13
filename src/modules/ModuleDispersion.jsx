@@ -226,6 +226,8 @@ export default function ModuleDispersion(){
   const r2=reg.r2;
   const r2Badge=r2>0.7?t.badge:r2>0.4?t.badgeAmber:t.badgeGray;
   const hasData=data.length>0;
+  const periodo=useMemo(()=>{ const s=new Set(); for(const r of data){ if(r.mes||r.ano) s.add(`${String(r.mes).toUpperCase()} ${r.ano}`.trim()); }
+    const a=[...s]; return a.length>3?`${a[0]} … ${a[a.length-1]} (${a.length} meses)`:a.join(', '); },[data]);
   const SORTS=[{k:'venta',label:'Vta'},{k:'invFin',label:'Inv'},{k:'dif',label:'Dif'}];
 
   const heroText=isDark?'':'text-white';
@@ -250,6 +252,7 @@ export default function ModuleDispersion(){
             {hasData&&<button onClick={openSaveModal} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${t.badge}`}><Icons.Save size={14}/> Guardar mes</button>}
             <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden" onChange={handleUpload}/>
             <button onClick={()=>fileRef.current?.click()} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${t.btnGhost}`}><Icons.Upload size={14}/> CSV Extracción</button>
+            {hasData&&periodo&&<span className={`px-3 py-1 rounded-full text-[10px] font-black border ${t.badgeAmber}`}>Info de: {periodo}</span>}
             {hasData&&<span className={`px-3 py-1 rounded-full text-[10px] font-black border ${t.badge}`}>{data.length.toLocaleString()} filas</span>}
             {hasData&&<button onClick={clearData} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${t.btnGhost} opacity-40 hover:opacity-100`}><Icons.Trash2 size={14}/></button>}
             </>}
