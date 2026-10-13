@@ -4,7 +4,7 @@ import { useNavigate } from 'react-router-dom';
 import {
   TrendingUp, ShoppingCart, Map, RefreshCw,
   ArrowLeftRight, ChevronDown, Zap, BarChart3,
-  Calendar, ArrowRight, Layers, FileSpreadsheet, Tag, Download, ListChecks, PieChart
+  Calendar, ArrowRight, Layers, FileSpreadsheet, Tag, Download, ListChecks, PieChart, Truck
 } from 'lucide-react';
 import { CSV_SCHEMAS } from './csvSchemas';
 
@@ -71,13 +71,14 @@ const WORLDS = [
   },
  {
     id: 'check', tag: 'CHECK DE COORDINADORES',
-    name: 'Daily · Eventos · Allocation',
+    name: 'Daily · Eventos · Allocation · Pedidos',
     desc: 'Detalle de ventas e inventarios diarios y por evento promocional, con proyección de venta y utilidades. Revisión de parametrizaciones y OC antes de que salga la mercancía.',
     accent: '#06b6d4', glow: 'rgba(6, 182, 212, 0.15)',
     modules: [
        { label: 'Daily',    Icon: Calendar,  desc: 'Ajustes diarios de inventario, ventas y margen.' },
        { label: 'Eventos',  Icon: Tag,       desc: 'Venta, margen, sell-through e inventario inicial de eventos promocionales (BTS, Navidad, etc.), comparado automáticamente contra el año anterior.' },
        { label: 'Allocation', Icon: ListChecks, desc: 'Reportero de parametrizaciones ZO9_DM (matriz de marca, clima, AP8, WOS, compra vs mínimos, curvas, clusters) y de OC (mínimos, destalle, picos, concentración). Dice qué está mal, dónde y a qué cambiarlo, y baja el CSV corregido para volver a parametrizar.' },
+       { label: 'Pedidos', Icon: Truck, desc: 'Rastreador de OCs en un mapa isométrico animado: proveedor → tránsito → aduana → CEDIS → PLAN → ruta → tienda sin entrada → recibido. Dónde está cada pedido, cuántos días lleva en su etapa, atorados contra un umbral editable, tiempos por tramo y proveedor, lead time y % a tiempo vs compromiso.' },
      ],
    },
  ];

@@ -31,6 +31,17 @@ export const CSV_SCHEMAS = [
     ],
   },
   {
+    module: 'Pedidos',
+    formats: [
+      {
+        title: 'Eventos de pedidos (una fila por evento)',
+        desc: 'Cada vez que la OC cambia de etapa o de lugar. ETAPA se reconoce por texto: proveedor, tránsito/embarque, aduana/pedimento, CEDIS, PLAN, ruta/salida, tienda (sin entrada), recibido/entrada. Fechas AAAA-MM-DD o DD/MM/AAAA (con hora opcional). ORIGEN IMP/NAC (si falta, se deduce: con aduana = importación). ZONA agrupa tiendas en el mapa. También acepta formato ancho: una fila por OC con FECHA_PROVEEDOR, FECHA_ADUANA, FECHA_CEDIS, FECHA_PLAN, FECHA_TIENDA, FECHA_RECIBIDO.',
+        columns: ['OC*', 'SKU', 'MODELO', 'PROVEEDOR', 'MARCA', 'ORIGEN', 'PIEZAS_PEDIDAS', 'PIEZAS_EVENTO', 'ETAPA*', 'UBICACION', 'CENTRO', 'ZONA', 'FECHA_EVENTO*', 'FECHA_OC', 'FECHA_COMPROMISO', 'CONTENEDOR'],
+        template: [['OC', 'SKU', 'MODELO', 'PROVEEDOR', 'MARCA', 'ORIGEN', 'PIEZAS_PEDIDAS', 'PIEZAS_EVENTO', 'ETAPA', 'UBICACION', 'CENTRO', 'ZONA', 'FECHA_EVENTO', 'FECHA_OC', 'FECHA_COMPROMISO', 'CONTENEDOR'], ['4500123456', 'ZAP025', 'ZAP-025', 'SKECHERS', 'SKECHERS', 'IMP', '600', '600', 'ADUANA', 'Manzanillo', '', '', '2026-10-01', '2026-08-15', '2026-10-20', 'MSKU700001']],
+      },
+    ],
+  },
+  {
     module: 'Allocation',
     formats: [
       {
