@@ -119,16 +119,16 @@ export default function DispersionHistorico({ t, isDark }) {
               <CartesianGrid strokeDasharray="3 3" stroke={isDark ? '#27272a' : '#ede9fe'} />
               <XAxis dataKey="mes" tick={{ fontSize: 10 }} />
               <YAxis domain={[0, 1]} tick={{ fontSize: 10 }} />
-              <Tooltip formatter={(v) => (v == null ? '—' : v.toFixed(3))} />
+              <Tooltip formatter={(v) => (v == null ? '—' : v.toFixed(3))} contentStyle={{ background: isDark ? '#1c1720' : '#fff', border: 'none', borderRadius: 8, fontSize: 11 }} />
               <Legend wrapperStyle={{ fontSize: 10 }} />
               <Line dataKey={String(LY)} stroke="#a1a1aa" strokeDasharray="5 4" connectNulls />
               <Line dataKey={String(TY)} stroke="#8b5cf6" strokeWidth={3} connectNulls />
             </LineChart>
           </ResponsiveContainer>
         </div>
-        <div className={`rounded-xl border overflow-x-auto ${t.cardInner}`}>
+        <div className={`rounded-xl border overflow-auto max-h-[70vh] ${t.cardInner}`}>
           <table className="w-full text-[11px]">
-            <thead className={t.thBg}>
+            <thead className={`sticky top-0 z-10 ${t.thBg}`}>
               <tr>
                 <th className="px-2 py-1 text-left" colSpan={2}></th>
                 <th className="px-2 py-1 text-center border-l border-white/20" colSpan={14}>{LY}</th>

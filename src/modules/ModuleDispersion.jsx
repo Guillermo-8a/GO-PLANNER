@@ -88,20 +88,20 @@ export default function ModuleDispersion(){
   const themes={
     dark:{
       appBg:'bg-transparent text-gray-100', card:'bg-white/[0.045] backdrop-blur-xl border-white/10 shadow-lg shadow-black/40 transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)]',
-      cardInner:'bg-white/5 border-white/10', textMain:'text-white', textMuted:'text-gray-400',
+      cardInner:'bg-white/[0.045] backdrop-blur-xl border-white/10 shadow-lg shadow-black/40 transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)]', textMain:'text-white', textMuted:'text-gray-400',
       accent:'text-violet-400', amber:'text-amber-400', border:'border-zinc-800',
-      input:'bg-white/5 border-white/10 text-white focus:ring-violet-500',
+      input:'bg-[#241e29] border-white/15 text-[#EDEBF2] focus:ring-violet-500 [color-scheme:dark] [&>option]:bg-[#1c1720] [&>option]:text-[#EDEBF2]',
       btnGhost:'bg-zinc-800 text-gray-300 hover:text-white hover:bg-zinc-700 border-zinc-700',
       badge:'bg-violet-500/20 text-violet-300 border-violet-400/50 shadow-[0_0_12px_rgba(139,92,246,0.35)]',
       badgeAmber:'bg-amber-500/20 text-amber-300 border-amber-400/50 shadow-[0_0_12px_rgba(245,158,11,0.35)]',
       badgeGray:'bg-zinc-800/60 text-gray-400 border-zinc-600/40',
-      thBg:'bg-violet-900/50 text-violet-200', rowAlt:'bg-white/[0.03]',
+      thBg:'bg-[#2a1745]/95 backdrop-blur-md text-violet-100 [&_th]:bg-[#2a1745]/60', rowAlt:'bg-white/[0.03]',
       kpiHero:'bg-gradient-to-br from-violet-600/30 to-violet-900/10 border-violet-500/40 shadow-[0_0_20px_rgba(139,92,246,0.25)]',
       kpiAmber:'bg-gradient-to-br from-amber-500/20 to-amber-900/5 border-amber-500/40',
     },
     light:{
       appBg:'bg-transparent text-gray-800', card:'bg-white border-gray-200 shadow-sm',
-      cardInner:'bg-gray-50 border-gray-200', textMain:'text-gray-900', textMuted:'text-gray-500',
+      cardInner:'bg-gray-50 border-gray-200 shadow-sm transition-all duration-300 hover:shadow-[0_0_30px_-10px_rgba(139,92,246,0.45)] hover:border-violet-300', textMain:'text-gray-900', textMuted:'text-gray-500',
       accent:'text-violet-600', amber:'text-amber-600', border:'border-gray-200',
       input:'bg-white border-gray-300 text-gray-900 focus:ring-violet-500',
       btnGhost:'bg-gray-100 text-gray-600 hover:text-gray-900 hover:bg-gray-200 border-gray-200',
@@ -127,14 +127,13 @@ export default function ModuleDispersion(){
   const [sortKey,setSortKey]=useState('venta');
   const [sortDir,setSortDir]=useState('desc');
   const [search,setSearch]=useState('');
-  const [history,setHistory]=useState([]);
   const [loading,setLoading]=useState(true);
-  const [saveModal,setSaveModal]=useState(null); // {label, sug} cuando abierto
+  const [showFilt,setShowFilt]=useState(false); const filtRef=useRef(null);
+  useEffect(()=>{ if(!showFilt) return; const h=e=>{ if(filtRef.current&&!filtRef.current.contains(e.target)) setShowFilt(false); }; document.addEventListener('mousedown',h); return ()=>document.removeEventListener('mousedown',h); },[showFilt]);
   const [tab,setTab]=useState('disp');
 
   useEffect(()=>{ (async()=>{
     try{ const d=await idbGet('data'); if(Array.isArray(d)&&d.length){ setData(d); setCols(d._cols||[]); } }catch{}
-    try{ const h=await idbGet('history'); if(Array.isArray(h)) setHistory(h); }catch{}
     try{ const c=localStorage.getItem('gop_dispersion'); if(c){ const o=JSON.parse(c);
       o.xKey&&setXKey(o.xKey); o.yKey&&setYKey(o.yKey); o.level&&setLevel(o.level);
       o.excludeZeros!=null&&setExcludeZeros(o.excludeZeros); o.filters&&setFilters(o.filters); o.sortKey&&setSortKey(o.sortKey); o.sortDir&&setSortDir(o.sortDir); } }catch{}
@@ -209,25 +208,6 @@ export default function ModuleDispersion(){
     return arr; },[data,filters,tableLevel,sortKey,sortDir,search]);
   const totals=useMemo(()=>tableRows.reduce((s,r)=>({venta:s.venta+r.venta,prom:s.prom+r.prom,invIni:s.invIni+r.invIni,invFin:s.invFin+r.invFin,ideal:s.ideal+r.ideal,dif:s.dif+r.dif}),{venta:0,prom:0,invIni:0,invFin:0,ideal:0,dif:0}),[tableRows]);
 
-  // Snapshot mensual
-  const openSaveModal=()=>{
-    const anos=[...new Set(data.filter(passFilters).map(r=>r.ano).filter(Boolean))];
-    const mess=[...new Set(data.filter(passFilters).map(r=>r.mes).filter(Boolean))];
-    const sug=`${mess.join('/')} ${anos.join('/')}`.trim().toUpperCase()||new Date().toLocaleDateString('es-MX');
-    setSaveModal({label:sug, anos, mess});
-  };
-  const confirmSave=()=>{
-    const {label,anos,mess}=saveModal; if(!label.trim()){ setSaveModal(null); return; }
-    const scope=FILTER_DIMS.filter(d=>filters[d.key]).map(d=>`${d.label}:${filters[d.key]}`).join(', ')||'Todo';
-    const snap={ id:Date.now(), label:label.trim(), ts:Date.now(),
-      ano:parseInt(anos[0])||0, mesNum:mesNum(mess[0]), scope, level,
-      venta:totals.venta, prom:totals.prom, invFin:totals.invFin, ideal:totals.ideal, dif:totals.dif, r2:reg.r2 };
-    const next=[...history.filter(h=>h.label!==snap.label), snap].sort((a,b)=>(a.ano-b.ano)||(a.mesNum-b.mesNum)||(a.ts-b.ts));
-    setHistory(next); idbSet('history',next).catch(()=>{}); setSaveModal(null);
-  };
-  const delSnapshot=id=>{ const next=history.filter(h=>h.id!==id); setHistory(next); idbSet('history',next).catch(()=>{}); };
-  const clearHistory=()=>{ if(window.confirm('¿Borrar histórico?')){ setHistory([]); idbSet('history',[]).catch(()=>{}); } };
-
   const gridC=isDark?'#27272a':'#ede9fe';
   const axisC=isDark?'#52525b':'#c4b5fd';
   const txtC=isDark?'#a1a1aa':'#6b7280';
@@ -245,7 +225,7 @@ export default function ModuleDispersion(){
   return (
     <div className={`min-h-screen p-4 md:p-6 ${t.appBg} animate-fade-in-up`}>
       {/* HEADER */}
-      <div className={`p-5 rounded-2xl border mb-6 ${t.card}`}>
+      <div className={`relative z-30 p-5 rounded-2xl border mb-6 ${t.card}`}>
         <div className="flex items-start justify-between flex-wrap gap-4">
           <div>
             <h1 className={`text-2xl font-black tracking-tight flex items-center gap-2 ${t.textMain}`}>
@@ -258,17 +238,44 @@ export default function ModuleDispersion(){
             <div className={`flex rounded-lg p-1 border ${t.btnGhost}`}>
               {[['disp','Dispersión'],['hist','Histórico LY vs TY']].map(([k,l])=><button key={k} onClick={()=>setTab(k)} className={`px-3 py-1 rounded-md text-xs font-bold ${tab===k?'bg-violet-600 text-white':''}`}>{l}</button>)}
             </div>
-            {tab==='disp'&&<>
-            {hasData&&<button onClick={openSaveModal} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${t.badge}`}><Icons.Save size={14}/> Guardar mes</button>}
+            <div className="relative" ref={filtRef}>
+              <button onClick={()=>tab==='disp'&&hasData&&setShowFilt(v=>!v)} disabled={tab!=='disp'||!hasData} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all disabled:opacity-40 ${showFilt||Object.values(filters).some(Boolean)?t.badge:t.btnGhost}`}>
+                <Icons.Filter size={14}/> Filtros{Object.values(filters).filter(Boolean).length?` (${Object.values(filters).filter(Boolean).length})`:''}<Icons.ChevronDown size={12}/>
+              </button>
+              {showFilt&&(
+                <div className={`absolute right-0 mt-2 z-40 w-[min(92vw,640px)] p-4 rounded-2xl border space-y-3 ${isDark?'bg-[#1c1720] border-white/10 shadow-[0_0_40px_-10px_rgba(139,92,246,0.5)]':'bg-white border-gray-200 shadow-2xl'} backdrop-blur-xl`}>
+                  <div className="flex flex-wrap items-end gap-3">
+                    <Ctrl label="Eje X" t={t}><select value={xKey} onChange={e=>setXKey(e.target.value)} className={`text-xs px-3 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}>{MEASURES.map(m=><option key={m.key} value={m.key}>{m.label}</option>)}</select></Ctrl>
+                    <Ctrl label="Eje Y" t={t}><select value={yKey} onChange={e=>setYKey(e.target.value)} className={`text-xs px-3 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}>{MEASURES.map(m=><option key={m.key} value={m.key}>{m.label}</option>)}</select></Ctrl>
+                    <Ctrl label="Excluir ceros" t={t}><button onClick={()=>setExcludeZeros(v=>!v)} className={`text-xs px-3 py-1.5 rounded-lg border font-bold ${excludeZeros?t.badge:t.btnGhost}`}>{excludeZeros?'Sí':'No'}</button></Ctrl>
+                  </div>
+                  <div>
+                    <div className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} mb-1`}>Nivel (cada punto =)</div>
+                    <div className="flex flex-wrap gap-1.5">{LEVELS.map(l=><button key={l.key} onClick={()=>setLevel(l.key)} className={`text-[10px] px-3 py-1 rounded-full border font-black transition-all ${level===l.key?t.badge:t.btnGhost}`}>{l.label}</button>)}</div>
+                  </div>
+                  <div>
+                    <div className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} mb-1`}>Filtros</div>
+                    <div className="flex flex-wrap gap-2">
+                      {FILTER_DIMS.map(d=>(
+                        <select key={d.key} value={filters[d.key]||''} onChange={e=>setFilters(f=>({...f,[d.key]:e.target.value}))} className={`text-xs px-3 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}>
+                          <option value="">{d.label}: Todos ({opts[d.key]?.length||0})</option>
+                          {opts[d.key]?.map(v=><option key={v} value={v}>{v}</option>)}
+                        </select>
+                      ))}
+                      {Object.values(filters).some(Boolean)&&<button onClick={()=>setFilters({})} className={`text-xs px-3 py-1.5 rounded-lg border font-bold ${t.btnGhost}`}>✕ Limpiar</button>}
+                    </div>
+                  </div>
+                </div>
+              )}
+            </div>
             <input ref={fileRef} type="file" accept=".csv,.txt,.xlsx" className="hidden" onChange={handleUpload}/>
             <button onClick={()=>fileRef.current?.click()} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${t.btnGhost}`}><Icons.Upload size={14}/> CSV / Excel Extracción</button>
             {hasData&&periodo&&<span className={`px-3 py-1 rounded-full text-[10px] font-black border ${t.badgeAmber}`}>Info de: {periodo}</span>}
             {hasData&&<span className={`px-3 py-1 rounded-full text-[10px] font-black border ${t.badge}`}>{data.length.toLocaleString()} filas</span>}
             {hasData&&<button onClick={clearData} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${t.btnGhost} opacity-40 hover:opacity-100`}><Icons.Trash2 size={14}/></button>}
-            </>}
           </div>
         </div>
-        {tab==='disp'&&hasData&&cols.length>0&&<p className={`text-[9px] mt-3 ${t.textMuted}`}>Columnas detectadas: {cols.join(' · ')}</p>}
+        {hasData&&cols.length>0&&<p className={`text-[9px] mt-3 ${t.textMuted}`}>Columnas detectadas: {cols.join(' · ')}</p>}
       </div>
 
       {tab==='hist'?<DispersionHistorico t={t} isDark={isDark}/>:!hasData?(
@@ -279,27 +286,6 @@ export default function ModuleDispersion(){
         </div>
       ):(
         <div className="space-y-4">
-          {/* CONTROLES */}
-          <div className={`flex flex-wrap items-end gap-3 p-3 rounded-xl border ${t.cardInner}`}>
-            <Ctrl label="Eje X" t={t}><select value={xKey} onChange={e=>setXKey(e.target.value)} className={`text-xs px-3 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}>{MEASURES.map(m=><option key={m.key} value={m.key}>{m.label}</option>)}</select></Ctrl>
-            <Ctrl label="Eje Y" t={t}><select value={yKey} onChange={e=>setYKey(e.target.value)} className={`text-xs px-3 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}>{MEASURES.map(m=><option key={m.key} value={m.key}>{m.label}</option>)}</select></Ctrl>
-            <Ctrl label="Excluir ceros" t={t}><button onClick={()=>setExcludeZeros(v=>!v)} className={`text-xs px-3 py-1.5 rounded-lg border font-bold ${excludeZeros?t.badge:t.btnGhost}`}>{excludeZeros?'Sí':'No'}</button></Ctrl>
-          </div>
-          {/* NIVEL */}
-          <div className={`flex flex-wrap items-center gap-2 p-3 rounded-xl border ${t.cardInner}`}>
-            <span className={`text-[10px] font-black uppercase tracking-widest ${t.textMuted} mr-1`}><Icons.BarChart2 size={11} className="inline mr-1"/>Nivel (cada punto =)</span>
-            {LEVELS.map(l=><button key={l.key} onClick={()=>setLevel(l.key)} className={`text-[10px] px-3 py-1 rounded-full border font-black transition-all ${level===l.key?t.badge:t.btnGhost}`}>{l.label}</button>)}
-          </div>
-          {/* FILTROS cascada */}
-          <div className={`flex flex-wrap gap-2 p-3 rounded-xl border ${t.cardInner}`}>
-            {FILTER_DIMS.map(d=>(
-              <select key={d.key} value={filters[d.key]||''} onChange={e=>setFilters(f=>({...f,[d.key]:e.target.value}))} className={`text-xs px-3 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}>
-                <option value="">{d.label}: Todos ({opts[d.key]?.length||0})</option>
-                {opts[d.key]?.map(v=><option key={v} value={v}>{v}</option>)}
-              </select>
-            ))}
-            {Object.values(filters).some(Boolean)&&<button onClick={()=>setFilters({})} className={`text-xs px-3 py-1.5 rounded-lg border font-bold ${t.btnGhost}`}>✕ Limpiar</button>}
-          </div>
           {/* KPIs */}
           <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
             <div className={`p-3 rounded-xl border text-center ${t.kpiHero}`}>
@@ -383,39 +369,7 @@ export default function ModuleDispersion(){
             {tableRows.length>TABLE_RENDER&&<p className={`text-[9px] mt-2 ${t.textMuted}`}>Mostrando {TABLE_RENDER} de {tableRows.length.toLocaleString()} (usa buscar/ordenar para acotar).</p>}
           </div>
 {/* HISTÓRICO + R² JERÁRQUICO */}
-          <div className={`grid grid-cols-1 ${history.length>0?'lg:grid-cols-2':''} gap-4`}>
-            {history.length>0&&(
-              <div className={`p-4 rounded-xl border ${t.cardInner}`}>
-                <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
-                  <h4 className={`text-sm font-bold ${t.textMain}`}>📈 Histórico mensual <span className={`text-[10px] font-normal ${t.textMuted}`}>· {history.length} meses</span></h4>
-                  <button onClick={clearHistory} className={`text-[10px] px-2.5 py-1 rounded-full border font-black ${t.btnGhost}`}>Limpiar histórico</button>
-                </div>
-                <ResponsiveContainer width="100%" height={220}>
-                  <LineChart data={history} margin={{top:5,right:10,left:0,bottom:5}}>
-                    <CartesianGrid strokeDasharray="3 3" stroke={gridC}/>
-                    <XAxis dataKey="label" tick={{fontSize:9,fill:txtC}} stroke={axisC}/>
-                    <YAxis tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>Math.abs(v)>=1000?(v/1000).toFixed(0)+'k':fmt(v)}/>
-                    <Tooltip content={({active,payload,label})=>{ if(!active||!payload?.length) return null; const d=payload[0]?.payload;
-                      return <div className={`p-3 rounded-xl border text-xs shadow-xl ${t.card}`}><p className={`font-bold mb-1 ${t.textMain}`}>{label}</p><p className={t.accent}>Prom Inv: {fmt(d.prom)}</p><p className={t.amber}>Diferencia: {fmt(d.dif)}</p><p className={t.textMuted}>R²: {fmt(d.r2,3)} · {d.scope}</p></div>; }}/>
-                    <Legend wrapperStyle={{fontSize:10}}/>
-                    <Line type="monotone" dataKey="prom" name="Prom Inventario" stroke="#8b5cf6" strokeWidth={2.5} dot={{r:3,fill:'#8b5cf6'}}/>
-                    <Line type="monotone" dataKey="dif" name="Diferencia" stroke="#f59e0b" strokeWidth={2.5} dot={{r:3,fill:'#f59e0b'}}/>
-                  </LineChart>
-                </ResponsiveContainer>
-                <div className="flex flex-wrap gap-2 mt-3">
-                  {history.map((h,i)=>{ const prev=history[i-1]; const dPct=prev&&prev.prom?((h.prom-prev.prom)/Math.abs(prev.prom))*100:null;
-                    return (
-                    <span key={h.id} className={`flex items-center gap-2 text-[10px] px-2.5 py-1 rounded-full border ${t.badgeGray}`}>
-                      <b className={t.textMain}>{h.label}</b>
-                      <span className={t.textMuted}>R² {fmt(h.r2,2)}</span>
-                      {dPct!=null&&<span className={`font-black ${dPct<=0?'text-emerald-400':'text-red-400'}`}>{dPct<=0?'▼':'▲'}{Math.abs(dPct).toFixed(1)}%</span>}
-                      <button onClick={()=>delSnapshot(h.id)} className="opacity-50 hover:opacity-100">✕</button>
-                    </span>
-                  ); })}
-                </div>
-                <p className={`text-[9px] mt-2 ${t.textMuted}`}>Cada punto = una "foto" guardada con "Guardar mes". El % chip es Δ Prom Inv vs mes anterior: ▼ verde = baja inventario, ▲ rojo = sube.</p>
-              </div>
-            )}
+          <div className="grid grid-cols-1 gap-4">
             {/* R² JERÁRQUICO */}
             <div className={`p-4 rounded-xl border ${t.cardInner}`}>
               <div className="flex items-center justify-between mb-3 flex-wrap gap-2">
@@ -449,34 +403,6 @@ export default function ModuleDispersion(){
           </div>
         </div>
           )}
-      {/* MODAL GUARDAR MES */}
-      {saveModal&&(
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{background:isDark?'rgba(9,9,11,0.6)':'rgba(255,255,255,0.5)',backdropFilter:'blur(6px)'}} onClick={()=>setSaveModal(null)}>
-          <div onClick={e=>e.stopPropagation()} className={`w-full max-w-sm p-5 rounded-2xl border ${t.card} ${isDark?'shadow-[0_0_40px_rgba(139,92,246,0.3)]':'shadow-2xl'}`}>
-            <div className="flex items-center gap-2 mb-1">
-              <span className={`p-1.5 rounded-lg ${isDark?'bg-violet-500/20':'bg-violet-100'}`}><Icons.Save size={16} className={t.accent}/></span>
-              <h3 className={`text-sm font-black ${t.textMain}`}>Guardar mes</h3>
-            </div>
-            <p className={`text-[10px] mb-3 ${t.textMuted}`}>Foto del scope actual: {FILTER_DIMS.filter(d=>filters[d.key]).map(d=>filters[d.key]).join(' · ')||'Todo'} · nivel {LEVELS.find(l=>l.key===level)?.label}</p>
-            <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted}`}>Etiqueta del mes</label>
-            <input autoFocus value={saveModal.label} onChange={e=>setSaveModal(m=>({...m,label:e.target.value}))} onKeyDown={e=>{ if(e.key==='Enter') confirmSave(); if(e.key==='Escape') setSaveModal(null); }}
-              placeholder="ej. MAYO 2026" className={`w-full mt-1 text-sm px-3 py-2 rounded-lg border ${t.input} focus:outline-none focus:ring-2`}/>
-            <div className="grid grid-cols-2 gap-2 mt-4">
-              {[{label:'Vtas',v:totals.venta},{label:'Prom Inv',v:totals.prom},{label:'Diferencia',v:totals.dif},{label:'R²',v:reg.r2,d:3}].map(x=>(
-                <div key={x.label} className={`px-3 py-2 rounded-lg ${t.cardInner} border text-center`}>
-                  <div className={`text-[8px] font-black uppercase ${t.textMuted}`}>{x.label}</div>
-                  <div className={`text-sm font-black ${t.accent}`}>{fmt(x.v,x.d||0)}</div>
-                </div>
-              ))}
-            </div>
-            <div className="flex justify-end gap-2 mt-4">
-              <button onClick={()=>setSaveModal(null)} className={`text-xs px-4 py-2 rounded-lg border font-bold ${t.btnGhost}`}>Cancelar</button>
-              <button onClick={confirmSave} className={`text-xs px-4 py-2 rounded-lg border font-bold ${t.badge}`}>Guardar</button>
-            </div>
-          </div>
-        </div>
-      )}
-
       <style dangerouslySetInnerHTML={{__html:`@keyframes fadeInUp{from{opacity:0;transform:translateY(10px);}to{opacity:1;transform:translateY(0);}}.animate-fade-in-up{animation:fadeInUp 0.4s ease-out forwards;}`}}/>
        </div>
   );
