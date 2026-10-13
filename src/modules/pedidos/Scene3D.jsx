@@ -10,7 +10,7 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
-import { N, SITES, paths, roadsFor, pathAt, zonaPos, ciudadPos } from './layout';
+import { N, SITES, paths, roadsFor, pathAt, pathLen, zonaPos, ciudadPos } from './layout';
 
 const TIPO_C = { IMP: '#14B8A6', NAC: '#3B82F6', DIR: '#F59E0B' };
 const fmtN = (v) => Math.round(v || 0).toLocaleString('es-MX');
@@ -154,21 +154,49 @@ function store(P, x, y, name) {
   s.position.copy(W(x + w / 2, y + d + 0.06, h + 0.08)); g.add(s);
   return g;
 }
-function factory(P) {
-  const n = N.PROV, g = new THREE.Group();
+function factory(P, n = N.PROV, roofC) {
+  const g = new THREE.Group();
   g.add(boxAt(n.x, n.y, 0, n.w, n.d, n.h, mat(P === PALETTE.dark ? '#B9B3CC' : '#C9D1DE'), 0.04));
   for (let i = 0; i < 4; i++) {
     const x0 = n.x + i * (n.w / 4), sw = n.w / 4;
     const sh = new THREE.Shape(); sh.moveTo(0, 0); sh.lineTo(sw, 0); sh.lineTo(sw, 0.6); sh.closePath();
-    const st = mesh(memo('saw', () => new THREE.ExtrudeGeometry(sh, { depth: n.d, bevelEnabled: false })), mat(P === PALETTE.dark ? '#7A6FA8' : '#8FA2C0', { flatShading: true }));
+    const st = mesh(memo(`saw:${sw}:${n.d}`, () => new THREE.ExtrudeGeometry(sh, { depth: n.d, bevelEnabled: false })), mat(roofC || (P === PALETTE.dark ? '#7A6FA8' : '#8FA2C0'), { flatShading: true }));
     st.position.copy(W(x0, n.y, n.h)); g.add(st);
     g.add(boxAt(x0 + sw - 0.03, n.y + 0.05, n.h + 0.04, 0.03, n.d - 0.1, 0.5, mat(P.glass, { emissive: P.glass, emissiveIntensity: P === PALETTE.dark ? 0.5 : 0.05, roughness: 0.1 }), 0.005));
   }
-  const ch = mesh(memo('chim', () => new THREE.CylinderGeometry(0.22, 0.28, n.h + 1.8, 16)), mat('#9AA4B6')); ch.position.copy(W(n.x + 0.55, n.y + 0.5, (n.h + 1.8) / 2)); g.add(ch);
+  const ch = mesh(memo(`chim:${n.h}`, () => new THREE.CylinderGeometry(0.22, 0.28, n.h + 1.8, 16)), mat('#9AA4B6')); ch.position.copy(W(n.x + 0.55, n.y + 0.5, (n.h + 1.8) / 2)); g.add(ch);
   const band = mesh(memo('chimb', () => new THREE.CylinderGeometry(0.235, 0.235, 0.18, 16)), mat('#E5484D')); band.position.copy(W(n.x + 0.55, n.y + 0.5, n.h + 1.55)); g.add(band);
   for (let i = 0; i < 3; i++) g.add(boxAt(n.x + 0.5 + i, n.y + n.d - 0.01, 0.45, 0.6, 0.04, 0.5, mat(P.glass, { emissive: P.glass, emissiveIntensity: P === PALETTE.dark ? 0.5 : 0.05, roughness: 0.1 }), 0.01));
   return g;
 }
+
+function palm(s = 1) {
+  const g = new THREE.Group();
+  const tr = mesh(memo('palmT', () => new THREE.CylinderGeometry(0.05, 0.08, 1.3, 7)), mat('#9C7A52', { roughness: 0.9 })); tr.position.set(0.12, 0.62, 0); tr.rotation.z = -0.18; g.add(tr);
+  for (let i = 0; i < 6; i++) { const lf = mesh(memo('palmL', () => new THREE.BoxGeometry(0.62, 0.025, 0.16)), mat('#3FA968', { roughness: 0.8 })); const a = (i / 6) * Math.PI * 2; lf.position.set(0.24 + Math.cos(a) * 0.26, 1.24, Math.sin(a) * 0.26); lf.rotation.set(0, -a, -0.35); g.add(lf); }
+  g.scale.setScalar(s); return g;
+}
+function umbrella(c) {
+  const g = new THREE.Group();
+  const p = mesh(memo('umbP', () => new THREE.CylinderGeometry(0.015, 0.015, 0.6, 6)), mat('#E5E7EB'), false); p.position.y = 0.3; g.add(p);
+  const top = mesh(memo('umbT', () => new THREE.ConeGeometry(0.34, 0.16, 10)), new THREE.MeshStandardMaterial({ map: stripes(c, '#FFFFFF', 6), roughness: 0.6 })); top.position.y = 0.64; g.add(top);
+  return g;
+}
+function lighthouse(P) {
+  const g = new THREE.Group();
+  for (let i = 0; i < 4; i++) { const b = mesh(memo(`lh${i}`, () => new THREE.CylinderGeometry(0.3 - i * 0.04 - 0.04, 0.3 - i * 0.04, 0.5, 14)), mat(i % 2 ? '#E5484D' : '#F4F6FB', { roughness: 0.5 })); b.position.y = 0.25 + i * 0.5; g.add(b); }
+  const lamp = mesh(memo('lhL', () => new THREE.CylinderGeometry(0.16, 0.16, 0.26, 12)), mat('#FFE9A8', { emissive: '#FFD66B', emissiveIntensity: P === PALETTE.dark ? 3 : 0.5 }), false); lamp.position.y = 2.13; g.add(lamp);
+  const cap = mesh(memo('lhC', () => new THREE.ConeGeometry(0.22, 0.25, 12)), mat('#2A2733')); cap.position.y = 2.38; g.add(cap);
+  return g;
+}
+const billTex = (dark) => canvasTex(`bill:${dark}`, 1024, 256, (g, w, h) => {
+  const gr = g.createLinearGradient(0, 0, w, 0); gr.addColorStop(0, '#5B3FD0'); gr.addColorStop(1, '#8B6CF6'); g.fillStyle = gr; g.beginPath(); g.roundRect(6, 6, w - 12, h - 12, 36); g.fill();
+  g.strokeStyle = '#E0BB3E'; g.lineWidth = 8; g.stroke();
+  g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = '900 110px Inter, system-ui, sans-serif'; g.textAlign = 'left'; const a = g.measureText('GO ').width, b = g.measureText('PLANNER').width, x0 = (w - a - b) / 2; g.fillStyle = '#FFFFFF'; g.fillText('GO ', x0, h / 2 - 18); g.fillStyle = '#F2C94C'; g.fillText('PLANNER', x0 + a, h / 2 - 18); g.textAlign = 'center';
+  g.font = '700 34px Inter, system-ui, sans-serif'; g.fillStyle = 'rgba(255,255,255,0.85)'; g.fillText('RASTREADOR DE PEDIDOS', w / 2, h / 2 + 72);
+});
+// Barco centrado en su origen (para girarlo sobre la ruta)
+function shipC() { const g = new THREE.Group(); const s = ship(); s.position.set(-2.2, 0, -0.575); g.add(s); return g; }
 
 export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey, site, panelOpen, play, onPick, zoomCmd, semaforo }) {
   const host = useRef(null);
@@ -275,8 +303,8 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     const pick = (o, k) => { o.userData.pick = k; o.traverse((c) => { c.userData.pickParent = k; }); return o; };
     const addAnim = (f) => { f.isStatic = true; S.anim.push(f); };
     // piso
-    const plate = boxAt(-16, -17, -0.4, 46, yBot + 19, 0.4, mat(P.plate, { roughness: 0.95 }), 0.3); plate.castShadow = false; G.add(plate);
-    [[-5, -16.5, 10, 9.7, P.grass], [7.2, -16.5, 12.4, 6.5, P.grass], [7.2, 5.8, 12.4, yBot - 4.8, P.grass2], [21.3, -16.5, 5.1, 12.5, P.grass]].forEach(([x, y, w, d, c]) => { const o = boxAt(x, y, 0, w, d, 0.05, mat(c, { roughness: 1 }), 0.08); o.castShadow = false; G.add(o); });
+    const plate = boxAt(-16, -17, -0.4, 51, yBot + 19, 0.4, mat(P.plate, { roughness: 0.95 }), 0.3); plate.castShadow = false; G.add(plate);
+    [[-5, -16.5, 10, 9.7, P.grass], [7.2, -16.5, 12.4, 6.5, P.grass], [7.2, 5.8, 12.4, yBot - 4.8, P.grass2], [21.3, -16.5, 5.1, 12.5, P.grass], [-15.6, -16.5, 10.2, 21.7, P.grass2], [27.9, -16.5, 6.7, yBot + 18, P.grass2]].forEach(([x, y, w, d, c]) => { const o = boxAt(x, y, 0, w, d, 0.05, mat(c, { roughness: 1 }), 0.08); o.castShadow = false; G.add(o); });
     [[-3.4, 0.6, 8.6, 5.8], [7.2, -4, 12.2, 7.8], [7.6, -10, 9.4, 3.4], [-2.4, -10.6, 6, 4.2]].forEach(([x, y, w, d]) => { const o = boxAt(x, y, 0, w, d, 0.07, mat(P.pad, { roughness: 0.9 }), 0.05); o.castShadow = false; G.add(o); });
     for (let i = 0; i < 10; i++) { const o = boxAt(8.4 + i * 1.05, 2.4, 0.07, 0.05, 1.2, 0.01, mat(P.padLine, { roughness: 0.6 }), 0); o.castShadow = false; G.add(o); }
     { const o = boxAt(8.4, 2.38, 0.07, 10.5, 0.05, 0.01, mat(P.padLine), 0); o.castShadow = false; G.add(o); }
@@ -286,6 +314,33 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     water.position.copy(W(-16 + 10.6, 6.4 + (yBot - 4.4) / 2, 0.16)); water.receiveShadow = true; G.add(water);
     const base = wg.attributes.position.array.slice();
     addAnim((t) => { const a = wg.attributes.position.array; for (let i = 0; i < a.length; i += 3) a[i + 1] = base[i + 1] + Math.sin(base[i] * 0.9 + t * 1.4) * 0.05 + Math.cos(base[i + 2] * 1.1 + t * 1.1) * 0.04; wg.attributes.position.needsUpdate = true; wg.computeVertexNormals(); });
+    { // playa con palmeras, sombrillas y faro
+      const sand = boxAt(-16, 5.1, 0, 12.5, 1.6, 0.2, mat(isDark ? '#8A7858' : '#EBD7A6', { roughness: 1 }), 0.1); sand.castShadow = false; G.add(sand);
+      [[-15.3, 5.5, 1], [-11.6, 5.3, 0.9], [-8.2, 5.4, 1.1], [-5.2, 5.3, 0.95]].forEach(([x, y, k], i) => { const pm = palm(k); pm.position.copy(W(x, y, 0.2)); pm.rotation.y = i * 1.7; G.add(pm); });
+      [[-10.2, 5.9, '#E5484D'], [-7.4, 6.0, '#3B82F6'], [-6.2, 5.8, '#F2B705']].forEach(([x, y, c]) => { const u = umbrella(c); u.position.copy(W(x, y, 0.2)); G.add(u); });
+      const lh = lighthouse(P); lh.position.copy(W(-14.6, 5.6, 0.2)); G.add(lh);
+      // muelle del proveedor de importación
+      G.add(boxAt(-13.6, 5.4, 0, 1.0, 4.3, 0.34, mat('#A47B4F', { roughness: 0.9 }), 0.03));
+      for (let i = 0; i < 4; i++) [[-13.62, 6.2 + i], [-12.68, 6.2 + i]].forEach(([x, y]) => G.add(boxAt(x, y, -0.3, 0.1, 0.1, 0.7, mat('#6B4F33'), 0.02)));
+      // barco descargando en el puerto (decorativo)
+      const dk = ship(); dk.position.copy(W(-1.8, 6.7, 0.2)); G.add(dk); addAnim((t) => { dk.position.y = 0.2 + Math.sin(t * 1.1) * 0.04; });
+      // isla con palmeras y veleros
+      const isl = mesh(memo('isl', () => new THREE.CylinderGeometry(1.5, 1.9, 0.36, 18)), mat(isDark ? '#8A7858' : '#EBD7A6', { roughness: 1 })); isl.position.copy(W(-9.5, 18, 0.05)); G.add(isl);
+      const islG = mesh(memo('islG', () => new THREE.CylinderGeometry(0.9, 1.2, 0.1, 16)), mat(P.grass2, { roughness: 1 })); islG.position.copy(W(-9.4, 17.8, 0.26)); G.add(islG);
+      [[-9.8, 17.6, 1], [-9, 18.4, 0.8], [-10.3, 18.6, 0.9]].forEach(([x, y, k], i) => { const pm = palm(k); pm.position.copy(W(x, y, 0.3)); pm.rotation.y = i * 2.1; G.add(pm); });
+      [[-13, 13.5, '#E5484D', 0], [-5, 21, '#F2B705', 2.5]].forEach(([x, y, c, ph]) => {
+        const sb = new THREE.Group(); const h = mesh(rbox(1.0, 0.2, 0.36, 0.08), mat('#F4F6FB', { roughness: 0.4 })); h.position.y = 0.1; sb.add(h);
+        const sh = new THREE.Shape(); sh.moveTo(0, 0); sh.lineTo(0.62, 0); sh.lineTo(0, 1.0); sh.closePath();
+        const sail = new THREE.Mesh(memo('sail', () => new THREE.ShapeGeometry(sh)), new THREE.MeshStandardMaterial({ color: c, side: THREE.DoubleSide, roughness: 0.6 })); sail.position.set(-0.2, 0.22, 0); sb.add(sail);
+        G.add(sb); addAnim((t) => { const a = t * 0.12 + ph; sb.position.copy(W(x + Math.cos(a) * 1.6, y + Math.sin(a) * 1.1, 0.16 + Math.sin(t * 1.4 + ph) * 0.04)); sb.rotation.y = -a - Math.PI / 2; });
+      });
+      [[-6, 8.6], [-4.6, 15.5], [-14, 10.5]].forEach(([x, y], i) => { const b = mesh(memo('buoy', () => new THREE.CylinderGeometry(0.1, 0.14, 0.3, 10)), mat(i % 2 ? '#F2B705' : '#E5484D', { emissive: i % 2 ? '#F2B705' : '#E5484D', emissiveIntensity: isDark ? 0.8 : 0 })); G.add(b); addAnim((t) => { b.position.copy(W(x, y, 0.25 + Math.sin(t * 2 + i) * 0.05)); }); });
+      // espectacular GO PLANNER
+      const bill = new THREE.Group(); [-2.6, 2.6].forEach((px) => { const p = mesh(memo('billP', () => new THREE.BoxGeometry(0.14, 1.6, 0.14)), mat('#4B5563', { metalness: 0.5 })); p.position.set(px, 0.8, 0); bill.add(p); });
+      const bb = new THREE.Mesh(memo('billG', () => new THREE.PlaneGeometry(6.4, 1.6)), new THREE.MeshStandardMaterial({ map: billTex(isDark), roughness: 0.5, emissive: '#ffffff', emissiveMap: billTex(isDark), emissiveIntensity: isDark ? 0.35 : 0 })); bb.position.y = 2.3; bill.add(bb);
+      const back = mesh(memo('billB', () => new THREE.BoxGeometry(6.5, 1.7, 0.08)), mat('#2A2733')); back.position.set(0, 2.3, -0.06); bill.add(back);
+      bill.position.copy(W(12.5, 16, 0.05)); bill.rotation.y = Math.PI / 4; bill.scale.setScalar(1.5); G.add(bill);
+    }
     const quay = boxAt(-3.4, 6.2, -0.4, 8.6, 0.3, 0.47, mat(isDark ? '#3A3350' : '#B9C3D3'), 0.04); G.add(quay);
     // caminos + líneas
     const roads = roadsFor(zs, cs, yBot);
@@ -301,6 +356,9 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     dashes.forEach(([x, y, v], i) => { q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), v ? Math.PI / 2 : 0); m4.compose(W(x, y, 0.066), q, sc); dm.setMatrixAt(i, m4); }); dm.receiveShadow = true; G.add(dm);
     // edificios
     G.add(pick(factory(P), 'PROV'));
+    G.add(pick(factory(P, N.PIMP, '#14B8A6'), 'PIMP'));
+    { const o = boxAt(N.PIMP.x - 0.6, N.PIMP.y - 0.6, 0, N.PIMP.w + 4.2, N.PIMP.d + 1.6, 0.07, mat(P.pad, { roughness: 0.9 }), 0.05); o.castShadow = false; G.add(o); }
+    ['#2BB3A8', '#3B6FE0', '#F2A900', '#E5484D'].forEach((c, i) => { const ct = container(c, 1.5); ct.position.copy(W(N.PIMP.x + N.PIMP.w + 1.6, N.PIMP.y + 0.2 + (i % 2) * 0.8, Math.floor(i / 2) * 0.64)); ct.rotation.y = Math.PI / 2; G.add(ct); });
     G.add(pick(warehouse(P, { ...N.ADUANA, roof: '#E2A93B', doors: 2, logo: 'ADUANA', rh: 0.42, windows: false }), 'ADU'));
     G.add(pick(warehouse(P, { ...N.ALM, roof: P.roofA, doors: 4, logo: 'PLAN · ALMACÉN' }), 'ALM'));
     G.add(pick(warehouse(P, { ...N.XD, roof: P.roofX, doors: 3, logo: 'CROSS DOCK', rh: 0.38 }), 'XD'));
@@ -344,7 +402,7 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     const fk1 = forklift(true), fk2 = forklift(false); G.add(fk1, fk2);
     addAnim((t) => { const u = (Math.sin(t * 0.8) + 1) / 2; fk1.position.copy(W(a.x + 0.6 + u * 3.2, a.y + a.d + 1.7, 0)); fk1.rotation.y = Math.cos(t * 0.8) > 0 ? 0 : Math.PI; const v = (Math.sin(t * 0.6 + 2) + 1) / 2; fk2.position.copy(W(N.XD.x + 0.4 + v * 2.4, N.XD.y + N.XD.d + 1.75, 0)); fk2.rotation.y = Math.cos(t * 0.6 + 2) > 0 ? 0 : Math.PI; });
     // árboles y autos
-    [[-4, -14], [-3.6, -8], [3.8, -12.5], [4.2, -2.5], [2.8, -1.4], [8, -12.5], [11, -13.4], [15, -12.8], [18.5, -13.4], [9, 7.5], [12, 8.6], [16, 7.2], [18.6, 10.4], [24.6, -4.6], [-4.6, -3], [21.2, 15], [10.5, 12], [14.5, 14]].forEach(([x, y], i) => { const tr = tree(P, 0.85 + ((i * 37) % 10) / 22); tr.position.copy(W(x, y, 0.05)); tr.rotation.y = i; G.add(tr); });
+    [[-4, -14], [-3.6, -8], [3.8, -12.5], [4.2, -2.5], [2.8, -1.4], [8, -12.5], [11, -13.4], [15, -12.8], [18.5, -13.4], [9, 7.5], [12, 8.6], [16, 7.2], [18.6, 10.4], [24.6, -4.6], [-4.6, -3], [10.5, 12], [16.8, 20.5], [9, 21], [-14.5, -15], [-7, -15.6], [-14.8, -7], [-7.2, -6.5], [-14.6, -2], [-6.6, 2.6], [-9.5, -8.8], [-12.6, -13.2], [33, -10], [33.2, -3], [33.4, 6], [33.2, 16]].forEach(([x, y], i) => { const tr = tree(P, 0.85 + ((i * 37) % 10) / 22); tr.position.copy(W(x, y, 0.05)); tr.rotation.y = i; G.add(tr); });
     // postes de luz a lo largo de los caminos principales
     const bulbM = mat('#FFE9A8', { emissive: '#FFD66B', emissiveIntensity: isDark ? 4 : 0.4 });
     [[5.2, -9], [5.2, -2], [5.2, 3], [10, -4.9], [16, -4.9], [19.7, 0], [19.7, 6], [19.7, 12], [2.5, 5.7], [19.7, -9]].forEach(([lx, ly]) => {
@@ -397,8 +455,11 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     const ring = (x, y, w, d) => { const g = new THREE.Group(); const m = new THREE.MeshBasicMaterial({ color: isDark ? '#A78BFA' : '#3B6FE0', transparent: true, opacity: 0.8 }); [[x - 0.25, y - 0.25, w + 0.5, 0.08], [x - 0.25, y + d + 0.17, w + 0.5, 0.08], [x - 0.25, y - 0.25, 0.08, d + 0.5], [x + w + 0.17, y - 0.25, 0.08, d + 0.5]].forEach(([a, b, c, e]) => { const s = new THREE.Mesh(new THREE.BoxGeometry(c, 0.02, e), m); s.position.copy(W(a + c / 2, b + e / 2, 0.1)); g.add(s); }); G.add(g); anim((t) => { m.opacity = 0.45 + Math.sin(t * 4) * 0.35; }); };
 
     // nodos fijos
+    const mg = (a, b) => ({ n: a.n + b.n, pzs: a.pzs + b.pzs, ator: a.ator + b.ator, pzsAtor: (a.pzsAtor || 0) + (b.pzsAtor || 0), ocs: (a.ocs || 0) + (b.ocs || 0) });
+    const cPN = mg(cnt('PROVEEDOR|NAC'), cnt('PROVEEDOR|DIR')), cPIm = cnt('PROVEEDOR|IMP');
     const nodes = [
-      ['PROV', 'PROVEEDOR', N.PROV, 'Proveedores', 'pzs on order', '#64748B', 2.4],
+      ['PROV', cPN, N.PROV, 'Proveedores nacionales', 'pzs on order', TIPO_C.NAC, 2.4],
+      ['PIMP', cPIm, N.PIMP, 'Proveedores importación', 'pzs on order', TIPO_C.IMP, 2.4],
       ['ADU', 'ADUANA', N.ADUANA, 'Aduana · Puerto', 'pzs', '#E2A93B', 1.9],
       ['ALM', 'ALMACEN', N.ALM, 'PLAN · Almacén', 'pzs en bodega', P.roofA, 3.1],
       ['XD', 'CROSSDOCK', N.XD, 'PLAN · Cross dock', 'pzs in process', P.roofX, 2.2],
@@ -406,13 +467,14 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
       ['FUL', 'FULFILLMENT', N.FUL, 'Fulfillment', 'pzs', '#14B8A6', 2.3],
     ];
     nodes.forEach(([key, sk, n, title, unit, color, lz]) => {
-      const c = cnt(sk);
+      const c = typeof sk === 'string' ? cnt(sk) : sk;
       label(key, n.x + n.w / 2, n.y + n.d / 2, n.h + lz, title, c.n ? `${c.ocs} OCs · ${fk(c.pzs)} ${unit}${c.ator ? ` · ${fk(c.pzsAtor || 0)} pzs atoradas` : ''}` : 'Sin pedidos', color, c.n, c.ator, c.pzs);
       pin(c.ator ? fk(c.pzsAtor || 0) : 0, n.x + n.w, n.y + n.d / 2, n.h + 0.6, key);
       halo(n.x, n.y, n.w, n.d, c);
       if (selKey === key) ring(n.x, n.y, n.w, n.d);
     });
-    stack(N.PROV.x, N.PROV.y + N.PROV.d + 0.35, cnt('PROVEEDOR').pzs, cnt('PROVEEDOR').ator > 0, 4);
+    stack(N.PROV.x, N.PROV.y + N.PROV.d + 0.35, cPN.pzs, cPN.ator > 0, 4);
+    stack(N.PIMP.x, N.PIMP.y + N.PIMP.d + 0.35, cPIm.pzs, cPIm.ator > 0, 4);
     stack(3.0, 4.5, cnt('ADUANA').pzs * 0.4, cnt('ADUANA').ator > 0, 3);
     stack(N.ALM.x + 0.2, N.ALM.y + N.ALM.d + 0.3, cnt('ALMACEN').pzs, cnt('ALMACEN').ator > 0, 5);
     stack(N.XD.x + 0.1, N.XD.y + N.XD.d + 0.3, cnt('CROSSDOCK').pzs, cnt('CROSSDOCK').ator > 0, 4);
@@ -441,28 +503,28 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     const vIMP = cnt('PROVEEDOR|IMP').n + cT.n + cnt('ADUANA').n, vNAC = cnt('PROVEEDOR|NAC').n, vDIR = cnt('PROVEEDOR|DIR').n;
     const vTot = Math.max(1, vIMP + vNAC + vDIR), vOutTot = Math.max(1, zs.reduce((a, p) => a + cnt(`TRANSITO_TDA|${p.z}`).n, 0));
     route(paths.SHIP, TIPO_C.IMP, hl('IMP'), vIMP / vTot); route(paths.IMP, TIPO_C.IMP, hl('IMP'), vIMP / vTot); route(paths.NAC, TIPO_C.NAC, hl('NAC'), vNAC / vTot);
-    zs.forEach((p) => { route(paths.DIR(p.y), TIPO_C.DIR, hl('DIR'), Math.max(0.02, vDIR / vTot)); route(paths.OUT(p.y), '#8B6CF6', fTipo === 'DIR' ? 0.12 : 0.9, cnt(`TRANSITO_TDA|${p.z}`).n / vOutTot); });
+    zs.forEach((p) => { route(paths.DIR(p), TIPO_C.DIR, hl('DIR'), Math.max(0.02, vDIR / vTot)); route(paths.OUT(p), '#8B6CF6', fTipo === 'DIR' ? 0.12 : 0.9, cnt(`TRANSITO_TDA|${p.z}`).n / vOutTot); });
 
-    // vehículos
-    const lane = (path, n, speed, color, op, cont, key) => {
-      for (let i = 0; i < n; i++) {
-        const tk = truck(color, cont, isDark); if (op < 1) tk.traverse((o) => { if (o.material) { o.material = o.material.clone(); o.material.transparent = true; o.material.opacity = op; } });
-        add(tk, key);
-        anim((t) => { const p = pathAt(path, ((t * speed) + i / n) % 1); tk.position.copy(W(p.x, p.y, 0.06)); tk.rotation.y = -p.ang; });
-      }
+    // vehículos: cada flota comparte reloj y velocidad, así en los tramos compartidos guardan su distancia y no se enciman
+    const tkOp = (color, cont, op) => { const tk = truck(color, cont, isDark); if (op < 1) tk.traverse((o) => { if (o.material) { o.material = o.material.clone(); o.material.transparent = true; o.material.opacity = op; } }); return tk; };
+    const rr = (lanes) => { const out = []; for (let k = 0; lanes.some((l) => l.length > k); k++) lanes.forEach((l) => { if (l[k]) out.push(l[k]); }); return out; };
+    const many = (n, it) => Array.from({ length: Math.max(0, n) }, () => it);
+    const fleet = (items, v, gap, mk, z = 0.06) => {
+      if (!items.length) return;
+      const Ls = items.map((it) => pathLen(it.path)), Lc = Math.max(...Ls) + gap, n = Math.min(items.length, Math.floor(Lc / gap));
+      items.slice(0, n).forEach((it, i) => {
+        const L = Ls[i], o = add(mk(it), it.key), d0 = (i * Lc) / n;
+        anim((t) => { const s = (d0 + t * v) % Lc; if (s > L) { o.position.set(0, -50, 0); return; } const p = pathAt(it.path, s / L); o.position.copy(W(p.x, p.y, z)); o.rotation.y = -p.ang; });
+      });
     };
+    const mkT = (it) => tkOp(it.color, it.cont, it.op);
     const nShip = Math.min(3, cT.n);
-    if (!nShip && cPI.n) { const sh = ship(); add(sh, 'MAR'); anim((t) => { sh.position.copy(W(-12, 8.6, 0.2 + Math.sin(t * 1.2) * 0.05)); sh.rotation.z = Math.sin(t) * 0.02; }); } // barco en origen: importación aún con proveedor
-    for (let i = 0; i < nShip; i++) { const sh = ship(); add(sh, 'MAR'); anim((t) => { const p = pathAt(paths.SHIP, ((t * 0.022) + i / nShip) % 1); sh.position.copy(W(p.x - 2.2, p.y - 0.58, 0.2 + Math.sin(t * 1.5 + i) * 0.05)); sh.rotation.z = Math.sin(t * 1.2 + i) * 0.02; }); }
-    lane(paths.IMP, Math.min(3, cnt('ADUANA').n), 0.04, TIPO_C.IMP, hl('IMP'), true, 'ADU');
-    lane(paths.NAC, Math.min(3, Math.ceil(cnt('PROVEEDOR|NAC').n / 6)), 0.035, TIPO_C.NAC, hl('NAC'), false, 'PROV');
-    if (cnt('FORO').n) lane(paths.FORO, 1, 0.045, '#EC4899', 1, false, 'FORO');
-    if (cnt('FULFILLMENT').n) lane(paths.FUL, 1, 0.035, '#14B8A6', 1, false, 'FUL');
-    cs.forEach((p, i) => { if (cnt(`BODEGA_REG|${p.c}`).n) lane(paths.BOD(p.y), 1, 0.026 + i * 0.004, '#0EA5E9', 1, false, `CIU|${p.c}`); });
-    zs.forEach((p, i) => {
-      lane(paths.OUT(p.y), Math.min(3, cnt(`TRANSITO_TDA|${p.z}|PLAN`).n), 0.045 + i * 0.003, '#7C5CF0', fTipo === 'DIR' ? 0.15 : 1, false, `ZR|${p.z}`);
-      lane(paths.DIR(p.y), Math.min(2, cnt(`TRANSITO_TDA|${p.z}|DIR`).n), 0.022 + i * 0.002, TIPO_C.DIR, hl('DIR'), false, `ZR|${p.z}`);
-    });
+    if (!nShip && cPI.n) { const sh = add(shipC(), 'MAR'); anim((t) => { sh.position.copy(W(-10.2, 8.3, 0.2 + Math.sin(t * 1.2) * 0.05)); sh.rotation.z = Math.sin(t) * 0.02; }); } // barco en el muelle del proveedor: importación aún con proveedor
+    fleet(many(nShip, { path: paths.SHIP, key: 'MAR' }), 0.35, 5.6, shipC, 0.2);
+    fleet(rr([many(Math.min(3, Math.ceil(cnt('PROVEEDOR|NAC').n / 6)), { path: paths.NAC, color: TIPO_C.NAC, op: hl('NAC'), key: 'PROV' }), many(Math.min(3, cnt('ADUANA').n), { path: paths.IMP, color: TIPO_C.IMP, op: hl('IMP'), cont: true, key: 'ADU' })]), 0.5, 2.4, mkT);
+    fleet([...(cnt('FORO').n ? [{ path: paths.FORO, color: '#EC4899', op: 1, key: 'FORO' }] : []), ...(cnt('FULFILLMENT').n ? [{ path: paths.FUL, color: '#14B8A6', op: 1, key: 'FUL' }] : [])], 0.5, 2.4, mkT);
+    fleet(rr([...zs.map((p) => many(Math.min(2, cnt(`TRANSITO_TDA|${p.z}|PLAN`).n), { path: paths.OUT(p), color: '#7C5CF0', op: fTipo === 'DIR' ? 0.15 : 1, key: `ZR|${p.z}` })), ...cs.map((p) => many(cnt(`BODEGA_REG|${p.c}`).n ? 1 : 0, { path: paths.BOD(p.y), color: '#0EA5E9', op: 1, key: `CIU|${p.c}` }))]), 0.8, 3.8, mkT);
+    fleet(rr(zs.map((p) => many(Math.min(2, cnt(`TRANSITO_TDA|${p.z}|DIR`).n), { path: paths.DIR(p), color: TIPO_C.DIR, op: hl('DIR'), key: `ZR|${p.z}` }))), 0.9, 3.8, mkT);
     // camiones en andén de PLAN
     [[9.2, TIPO_C.NAC, cnt('ALMACEN').n > 0], [11.4, TIPO_C.IMP, cnt('ALMACEN').n > 1], [14.5, TIPO_C.NAC, cnt('CROSSDOCK').n > 0], [16.6, TIPO_C.IMP, cnt('CROSSDOCK').n > 1]].forEach(([px, col, on]) => { if (!on) return; const tk = truck(col, false, isDark); tk.position.copy(W(px, 3.05, 0.07)); tk.rotation.y = -Math.PI / 2; G.add(tk); });
   }, [stats, fTipo, selKey, isDark, zonas.join('|'), ciudades.join('|')]);

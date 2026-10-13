@@ -154,7 +154,7 @@ function parseEventos(text) {
       const comp = v(r, 'COMPROMISO');
       const base = {
         oc, pos: '', sku: v(r, 'GOA'), modelo: '', prov: v(r, 'PROVEEDOR') || 'Sin proveedor', marca: v(r, 'MARCA') || '—', seccion: v(r, 'SECCION'), goa: v(r, 'GOA'), origen,
-        pzsPed: asig || numv(v(r, 'PZS PEDIDAS')), pzsEv: 0, valor: numv(v(r, 'COSTO ASIG')) || numv(v(r, 'COSTO PEDIDO')), ubic: '', centro: ctr(tienda), zona: norm(v(r, 'ZONA')), cont: '',
+        pzsPed: asig || numv(v(r, 'PZS PEDIDAS')), pzsEv: 0, valor: numv(v(r, 'COSTO ASIG')) || numv(v(r, 'COSTO PEDIDO')), ubic: '', centro: ctr(tienda), zona: norm(v(r, 'ZONA')), cont: '', mon: origen === 'IMP' ? 'USD' : '', // el costo de importación viene en dólares
         fechaOc: toDate(v(r, 'FCH OC')), fechaComp: comp && !comp.startsWith('1900') ? toDate(comp) : null,
       };
       const add = (etapa, h, pzsEv, ubic) => { const f = toDate(v(r, h)); if (f) ev.push({ ...base, etapa, fecha: f, pzsEv, ubic }); };
@@ -311,30 +311,30 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
     rd.readAsArrayBuffer(f); e.target.value = '';
   };
 
-  // Zona de cada tienda: columna ZONA → catálogo cargado aquí → base de Traslados → bloques por número de tienda
-  const [zonaCat, setZonaCat] = useState(() => { try { return JSON.parse(localStorage.getItem('gop_pedidos_zonas') || '{}'); } catch { return {}; } });
-  const zonaRef = useRef(null);
-  const onZonas = (e) => {
-    const f = e.target.files?.[0]; if (!f) return;
-    const rd = new FileReader();
-    rd.onload = () => {
-      const rows = parseCSV(decode(rd.result)); const h = (rows[0] || []).map(norm);
-      const iC = h.findIndex((x) => ['TIENDA', 'CENTRO', 'CENTRO DESTINO', 'SUCURSAL'].includes(x)), iZ = h.findIndex((x) => ['ZONA', 'REGION', 'PLAZA', 'DISTRITO'].includes(x));
-      if (iC < 0 || iZ < 0) { setAviso('El catálogo necesita columnas TIENDA (o CENTRO) y ZONA.'); return; }
-      const m = {}; rows.slice(1).forEach((r) => { const c = ctr(r[iC]), z = norm(r[iZ]); if (c && z) m[c] = z; });
-      setZonaCat(m); setAviso(''); try { localStorage.setItem('gop_pedidos_zonas', JSON.stringify(m)); } catch { /* sin espacio */ }
-    };
-    rd.readAsArrayBuffer(f); e.target.value = '';
-  };
+  // Zona de cada tienda: columna ZONA → base de Traslados → bloques por número de tienda
+  // Tipo de cambio USD→MXN del día de la OC (Frankfurter/BCE, se guarda); si no hay conexión usa el manual de la configuración
+  const [fx, setFx] = useState(() => { try { return JSON.parse(localStorage.getItem('gop_fx_usdmxn') || '{}'); } catch { return {}; } });
+  useEffect(() => {
+    const ds = ev.filter((e) => e.mon === 'USD' && e.fechaOc).map((e) => new Date(e.fechaOc).toISOString().slice(0, 10)).sort();
+    if (!ds.length) return;
+    const ini = new Date(new Date(ds[0]) - 7 * DAY).toISOString().slice(0, 10), fin = new Date().toISOString().slice(0, 10);
+    const ks = Object.keys(fx).sort();
+    if (ks.length && ks[0] <= ds[0] && ks[ks.length - 1] >= ds[ds.length - 1]) return;
+    const get = (u) => fetch(u).then((r) => (r.ok ? r.json() : Promise.reject()));
+    get(`https://api.frankfurter.app/${ini}..${fin}?from=USD&to=MXN`).catch(() => get(`https://api.frankfurter.dev/v1/${ini}..${fin}?base=USD&symbols=MXN`))
+      .then((j) => { const m = { ...fx }; Object.entries(j.rates || {}).forEach(([d, r]) => { if (r.MXN) m[d] = r.MXN; }); setFx(m); try { localStorage.setItem('gop_fx_usdmxn', JSON.stringify(m)); } catch { /* sin espacio */ } })
+      .catch(() => {});
+  }, [ev]);
+  const tcDe = useMemo(() => { const ks = Object.keys(fx).sort(); return (d) => { if (!d || !ks.length) return null; const k = new Date(d).toISOString().slice(0, 10); let r = null; for (const x of ks) { if (x > k) break; r = fx[x]; } return r ?? fx[ks[0]]; }; }, [fx]);
   const zonaTraslados = useMemo(() => { try { const d = JSON.parse(localStorage.getItem('gop_traslados_exc') || 'null'); const m = {}; (d?.rawData || []).forEach((r) => { if (r.centro && r.zona) m[ctr(r.centro)] = norm(r.zona); }); return m; } catch { return {}; } }, []);
   const allUnits = useMemo(() => {
     const us = buildUnits(ev, cfg.umbral, hoy);
-    us.forEach((u) => { if (!u.zona && u.centro) u.zona = zonaCat[u.centro] || zonaTraslados[u.centro] || ''; });
+    us.forEach((u) => { if (!u.zona && u.centro) u.zona = zonaTraslados[u.centro] || ''; if (u.valor && u.eventos[0]?.mon === 'USD') { u.valorUSD = u.valor; u.tc = tcDe(u.inicio) || cfg.tc || 18.5; u.valor *= u.tc; } });
     // Sin zona: se agrupan por número de tienda en hasta 6 bloques para que el mapa no quede en un solo edificio
     const sinZ = [...new Set(us.filter((u) => !u.zona && u.centro).map((u) => u.centro))].sort();
-    if (sinZ.length) { const k = Math.min(6, Math.ceil(sinZ.length / 8)), tam = Math.ceil(sinZ.length / k), blk = {}; sinZ.forEach((c, i) => { const b = Math.floor(i / tam); blk[c] = `T${sinZ[b * tam]}–${sinZ[Math.min(sinZ.length - 1, b * tam + tam - 1)]}`; }); us.forEach((u) => { if (!u.zona && u.centro) u.zona = blk[u.centro]; }); }
+    if (sinZ.length && !us.some((u) => u.zona)) { const k = Math.min(6, Math.ceil(sinZ.length / 8)), tam = Math.ceil(sinZ.length / k), blk = {}; sinZ.forEach((c, i) => { const b = Math.floor(i / tam); blk[c] = `T${sinZ[b * tam]}–${sinZ[Math.min(sinZ.length - 1, b * tam + tam - 1)]}`; }); us.forEach((u) => { if (!u.zona && u.centro) u.zona = blk[u.centro]; }); }
     return us;
-  }, [ev, cfg.umbral, hoy, zonaCat, zonaTraslados]);
+  }, [ev, cfg.umbral, cfg.tc, hoy, zonaTraslados, tcDe]);
   const opts = useMemo(() => { const u = (k) => [...new Set(allUnits.map((x) => x[k]).filter(Boolean))].sort(); return { prov: u('prov'), marca: u('marca'), zona: u('zona'), seccion: u('seccion') }; }, [allUnits]);
   const units = useMemo(() => {
     const qq = norm(q);
@@ -343,7 +343,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
       && (!qq || norm(`${u.oc} ${u.sku} ${u.modelo} ${u.centro} ${u.cont}`).includes(qq)));
   }, [allUnits, fProv, fMarca, fTipo, fZona, fSec, fSolo, q]);
 
-  const zonas = useMemo(() => { const z = [...new Set(allUnits.map((u) => u.zona).filter(Boolean))].sort(); return z.length ? z.slice(0, 6) : ['TIENDAS']; }, [allUnits]);
+  const zonas = useMemo(() => { const z = [...new Set(allUnits.map((u) => u.zona).filter(Boolean))].sort(); return z.length ? z.slice(0, 14) : ['TIENDAS']; }, [allUnits]);
   const zonaDe = (u) => (zonas.includes(u.zona) ? u.zona : zonas[zonas.length - 1]);
   const ciudades = useMemo(() => { const c = [...new Set(allUnits.map((u) => u.ciudad).filter(Boolean))].sort(); return c.length ? c.slice(0, 4) : ['REGIONAL']; }, [allUnits]);
   const ciudadDe = (u) => (ciudades.includes(u.ciudad) ? u.ciudad : ciudades[0]);
@@ -414,7 +414,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
 
   const nodeUnits = useMemo(() => {
     if (!sel) return [];
-    return units.filter((u) => sel.stages.includes(u.etapa) && (!sel.zona || zonaDe(u) === sel.zona) && (!sel.ciudad || ciudadDe(u) === sel.ciudad) && (!sel.tipo || u.tipo === sel.tipo) && (!selTienda || u.centro === selTienda))
+    return units.filter((u) => sel.stages.includes(u.etapa) && (!sel.zona || zonaDe(u) === sel.zona) && (!sel.ciudad || ciudadDe(u) === sel.ciudad) && (!sel.tipo || [].concat(sel.tipo).includes(u.tipo)) && (!selTienda || u.centro === selTienda))
       .sort((a, b) => b.atorado - a.atorado || b.enEtapa - a.enEtapa);
   }, [units, sel, selTienda, zonas, ciudades]);
   const tiendasZona = useMemo(() => {
@@ -428,7 +428,8 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
   const abrir = (s) => { setSel(s); setSelUnit(null); setSelTienda(''); const k = siteOfKey(s?.key); if (k) setSite(k); };
   // Clic en la escena 3D → selección
   const onPick = (k) => {
-    if (k === 'PROV') return abrir({ key: k, stages: ['PROVEEDOR'], titulo: 'Proveedores · On order' });
+    if (k === 'PROV') return abrir({ key: k, stages: ['PROVEEDOR'], tipo: ['NAC', 'DIR'], titulo: 'Proveedores nacionales · On order' });
+    if (k === 'PIMP') return abrir({ key: k, stages: ['PROVEEDOR'], tipo: 'IMP', titulo: 'Proveedores importación · On order' });
     if (k === 'ADU') return abrir({ key: k, stages: ['ADUANA'], titulo: 'Aduana · Puerto' });
     if (k === 'MAR') return abrir({ key: k, stages: ['TRANSITO_INT', 'ADUANA'], titulo: 'Importación (tránsito y aduana)' });
     if (k === 'ALM') return abrir({ key: k, stages: ['ALMACEN'], titulo: 'PLAN · Almacén' });
@@ -459,8 +460,6 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
     <>
       <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden" onChange={onFile} />
       <button onClick={() => fileRef.current?.click()} className={`px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 ${isDark ? 'bg-violet-600 text-white hover:bg-violet-500' : 'bg-blue-600 text-white hover:bg-blue-500'}`}><Upload size={14} /> Cargar CSV</button>
-      <input ref={zonaRef} type="file" accept=".csv,.txt" className="hidden" onChange={onZonas} />
-      <button onClick={() => zonaRef.current?.click()} title="CSV con TIENDA y ZONA para agrupar las tiendas en el mapa" className={`px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 border ${t.cardInner}`}><Store size={14} /> Zonas{Object.keys(zonaCat).length ? ` · ${Object.keys(zonaCat).length}` : ''}</button>
       <button onClick={() => { setEv(demoEventos()); setAviso(''); abrir(null); }} className={`px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 border ${t.cardInner}`}><Wand2 size={14} /> Datos de prueba</button>
       {ev.length > 0 && <button onClick={exportar} className={`px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 border ${t.cardInner}`}><Download size={14} /> Exportar</button>}
       {ev.length > 0 && <button onClick={() => { setEv([]); abrir(null); }} className={`p-2 rounded-lg border ${t.cardInner}`} title="Borrar datos"><Trash2 size={14} /></button>}
@@ -514,6 +513,10 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
                   <span className="opacity-60" title="Promedio histórico / percentil 90">{tramoProm[k] ? `prom ${tramoProm[k].prom.toFixed(1)} · p90 ${tramoProm[k].p90.toFixed(1)}` : ''}</span>
                 </label>
               ))}
+              <label className={`text-[11px] flex items-center gap-1.5 ${t.textMuted}`}>Tipo de cambio USD (si no hay del día)
+                <input type="number" min="1" step="0.01" value={cfg.tc ?? 18.5} onChange={(e) => setCfg((c) => ({ ...c, tc: Math.max(1, Number(e.target.value)) }))} className={`${inCls} w-16 text-center`} />
+                <span className="opacity-60">{Object.keys(fx).length ? `${Object.keys(fx).length} días descargados (BCE)` : 'sin descarga'}</span>
+              </label>
             </div>
           )}
         </div>
@@ -576,7 +579,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
                 </div>
               )}
               {(() => {
-                const ks = sel.stages; const us = units.filter((u) => ks.includes(u.etapa) && (!sel.zona || zonaDe(u) === sel.zona) && (!sel.ciudad || ciudadDe(u) === sel.ciudad) && (!sel.tipo || u.tipo === sel.tipo));
+                const ks = sel.stages; const us = units.filter((u) => ks.includes(u.etapa) && (!sel.zona || zonaDe(u) === sel.zona) && (!sel.ciudad || ciudadDe(u) === sel.ciudad) && (!sel.tipo || [].concat(sel.tipo).includes(u.tipo)));
                 const c = { n: us.length, pzs: us.reduce((a, u) => a + Math.max(0, u.pzs - u.pzsRec), 0), ator: us.filter((u) => u.atorado).length, maxDias: Math.max(0, ...us.map((u) => u.enEtapa || 0)) };
                 const tp = ks.length === 1 ? tramoProm[ks[0]] : null;
                 return (

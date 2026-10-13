@@ -35,14 +35,8 @@ export const CSV_SCHEMAS = [
     formats: [
       {
         title: 'Extracto BigQuery PEDIDOS_TRACK (recomendado)',
-        desc: 'Una fila por OC × tienda. FCH_OC = colocada con proveedor; DT_CEDIS = recibida en PLAN (almacén); DT_PLAN = asignada (si es después de recibir pasa a cross dock / in process); DT_SALIDA = sale a tienda (in transit); DT_TIENDA = llegó a tienda. Las piezas por tienda salen de PZS_ASIG. TIPO NACIONAL / IMPORTACION; CENTRO_OC con número de tienda = directo a tienda. COMPROMISO es la fecha del proveedor: "a tiempo" se mide contra la llegada a CEDIS y "atorado con proveedor" solo cuenta si ya pasó. Para ver importación en tránsito o aduana hacen falta fechas de embarque y aduana (aún no vienen en el extracto).',
-        columns: ['OC*', 'TIPO', 'SECCION', 'GOA', 'PROVEEDOR', 'FCH_OC', 'COMPROMISO', 'PZS_PEDIDAS', 'PZS_REC_CEDIS', 'DT_CEDIS*', 'CENTRO_OC', 'TIENDA', 'PZS_ASIG', 'DT_PLAN', 'PZS_SALIDA', 'DT_SALIDA', 'PZS_TIENDA', 'DT_TIENDA', 'ESTATUS'],
-      },
-      {
-        title: 'Zonas de tiendas (opcional, botón "Zonas")',
-        desc: 'Agrupa las tiendas en el mapa. Si no lo cargas se usa la zona de la base de Traslados y, si tampoco hay, bloques por número de tienda.',
-        columns: ['TIENDA (o CENTRO)*', 'ZONA*'],
-        template: [['TIENDA', 'ZONA'], ['0491', 'NORTE']],
+        desc: 'Una fila por OC × tienda. FCH_OC = colocada con proveedor; DT_CEDIS = recibida en PLAN (almacén); DT_PLAN = asignada (si es después de recibir pasa a cross dock / in process); DT_SALIDA = sale a tienda (in transit); DT_TIENDA = llegó a tienda. Las piezas por tienda salen de PZS_ASIG. TIPO NACIONAL / IMPORTACION; CENTRO_OC con número de tienda = directo a tienda. COMPROMISO es la fecha del proveedor: "a tiempo" se mide contra la llegada a CEDIS y "atorado con proveedor" solo cuenta si ya pasó. ZONA agrupa las tiendas en el mapa; TIPO_DESTINO = BODEGA va a bodegas regionales. COSTO_ASIG da el $ por nodo: en importación viene en dólares y se convierte con el tipo de cambio del día de FCH_OC. Para ver importación en tránsito o aduana hacen falta fechas de embarque y aduana (aún no vienen en el extracto).',
+        columns: ['OC*', 'TIPO', 'SECCION', 'GOA', 'PROVEEDOR', 'FCH_OC', 'COMPROMISO', 'PZS_PEDIDAS', 'PZS_REC_CEDIS', 'DT_CEDIS*', 'CENTRO_OC', 'TIENDA', 'ZONA', 'TIPO_DESTINO', 'PZS_ASIG', 'COSTO_ASIG', 'DT_PLAN', 'PZS_SALIDA', 'DT_SALIDA', 'PZS_TIENDA', 'DT_TIENDA', 'ESTATUS'],
       },
       {
         title: 'Eventos de pedidos (una fila por evento)',
