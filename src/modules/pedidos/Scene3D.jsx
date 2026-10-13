@@ -6,6 +6,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 import { RoundedBoxGeometry } from 'three/examples/jsm/geometries/RoundedBoxGeometry.js';
 import { CSS2DRenderer, CSS2DObject } from 'three/examples/jsm/renderers/CSS2DRenderer.js';
 import { EffectComposer } from 'three/examples/jsm/postprocessing/EffectComposer.js';
+import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment.js';
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
@@ -169,7 +170,7 @@ function factory(P) {
   return g;
 }
 
-export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey, site, panelOpen, play, onPick, zoomCmd }) {
+export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey, site, panelOpen, play, onPick, zoomCmd, semaforo }) {
   const host = useRef(null);
   const st = useRef({});
   const props = useRef({});
@@ -195,6 +196,7 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     controls.minZoom = 0.6; controls.maxZoom = 5; controls.minPolarAngle = 0.45; controls.maxPolarAngle = 1.2;
     controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
     controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
+    const pmrem = new THREE.PMREMGenerator(renderer); scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture; scene.environmentIntensity = 0.45; // luz ambiental suave
     const hemi = new THREE.HemisphereLight('#ffffff', '#5a5470', 1); scene.add(hemi);
     const sun = new THREE.DirectionalLight('#fff6e8', 1.8); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
     Object.assign(sun.shadow.camera, { left: -32, right: 32, top: 32, bottom: -32, near: 1, far: 140 }); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.02; sun.shadow.radius = 3;
@@ -202,7 +204,7 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     const fill = new THREE.DirectionalLight('#b9a8ff', 0.35); fill.position.set(40, 20, -30); scene.add(fill);
     const staticG = new THREE.Group(), dynG = new THREE.Group(); scene.add(staticG, dynG);
     composer.addPass(new RenderPass(scene, cam));
-    const bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.45, 0.5, 0.82); composer.addPass(bloom); composer.addPass(new OutputPass());
+    const bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.4, 0.45, 0.97); composer.addPass(bloom); composer.addPass(new OutputPass());
     Object.assign(S, { renderer, labels, scene, cam, controls, hemi, sun, staticG, dynG, anim: [], movers: [], t: 0, labelEls: [], detail: null, composer, bloom });
 
     const resize = () => { const w = el.clientWidth, h = el.clientHeight, a = w / h, vs = 30; cam.left = (-vs * a) / 2; cam.right = (vs * a) / 2; cam.top = vs / 2; cam.bottom = -vs / 2; cam.updateProjectionMatrix(); renderer.setSize(w, h); labels.setSize(w, h); S.composer?.setSize(w, h); };
@@ -226,10 +228,26 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
       if (props.current.play) S.t += dt;
       const t = S.t;
       if (S.tween) { const k = Math.min(1, (now - S.tween.t0) / 700), e = 1 - Math.pow(1 - k, 3); controls.target.lerpVectors(S.tween.a, S.tween.b, e); cam.position.copy(controls.target).add(S.tween.off); cam.zoom = S.tween.za + (S.tween.zb - S.tween.za) * e; cam.updateProjectionMatrix(); if (k >= 1) S.tween = null; }
-      controls.update();
+      const moved = controls.update();
+      // En pausa solo se dibuja si la cámara se movió o cambió la escena (ahorra batería)
+      if (!props.current.play && !S.tween && !moved && !S.dirty && S.frame > 2) { raf = requestAnimationFrame(loop); return; }
+      S.dirty = false;
+      // Monitor de rendimiento: si va lento, quita el brillo y baja la resolución
+      S.fpsAcc = (S.fpsAcc || 0) + dt; S.fpsN = (S.fpsN || 0) + 1;
+      if (S.fpsAcc > 3) { const fps = S.fpsN / S.fpsAcc; if (fps < 32 && !S.lowPerf) { S.lowPerf = true; if (S.bloom) S.bloom.enabled = false; renderer.setPixelRatio(1); resize(); } S.fpsAcc = 0; S.fpsN = 0; }
       S.anim.forEach((f) => f(t, dt));
       // detalle de etiquetas según zoom
-      const det = cam.zoom > 1.55; if (det !== S.detail) { S.detail = det; S.labelEls.forEach((l) => l.setDetail(det)); }
+      const det = cam.zoom > 1.55; if (det !== S.detail) { S.detail = det; S.labelEls.forEach((l) => l.setDetail(det)); S.frame = 0; }
+      // Etiquetas sin encimarse: por prioridad (seleccionada > con atorados > con más piezas); las que chocan se ocultan
+      if ((S.frame = (S.frame || 0) + 1) % 12 === 1) {
+        const r = el.getBoundingClientRect(), placed = [], v = new THREE.Vector3();
+        [...S.labelEls].sort((a, b) => b.pri - a.pri).forEach((l) => {
+          v.copy(l.obj.position).project(cam); const w = l.el.offsetWidth || 80, h = l.el.offsetHeight || 22;
+          const x = (v.x + 1) / 2 * r.width - w / 2, y = (1 - v.y) / 2 * r.height - h - 14;
+          const hit = placed.some((p) => x < p.x + p.w + 4 && x + w + 4 > p.x && y < p.y + p.h + 3 && y + h + 3 > p.y);
+          l.el.style.visibility = hit ? 'hidden' : 'visible'; if (!hit) placed.push({ x, y, w, h });
+        });
+      }
       sun.position.copy(controls.target).add(new THREE.Vector3(-18, 34, 14)); sun.target.position.copy(controls.target);
       if (S.bloom?.enabled) S.composer.render(); else renderer.render(scene, cam);
       labels.render(scene, cam);
@@ -244,7 +262,8 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     const S = st.current; if (!S.scene) return;
     const P = isDark ? PALETTE.dark : PALETTE.light;
     S.renderer.setClearColor(P.bg); S.scene.fog = new THREE.Fog(P.bg, 90, 200);
-    if (S.bloom) S.bloom.enabled = isDark; // brillo de ventanas y postes solo de noche
+    if (S.bloom) S.bloom.enabled = isDark && !S.lowPerf; // brillo de ventanas y postes solo de noche
+    S.dirty = true;
     S.hemi.intensity = P.hemi; S.hemi.groundColor.set(isDark ? '#3a3350' : '#b9c3d6'); S.sun.intensity = P.sun;
     const G = S.staticG; while (G.children.length) G.remove(G.children[0]);
     S.anim = S.anim.filter((f) => !f.isStatic);
@@ -340,25 +359,33 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     const S = st.current; if (!S.scene) return;
     const P = isDark ? PALETTE.dark : PALETTE.light;
     const G = S.dynG; while (G.children.length) G.remove(G.children[0]);
+    S.dirty = true;
     S.anim = S.anim.filter((f) => f.isStatic); S.labelEls = []; S.detail = null;
     const cnt = (k) => stats[k] || { n: 0, pzs: 0, ator: 0 };
     const hl = (tp) => (!fTipo || fTipo === tp ? 1 : 0.12);
     const zs = zonas.map((z, i) => ({ z, ...zonaPos(i) })), cs = ciudades.map((c, i) => ({ c, ...ciudadPos(i) }));
     const add = (o, k) => { if (k) o.userData.pick = k; G.add(o); return o; };
     const anim = (f) => S.anim.push(f);
-    const label = (key, x, y, z, title, sub, color) => {
-      const el = document.createElement('div'); const active = selKey === key;
-      el.style.cssText = `pointer-events:auto;cursor:pointer;background:${active ? (isDark ? 'rgba(58,47,85,0.96)' : 'rgba(238,243,255,0.98)') : P.card};border:1px solid ${active ? color : P.cardB};border-radius:10px;padding:4px 9px;font-family:Inter,system-ui,sans-serif;box-shadow:0 6px 18px rgba(0,0,0,0.18);white-space:nowrap;transform:translateY(-14px);backdrop-filter:blur(6px);`;
+    const label = (key, x, y, z, title, sub, color, n = 1, ator = 0, pzs = 0) => {
+      const el = document.createElement('div'); const active = selKey === key; const idle = !n;
+      el.style.cssText = `pointer-events:auto;cursor:pointer;background:${active ? (isDark ? 'rgba(58,47,85,0.96)' : 'rgba(238,243,255,0.98)') : P.card};border:1px solid ${active ? color : P.cardB};border-radius:10px;padding:4px 9px;font-family:Inter,system-ui,sans-serif;box-shadow:0 6px 18px rgba(0,0,0,0.18);white-space:nowrap;transform:translateY(-14px);backdrop-filter:blur(6px);opacity:${idle && !active ? 0.55 : 1};`;
       const sh = (sub || '').split(' · ')[0];
       el.innerHTML = `<div style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:800;color:${P.text}"><span style="width:7px;height:7px;border-radius:9px;background:${color}"></span>${title}<span class="sm" style="font-weight:600;color:${P.sub}">${sh}</span></div><div class="lg" style="font-size:9.5px;color:${P.sub};margin-top:1px">${sub || ''}</div>`;
       el.onclick = (e) => { e.stopPropagation(); props.current.onPick?.(key); };
       const o = new CSS2DObject(el); o.position.copy(W(x, y, z)); G.add(o);
       const sm = el.querySelector('.sm'), lg = el.querySelector('.lg');
-      const setDetail = (d) => { const on = d || active; lg.style.display = on ? 'block' : 'none'; sm.style.display = on ? 'none' : 'inline'; };
-      S.labelEls.push({ setDetail });
+      const setDetail = (d) => { const on = (d || active) && !idle; lg.style.display = on ? 'block' : 'none'; sm.style.display = on || idle ? 'none' : 'inline'; };
+      S.labelEls.push({ setDetail, el, obj: o, pri: active ? 1e9 : idle ? -1 : ator * 1000 + pzs });
     };
-    const pin = (n, x, y, z) => { if (!n) return; const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: pinTex(n), depthTest: false })); sp.scale.set(0.62, 0.83, 1); sp.center.set(0.5, 0); sp.renderOrder = 10; G.add(sp); anim((t) => { sp.position.copy(W(x, y, z + 0.15 + Math.abs(Math.sin(t * 2.6 + x)) * 0.35)); }); };
+    const pin = (n, x, y, z, key) => { if (!n) return; const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: pinTex(n), depthTest: false })); sp.scale.set(0.62, 0.83, 1); if (key) sp.userData.pick = key; sp.center.set(0.5, 0); sp.renderOrder = 10; G.add(sp); anim((t) => { sp.position.copy(W(x, y, z + 0.15 + Math.abs(Math.sin(t * 2.6 + x)) * 0.35)); }); };
     const stack = (x0, y0, pzs, alert, cols = 3) => { const n = pzs > 0 ? Math.min(14, Math.max(1, Math.round(Math.log2(pzs / 60 + 1) * 2.4))) : 0; for (let i = 0; i < n; i++) { const c = i % cols, r = Math.floor(i / cols) % 2, l = Math.floor(i / (cols * 2)); const p = pallet(alert); p.position.copy(W(x0 + c * 0.68 + 0.28, y0 + r * 0.68 + 0.28, 0.07 + l * 0.46)); G.add(p); } };
+    const SM = semaforo?.nodo || { riesgo: 0.05, atorado: 0.2 };
+    const halo = (x, y, w, d, c) => { // anillo en el piso: verde OK · ámbar riesgo · rojo atorado (pulsa)
+      if (!c.n) return; const sh = c.ator / c.n; const col = sh >= SM.atorado ? '#E5484D' : sh >= SM.riesgo ? '#F59E0B' : '#22C55E';
+      const m = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.32, depthWrite: false });
+      const o = new THREE.Mesh(rbox(w + 1.1, 0.02, d + 1.1, 0.4), m); o.position.copy(W(x + w / 2, y + d / 2, 0.09)); o.renderOrder = 2; G.add(o);
+      if (sh >= SM.atorado) anim((t) => { m.opacity = 0.22 + (Math.sin(t * 3.5) + 1) * 0.16; });
+    };
     const ring = (x, y, w, d) => { const g = new THREE.Group(); const m = new THREE.MeshBasicMaterial({ color: isDark ? '#A78BFA' : '#3B6FE0', transparent: true, opacity: 0.8 }); [[x - 0.25, y - 0.25, w + 0.5, 0.08], [x - 0.25, y + d + 0.17, w + 0.5, 0.08], [x - 0.25, y - 0.25, 0.08, d + 0.5], [x + w + 0.17, y - 0.25, 0.08, d + 0.5]].forEach(([a, b, c, e]) => { const s = new THREE.Mesh(new THREE.BoxGeometry(c, 0.02, e), m); s.position.copy(W(a + c / 2, b + e / 2, 0.1)); g.add(s); }); G.add(g); anim((t) => { m.opacity = 0.45 + Math.sin(t * 4) * 0.35; }); };
 
     // nodos fijos
@@ -372,8 +399,9 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     ];
     nodes.forEach(([key, sk, n, title, unit, color, lz]) => {
       const c = cnt(sk);
-      label(key, n.x + n.w / 2, n.y + n.d / 2, n.h + lz, title, c.n ? `${c.ocs} OCs · ${fk(c.pzs)} ${unit}` : 'Sin pedidos', color);
-      pin(c.ator, n.x + n.w, n.y + n.d / 2, n.h + 0.6);
+      label(key, n.x + n.w / 2, n.y + n.d / 2, n.h + lz, title, c.n ? `${c.ocs} OCs · ${fk(c.pzs)} ${unit}${c.ator ? ` · ${fk(c.pzsAtor || 0)} pzs atoradas` : ''}` : 'Sin pedidos', color, c.n, c.ator, c.pzs);
+      pin(c.ator ? fk(c.pzsAtor || 0) : 0, n.x + n.w, n.y + n.d / 2, n.h + 0.6, key);
+      halo(n.x, n.y, n.w, n.d, c);
       if (selKey === key) ring(n.x, n.y, n.w, n.d);
     });
     stack(N.PROV.x, N.PROV.y + N.PROV.d + 0.35, cnt('PROVEEDOR').pzs, cnt('PROVEEDOR').ator > 0, 4);
@@ -383,19 +411,22 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     stack(N.FORO.x + N.FORO.w + 0.2, N.FORO.y + 0.2, cnt('FORO').pzs, cnt('FORO').ator > 0, 2);
     const cT = cnt('TRANSITO_INT');
     const cPI = cnt('PROVEEDOR|IMP');
-    if (cT.n || cPI.n) { label('MAR', -9, 9.6, 1.9, 'Importación', `${cPI.ocs || 0} OCs con proveedor · ${cT.ocs || 0} en tránsito (sin fecha de embarque/aduana en la base)`, TIPO_C.IMP); pin(cT.ator, -7, 9.7, 1.4); }
-    cs.forEach(({ c, x, y }) => { const k = `CIU|${c}`, s = cnt(`BODEGA_REG|${c}`); label(k, x + 1.2, y + 0.9, 2.1, c === 'REGIONAL' ? 'Bodegas regionales' : `Bodega ${c[0]}${c.slice(1).toLowerCase()}`, s.n ? `${s.ocs} OCs · ${fk(s.pzs)} pzs` : 'Sin inventario', '#0EA5E9'); pin(s.ator, x + 2.4, y + 0.9, 1.5); stack(x + 2.75, y + 0.15, s.pzs, s.ator > 0, 2); if (selKey === k) ring(x, y, 2.4, 1.8); });
-    zs.forEach(({ z, x, y }) => { const k = `Z|${z}`, sT = cnt(`TIENDA|${z}`), sR = cnt(`RECIBIDO|${z}`), sRu = cnt(`TRANSITO_TDA|${z}`); label(k, x + 1.2, y + 0.95, 1.9, z === 'TIENDAS' ? 'Tiendas' : `Zona ${z}`, `${sRu.n} en ruta · ${fk(sT.pzs)} pzs sin entrada · ${sR.n} recibidos`, '#F59E0B'); pin(sT.ator, x + 2.4, y + 0.95, 1.4); stack(x - 1.5, y + 0.15, sT.pzs, sT.ator > 0, 2); if (selKey === k) ring(x, y, 2.4, 1.9); });
+    if (cT.n || cPI.n) { label('MAR', -9, 9.6, 1.9, 'Importación', `${cPI.ocs || 0} OCs con proveedor · ${cT.ocs || 0} en tránsito (sin fecha de embarque/aduana en la base)`, TIPO_C.IMP, cT.n + cPI.n, cT.ator + cPI.ator, cT.pzs + cPI.pzs); pin(cT.ator + cPI.ator ? fk((cT.pzsAtor || 0) + (cPI.pzsAtor || 0)) : 0, -7, 9.7, 1.4, 'MAR'); }
+    cs.forEach(({ c, x, y }) => { const k = `CIU|${c}`, s = cnt(`BODEGA_REG|${c}`); label(k, x + 1.2, y + 0.9, 2.1, c === 'REGIONAL' ? 'Bodegas regionales' : `Bodega ${c[0]}${c.slice(1).toLowerCase()}`, s.n ? `${s.ocs} OCs · ${fk(s.pzs)} pzs` : 'Sin inventario', '#0EA5E9', s.n, s.ator, s.pzs); pin(s.ator ? fk(s.pzsAtor || 0) : 0, x + 2.4, y + 0.9, 1.5, k); halo(x, y, 2.4, 1.8, s); stack(x + 2.75, y + 0.15, s.pzs, s.ator > 0, 2); if (selKey === k) ring(x, y, 2.4, 1.8); });
+    zs.forEach(({ z, x, y }) => { const k = `Z|${z}`, sT = cnt(`TIENDA|${z}`), sR = cnt(`RECIBIDO|${z}`), sRu = cnt(`TRANSITO_TDA|${z}`); label(k, x + 1.2, y + 0.95, 1.9, z === 'TIENDAS' ? 'Tiendas' : `Zona ${z}`, `${sRu.n} en ruta · ${fk(sT.pzs)} pzs sin entrada · ${sR.n} recibidos`, '#F59E0B', sT.n + sRu.n + sR.n, sT.ator + sRu.ator, sT.pzs + sRu.pzs); pin(sT.ator + sRu.ator ? fk((sT.pzsAtor || 0) + (sRu.pzsAtor || 0)) : 0, x + 2.4, y + 0.95, 1.4, k); halo(x - 1.45, y - 1.2, 3.85, 3.0, { n: sT.n + sRu.n, ator: sT.ator + sRu.ator }); stack(x - 1.5, y + 0.15, sT.pzs, sT.ator > 0, 2); if (selKey === k) ring(x, y, 2.4, 1.9); });
 
     // rutas de color (tubo con flujo animado)
-    const route = (path, color, op) => {
+    const route = (path, color, op, vol = 0.3) => {
       const cp = new THREE.CurvePath(); for (let i = 0; i < path.length - 1; i++) cp.add(new THREE.LineCurve3(W(path[i][0], path[i][1], 0.1), W(path[i + 1][0], path[i + 1][1], 0.1)));
       const len = cp.getLength(); const tex = flowTex(color).clone(); tex.needsUpdate = true; tex.wrapS = THREE.RepeatWrapping; tex.repeat.set(len / 0.9, 1);
-      const tube = new THREE.Mesh(new THREE.TubeGeometry(cp, Math.max(8, path.length * 24), 0.05, 6, false), new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: op, depthWrite: false }));
+      const tube = new THREE.Mesh(new THREE.TubeGeometry(cp, Math.max(8, path.length * 24), 0.035 + 0.09 * Math.sqrt(Math.min(1, vol)), 6, false), new THREE.MeshBasicMaterial({ map: tex, transparent: true, opacity: op, depthWrite: false }));
       G.add(tube); anim((t) => { tex.offset.x = -t * 0.9; });
     };
-    route(paths.SHIP, TIPO_C.IMP, hl('IMP')); route(paths.IMP, TIPO_C.IMP, hl('IMP')); route(paths.NAC, TIPO_C.NAC, hl('NAC'));
-    zs.forEach((p) => { route(paths.DIR(p.y), TIPO_C.DIR, hl('DIR')); route(paths.OUT(p.y), '#8B6CF6', fTipo === 'DIR' ? 0.12 : 0.9); });
+    // grosor proporcional al volumen activo de cada ruta
+    const vIMP = cnt('PROVEEDOR|IMP').n + cT.n + cnt('ADUANA').n, vNAC = cnt('PROVEEDOR|NAC').n, vDIR = cnt('PROVEEDOR|DIR').n;
+    const vTot = Math.max(1, vIMP + vNAC + vDIR), vOutTot = Math.max(1, zs.reduce((a, p) => a + cnt(`TRANSITO_TDA|${p.z}`).n, 0));
+    route(paths.SHIP, TIPO_C.IMP, hl('IMP'), vIMP / vTot); route(paths.IMP, TIPO_C.IMP, hl('IMP'), vIMP / vTot); route(paths.NAC, TIPO_C.NAC, hl('NAC'), vNAC / vTot);
+    zs.forEach((p) => { route(paths.DIR(p.y), TIPO_C.DIR, hl('DIR'), Math.max(0.02, vDIR / vTot)); route(paths.OUT(p.y), '#8B6CF6', fTipo === 'DIR' ? 0.12 : 0.9, cnt(`TRANSITO_TDA|${p.z}`).n / vOutTot); });
 
     // vehículos
     const lane = (path, n, speed, color, op, cont, key) => {

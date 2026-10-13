@@ -49,6 +49,8 @@ const TIPOS = { IMP: { l: 'Importación', c: '#14B8A6' }, NAC: { l: 'Nacional', 
 const DEF_UMBRAL = { PROVEEDOR: 0, TRANSITO_INT: 35, ADUANA: 7, ALMACEN: 15, CROSSDOCK: 3, BODEGA_REG: 20, FULFILLMENT: 30, FORO: 10, TRANSITO_TDA: 4, TIENDA: 2 };
 const BASE_ROUTE = { IMP: ['PROVEEDOR', 'TRANSITO_INT', 'ADUANA', 'CROSSDOCK', 'TRANSITO_TDA', 'TIENDA', 'RECIBIDO'], NAC: ['PROVEEDOR', 'CROSSDOCK', 'TRANSITO_TDA', 'TIENDA', 'RECIBIDO'], DIR: ['PROVEEDOR', 'TRANSITO_TDA', 'TIENDA', 'RECIBIDO'] };
 const FINALES = ['BODEGA_REG', 'FULFILLMENT', 'FORO'];
+// Umbrales de semáforo (KPIs y halos de nodos) en un solo lugar
+const SEMAFORO = { aTiempo: { ok: 90, riesgo: 75 }, leadObjetivo: 30, nodo: { riesgo: 0.05, atorado: 0.2 } };
 const BUCKET_SEL = { OO: { key: 'B:OO', stages: ['PROVEEDOR', 'TRANSITO_INT', 'ADUANA'], titulo: 'On order' }, INP: { key: 'XD', stages: ['CROSSDOCK'], titulo: 'PLAN · Cross dock (in process)' }, TRN: { key: 'B:TRN', stages: ['TRANSITO_TDA'], titulo: 'In transit a tienda' }, BOD: { key: 'B:BOD', stages: ['ALMACEN', 'BODEGA_REG'], titulo: 'Bodegas (PLAN + regionales)' }, FORO: { key: 'FORO', stages: ['FORO'], titulo: 'Foro fotográfico' }, FUL: { key: 'FUL', stages: ['FULFILLMENT'], titulo: 'Fulfillment · E-commerce' }, TDA: { key: 'B:TDA', stages: ['TIENDA'], titulo: 'Tienda sin entrada' } };
 
 const norm = (s) => String(s ?? '').trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[_.\-/]+/g, ' ').replace(/\s+/g, ' ').trim();
@@ -283,12 +285,13 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
   const [cfg, setCfg] = useState(() => { try { const c = JSON.parse(localStorage.getItem(LS_CFG) || '{}'); return { ...c, v2: true, umbral: { ...DEF_UMBRAL, ...(c.umbral || {}), ...(c.v2 ? {} : { PROVEEDOR: 0 }) } }; } catch { return { umbral: DEF_UMBRAL }; } });
   const [aviso, setAviso] = useState('');
   const [fProv, setFProv] = useState(''); const [fMarca, setFMarca] = useState(''); const [fTipo, setFTipo] = useState(''); const [fZona, setFZona] = useState('');
-  const [fSolo, setFSolo] = useState(''); const [q, setQ] = useState('');
+  const [fSolo, setFSolo] = useState(''); const [q, setQ] = useState(''); const [fSec, setFSec] = useState('');
+  const [hoverTipo, setHoverTipo] = useState(''); const [feedAge, setFeedAge] = useState('');
   const [sel, setSel] = useState(null); // { key, stages:[...], titulo, zona?, ciudad? }
   const [selUnit, setSelUnit] = useState(null);
   const [selTienda, setSelTienda] = useState('');
   const [showCfg, setShowCfg] = useState(false);
-  const [play, setPlay] = useState(true);
+  const [play, setPlay] = useState(() => !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches));
   const [zoomCmd, setZoomCmd] = useState({ n: 0, f: 1 });
   const [feedTab, setFeedTab] = useState('mov');
   const [feedOpen, setFeedOpen] = useState(false);
@@ -332,13 +335,13 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
     if (sinZ.length) { const k = Math.min(6, Math.ceil(sinZ.length / 8)), tam = Math.ceil(sinZ.length / k), blk = {}; sinZ.forEach((c, i) => { const b = Math.floor(i / tam); blk[c] = `T${sinZ[b * tam]}–${sinZ[Math.min(sinZ.length - 1, b * tam + tam - 1)]}`; }); us.forEach((u) => { if (!u.zona && u.centro) u.zona = blk[u.centro]; }); }
     return us;
   }, [ev, cfg.umbral, hoy, zonaCat, zonaTraslados]);
-  const opts = useMemo(() => { const u = (k) => [...new Set(allUnits.map((x) => x[k]).filter(Boolean))].sort(); return { prov: u('prov'), marca: u('marca'), zona: u('zona') }; }, [allUnits]);
+  const opts = useMemo(() => { const u = (k) => [...new Set(allUnits.map((x) => x[k]).filter(Boolean))].sort(); return { prov: u('prov'), marca: u('marca'), zona: u('zona'), seccion: u('seccion') }; }, [allUnits]);
   const units = useMemo(() => {
     const qq = norm(q);
-    return allUnits.filter((u) => (!fProv || u.prov === fProv) && (!fMarca || u.marca === fMarca) && (!fTipo || u.tipo === fTipo) && (!fZona || u.zona === fZona)
+    return allUnits.filter((u) => (!fProv || u.prov === fProv) && (!fMarca || u.marca === fMarca) && (!fTipo || u.tipo === fTipo) && (!fZona || u.zona === fZona) && (!fSec || u.seccion === fSec)
       && (!fSolo || (fSolo === 'atorado' ? u.atorado : fSolo === 'vencido' ? u.vencido : fSolo === 'activo' ? u.etapa !== 'RECIBIDO' : true))
       && (!qq || norm(`${u.oc} ${u.sku} ${u.modelo} ${u.centro} ${u.cont}`).includes(qq)));
-  }, [allUnits, fProv, fMarca, fTipo, fZona, fSolo, q]);
+  }, [allUnits, fProv, fMarca, fTipo, fZona, fSec, fSolo, q]);
 
   const zonas = useMemo(() => { const z = [...new Set(allUnits.map((u) => u.zona).filter(Boolean))].sort(); return z.length ? z.slice(0, 6) : ['TIENDAS']; }, [allUnits]);
   const zonaDe = (u) => (zonas.includes(u.zona) ? u.zona : zonas[zonas.length - 1]);
@@ -348,7 +351,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
   // Agregados por llave de nodo
   const agg = useMemo(() => {
     const m = {};
-    const add = (k, u) => { const o = (m[k] = m[k] || { n: 0, pzs: 0, ator: 0, maxDias: 0, oc: new Set() }); o.n++; o.oc.add(u.oc); o.ocs = o.oc.size; o.pzs += Math.max(0, u.pzs - u.pzsRec); if (u.atorado) o.ator++; o.maxDias = Math.max(o.maxDias, u.enEtapa || 0); };
+    const add = (k, u) => { const o = (m[k] = m[k] || { n: 0, pzs: 0, ator: 0, maxDias: 0, oc: new Set() }); o.n++; o.oc.add(u.oc); o.ocs = o.oc.size; o.pzs += Math.max(0, u.pzs - u.pzsRec); if (u.atorado) { o.ator++; o.pzsAtor = (o.pzsAtor || 0) + u.pzs; } o.maxDias = Math.max(o.maxDias, u.enEtapa || 0); o.sumDias = (o.sumDias || 0) + (u.enEtapa || 0); };
     units.forEach((u) => {
       add(u.etapa, u);
       if (u.etapa !== 'RECIBIDO') add(`B:${bucketOf(u)}`, u);
@@ -385,6 +388,11 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
       lead: rec.length ? rec.reduce((a, u) => a + u.lead, 0) / rec.length : null,
       onTime: conComp.length ? conComp.filter((u) => u.aTiempo).length / conComp.length : null,
       vencidos: units.filter((u) => u.vencido).length, ocs: new Set(units.filter((u) => u.etapa !== 'RECIBIDO').map((u) => u.oc)).size,
+      // lead de lo recibido en los últimos 7 días vs los 7 anteriores
+      lead7: (() => { const a = rec.filter((u) => dias(u.fin, hoy) <= 7); return a.length ? a.reduce((x, u) => x + u.lead, 0) / a.length : null; })(),
+      leadPrev: (() => { const a = rec.filter((u) => { const d = dias(u.fin, hoy); return d > 7 && d <= 14; }); return a.length ? a.reduce((x, u) => x + u.lead, 0) / a.length : null; })(),
+      pzsTransito: units.filter((u) => u.etapa === 'TRANSITO_TDA').reduce((a, u) => a + u.pzs, 0),
+      vencen7: new Set(units.filter((u) => u.fechaComp && !u.vencido && !(u.at.ALMACEN || u.at.CROSSDOCK || u.fin) && dias(hoy, u.fechaComp) <= 7).map((u) => u.oc)).size,
     };
   }, [units]);
   const leadTipo = useMemo(() => Object.keys(TIPOS).map((tp) => {
@@ -484,7 +492,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
         {/* Filtros */}
         <div className={`rounded-2xl border p-3 mb-3 flex flex-wrap items-center gap-2 ${t.card}`}>
           <div className="relative"><Search size={13} className={`absolute left-2 top-2 ${t.textMuted}`} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="OC, SKU, centro, contenedor…" className={`${inCls} pl-7 w-56`} /></div>
-          {[['Proveedor', fProv, setFProv, opts.prov], ['Marca', fMarca, setFMarca, opts.marca], ['Zona', fZona, setFZona, opts.zona]].map(([l, v, s, o]) => (
+          {[['Sección', fSec, setFSec, opts.seccion], ['Proveedor', fProv, setFProv, opts.prov], ['Marca', fMarca, setFMarca, opts.marca], ['Zona', fZona, setFZona, opts.zona]].map(([l, v, s, o]) => (
             <select key={l} value={v} onChange={(e) => s(e.target.value)} className={inCls} style={selStyle}><option value="">{l}: todas</option>{o.map((x) => <option key={x} value={x}>{x}</option>)}</select>
           ))}
           <div className="flex gap-1 flex-wrap">
@@ -511,28 +519,35 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
         {/* Escena */}
         <div className={`relative rounded-2xl border overflow-hidden ${t.card}`} style={{ height: 720 }}>
           <Suspense fallback={<div className={`absolute inset-0 flex items-center justify-center text-xs ${t.textMuted}`}>Cargando escena 3D…</div>}>
-            <Scene3D isDark={isDark} zonas={zonas} ciudades={ciudades} stats={agg} fTipo={fTipo} selKey={sel?.key || ''} site={site} panelOpen={!!sel} play={play} onPick={onPick} zoomCmd={zoomCmd} />
+            <Scene3D isDark={isDark} zonas={zonas} ciudades={ciudades} stats={agg} fTipo={hoverTipo || fTipo} semaforo={SEMAFORO} selKey={sel?.key || ''} site={site} panelOpen={!!sel} play={play} onPick={onPick} zoomCmd={zoomCmd} />
           </Suspense>
           <div className={`absolute bottom-3 right-3 text-[10px] pointer-events-none ${t.textMuted} ${sel || unit ? 'hidden' : ''}`}>Arrastra para mover · rueda para zoom · clic derecho para girar</div>
 
           {/* KPIs flotantes */}
-          <div className="absolute top-3 left-3 flex flex-wrap gap-2 max-w-[60%]">
-            {[
-              { l: 'Atorados', v: fmt(kpi.ator), s: `${fmt(kpi.pzsAtor)} pzs`, I: AlertTriangle, bad: kpi.ator > 0, f: 'atorado', c: '#E5484D' },
-              { l: 'OCs activas', v: fmt(kpi.ocs), s: `${fmt(units.length)} líneas`, I: Package, c: '#3B82F6' },
-              { l: 'Lead time OC → destino', v: kpi.lead != null ? `${kpi.lead.toFixed(0)} d` : '—', s: 'promedio de lo recibido', I: Clock, c: '#7C5CF0' },
-              { l: 'A tiempo', v: kpi.onTime != null ? `${(kpi.onTime * 100).toFixed(0)}%` : '—', s: `${kpi.vencidos} vencidos hoy`, I: CheckCircle2, f: 'vencido', c: '#14B8A6' },
-            ].map(({ l, v, s, I, bad, f, c }) => (
-              <button key={l} onClick={() => f && setFSolo(fSolo === f ? '' : f)} className={`text-left px-3 py-2 rounded-xl border shadow-md flex items-center gap-2.5 ${glass}`}>
+          <div className={`absolute top-3 left-3 flex flex-wrap gap-2 ${sel ? 'max-w-[calc(100%-470px)]' : 'max-w-[78%]'}`}>
+            {(() => {
+              const ot = kpi.onTime != null ? kpi.onTime * 100 : null;
+              const otC = ot == null ? '#94A3B8' : ot >= SEMAFORO.aTiempo.ok ? '#22C55E' : ot >= SEMAFORO.aTiempo.riesgo ? '#F59E0B' : '#E5484D';
+              const ld = kpi.lead7 ?? kpi.lead, dl = kpi.lead7 != null && kpi.leadPrev != null ? kpi.lead7 - kpi.leadPrev : null;
+              const ldC = ld == null ? '#7C5CF0' : ld <= SEMAFORO.leadObjetivo ? '#22C55E' : ld <= SEMAFORO.leadObjetivo * 1.25 ? '#F59E0B' : '#E5484D';
+              return [
+                { l: 'Atorados', v: fmt(kpi.ator), s: `${fmt(kpi.pzsAtor)} pzs · clic para ver`, I: AlertTriangle, bad: kpi.ator > 0, f: 'atorado', c: '#E5484D' },
+                { l: 'Vencen en 7 días', v: fmt(kpi.vencen7), s: 'OCs aún sin llegar a CEDIS', I: Clock, c: '#F59E0B', f: 'activo' },
+                { l: 'En tránsito a tiendas', v: fk(kpi.pzsTransito), s: 'pzs', I: Truck, c: '#3B82F6', onClick: () => abrir(BUCKET_SEL.TRN) },
+                { l: 'Lead time', v: ld != null ? `${ld.toFixed(0)} d` : '—', s: `obj. ${SEMAFORO.leadObjetivo} d${dl != null ? ` · ${dl > 0 ? '▲' : '▼'} ${Math.abs(dl).toFixed(1)} vs sem. ant.` : ''}`, I: Clock, c: ldC },
+                { l: 'A tiempo', v: ot != null ? `${ot.toFixed(0)}%` : '—', s: `${kpi.vencidos} vencidos hoy`, I: ot != null && ot < SEMAFORO.aTiempo.riesgo ? AlertTriangle : CheckCircle2, f: 'vencido', c: otC, color: otC },
+              ];
+            })().map(({ l, v, s, I, bad, f, c, color, onClick }) => (
+              <button key={l} onClick={() => (onClick ? onClick() : f && setFSolo(fSolo === f ? '' : f))} className={`text-left px-3 py-2 rounded-xl border shadow-md flex items-center gap-2.5 ${glass} ${f && fSolo === f ? 'ring-2 ring-violet-500' : ''}`}>
                 <span className="p-2 rounded-lg" style={{ background: `${c}1f`, color: c }}><I size={16} /></span>
-                <span><span className={`block text-[9px] font-black uppercase tracking-wider ${t.textMuted}`}>{l}</span><span className={`block text-lg font-black leading-tight ${bad ? 'text-rose-500' : t.text}`}>{v}</span><span className={`block text-[10px] ${t.textMuted}`}>{s}</span></span>
+                <span><span className={`block text-[9px] font-black uppercase tracking-wider ${t.textMuted}`}>{l}</span><span className={`block text-lg font-black leading-tight ${bad ? 'text-rose-500' : t.text}`} style={color ? { color } : undefined}>{v}</span><span className={`block text-[10px] ${t.textMuted}`}>{s}</span></span>
               </button>
             ))}
           </div>
           {/* Leyenda de rutas */}
-          <div className={`absolute left-3 top-[92px] rounded-xl border px-3 py-2 shadow-md ${glass}`}>
+          <div className={`absolute left-3 top-[100px] rounded-xl border px-3 py-2 shadow-md ${glass}`}>
             <div className={`text-[9px] font-black uppercase tracking-wider mb-1 ${t.textMuted}`}>Rutas</div>
-            {Object.entries(TIPOS).map(([k, v]) => <button key={k} onClick={() => setFTipo(fTipo === k ? '' : k)} className={`flex items-center gap-2 text-[11px] font-bold py-0.5 ${fTipo && fTipo !== k ? 'opacity-40' : ''} ${t.text}`}><span className="w-5 h-1 rounded-full" style={{ background: v.c }} />{v.l} <span className={t.textMuted}>{units.filter((u) => u.tipo === k && u.etapa !== 'RECIBIDO').length}</span></button>)}
+            {Object.entries(TIPOS).map(([k, v]) => <button key={k} onMouseEnter={() => setHoverTipo(k)} onMouseLeave={() => setHoverTipo('')} onClick={() => setFTipo(fTipo === k ? '' : k)} className={`flex items-center gap-2 text-[11px] font-bold py-0.5 ${fTipo && fTipo !== k ? 'opacity-40' : ''} ${t.text}`}><span className="w-5 h-1 rounded-full" style={{ background: v.c }} />{v.l} <span className={t.textMuted}>{units.filter((u) => u.tipo === k && u.etapa !== 'RECIBIDO').length}</span></button>)}
             <div className={`flex items-center gap-2 text-[11px] font-bold py-0.5 ${t.text}`}><span className="w-5 h-1 rounded-full bg-violet-500" />PLAN → tiendas</div>
           </div>
           {/* Controles */}
@@ -564,9 +579,26 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
                 const tp = ks.length === 1 ? tramoProm[ks[0]] : null;
                 return (
                   <div className="px-4 grid grid-cols-3 gap-1.5 mb-2">
-                    {[['Pedidos', fmt(c.n)], ['Piezas', fk(c.pzs)], ['Atorados', fmt(c.ator)], ['Máx. días', c.maxDias ? c.maxDias.toFixed(0) : '—'], ['Prom. hist.', tp ? `${tp.prom.toFixed(1)} d` : '—'], ['Umbral', ks.length === 1 && cfg.umbral[ks[0]] != null ? `${cfg.umbral[ks[0]]} d` : '—']].map(([l, v]) => (
-                      <div key={l} className={`rounded-lg border px-2 py-1.5 ${t.cardInner}`}><div className={`text-[8.5px] uppercase font-bold ${t.textMuted}`}>{l}</div><div className={`text-sm font-black ${l === 'Atorados' && c.ator ? 'text-rose-500' : t.text}`}>{v}</div></div>
+                    {[['OCs', fmt(new Set(us.map((u) => u.oc)).size)], ['Piezas', fk(c.pzs)], ['Pzs atoradas', fk(us.filter((u) => u.atorado).reduce((a, u) => a + u.pzs, 0))], ['Días prom. aquí', us.length ? (us.reduce((a, u) => a + (u.enEtapa || 0), 0) / us.length).toFixed(1) : '—'], ['SLA (umbral)', ks.length === 1 && cfg.umbral[ks[0]] != null ? `${cfg.umbral[ks[0]]} d` : '—'], ['Máx. días', c.maxDias ? c.maxDias.toFixed(0) : '—']].map(([l, v]) => (
+                      <div key={l} className={`rounded-lg border px-2 py-1.5 ${t.cardInner}`}><div className={`text-[8.5px] uppercase font-bold ${t.textMuted}`}>{l}</div><div className={`text-sm font-black ${l === 'Pzs atoradas' && c.ator ? 'text-rose-500' : t.text}`}>{v}</div></div>
                     ))}
+                  </div>
+                );
+              })()}
+              {(() => {
+                // Top 10 OCs más atrasadas del nodo (agrupadas por OC)
+                const m = {};
+                nodeUnits.filter((u) => u.atorado || u.vencido).forEach((u) => { const o = (m[u.oc] = m[u.oc] || { oc: u.oc, prov: u.prov, goa: u.goa || u.modelo || u.sku, pzs: 0, comp: u.fechaComp, dias: 0, u }); o.pzs += u.pzs; const d = u.etapa === 'PROVEEDOR' && u.fechaComp ? dias(u.fechaComp, hoy) : u.enEtapa - (cfg.umbral[u.etapa] ?? 0); if (d > o.dias) { o.dias = d; o.u = u; } });
+                const top = Object.values(m).sort((a, b) => b.dias - a.dias).slice(0, 10);
+                const exp = () => { const H = ['OC', 'PROVEEDOR', 'SECCION', 'GOA', 'TIENDA', 'TIPO', 'ETAPA', 'PIEZAS', 'DIAS_EN_ETAPA', 'ATORADO', 'COMPROMISO']; const L = [H.join(',')]; nodeUnits.forEach((u) => L.push([u.oc, u.prov, u.seccion, u.goa, u.centro, TIPOS[u.tipo].l, SL[u.etapa], u.pzs, (u.enEtapa || 0).toFixed(1), u.atorado ? 'SI' : '', u.fechaComp ? u.fechaComp.toISOString().slice(0, 10) : ''].map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['\uFEFF' + L.join('\r\n')], { type: 'text/csv;charset=utf-8' })); a.download = `Pedidos_${(sel.titulo || 'nodo').replace(/[^\w]+/g, '_')}.csv`; a.click(); };
+                return (
+                  <div className="px-4 mb-2">
+                    <div className={`text-[9px] font-black uppercase tracking-wider mb-1 flex justify-between items-center ${t.textMuted}`}><span>Top 10 OCs más atrasadas</span><button onClick={exp} className="flex items-center gap-1 normal-case font-bold hover:underline"><Download size={11} /> CSV del nodo</button></div>
+                    {top.length === 0 ? <p className={`text-[10px] ${t.textMuted}`}>Sin OCs atrasadas aquí.</p> : (
+                      <div className={`rounded-lg border max-h-40 overflow-y-auto custom-scrollbar ${t.cardInner}`}>
+                        {top.map((o) => <button key={o.oc} onClick={() => setSelUnit(o.u.key)} className={`w-full grid grid-cols-[1fr_auto] gap-1 px-2 py-1 text-left border-b last:border-0 ${isDark ? 'border-white/5 hover:bg-white/5' : 'border-gray-100 hover:bg-gray-50'}`}><span className="min-w-0"><span className={`block text-[11px] font-bold truncate ${t.text}`}>{o.oc} · {o.prov}</span><span className={`block text-[9.5px] truncate ${t.textMuted}`}>{o.goa} · {fmt(o.pzs)} pzs{o.comp ? ` · esperada ${fdate(o.comp)}` : ''}</span></span><span className="text-[11px] font-black text-rose-500 self-center">+{Math.max(0, o.dias).toFixed(0)} d</span></button>)}
+                      </div>
+                    )}
                   </div>
                 );
               })()}
@@ -604,8 +636,11 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
                 {[['mov', 'Movimientos recientes'], ['ator', `Atorados ${kpi.ator}`]].map(([k, l]) => <button key={k} onClick={() => setFeedTab(k)} className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border ${pill(feedTab === k)}`}>{l}</button>)}
                 <button onClick={() => setFeedOpen(false)} className={`ml-auto ${t.textMuted}`}><X size={14} /></button>
               </div>
-              <div className="space-y-1 max-h-40 overflow-y-auto custom-scrollbar">
-                {(feedTab === 'mov' ? feed.map(({ u, e }) => ({ u, txt: SL[e.etapa], when: hace(e.fecha, hoy) })) : units.filter((u) => u.atorado).sort((a, b) => b.enEtapa - a.enEtapa).slice(0, 12).map((u) => ({ u, txt: `${STAGES[SIDX[u.etapa]].short} · ${u.enEtapa.toFixed(0)} d`, when: `umbral ${cfg.umbral[u.etapa]} d` }))).map(({ u, txt, when }) => (
+              {feedTab === 'ator' && (
+                <div className="flex gap-1 mb-2">{[['', 'Todos'], ['0-7', '0–7 d'], ['8-15', '8–15 d'], ['16-30', '16–30 d'], ['31-9999', '>30 d']].map(([k, l]) => <button key={k} onClick={() => setFeedAge(k)} className={`px-2 py-0.5 rounded-md text-[10px] font-bold border ${pill(feedAge === k)}`}>{l}</button>)}</div>
+              )}
+              <div className="space-y-1 max-h-56 overflow-y-auto custom-scrollbar">
+                {(feedTab === 'mov' ? feed.map(({ u, e }) => ({ u, txt: SL[e.etapa], when: hace(e.fecha, hoy) })) : units.filter((u) => { if (!u.atorado) return false; if (!feedAge) return true; const [a, b] = feedAge.split('-').map(Number); return u.enEtapa >= a && u.enEtapa < b + 1; }).sort((a, b) => b.enEtapa - a.enEtapa).slice(0, 60).map((u) => ({ u, txt: `${STAGES[SIDX[u.etapa]].short} · ${u.enEtapa.toFixed(0)} d`, when: `umbral ${cfg.umbral[u.etapa]} d` }))).map(({ u, txt, when }) => (
                   <button key={u.key} onClick={() => abrirUnidad(u)} className={`w-full flex items-center justify-between text-left px-2 py-1.5 rounded-lg ${isDark ? 'hover:bg-white/5' : 'hover:bg-gray-50'}`}>
                     <span className="flex items-center gap-2 min-w-0"><span className="w-2 h-2 rounded-full shrink-0" style={{ background: TIPOS[u.tipo].c }} /><span className="min-w-0"><span className={`block text-[11px] font-bold truncate ${t.text}`}>OC {u.oc} · {u.prov}</span><span className={`block text-[10px] truncate ${t.textMuted}`}>{txt}{u.ubic ? ` · ${u.ubic}` : ''}</span></span></span>
                     <span className={`text-[10px] shrink-0 ${feedTab === 'ator' ? 'text-rose-500 font-bold' : t.textMuted}`}>{when}</span>

@@ -26,7 +26,7 @@ export const siteOfKey = (k = '') => (k === 'PROV' ? 'PROV' : k === 'ADU' || k =
 export const paths = {
   NAC: [[1.2, YFAC], [XV1, YFAC], [XV1, 1.9], [8.4, 1.9]],
   IMP: [[2.6, YLOW], [XV1, YLOW], [XV1, 1.9], [8.4, 1.9]],
-  SHIP: [[-17, 9.2], [-3.4, 9.2]],
+  SHIP: [[-15.2, 9.2], [-3.4, 9.2]],
   DIR: (zy) => [[-0.4, YFAC], [-2.6, YFAC], [-2.6, YTOP], [XDIR, YTOP], [XDIR, zy + 1.0], [25.9, zy + 1.0]],
   OUT: (zy) => [[15.6, 2.4], [15.6, YLOW], [XV2, YLOW], [XV2, zy + 1.0], [23.0, zy + 1.0]],
   BOD: (cy) => [[15.6, 2.4], [15.6, YLOW], [XV2, YLOW], [XV2, cy + 0.9], [22.4, cy + 0.9]],
