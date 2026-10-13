@@ -77,13 +77,13 @@ function container(color, L = 1.9) {
   const m = mesh(memo(`cont:${L}`, () => new THREE.BoxGeometry(L, 0.62, 0.68)), new THREE.MeshStandardMaterial({ map: stripes(color, new THREE.Color(color).offsetHSL(0, 0, -0.1).getStyle(), 18), roughness: 0.55, metalness: 0.2 }));
   m.position.y = 0.31; g.add(m); return g;
 }
-function truck(color, cont) {
+function truck(color, cont, dark) {
   const g = new THREE.Group();
-  const trailerM = cont ? new THREE.MeshStandardMaterial({ map: stripes('#2BB3A8', '#22948B', 18), roughness: 0.5, metalness: 0.2 }) : mat('#FFFFFF', { roughness: 0.35 });
+  const trailerM = cont ? new THREE.MeshStandardMaterial({ map: stripes('#2BB3A8', '#22948B', 18), roughness: 0.5, metalness: 0.2 }) : dark ? mat('#B9B4C8', { roughness: 0.7 }) : mat('#FFFFFF', { roughness: 0.35 });
   const tr = mesh(rbox(1.2, 0.74, 0.64, 0.06), trailerM); tr.position.set(-0.26, 0.6, 0); g.add(tr);
   if (!cont) { const st = mesh(rbox(1.21, 0.13, 0.65, 0.02), mat(color)); st.position.set(-0.26, 0.5, 0); g.add(st); }
   const ch = mesh(rbox(1.78, 0.1, 0.5, 0.02), mat('#2A2733')); ch.position.set(-0.05, 0.2, 0); g.add(ch);
-  const cab = mesh(rbox(0.5, 0.62, 0.62, 0.1), mat(color, { roughness: 0.35, metalness: 0.2 })); cab.position.set(0.6, 0.53, 0); g.add(cab);
+  const cab = mesh(rbox(0.5, 0.62, 0.62, 0.1), mat(color, dark ? { roughness: 0.6, metalness: 0.1 } : { roughness: 0.35, metalness: 0.2 })); cab.position.set(0.6, 0.53, 0); g.add(cab);
   const ws = mesh(rbox(0.04, 0.24, 0.52, 0.02), mat('#1E2A44', { roughness: 0.1, metalness: 0.6 }), false); ws.position.set(0.86, 0.66, 0); g.add(ws);
   const wg = memo('wheel', () => new THREE.CylinderGeometry(0.15, 0.15, 0.12, 14));
   [[-0.66, 0.29], [-0.66, -0.29], [-0.3, 0.29], [-0.3, -0.29], [0.62, 0.29], [0.62, -0.29]].forEach(([wx, wz]) => { const w = mesh(wg, mat('#16151C', { roughness: 0.9 })); w.rotation.x = Math.PI / 2; w.position.set(wx, 0.15, wz); g.add(w); });
@@ -446,7 +446,7 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     // vehículos
     const lane = (path, n, speed, color, op, cont, key) => {
       for (let i = 0; i < n; i++) {
-        const tk = truck(color, cont); if (op < 1) tk.traverse((o) => { if (o.material) { o.material = o.material.clone(); o.material.transparent = true; o.material.opacity = op; } });
+        const tk = truck(color, cont, isDark); if (op < 1) tk.traverse((o) => { if (o.material) { o.material = o.material.clone(); o.material.transparent = true; o.material.opacity = op; } });
         add(tk, key);
         anim((t) => { const p = pathAt(path, ((t * speed) + i / n) % 1); tk.position.copy(W(p.x, p.y, 0.06)); tk.rotation.y = -p.ang; });
       }
@@ -464,7 +464,7 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
       lane(paths.DIR(p.y), Math.min(2, cnt(`TRANSITO_TDA|${p.z}|DIR`).n), 0.022 + i * 0.002, TIPO_C.DIR, hl('DIR'), false, `ZR|${p.z}`);
     });
     // camiones en andén de PLAN
-    [[9.2, TIPO_C.NAC, cnt('ALMACEN').n > 0], [11.4, TIPO_C.IMP, cnt('ALMACEN').n > 1], [14.5, TIPO_C.NAC, cnt('CROSSDOCK').n > 0], [16.6, TIPO_C.IMP, cnt('CROSSDOCK').n > 1]].forEach(([px, col, on]) => { if (!on) return; const tk = truck(col, false); tk.position.copy(W(px, 3.05, 0.07)); tk.rotation.y = -Math.PI / 2; G.add(tk); });
+    [[9.2, TIPO_C.NAC, cnt('ALMACEN').n > 0], [11.4, TIPO_C.IMP, cnt('ALMACEN').n > 1], [14.5, TIPO_C.NAC, cnt('CROSSDOCK').n > 0], [16.6, TIPO_C.IMP, cnt('CROSSDOCK').n > 1]].forEach(([px, col, on]) => { if (!on) return; const tk = truck(col, false, isDark); tk.position.copy(W(px, 3.05, 0.07)); tk.rotation.y = -Math.PI / 2; G.add(tk); });
   }, [stats, fTipo, selKey, isDark, zonas.join('|'), ciudades.join('|')]);
 
   // ── Cámara a sitio ──

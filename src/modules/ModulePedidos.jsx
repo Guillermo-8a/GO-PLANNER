@@ -384,14 +384,14 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
     const rec = units.filter((u) => u.lead != null);
     const conComp = units.filter((u) => u.aTiempo != null);
     return {
-      ator: units.filter((u) => u.atorado).length, pzsAtor: units.filter((u) => u.atorado).reduce((a, u) => a + u.pzs, 0),
+      ator: units.filter((u) => u.atorado).length, pzsAtor: units.filter((u) => u.atorado).reduce((a, u) => a + u.pzs, 0), valAtor: units.filter((u) => u.atorado).reduce((a, u) => a + (u.valor || 0), 0),
       lead: rec.length ? rec.reduce((a, u) => a + u.lead, 0) / rec.length : null,
       onTime: conComp.length ? conComp.filter((u) => u.aTiempo).length / conComp.length : null,
       vencidos: units.filter((u) => u.vencido).length, ocs: new Set(units.filter((u) => u.etapa !== 'RECIBIDO').map((u) => u.oc)).size,
       // lead de lo recibido en los últimos 7 días vs los 7 anteriores
       lead7: (() => { const a = rec.filter((u) => dias(u.fin, hoy) <= 7); return a.length ? a.reduce((x, u) => x + u.lead, 0) / a.length : null; })(),
       leadPrev: (() => { const a = rec.filter((u) => { const d = dias(u.fin, hoy); return d > 7 && d <= 14; }); return a.length ? a.reduce((x, u) => x + u.lead, 0) / a.length : null; })(),
-      pzsTransito: units.filter((u) => u.etapa === 'TRANSITO_TDA').reduce((a, u) => a + u.pzs, 0),
+      pzsTransito: units.filter((u) => u.etapa === 'TRANSITO_TDA').reduce((a, u) => a + u.pzs, 0), valTransito: units.filter((u) => u.etapa === 'TRANSITO_TDA').reduce((a, u) => a + (u.valor || 0), 0),
       // fecha esperada entre hoy y hoy+7 (por día calendario) y aún sin llegar a CEDIS / destino
       vencen7: (() => { const h0 = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()), h7 = new Date(h0.getTime() + 8 * DAY); return new Set(units.filter((u) => u.fechaComp && u.fechaComp >= h0 && u.fechaComp < h7 && !(u.at.ALMACEN || u.at.CROSSDOCK || u.fin)).map((u) => u.oc)).size; })(),
       compFuturo: units.some((u) => u.fechaComp && u.fechaComp >= new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate())),
@@ -533,9 +533,9 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
               const ld = kpi.lead7 ?? kpi.lead, dl = kpi.lead7 != null && kpi.leadPrev != null ? kpi.lead7 - kpi.leadPrev : null;
               const ldC = ld == null ? '#7C5CF0' : ld <= SEMAFORO.leadObjetivo ? '#22C55E' : ld <= SEMAFORO.leadObjetivo * 1.25 ? '#F59E0B' : '#E5484D';
               return [
-                { l: 'Atorados', v: fmt(kpi.ator), s: `${fmt(kpi.pzsAtor)} pzs · clic para ver`, I: AlertTriangle, bad: kpi.ator > 0, f: 'atorado', c: '#E5484D' },
+                { l: 'Atorados', v: fmt(kpi.ator), s: `${fmt(kpi.pzsAtor)} pzs${kpi.valAtor ? ` · $${fk(kpi.valAtor)}` : ''} · clic para ver`, I: AlertTriangle, bad: kpi.ator > 0, f: 'atorado', c: '#E5484D' },
                 { l: 'Vencen en 7 días', v: fmt(kpi.vencen7), s: kpi.compFuturo ? 'OCs aún sin llegar a CEDIS' : 'la base no trae compromisos futuros', I: Clock, c: '#F59E0B', f: 'activo' },
-                { l: 'En tránsito a tiendas', v: fk(kpi.pzsTransito), s: 'pzs', I: Truck, c: '#3B82F6', onClick: () => abrir(BUCKET_SEL.TRN) },
+                { l: 'En tránsito a tiendas', v: fk(kpi.pzsTransito), s: `pzs${kpi.valTransito ? ` · $${fk(kpi.valTransito)}` : ''}`, I: Truck, c: '#3B82F6', onClick: () => abrir(BUCKET_SEL.TRN) },
                 { l: 'Lead time', v: ld != null ? `${ld.toFixed(0)} d` : '—', s: <>obj. {SEMAFORO.leadObjetivo} d{dl != null && <> · <span style={{ color: dl > 0 ? '#E5484D' : '#22C55E', fontWeight: 700 }}>{dl > 0 ? '▲' : '▼'} {Math.abs(dl).toFixed(1)}</span> vs sem. ant.</>}</>, I: Clock, c: ldC },
                 { l: 'A tiempo', v: ot != null ? `${ot.toFixed(0)}%` : '—', s: `${kpi.vencidos} vencidos hoy`, I: ot != null && ot < SEMAFORO.aTiempo.riesgo ? AlertTriangle : CheckCircle2, f: 'vencido', c: otC, color: otC },
               ];
@@ -580,9 +580,9 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
                 const c = { n: us.length, pzs: us.reduce((a, u) => a + Math.max(0, u.pzs - u.pzsRec), 0), ator: us.filter((u) => u.atorado).length, maxDias: Math.max(0, ...us.map((u) => u.enEtapa || 0)) };
                 const tp = ks.length === 1 ? tramoProm[ks[0]] : null;
                 return (
-                  <div className="px-4 grid grid-cols-3 gap-1.5 mb-2">
-                    {[['OCs', fmt(new Set(us.map((u) => u.oc)).size)], ['Piezas', fk(c.pzs)], ['Pzs atoradas', fk(us.filter((u) => u.atorado).reduce((a, u) => a + u.pzs, 0))], ['Días prom. aquí', us.length ? (us.reduce((a, u) => a + (u.enEtapa || 0), 0) / us.length).toFixed(1) : '—'], ['SLA (umbral)', ks.length === 1 && cfg.umbral[ks[0]] != null ? `${cfg.umbral[ks[0]]} d` : '—'], ['Máx. días', c.maxDias ? c.maxDias.toFixed(0) : '—']].map(([l, v]) => (
-                      <div key={l} className={`rounded-lg border px-2 py-1.5 ${t.cardInner}`}><div className={`text-[8.5px] uppercase font-bold ${t.textMuted}`}>{l}</div><div className={`text-sm font-black ${l === 'Pzs atoradas' && c.ator ? 'text-rose-500' : t.text}`}>{v}</div></div>
+                  <div className="px-4 grid grid-cols-4 gap-1.5 mb-2">
+                    {[['OCs', fmt(new Set(us.map((u) => u.oc)).size)], ['Piezas', fk(c.pzs)], ['Pzs atoradas', fk(us.filter((u) => u.atorado).reduce((a, u) => a + u.pzs, 0))], ['Costo', `$${fk(us.reduce((a, u) => a + (u.valor || 0), 0))}`], ['Costo atorado', `$${fk(us.filter((u) => u.atorado).reduce((a, u) => a + (u.valor || 0), 0))}`], ['Días prom. aquí', us.length ? (us.reduce((a, u) => a + (u.enEtapa || 0), 0) / us.length).toFixed(1) : '—'], ['SLA (umbral)', ks.length === 1 && cfg.umbral[ks[0]] != null ? `${cfg.umbral[ks[0]]} d` : '—'], ['Máx. días', c.maxDias ? c.maxDias.toFixed(0) : '—']].map(([l, v]) => (
+                      <div key={l} className={`rounded-lg border px-2 py-1.5 ${t.cardInner}`}><div className={`text-[8.5px] uppercase font-bold ${t.textMuted}`}>{l}</div><div className={`text-sm font-black ${(l === 'Pzs atoradas' || l === 'Costo atorado') && c.ator ? 'text-rose-500' : t.text}`}>{v}</div></div>
                     ))}
                   </div>
                 );
