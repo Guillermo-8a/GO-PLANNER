@@ -151,8 +151,8 @@ function parseEventos(text) {
       const asig = numv(v(r, 'PZS ASIG'));
       const comp = v(r, 'COMPROMISO');
       const base = {
-        oc, pos: '', sku: v(r, 'GOA'), modelo: '', prov: v(r, 'PROVEEDOR') || 'Sin proveedor', marca: '—', seccion: v(r, 'SECCION'), goa: v(r, 'GOA'), origen,
-        pzsPed: asig || numv(v(r, 'PZS PEDIDAS')), pzsEv: 0, valor: 0, ubic: '', centro: ctr(tienda), zona: '', cont: '',
+        oc, pos: '', sku: v(r, 'GOA'), modelo: '', prov: v(r, 'PROVEEDOR') || 'Sin proveedor', marca: v(r, 'MARCA') || '—', seccion: v(r, 'SECCION'), goa: v(r, 'GOA'), origen,
+        pzsPed: asig || numv(v(r, 'PZS PEDIDAS')), pzsEv: 0, valor: 0, ubic: '', centro: ctr(tienda), zona: norm(v(r, 'ZONA')), cont: '',
         fechaOc: toDate(v(r, 'FCH OC')), fechaComp: comp && !comp.startsWith('1900') ? toDate(comp) : null,
       };
       const add = (etapa, h, pzsEv, ubic) => { const f = toDate(v(r, h)); if (f) ev.push({ ...base, etapa, fecha: f, pzsEv, ubic }); };
