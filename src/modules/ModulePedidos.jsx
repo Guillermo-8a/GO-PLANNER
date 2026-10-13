@@ -158,6 +158,13 @@ function parseEventos(text) {
         fechaOc: toDate(v(r, 'FCH OC')), fechaComp: comp && !comp.startsWith('1900') ? toDate(comp) : null,
       };
       const add = (etapa, h, pzsEv, ubic) => { const f = toDate(v(r, h)); if (f) ev.push({ ...base, etapa, fecha: f, pzsEv, ubic }); };
+      // Inventario en CEDIS / CR (sin traslado, asignado) y mercancía embarcada: una sola foto fechada en la última entrada
+      if (v(r, 'CLASE DOC') === 'INV') {
+        const es = v(r, 'ESTATUS');
+        const etapa = es === 'EMBARCADA' ? 'TRANSITO_INT' : es === 'INV ASIGNADO' ? 'CROSSDOCK' : v(r, 'TIPO DESTINO') === 'CR' ? 'FULFILLMENT' : 'ALMACEN';
+        add(etapa, 'DT CEDIS', 0, cOc);
+        return;
+      }
       add('PROVEEDOR', 'FCH OC', 0, base.prov);
       if (origen === 'DIR') add('RECIBIDO', 'DT CEDIS', numv(v(r, 'PZS REC CEDIS')), `T${tienda}`);
       else {
