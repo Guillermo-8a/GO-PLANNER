@@ -292,7 +292,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
   const [cfg, setCfg] = useState(() => { try { const c = JSON.parse(localStorage.getItem(LS_CFG) || '{}'); return { ...c, v2: true, umbral: { ...DEF_UMBRAL, ...(c.umbral || {}), ...(c.v2 ? {} : { PROVEEDOR: 0 }) } }; } catch { return { umbral: DEF_UMBRAL }; } });
   const [aviso, setAviso] = useState('');
   const [fProv, setFProv] = useState(''); const [fMarca, setFMarca] = useState(''); const [fTipo, setFTipo] = useState(''); const [fZona, setFZona] = useState('');
-  const [fSolo, setFSolo] = useState(''); const [q, setQ] = useState(''); const [fSec, setFSec] = useState('');
+  const [fSolo, setFSolo] = useState(''); const [q, setQ] = useState(''); const [fSec, setFSec] = useState(''); const [fMes, setFMes] = useState('');
   const [hoverTipo, setHoverTipo] = useState(''); const [feedAge, setFeedAge] = useState(''); const [expOC, setExpOC] = useState('');
   const [sel, setSel] = useState(null); // { key, stages:[...], titulo, zona?, ciudad? }
   const [selUnit, setSelUnit] = useState(null);
@@ -353,13 +353,15 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
     });
     return us;
   }, [ev, cfg.umbral, cfg.tc, hoy, zonaTraslados, tcDe]);
-  const opts = useMemo(() => { const u = (k) => [...new Set(allUnits.map((x) => x[k]).filter(Boolean))].sort(); return { prov: u('prov'), marca: u('marca'), zona: u('zona'), seccion: u('seccion') }; }, [allUnits]);
+  // Mes de recepción = mes de la fecha compromiso del proveedor (cuándo debe llegar a CEDIS)
+  const mesDe = (u) => (u.fechaComp ? `${u.fechaComp.getFullYear()}-${String(u.fechaComp.getMonth() + 1).padStart(2, '0')}` : 'SIN');
+  const opts = useMemo(() => { const u = (k) => [...new Set(allUnits.map((x) => x[k]).filter(Boolean))].sort(); return { prov: u('prov'), marca: u('marca'), zona: u('zona'), seccion: u('seccion'), mes: [...new Set(allUnits.map(mesDe))].sort() }; }, [allUnits]);
   const units = useMemo(() => {
     const qq = norm(q);
-    return allUnits.filter((u) => (!fProv || u.prov === fProv) && (!fMarca || u.marca === fMarca) && (!fTipo || u.tipo === fTipo) && (!fZona || u.zona === fZona) && (!fSec || u.seccion === fSec)
+    return allUnits.filter((u) => (!fProv || u.prov === fProv) && (!fMarca || u.marca === fMarca) && (!fTipo || u.tipo === fTipo) && (!fZona || u.zona === fZona) && (!fSec || u.seccion === fSec) && (!fMes || mesDe(u) === fMes)
       && (!fSolo || (fSolo === 'atorado' ? u.atorado : fSolo === 'vencido' ? u.vencido : fSolo === 'activo' ? u.etapa !== 'RECIBIDO' : true))
       && (!qq || norm(`${u.oc} ${u.sku} ${u.modelo} ${u.centro} ${u.cont}`).includes(qq)));
-  }, [allUnits, fProv, fMarca, fTipo, fZona, fSec, fSolo, q]);
+  }, [allUnits, fProv, fMarca, fTipo, fZona, fSec, fMes, fSolo, q]);
 
   const zonas = useMemo(() => { const z = [...new Set(allUnits.map((u) => u.zona).filter(Boolean))].sort(); return z.length ? z.slice(0, 14) : ['TIENDAS']; }, [allUnits]);
   const zonaDe = (u) => (zonas.includes(u.zona) ? u.zona : zonas[zonas.length - 1]);
@@ -476,8 +478,12 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
   const pill = (on) => (on ? (isDark ? 'bg-violet-600 border-violet-500 text-white' : 'bg-blue-600 border-blue-600 text-white') : t.cardInner);
   const totPipe = BUCKETS.reduce((a, b) => a + cnt(`B:${b.k}`).pzs, 0) || 1;
 
+  // Frescura de la base: último registro que trae vs hoy
+  const baseAl = useMemo(() => ev.reduce((m, e) => (e.fecha && new Date(e.fecha) > m ? new Date(e.fecha) : m), null), [ev]);
+  const baseDias = baseAl ? Math.round((new Date(hoy).setHours(0, 0, 0, 0) - new Date(baseAl).setHours(0, 0, 0, 0)) / DAY) : null;
   const headerRight = (
     <>
+      {baseAl && <span title="Fecha del registro más reciente de la base. Si tiene más de un día, los días en etapa y los atorados salen inflados." className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border flex items-center gap-1 ${baseDias > 1 ? 'bg-amber-500/15 border-amber-500/50 text-amber-500' : t.cardInner}`}><Clock size={12} /> Base al {fdate(baseAl)} · {baseDias <= 0 ? 'hoy' : baseDias === 1 ? 'ayer' : `hace ${baseDias} días`}</span>}
       <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden" onChange={onFile} />
       <button onClick={() => fileRef.current?.click()} className={`px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 ${isDark ? 'bg-violet-600 text-white hover:bg-violet-500' : 'bg-blue-600 text-white hover:bg-blue-500'}`}><Upload size={14} /> Cargar CSV</button>
       <button onClick={() => { setEv(demoEventos()); setAviso(''); abrir(null); }} className={`px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 border ${t.cardInner}`}><Wand2 size={14} /> Datos de prueba</button>
@@ -516,6 +522,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
           {[['Sección', fSec, setFSec, opts.seccion], ['Proveedor', fProv, setFProv, opts.prov], ['Marca', fMarca, setFMarca, opts.marca], ['Zona', fZona, setFZona, opts.zona]].map(([l, v, s, o]) => (
             <select key={l} value={v} onChange={(e) => s(e.target.value)} className={inCls} style={selStyle}><option value="">{l}: todas</option>{o.map((x) => <option key={x} value={x}>{x}</option>)}</select>
           ))}
+          <select value={fMes} onChange={(e) => setFMes(e.target.value)} className={inCls} style={selStyle} title="Mes de la fecha compromiso del proveedor"><option value="">Mes de recepción: todos</option>{opts.mes.map((m) => <option key={m} value={m}>{m === 'SIN' ? 'Sin compromiso' : new Date(`${m}-15`).toLocaleDateString('es-MX', { month: 'long', year: 'numeric' })}</option>)}</select>
           <div className="flex gap-1 flex-wrap">
             <button onClick={() => setFTipo('')} className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border ${pill(!fTipo)}`}>Todas las rutas</button>
             {Object.entries(TIPOS).map(([k, v]) => <button key={k} onClick={() => setFTipo(fTipo === k ? '' : k)} className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border flex items-center gap-1.5 ${pill(fTipo === k)}`}><span className="w-2 h-2 rounded-full" style={{ background: v.c }} />{v.l}</button>)}
