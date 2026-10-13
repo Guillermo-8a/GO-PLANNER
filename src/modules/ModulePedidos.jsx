@@ -430,7 +430,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
   const onPick = (k) => {
     if (k === 'PROV') return abrir({ key: k, stages: ['PROVEEDOR'], titulo: 'Proveedores · On order' });
     if (k === 'ADU') return abrir({ key: k, stages: ['ADUANA'], titulo: 'Aduana · Puerto' });
-    if (k === 'MAR') return abrir({ key: k, stages: ['TRANSITO_INT'], titulo: 'Importación en tránsito' });
+    if (k === 'MAR') return abrir({ key: k, stages: ['TRANSITO_INT', 'ADUANA'], titulo: 'Importación (tránsito y aduana)' });
     if (k === 'ALM') return abrir({ key: k, stages: ['ALMACEN'], titulo: 'PLAN · Almacén' });
     if (k === 'XD') return abrir(BUCKET_SEL.INP);
     if (k === 'FORO') return abrir(BUCKET_SEL.FORO);
@@ -595,7 +595,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
                 const exp = () => { const H = ['OC', 'PROVEEDOR', 'SECCION', 'GOA', 'TIENDA', 'TIPO', 'ETAPA', 'PIEZAS', 'DIAS_EN_ETAPA', 'ATORADO', 'COMPROMISO']; const L = [H.join(',')]; nodeUnits.forEach((u) => L.push([u.oc, u.prov, u.seccion, u.goa, u.centro, TIPOS[u.tipo].l, SL[u.etapa], u.pzs, (u.enEtapa || 0).toFixed(1), u.atorado ? 'SI' : '', u.fechaComp ? u.fechaComp.toISOString().slice(0, 10) : ''].map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['\uFEFF' + L.join('\r\n')], { type: 'text/csv;charset=utf-8' })); a.download = `Pedidos_${(sel.titulo || 'nodo').replace(/[^\w]+/g, '_')}.csv`; a.click(); };
                 return (
                   <div className="px-4 mb-2">
-                    <div className={`text-[9px] font-black uppercase tracking-wider mb-1 flex justify-between items-center ${t.textMuted}`}><span title="Días de atraso contra la fecha esperada (compromiso); fuera de proveedor, días en el nodo por encima del SLA">Top 10 · atraso vs fecha esperada</span><button onClick={exp} className="flex items-center gap-1 normal-case font-bold hover:underline"><Download size={11} /> CSV del nodo</button></div>
+                    <div className={`text-[9px] font-black uppercase tracking-wider mb-1 flex justify-between items-center ${t.textMuted}`}><span title="Días de atraso contra la fecha esperada (compromiso); fuera de proveedor, días en el nodo por encima del SLA">Top 10 · atraso vs compromiso / umbral</span><button onClick={exp} className="flex items-center gap-1 normal-case font-bold hover:underline"><Download size={11} /> CSV del nodo</button></div>
                     {top.length === 0 ? <p className={`text-[10px] ${t.textMuted}`}>Sin OCs atrasadas aquí.</p> : (
                       <div className={`rounded-lg border max-h-40 overflow-y-auto custom-scrollbar ${t.cardInner}`}>
                         {top.map((o) => <button key={o.oc} onClick={() => setSelUnit(o.u.key)} className={`w-full grid grid-cols-[1fr_auto] gap-1 px-2 py-1 text-left border-b last:border-0 ${isDark ? 'border-white/5 hover:bg-white/5' : 'border-gray-100 hover:bg-gray-50'}`}><span className="min-w-0"><span className={`block text-[11px] font-bold truncate ${t.text}`}>{o.oc} · {o.prov}</span><span className={`block text-[9.5px] truncate ${t.textMuted}`}>{o.goa} · {fmt(o.pzs)} pzs{o.comp ? ` · esperada ${fdate(o.comp)}` : ''}</span></span><span className="text-[11px] font-black text-rose-500 self-center">+{Math.max(0, o.dias).toFixed(0)} d</span></button>)}
@@ -615,7 +615,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
               )}
               <div className="flex-1 overflow-y-auto px-2 pb-2 custom-scrollbar">
                 {nodeUnits.length === 0 && <p className={`text-xs text-center py-6 ${t.textMuted}`}>Sin pedidos aquí con los filtros actuales.</p>}
-                {nodeUnits.length > 0 && <div className={`text-[9px] font-black uppercase tracking-wider px-2 pb-1 ${t.textMuted}`} title="Días desde el último registro de la OC en este nodo (máximo entre sus tiendas)">OCs · días en este nodo</div>}
+                {nodeUnits.length > 0 && <div className={`text-[9px] font-black uppercase tracking-wider px-2 pb-1 ${t.textMuted}`} title="Días desde el último registro de la OC en este nodo (máximo entre sus tiendas)">Días en este nodo</div>}
                 {(() => {
                   // Una fila por OC (tiendas, piezas y máximo de días); clic para ver sus tiendas
                   const m = new Map();
