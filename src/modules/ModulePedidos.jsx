@@ -134,6 +134,30 @@ function parseEventos(text) {
   if (rows.length < 2) return { ev: [], aviso: 'El archivo no trae filas.' };
   const { cols, n, used } = mapCols(rows[0]);
   if (cols.oc == null) return { ev: [], aviso: `No encontré la columna OC/PEDIDO. Leí: ${rows[0].slice(0, 12).join(', ')}` };
+  // Extracto BigQuery (PEDIDOS_TRACK): una fila por OC × GOA × tienda con fecha-hora por evento (EKBE)
+  if (n.includes('DT CEDIS')) {
+    const v = (r, h) => String(r[n.indexOf(h)] ?? '').trim();
+    const ev = [];
+    rows.slice(1).forEach((r) => {
+      const oc = v(r, 'OC'); if (!oc) return;
+      const cOc = v(r, 'CENTRO OC'), tienda = v(r, 'TIENDA') || cOc;
+      const origen = /IMP/.test(v(r, 'TIPO')) ? 'IMP' : /^\d{4}$/.test(cOc) ? 'DIR' : 'NAC';
+      const asig = numv(v(r, 'PZS ASIG'));
+      const comp = v(r, 'COMPROMISO');
+      const base = {
+        oc, pos: '', sku: v(r, 'GOA'), modelo: '', prov: v(r, 'PROVEEDOR') || 'Sin proveedor', marca: '—', seccion: v(r, 'SECCION'), goa: v(r, 'GOA'), origen,
+        pzsPed: asig || numv(v(r, 'PZS PEDIDAS')), pzsEv: 0, valor: 0, ubic: '', centro: ctr(tienda), zona: '', cont: '',
+        fechaOc: toDate(v(r, 'FCH OC')), fechaComp: comp && !comp.startsWith('1900') ? toDate(comp) : null,
+      };
+      const add = (etapa, h, pzsEv, ubic) => { const f = toDate(v(r, h)); if (f) ev.push({ ...base, etapa, fecha: f, pzsEv, ubic }); };
+      add('PROVEEDOR', 'FCH OC', 0, base.prov);
+      if (origen === 'DIR') add('RECIBIDO', 'DT CEDIS', numv(v(r, 'PZS REC CEDIS')), `T${tienda}`);
+      else add('ALMACEN', 'DT CEDIS', 0, cOc);
+      add('TRANSITO_TDA', 'DT SALIDA', numv(v(r, 'PZS SALIDA')), `${cOc} → T${tienda}`);
+      add('RECIBIDO', 'DT TIENDA', numv(v(r, 'PZS TIENDA')), `T${tienda}`);
+    });
+    return { ev, aviso: ev.length ? '' : 'No encontré eventos con fecha válida.' };
+  }
   const wide = cols.etapa == null ? n.map((h, i) => (!used.has(i) && /^(FECHA|F) /.test(h) ? { i, st: stageOf(h.replace(/^(FECHA|F) /, '')) } : null)).filter((x) => x && x.st) : [];
   if (cols.etapa == null && !wide.length) return { ev: [], aviso: 'Falta ETAPA (o columnas FECHA_ADUANA, FECHA_PLAN…).' };
   const g = (r, k) => (cols[k] != null ? String(r[cols[k]] ?? '').trim() : '');
