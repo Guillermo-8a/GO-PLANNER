@@ -30,7 +30,7 @@ export const siteOfKey = (k = '') => (k === 'PROV' ? 'PROV' : k === 'PIMP' ? 'PI
 export const paths = {
   NAC: [[1.2, YFAC], [XV1, YFAC], [XV1, 1.9], [8.4, 1.9]],
   IMP: [[2.6, YLOW], [XV1, YLOW], [XV1, 1.9], [8.4, 1.9]],
-  SHIP: [[-10.2, 8.3], [-7.2, 12.4], [-3.4, 12.4], [-3.4, 9.9]], // del muelle del proveedor a la aduana
+  SHIP: [[-10.2, 8.3], [-12.8, 12.5], [-12.8, 18.4], [-9.5, 21.4], [-6.2, 18.6], [-5.6, 14], [-3.4, 12.4], [-3.4, 9.9]], // del muelle del proveedor, rodea la isla y llega a la aduana
   DIR: (p) => [[-0.4, YFAC], [-2.6, YFAC], [-2.6, YTOP], [XDIR, YTOP], [XDIR, p.y + 1.0], [p.col ? XB - 0.1 : 25.9, p.y + 1.0]],
   OUT: (p) => [[15.6, 2.4], [15.6, YLOW], [XV2, YLOW], [XV2, p.y + 1.0], [p.col ? XB - 0.1 : 23.0, p.y + 1.0]],
   BOD: (cy) => [[15.6, 2.4], [15.6, YLOW], [XV2, YLOW], [XV2, cy + 0.9], [22.4, cy + 0.9]],

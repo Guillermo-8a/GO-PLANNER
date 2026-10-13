@@ -47,6 +47,8 @@ const BUCKETS = [
 ];
 const TIPOS = { IMP: { l: 'Importación', c: '#14B8A6' }, NAC: { l: 'Nacional', c: '#3B82F6' }, DIR: { l: 'Directo a tienda', c: '#F59E0B' } };
 // Centros que no son tienda: CRs (fulfillment) y CEDIS
+// Zonas de venta Suburbia: siempre visibles (aunque no tengan pedidos) para que el plano no se mueva
+const ZONAS_SBB = ['METRO CENTRO', 'METRO NORTE', 'METRO ORIENTE', 'METRO SUR', 'CENTRO NORTE', 'CENTRO SUR', 'BAJIO', 'OCCIDENTE', 'PACIFICO', 'NORTE', 'GOLFO', 'SUR'];
 const CENTROS = { '107S': 'CR ACAPULCO', '094S': 'CR LEON', '049S': 'CR MONTERREY', '147S': 'CR CULIACAN', '093S': 'CR VILLAHERMOSA', '155S': 'CR TAPACHULA', '185S': 'CR ZONA NORTE', '158S': 'CR LA PAZ', '108S': 'CR MORELIA', '151S': 'CR OAXACA', '171S': 'CR SALINA CRUZ', '119S': 'CR CANCUN', '148S': 'CR DURANGO', '032S': 'CR COATZACOALCOS', '880S': 'CEDIS SOFTLINE PLAN', '895S': 'PLAN SOFTLINE BODEGA', '0670': 'CEDIS TULTIPARK', '811S': 'PLAN BIG TICKET 2', '095S': 'CD NACIONAL BIG TICKET', '0681': 'SUBURBIA CEDIS MONTE' };
 const DEF_UMBRAL = { PROVEEDOR: 0, TRANSITO_INT: 35, ADUANA: 7, ALMACEN: 15, CROSSDOCK: 3, BODEGA_REG: 20, FULFILLMENT: 30, FORO: 10, TRANSITO_TDA: 4, TIENDA: 2 };
 const BASE_ROUTE = { IMP: ['PROVEEDOR', 'TRANSITO_INT', 'ADUANA', 'CROSSDOCK', 'TRANSITO_TDA', 'TIENDA', 'RECIBIDO'], NAC: ['PROVEEDOR', 'CROSSDOCK', 'TRANSITO_TDA', 'TIENDA', 'RECIBIDO'], DIR: ['PROVEEDOR', 'TRANSITO_TDA', 'TIENDA', 'RECIBIDO'] };
@@ -165,7 +167,7 @@ function parseEventos(text) {
         const es = v(r, 'ESTATUS');
         // 880S = cross dock de PLAN; 895S y demás CEDIS = bodega (almacén); CR = fulfillment
         const etapa = es === 'EMBARCADA' ? 'TRANSITO_INT' : v(r, 'TIPO DESTINO') === 'CR' ? 'FULFILLMENT' : cOc === '880S' ? 'CROSSDOCK' : 'ALMACEN';
-        add(etapa, 'DT CEDIS', 0, es === 'EMBARCADA' ? cOc : `${cOc} · ${es === 'INV ASIGNADO' ? 'con traslado' : 'sin traslado'}`);
+        add(etapa, 'DT CEDIS', 0, es === 'EMBARCADA' ? cOc : `${CENTROS[cOc] || cOc} · ${es === 'INV ASIGNADO' ? 'con traslado' : 'sin traslado'}`);
         return;
       }
       add('PROVEEDOR', 'FCH OC', 0, base.prov);
@@ -210,7 +212,7 @@ function demoEventos() {
   let seed = 11; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
   const pick = (a) => a[Math.floor(rnd() * a.length)];
   const provs = [['WEEKEND', 'NAC'], ['FLEXI', 'NAC'], ['ANDREA', 'DIR'], ['SKECHERS', 'IMP'], ['NIKE', 'IMP'], ['CONVERSE', 'IMP'], ['PRICE SHOES', 'DIR'], ['VANS', 'IMP'], ['CKLASS', 'NAC'], ['MIRAMAR', 'NAC']];
-  const zonas = { NORTE: 34, CENTRO: 52, BAJIO: 30, OCCIDENTE: 33, SUR: 26, SURESTE: 25 };
+  const zonas = { NORTE: 34, 'METRO CENTRO': 52, BAJIO: 30, OCCIDENTE: 33, SUR: 26, GOLFO: 25 };
   const tiendas = {}; let c0 = 100; Object.entries(zonas).forEach(([z, n]) => { tiendas[z] = Array.from({ length: n }, () => String(c0++).padStart(4, '0')); });
   const ciudades = ['MONTERREY', 'GUADALAJARA', 'MERIDA'];
   const goas = ['TENIS URBANO', 'CHOCLO', 'BOTA', 'SANDALIA', 'MOCASIN'];
@@ -282,7 +284,7 @@ function buildUnits(ev, umbral, hoy) {
       fechaComp, inicio, fin: llegada, lead: llegada ? dias(inicio, llegada) : null,
       // Con proveedor: atorado solo si ya pasó su compromiso + tolerancia (una OC para enero no está atorada hoy).
       // Resto de etapas: días sin moverse desde su último registro > umbral.
-      atorado: etapa === 'PROVEEDOR' ? !!(fechaComp && dias(fechaComp, hoy) > (umbral.PROVEEDOR ?? 0)) : etapa !== 'RECIBIDO' && enEtapa > (umbral[etapa] ?? 99),
+      atorado: etapa === 'FORO' ? false : etapa === 'PROVEEDOR' ? !!(fechaComp && dias(fechaComp, hoy) > (umbral.PROVEEDOR ?? 0)) : etapa !== 'RECIBIDO' && enEtapa > (umbral[etapa] ?? 99),
       // El compromiso es del proveedor: se mide contra la llegada a CEDIS (o al destino si no pasa por CEDIS)
       vencido: !(at.ALMACEN || at.CROSSDOCK || llegada) && fechaComp && hoy > fechaComp,
       aTiempo: fechaComp && (at.ALMACEN || at.CROSSDOCK || llegada) ? (at.ALMACEN || at.CROSSDOCK || llegada) <= new Date(fechaComp.getTime() + DAY - 1) : null,
@@ -368,7 +370,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
       && (!qq || norm(`${u.oc} ${u.sku} ${u.modelo} ${u.centro} ${u.cont}`).includes(qq)));
   }, [allUnits, fProv, fMarca, fTipo, fZona, fSec, fMes, fSolo, q]);
 
-  const zonas = useMemo(() => { const z = [...new Set(allUnits.map((u) => u.zona).filter(Boolean))].sort(); return z.length ? z.slice(0, 14) : ['TIENDAS']; }, [allUnits]);
+  const zonas = useMemo(() => [...new Set([...ZONAS_SBB, ...allUnits.map((u) => u.zona).filter(Boolean).sort()])].slice(0, 14), [allUnits]);
   const zonaDe = (u) => (zonas.includes(u.zona) ? u.zona : zonas[zonas.length - 1]);
   const ciudades = useMemo(() => { const c = [...new Set(allUnits.map((u) => u.ciudad).filter(Boolean))].sort(); return c.length ? c.slice(0, 4) : ['REGIONAL']; }, [allUnits]);
   const ciudadDe = (u) => (ciudades.includes(u.ciudad) ? u.ciudad : ciudades[0]);
@@ -663,7 +665,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
                           <span className={`text-xs font-black flex items-center gap-1.5 ${t.text}`}><span className="w-2 h-2 rounded-full" style={{ background: TIPOS[o.tipo].c }} />OC {o.oc}</span>
                           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${o.ator ? 'bg-rose-500/15 text-rose-500' : (isDark ? 'bg-white/10 text-gray-300' : 'bg-gray-100 text-gray-600')}`}>{o.max.toFixed(0)} d en nodo</span>
                         </div>
-                        <div className={`text-[10px] ${t.textMuted}`}>{o.prov} · {o.goa} · {o.us.length} {o.us.length === 1 ? 'tienda' : 'tiendas'} · {fmt(o.pzs)} pzs{o.ator ? ` · ${o.ator} atoradas` : ''}</div>
+                        <div className={`text-[10px] ${t.textMuted}`}>{o.prov} · {o.goa} · {o.us.length} {o.us.length === 1 ? 'tienda' : 'tiendas'} · {fmt(o.pzs)} pzs{o.us[0]?.etapa === 'FULFILLMENT' && o.us[0].ubic ? ` · ${o.us[0].ubic}` : ''}{o.ator ? ` · ${o.ator} atoradas` : ''}</div>
                       </button>
                       {expOC === o.oc && o.us.length > 1 && (
                         <div className={`ml-4 pl-2 border-l ${isDark ? 'border-white/10' : 'border-gray-200'}`}>

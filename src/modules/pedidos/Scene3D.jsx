@@ -189,12 +189,6 @@ function lighthouse(P) {
   const cap = mesh(memo('lhC', () => new THREE.ConeGeometry(0.22, 0.25, 12)), mat('#2A2733')); cap.position.y = 2.38; g.add(cap);
   return g;
 }
-const billTex = (dark) => canvasTex(`bill:${dark}`, 1024, 256, (g, w, h) => {
-  const gr = g.createLinearGradient(0, 0, w, 0); gr.addColorStop(0, '#5B3FD0'); gr.addColorStop(1, '#8B6CF6'); g.fillStyle = gr; g.beginPath(); g.roundRect(6, 6, w - 12, h - 12, 36); g.fill();
-  g.strokeStyle = '#E0BB3E'; g.lineWidth = 8; g.stroke();
-  g.textAlign = 'center'; g.textBaseline = 'middle'; g.font = '900 110px Inter, system-ui, sans-serif'; g.textAlign = 'left'; const a = g.measureText('GO ').width, b = g.measureText('PLANNER').width, x0 = (w - a - b) / 2; g.fillStyle = '#FFFFFF'; g.fillText('GO ', x0, h / 2 - 18); g.fillStyle = '#F2C94C'; g.fillText('PLANNER', x0 + a, h / 2 - 18); g.textAlign = 'center';
-  g.font = '700 34px Inter, system-ui, sans-serif'; g.fillStyle = 'rgba(255,255,255,0.85)'; g.fillText('RASTREADOR DE PEDIDOS', w / 2, h / 2 + 72);
-});
 // Barco centrado en su origen (para girarlo sobre la ruta)
 function shipC() { const g = new THREE.Group(); const s = ship(); s.position.set(-2.2, 0, -0.575); g.add(s); return g; }
 
@@ -299,7 +293,7 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     const G = S.staticG; while (G.children.length) G.remove(G.children[0]);
     S.anim = S.anim.filter((f) => !f.isStatic);
     const zs = zonas.map((z, i) => ({ z, ...zonaPos(i) })), cs = ciudades.map((c, i) => ({ c, ...ciudadPos(i) }));
-    const yBot = Math.max(17, Math.max(...zs.map((p) => p.y)) + 3); // mínimo para que el piso cubra agua y árboles
+    const yBot = Math.max(21, Math.max(...zs.map((p) => p.y)) + 3); // mínimo para que el piso cubra agua y árboles
     const pick = (o, k) => { o.userData.pick = k; o.traverse((c) => { c.userData.pickParent = k; }); return o; };
     const addAnim = (f) => { f.isStatic = true; S.anim.push(f); };
     // piso
@@ -337,8 +331,9 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
       [[-6, 8.6], [-4.6, 15.5], [-14, 10.5]].forEach(([x, y], i) => { const b = mesh(memo('buoy', () => new THREE.CylinderGeometry(0.1, 0.14, 0.3, 10)), mat(i % 2 ? '#F2B705' : '#E5484D', { emissive: i % 2 ? '#F2B705' : '#E5484D', emissiveIntensity: isDark ? 0.8 : 0 })); G.add(b); addAnim((t) => { b.position.copy(W(x, y, 0.25 + Math.sin(t * 2 + i) * 0.05)); }); });
       // espectacular GO PLANNER
       const bill = new THREE.Group(); [-2.6, 2.6].forEach((px) => { const p = mesh(memo('billP', () => new THREE.BoxGeometry(0.14, 1.6, 0.14)), mat('#4B5563', { metalness: 0.5 })); p.position.set(px, 0.8, 0); bill.add(p); });
-      const bb = new THREE.Mesh(memo('billG', () => new THREE.PlaneGeometry(6.4, 1.6)), new THREE.MeshStandardMaterial({ map: billTex(isDark), roughness: 0.5, emissive: '#ffffff', emissiveMap: billTex(isDark), emissiveIntensity: isDark ? 0.35 : 0 })); bb.position.y = 2.3; bill.add(bb);
-      const back = mesh(memo('billB', () => new THREE.BoxGeometry(6.5, 1.7, 0.08)), mat('#2A2733')); back.position.set(0, 2.3, -0.06); bill.add(back);
+      // solo el logo (PNG transparente 2:1); al cargar se vuelve a dibujar la escena
+      const logo = memo('billLogo', () => new THREE.TextureLoader().load('/logov.png', (tx) => { tx.colorSpace = THREE.SRGBColorSpace; S.dirty = true; }));
+      const bb = new THREE.Mesh(memo('billG', () => new THREE.PlaneGeometry(5, 2.5)), new THREE.MeshStandardMaterial({ map: logo, transparent: true, alphaTest: 0.05, side: THREE.DoubleSide, roughness: 0.5, emissive: '#ffffff', emissiveMap: logo, emissiveIntensity: isDark ? 0.35 : 0 })); bb.position.y = 2.6; bill.add(bb);
       bill.position.copy(W(12.5, 16, 0.05)); bill.rotation.y = Math.PI / 4; bill.scale.setScalar(1.5); G.add(bill);
     }
     const quay = boxAt(-3.4, 6.2, -0.4, 8.6, 0.3, 0.47, mat(isDark ? '#3A3350' : '#B9C3D3'), 0.04); G.add(quay);
