@@ -247,6 +247,21 @@ const N = {
   FUL: { x: 12.6, y: -8.8, w: 3.6, d: 2.3, h: 1.45 },
 };
 const XV1 = 6, XV2 = 20.5, XDIR = 27.2, YTOP = -12, YFAC = -5.6, YLOW = 4.9;
+// Vistas de cámara (centro en mundo + zoom): "Red completa" o acercamiento a un sitio
+const SITES = {
+  RED: { l: 'Red completa', z: 1.3 },
+  PROV: { l: 'Proveedores', x: 0.5, y: -8, z: 2.7 },
+  PUERTO: { l: 'Puerto · Aduana', x: -1, y: 5, z: 2.3 },
+  PLAN: { l: 'PLAN · Almacén y cross dock', x: 12.8, y: 0.2, z: 2.3 },
+  NORTE: { l: 'Foro y fulfillment', x: 12.5, y: -8, z: 2.6 },
+  BOD: { l: 'Bodegas regionales', x: 23.5, y: -11, z: 2.3 },
+  TDAS: { l: 'Zonas de tiendas', x: 24.5, y: 8, z: 1.9 },
+};
+const siteOfKey = (k = '') => (k === 'PROV' ? 'PROV' : k === 'ADU' || k === 'MAR' ? 'PUERTO' : k === 'ALM' || k === 'XD' ? 'PLAN' : k === 'FORO' || k === 'FUL' ? 'NORTE' : k.startsWith('CIU|') ? 'BOD' : k.startsWith('Z|') ? 'TDAS' : null);
+const boundsFor = (yBot) => {
+  const c = [P(-16, -17), P(-16, yBot + 2), P(30, -17), P(30, yBot + 2), P(30, -17, 4), P(-16, -17, 4)];
+  return { minX: Math.min(...c.map((q) => q[0])) + 40, maxX: Math.max(...c.map((q) => q[0])) - 40, minY: Math.min(...c.map((q) => q[1])) + 60, maxY: Math.max(...c.map((q) => q[1])) - 40 };
+};
 
 export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc }) {
   const C = isDark
@@ -265,6 +280,9 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
   const [play, setPlay] = useState(true);
   const [tick, setTick] = useState(0);
   const [feedTab, setFeedTab] = useState('mov');
+  const [feedOpen, setFeedOpen] = useState(false);
+  const [site, setSite] = useState('RED');
+  const camAnim = useRef(null);
   const fileRef = useRef(null); const drag = useRef(null);
   const hoy = useMemo(() => new Date(), [ev]);
 
@@ -368,7 +386,20 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
     return Object.values(m).sort((a, b) => a.c.localeCompare(b.c));
   }, [allUnits, sel, zonas]);
 
-  const abrir = (s) => { setSel(s); setSelUnit(null); setSelTienda(''); };
+  // Cámara: anima zoom/pan hacia la vista del sitio (como cambiar de bodega en un mapa)
+  const camTo = (k, conPanel = !!sel) => {
+    const st = SITES[k] || SITES.RED; setSite(k);
+    const yBot = -1.2 + (Math.max(1, zonas.length) - 1) * 4 + 3;
+    const b = boundsFor(yBot); const c0 = [(b.minX + b.maxX) / 2, (b.minY + b.maxY) / 2];
+    // con el panel lateral abierto, el sitio se recorre a la izquierda para que no quede debajo del panel
+    const off = conPanel && st.x != null ? ((b.maxX - b.minX) / st.z) * 0.14 : 0;
+    const tgt = st.x == null ? [0, 0] : (() => { const sp = P(st.x, st.y, 1); return [c0[0] - sp[0] - off, c0[1] - sp[1]]; })();
+    const z0 = zoom, p0 = pan, t0 = performance.now();
+    cancelAnimationFrame(camAnim.current);
+    const step = (now) => { const f = Math.min(1, (now - t0) / 650), e = 1 - Math.pow(1 - f, 3); setZoom(z0 + (st.z - z0) * e); setPan([p0[0] + (tgt[0] - p0[0]) * e, p0[1] + (tgt[1] - p0[1]) * e]); if (f < 1) camAnim.current = requestAnimationFrame(step); };
+    camAnim.current = requestAnimationFrame(step);
+  };
+  const abrir = (s) => { setSel(s); setSelUnit(null); setSelTienda(''); const k = siteOfKey(s?.key); if (k && (k !== site || !sel)) camTo(k, !!s); };
   const abrirUnidad = (u) => { abrir({ key: '', stages: [u.etapa], titulo: SL[u.etapa], zona: ['TRANSITO_TDA', 'TIENDA', 'RECIBIDO'].includes(u.etapa) ? zonaDe(u) : undefined, ciudad: u.etapa === 'BODEGA_REG' ? ciudadDe(u) : undefined }); setSelUnit(u.key); };
   const exportar = () => {
     const H = ['OC', 'SKU', 'MODELO', 'PROVEEDOR', 'MARCA', 'TIPO', 'CENTRO', 'ZONA', 'PIEZAS', 'BUCKET', 'ETAPA_ACTUAL', 'ULTIMO_REGISTRO', 'UBICACION', 'DIAS_EN_ETAPA', 'ATORADO', 'FECHA_COMPROMISO', 'VENCIDO', ...STAGES.map((s) => `DIAS_${s.k}`)];
@@ -418,11 +449,24 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
 
   const items = []; const overlay = [];
   const push = (depth, el) => items.push({ depth, el });
+  const ks = Math.min(1, 1.8 / zoom); // etiquetas y pines a tamaño constante en pantalla al hacer zoom
   const label = (key, x, y, z, txt, sub, onClick, active, color) => {
     const [sx, sy] = P(x, y, z);
+    if (!active && zoom < 1.8) { // vista lejana: etiqueta compacta para no amontonar
+      const cnt0 = (sub || '').split(' · ')[0];
+      const w0 = txt.length * 5.6 + (cnt0 ? cnt0.length * 5 + 10 : 0) + 22;
+      overlay.push(
+        <g key={key} transform={`translate(${sx},${sy}) scale(${ks})`} onClick={onClick} style={{ cursor: 'pointer' }}>
+          <rect x={-w0 / 2} y={-24} width={w0} height={18} rx="9" fill={C.card} stroke={C.cardB} opacity="0.96" />
+          <circle cx={-w0 / 2 + 10} cy={-15} r="3.5" fill={color} />
+          <text x={-w0 / 2 + 17} y={-11.5} fontSize="9" fontWeight="800" fill={C.text}>{txt}{cnt0 && <tspan fill={C.sub} fontWeight="600">{`  ${cnt0}`}</tspan>}</text>
+        </g>,
+      );
+      return;
+    }
     const w = Math.max(txt.length * 6.4, (sub || '').length * 5.2) + 26;
     overlay.push(
-      <g key={key} transform={`translate(${sx},${sy})`} onClick={onClick} style={{ cursor: 'pointer' }}>
+      <g key={key} transform={`translate(${sx},${sy}) scale(${ks})`} onClick={onClick} style={{ cursor: 'pointer' }}>
         <rect x={-w / 2 + 1} y={-35} width={w} height={sub ? 33 : 22} rx="9" fill="#0F172A" opacity="0.08" />
         <rect x={-w / 2} y={-37} width={w} height={sub ? 33 : 22} rx="9" fill={active ? (isDark ? '#3A2F55' : '#EEF3FF') : C.card} stroke={active ? color : C.cardB} strokeWidth={active ? 1.6 : 1} />
         <circle cx={-w / 2 + 11} cy={sub ? -27 : -26} r="4" fill={color} />
@@ -435,7 +479,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
     const n = pzs > 0 ? Math.min(14, Math.max(1, Math.round(Math.log2(pzs / 60 + 1) * 2.4))) : 0;
     for (let i = 0; i < n; i++) { const c = i % cols, r = Math.floor(i / cols) % 2, l = Math.floor(i / (cols * 2)); const x = x0 + c * 0.66, y = y0 + r * 0.66; push(x + y + 0.6, <Pallet key={`${key}${i}`} x={x} y={y} z={l * 0.44} alert={alert} />); }
   };
-  const pinIf = (key, c, x, y, z) => { if (c.ator) overlay.push(<MapPin key={key} x={x} y={y} z={z} n={c.ator} color="#E5484D" t={tick} />); };
+  const pinIf = (key, c, x, y, z) => { if (!c.ator) return; const [sx, sy] = P(x, y, z); overlay.push(<g key={key} transform={`translate(${sx},${sy}) scale(${ks}) translate(${-sx},${-sy})`}><MapPin x={x} y={y} z={z} n={c.ator} color="#E5484D" t={tick} /></g>); };
 
   // Suelo
   const ground = [];
@@ -591,9 +635,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
   items.sort((a, b) => a.depth - b.depth);
 
   // viewBox
-  const corners = [P(-16, -17), P(-16, yBot + 2), P(30, -17), P(30, yBot + 2), P(30, -17, 4), P(-16, -17, 4)];
-  const minX = Math.min(...corners.map((c) => c[0])) + 40, maxX = Math.max(...corners.map((c) => c[0])) - 40;
-  const minY = Math.min(...corners.map((c) => c[1])) + 60, maxY = Math.max(...corners.map((c) => c[1])) - 40;
+  const { minX, maxX, minY, maxY } = boundsFor(yBot);
   const vbW = (maxX - minX) / zoom, vbH = (maxY - minY) / zoom;
   const vb = `${minX + (maxX - minX - vbW) / 2 - pan[0]} ${minY + (maxY - minY - vbH) / 2 - pan[1]} ${vbW} ${vbH}`;
 
@@ -704,11 +746,18 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
             {Object.entries(TIPOS).map(([k, v]) => <button key={k} onClick={() => setFTipo(fTipo === k ? '' : k)} className={`flex items-center gap-2 text-[11px] font-bold py-0.5 ${fTipo && fTipo !== k ? 'opacity-40' : ''} ${t.text}`}><span className="w-5 h-1 rounded-full" style={{ background: v.c }} />{v.l} <span className={t.textMuted}>{units.filter((u) => u.tipo === k && u.etapa !== 'RECIBIDO').length}</span></button>)}
             <div className={`flex items-center gap-2 text-[11px] font-bold py-0.5 ${t.text}`}><span className="w-5 h-1 rounded-full bg-violet-500" />PLAN → tiendas</div>
           </div>
+          {/* Selector de sitio */}
+          <div className={`absolute top-3 flex items-center gap-2 rounded-xl border pl-2 pr-1 py-1 shadow-md ${glass} ${sel ? 'right-[444px] max-lg:right-16' : 'right-16'}`}>
+            <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-md ${isDark ? 'bg-violet-600 text-white' : 'bg-blue-600 text-white'}`}>{site === 'RED' ? 'RED' : site}</span>
+            <select value={site} onChange={(e) => camTo(e.target.value)} className={`text-xs font-bold bg-transparent outline-none pr-1 ${t.text}`} style={selStyle}>
+              {Object.entries(SITES).map(([k, v]) => <option key={k} value={k}>{v.l}</option>)}
+            </select>
+          </div>
           {/* Controles */}
           <div className={`absolute top-3 right-3 flex flex-col gap-1 rounded-xl border p-1 shadow-md ${glass} ${sel ? 'lg:right-[394px]' : ''}`}>
             <button onClick={() => setZoom((z) => Math.min(3.5, z * 1.2))} className="p-1.5"><ZoomIn size={15} /></button>
             <button onClick={() => setZoom((z) => Math.max(0.6, z / 1.2))} className="p-1.5"><ZoomOut size={15} /></button>
-            <button onClick={() => { setZoom(1.3); setPan([0, 0]); }} className="p-1.5"><RotateCcw size={15} /></button>
+            <button onClick={() => camTo('RED')} className="p-1.5"><RotateCcw size={15} /></button>
             <button onClick={() => setPlay((p) => !p)} className="p-1.5" title={play ? 'Pausar animación' : 'Reanudar'}>{play ? <Pause size={15} /> : <Play size={15} />}</button>
           </div>
 
@@ -764,10 +813,14 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
           )}
 
           {/* Movimientos recientes / atorados */}
-          {!sel && !unit && (
+          {!sel && !unit && !feedOpen && (
+            <button onClick={() => setFeedOpen(true)} className={`absolute left-3 bottom-3 px-3 py-2 rounded-xl border shadow-md text-[11px] font-bold flex items-center gap-2 ${glass} ${t.text}`}><Clock size={13} /> Movimientos{kpi.ator ? <span className="text-rose-500">· {kpi.ator} atorados</span> : ''}</button>
+          )}
+          {!sel && !unit && feedOpen && (
             <div className={`absolute left-3 bottom-3 w-[330px] max-w-[calc(100%-24px)] rounded-2xl border shadow-xl p-3 ${glass}`}>
-              <div className="flex gap-1 mb-2">
+              <div className="flex gap-1 mb-2 items-center">
                 {[['mov', 'Movimientos recientes'], ['ator', `Atorados ${kpi.ator}`]].map(([k, l]) => <button key={k} onClick={() => setFeedTab(k)} className={`px-2.5 py-1 rounded-lg text-[11px] font-bold border ${pill(feedTab === k)}`}>{l}</button>)}
+                <button onClick={() => setFeedOpen(false)} className={`ml-auto ${t.textMuted}`}><X size={14} /></button>
               </div>
               <div className="space-y-1 max-h-40 overflow-y-auto custom-scrollbar">
                 {(feedTab === 'mov' ? feed.map(({ u, e }) => ({ u, txt: SL[e.etapa], when: hace(e.fecha, hoy) })) : units.filter((u) => u.atorado).sort((a, b) => b.enEtapa - a.enEtapa).slice(0, 12).map((u) => ({ u, txt: `${STAGES[SIDX[u.etapa]].short} · ${u.enEtapa.toFixed(0)} d`, when: `umbral ${cfg.umbral[u.etapa]} d` }))).map(({ u, txt, when }) => (
