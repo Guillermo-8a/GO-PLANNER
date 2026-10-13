@@ -130,7 +130,7 @@ const LOCAL_DATA_KEYS = {
   planning:  ['gop_forecast_setup'],
   suplementarios: ['gop_suplementarios'],
   allocation: ['gop_allocation_files'],
-  pedidos: ['gop_pedidos'],
+  pedidos: ['gop_pedidos_has'],
 };
 function moduleHasData(m, global) {
   return m.dataKey ? !!global[m.dataKey] : hasLocalData(m.id);

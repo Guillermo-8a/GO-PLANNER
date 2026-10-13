@@ -7,12 +7,18 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import { Upload, Download, Trash2, Search, AlertTriangle, Truck, Package, Clock, CheckCircle2, ZoomIn, ZoomOut, RotateCcw, Play, Pause, Settings, X, Store, Wand2, Warehouse as WhIcon, Camera, ShoppingBag, Factory, Activity } from 'lucide-react';
 import ModuleHeader from '../components/ModuleHeader';
 import { lazy, Suspense } from 'react';
-import { SITES, siteOfKey } from './pedidos/layout';
+import { siteOfKey } from './pedidos/layout';
 const Scene3D = lazy(() => import('./pedidos/Scene3D'));
 
 const LS_KEY = 'gop_pedidos';
 const LS_CFG = 'gop_pedidos_cfg';
 const DAY = 864e5;
+const idb = (mode, fn) => new Promise((res, rej) => {
+  const rq = indexedDB.open('gop_pedidos_db', 1);
+  rq.onupgradeneeded = () => rq.result.createObjectStore('kv');
+  rq.onerror = () => rej(rq.error);
+  rq.onsuccess = () => { const tx = rq.result.transaction('kv', mode); const r = fn(tx.objectStore('kv')); tx.oncomplete = () => res(r?.result); tx.onerror = () => rej(tx.error); };
+});
 
 // ─── Etapas y buckets ─────────────────────────────────────────────────────────
 const STAGES = [
@@ -40,7 +46,7 @@ const BUCKETS = [
   { k: 'TDA', l: 'Tienda sin entrada', I: Store, c: '#F59E0B' },
 ];
 const TIPOS = { IMP: { l: 'Importación', c: '#14B8A6' }, NAC: { l: 'Nacional', c: '#3B82F6' }, DIR: { l: 'Directo a tienda', c: '#F59E0B' } };
-const DEF_UMBRAL = { PROVEEDOR: 30, TRANSITO_INT: 35, ADUANA: 7, ALMACEN: 15, CROSSDOCK: 3, BODEGA_REG: 20, FULFILLMENT: 30, FORO: 10, TRANSITO_TDA: 4, TIENDA: 2 };
+const DEF_UMBRAL = { PROVEEDOR: 0, TRANSITO_INT: 35, ADUANA: 7, ALMACEN: 15, CROSSDOCK: 3, BODEGA_REG: 20, FULFILLMENT: 30, FORO: 10, TRANSITO_TDA: 4, TIENDA: 2 };
 const BASE_ROUTE = { IMP: ['PROVEEDOR', 'TRANSITO_INT', 'ADUANA', 'CROSSDOCK', 'TRANSITO_TDA', 'TIENDA', 'RECIBIDO'], NAC: ['PROVEEDOR', 'CROSSDOCK', 'TRANSITO_TDA', 'TIENDA', 'RECIBIDO'], DIR: ['PROVEEDOR', 'TRANSITO_TDA', 'TIENDA', 'RECIBIDO'] };
 const FINALES = ['BODEGA_REG', 'FULFILLMENT', 'FORO'];
 const BUCKET_SEL = { OO: { key: 'B:OO', stages: ['PROVEEDOR', 'TRANSITO_INT', 'ADUANA'], titulo: 'On order' }, INP: { key: 'XD', stages: ['CROSSDOCK'], titulo: 'PLAN · Cross dock (in process)' }, TRN: { key: 'B:TRN', stages: ['TRANSITO_TDA'], titulo: 'In transit a tienda' }, BOD: { key: 'B:BOD', stages: ['ALMACEN', 'BODEGA_REG'], titulo: 'Bodegas (PLAN + regionales)' }, FORO: { key: 'FORO', stages: ['FORO'], titulo: 'Foro fotográfico' }, FUL: { key: 'FUL', stages: ['FULFILLMENT'], titulo: 'Fulfillment · E-commerce' }, TDA: { key: 'B:TDA', stages: ['TIENDA'], titulo: 'Tienda sin entrada' } };
@@ -152,7 +158,12 @@ function parseEventos(text) {
       const add = (etapa, h, pzsEv, ubic) => { const f = toDate(v(r, h)); if (f) ev.push({ ...base, etapa, fecha: f, pzsEv, ubic }); };
       add('PROVEEDOR', 'FCH OC', 0, base.prov);
       if (origen === 'DIR') add('RECIBIDO', 'DT CEDIS', numv(v(r, 'PZS REC CEDIS')), `T${tienda}`);
-      else add('ALMACEN', 'DT CEDIS', 0, cOc);
+      else {
+        add('ALMACEN', 'DT CEDIS', 0, cOc);
+        // Asignado en PLAN después (o antes) de recibir → se trabaja en cross dock desde la fecha más tardía
+        const fC = toDate(v(r, 'DT CEDIS')), fP = toDate(v(r, 'DT PLAN'));
+        if (fC && fP) ev.push({ ...base, etapa: 'CROSSDOCK', fecha: new Date(Math.max(fC, fP) + 1000), pzsEv: 0, ubic: `${cOc} · asignado` });
+      }
       add('TRANSITO_TDA', 'DT SALIDA', numv(v(r, 'PZS SALIDA')), `${cOc} → T${tienda}`);
       add('RECIBIDO', 'DT TIENDA', numv(v(r, 'PZS TIENDA')), `T${tienda}`);
     });
@@ -255,8 +266,12 @@ function buildUnits(ev, umbral, hoy) {
       zona: list.find((e) => e.zona)?.zona || '', cont: list.find((e) => e.cont)?.cont || '', ciudad: norm(list.filter((e) => e.etapa === 'BODEGA_REG').pop()?.ubic || ''),
       tipo, pzs, pzsRec, valor: Math.max(...list.map((e) => e.valor || 0)), etapa, desde: last.fecha, ubic: last.ubic, enEtapa, at, tramos, eventos: list, route,
       fechaComp, inicio, fin: llegada, lead: llegada ? dias(inicio, llegada) : null,
-      atorado: etapa !== 'RECIBIDO' && enEtapa > (umbral[etapa] ?? 99),
-      vencido: !llegada && fechaComp && hoy > fechaComp, aTiempo: llegada && fechaComp ? llegada <= fechaComp : null,
+      // Con proveedor: atorado solo si ya pasó su compromiso + tolerancia (una OC para enero no está atorada hoy).
+      // Resto de etapas: días sin moverse desde su último registro > umbral.
+      atorado: etapa === 'PROVEEDOR' ? !!(fechaComp && dias(fechaComp, hoy) > (umbral.PROVEEDOR ?? 0)) : etapa !== 'RECIBIDO' && enEtapa > (umbral[etapa] ?? 99),
+      // El compromiso es del proveedor: se mide contra la llegada a CEDIS (o al destino si no pasa por CEDIS)
+      vencido: !(at.ALMACEN || at.CROSSDOCK || llegada) && fechaComp && hoy > fechaComp,
+      aTiempo: fechaComp && (at.ALMACEN || at.CROSSDOCK || llegada) ? (at.ALMACEN || at.CROSSDOCK || llegada) <= new Date(fechaComp.getTime() + DAY - 1) : null,
     });
   });
   return units;
@@ -265,7 +280,7 @@ const bucketOf = (u) => STAGES[SIDX[u.etapa]].b;
 
 export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc }) {
   const [ev, setEv] = useState(() => { try { const s = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); return s ? s.map((e) => ({ ...e, fecha: new Date(e.fecha), fechaOc: e.fechaOc ? new Date(e.fechaOc) : null, fechaComp: e.fechaComp ? new Date(e.fechaComp) : null })) : []; } catch { return []; } });
-  const [cfg, setCfg] = useState(() => { try { const c = JSON.parse(localStorage.getItem(LS_CFG) || '{}'); return { ...c, umbral: { ...DEF_UMBRAL, ...(c.umbral || {}) } }; } catch { return { umbral: DEF_UMBRAL }; } });
+  const [cfg, setCfg] = useState(() => { try { const c = JSON.parse(localStorage.getItem(LS_CFG) || '{}'); return { ...c, v2: true, umbral: { ...DEF_UMBRAL, ...(c.umbral || {}), ...(c.v2 ? {} : { PROVEEDOR: 0 }) } }; } catch { return { umbral: DEF_UMBRAL }; } });
   const [aviso, setAviso] = useState('');
   const [fProv, setFProv] = useState(''); const [fMarca, setFMarca] = useState(''); const [fTipo, setFTipo] = useState(''); const [fZona, setFZona] = useState('');
   const [fSolo, setFSolo] = useState(''); const [q, setQ] = useState('');
@@ -281,7 +296,10 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
   const fileRef = useRef(null);
   const hoy = useMemo(() => new Date(), [ev]);
 
-  useEffect(() => { try { localStorage.setItem(LS_KEY, JSON.stringify(ev)); } catch { /* base grande */ } }, [ev]);
+  // La base real (decenas de miles de líneas) no cabe en localStorage → se guarda en IndexedDB
+  const idbReady = useRef(false);
+  useEffect(() => { idb('readonly', (st) => st.get('ev')).then((x) => { if (Array.isArray(x) && x.length && !ev.length) setEv(x); }).catch(() => {}).finally(() => { idbReady.current = true; }); }, []);
+  useEffect(() => { if (!idbReady.current) return; idb('readwrite', (st) => st.put(ev, 'ev')).catch(() => {}); try { localStorage.removeItem(LS_KEY); if (ev.length) localStorage.setItem('gop_pedidos_has', '1'); else localStorage.removeItem('gop_pedidos_has'); } catch { /* nada */ } }, [ev]);
   useEffect(() => { try { localStorage.setItem(LS_CFG, JSON.stringify(cfg)); } catch { /* sin espacio */ } }, [cfg]);
   const onFile = (e) => {
     const f = e.target.files?.[0]; if (!f) return;
@@ -290,7 +308,30 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
     rd.readAsArrayBuffer(f); e.target.value = '';
   };
 
-  const allUnits = useMemo(() => buildUnits(ev, cfg.umbral, hoy), [ev, cfg.umbral, hoy]);
+  // Zona de cada tienda: columna ZONA → catálogo cargado aquí → base de Traslados → bloques por número de tienda
+  const [zonaCat, setZonaCat] = useState(() => { try { return JSON.parse(localStorage.getItem('gop_pedidos_zonas') || '{}'); } catch { return {}; } });
+  const zonaRef = useRef(null);
+  const onZonas = (e) => {
+    const f = e.target.files?.[0]; if (!f) return;
+    const rd = new FileReader();
+    rd.onload = () => {
+      const rows = parseCSV(decode(rd.result)); const h = (rows[0] || []).map(norm);
+      const iC = h.findIndex((x) => ['TIENDA', 'CENTRO', 'CENTRO DESTINO', 'SUCURSAL'].includes(x)), iZ = h.findIndex((x) => ['ZONA', 'REGION', 'PLAZA', 'DISTRITO'].includes(x));
+      if (iC < 0 || iZ < 0) { setAviso('El catálogo necesita columnas TIENDA (o CENTRO) y ZONA.'); return; }
+      const m = {}; rows.slice(1).forEach((r) => { const c = ctr(r[iC]), z = norm(r[iZ]); if (c && z) m[c] = z; });
+      setZonaCat(m); setAviso(''); try { localStorage.setItem('gop_pedidos_zonas', JSON.stringify(m)); } catch { /* sin espacio */ }
+    };
+    rd.readAsArrayBuffer(f); e.target.value = '';
+  };
+  const zonaTraslados = useMemo(() => { try { const d = JSON.parse(localStorage.getItem('gop_traslados_exc') || 'null'); const m = {}; (d?.rawData || []).forEach((r) => { if (r.centro && r.zona) m[ctr(r.centro)] = norm(r.zona); }); return m; } catch { return {}; } }, []);
+  const allUnits = useMemo(() => {
+    const us = buildUnits(ev, cfg.umbral, hoy);
+    us.forEach((u) => { if (!u.zona && u.centro) u.zona = zonaCat[u.centro] || zonaTraslados[u.centro] || ''; });
+    // Sin zona: se agrupan por número de tienda en hasta 6 bloques para que el mapa no quede en un solo edificio
+    const sinZ = [...new Set(us.filter((u) => !u.zona && u.centro).map((u) => u.centro))].sort();
+    if (sinZ.length) { const k = Math.min(6, Math.ceil(sinZ.length / 8)), tam = Math.ceil(sinZ.length / k), blk = {}; sinZ.forEach((c, i) => { const b = Math.floor(i / tam); blk[c] = `T${sinZ[b * tam]}–${sinZ[Math.min(sinZ.length - 1, b * tam + tam - 1)]}`; }); us.forEach((u) => { if (!u.zona && u.centro) u.zona = blk[u.centro]; }); }
+    return us;
+  }, [ev, cfg.umbral, hoy, zonaCat, zonaTraslados]);
   const opts = useMemo(() => { const u = (k) => [...new Set(allUnits.map((x) => x[k]).filter(Boolean))].sort(); return { prov: u('prov'), marca: u('marca'), zona: u('zona') }; }, [allUnits]);
   const units = useMemo(() => {
     const qq = norm(q);
@@ -307,7 +348,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
   // Agregados por llave de nodo
   const agg = useMemo(() => {
     const m = {};
-    const add = (k, u) => { const o = (m[k] = m[k] || { n: 0, pzs: 0, ator: 0, maxDias: 0 }); o.n++; o.pzs += Math.max(0, u.pzs - u.pzsRec); if (u.atorado) o.ator++; o.maxDias = Math.max(o.maxDias, u.enEtapa || 0); };
+    const add = (k, u) => { const o = (m[k] = m[k] || { n: 0, pzs: 0, ator: 0, maxDias: 0, oc: new Set() }); o.n++; o.oc.add(u.oc); o.ocs = o.oc.size; o.pzs += Math.max(0, u.pzs - u.pzsRec); if (u.atorado) o.ator++; o.maxDias = Math.max(o.maxDias, u.enEtapa || 0); };
     units.forEach((u) => {
       add(u.etapa, u);
       if (u.etapa !== 'RECIBIDO') add(`B:${bucketOf(u)}`, u);
@@ -317,7 +358,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
     });
     return m;
   }, [units, zonas, ciudades]);
-  const cnt = (k) => agg[k] || { n: 0, pzs: 0, ator: 0, maxDias: 0 };
+  const cnt = (k) => agg[k] || { n: 0, pzs: 0, ator: 0, maxDias: 0, ocs: 0 };
 
   const tramoProm = useMemo(() => {
     const acc = {};
@@ -363,7 +404,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
 
   const nodeUnits = useMemo(() => {
     if (!sel) return [];
-    return units.filter((u) => sel.stages.includes(u.etapa) && (!sel.zona || zonaDe(u) === sel.zona) && (!sel.ciudad || ciudadDe(u) === sel.ciudad) && (!selTienda || u.centro === selTienda))
+    return units.filter((u) => sel.stages.includes(u.etapa) && (!sel.zona || zonaDe(u) === sel.zona) && (!sel.ciudad || ciudadDe(u) === sel.ciudad) && (!sel.tipo || u.tipo === sel.tipo) && (!selTienda || u.centro === selTienda))
       .sort((a, b) => b.atorado - a.atorado || b.enEtapa - a.enEtapa);
   }, [units, sel, selTienda, zonas, ciudades]);
   const tiendasZona = useMemo(() => {
@@ -379,7 +420,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
   const onPick = (k) => {
     if (k === 'PROV') return abrir({ key: k, stages: ['PROVEEDOR'], titulo: 'Proveedores · On order' });
     if (k === 'ADU') return abrir({ key: k, stages: ['ADUANA'], titulo: 'Aduana · Puerto' });
-    if (k === 'MAR') return abrir({ key: k, stages: ['TRANSITO_INT'], titulo: 'Tránsito internacional' });
+    if (k === 'MAR') return abrir({ key: k, stages: ['TRANSITO_INT', 'PROVEEDOR'], tipo: 'IMP', titulo: 'Importación (tránsito y con proveedor)' });
     if (k === 'ALM') return abrir({ key: k, stages: ['ALMACEN'], titulo: 'PLAN · Almacén' });
     if (k === 'XD') return abrir(BUCKET_SEL.INP);
     if (k === 'FORO') return abrir(BUCKET_SEL.FORO);
@@ -408,6 +449,8 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
     <>
       <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden" onChange={onFile} />
       <button onClick={() => fileRef.current?.click()} className={`px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 ${isDark ? 'bg-violet-600 text-white hover:bg-violet-500' : 'bg-blue-600 text-white hover:bg-blue-500'}`}><Upload size={14} /> Cargar CSV</button>
+      <input ref={zonaRef} type="file" accept=".csv,.txt" className="hidden" onChange={onZonas} />
+      <button onClick={() => zonaRef.current?.click()} title="CSV con TIENDA y ZONA para agrupar las tiendas en el mapa" className={`px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 border ${t.cardInner}`}><Store size={14} /> Zonas{Object.keys(zonaCat).length ? ` · ${Object.keys(zonaCat).length}` : ''}</button>
       <button onClick={() => { setEv(demoEventos()); setAviso(''); abrir(null); }} className={`px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 border ${t.cardInner}`}><Wand2 size={14} /> Datos de prueba</button>
       {ev.length > 0 && <button onClick={exportar} className={`px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 border ${t.cardInner}`}><Download size={14} /> Exportar</button>}
       {ev.length > 0 && <button onClick={() => { setEv([]); abrir(null); }} className={`p-2 rounded-lg border ${t.cardInner}`} title="Borrar datos"><Trash2 size={14} /></button>}
@@ -432,7 +475,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
             <button key={b.k} onClick={() => abrir(on ? null : BUCKET_SEL[b.k])} className={`text-left rounded-2xl border p-3 transition ${t.card} ${on ? 'ring-2 ring-violet-500' : ''}`}>
               <div className="flex items-center gap-2"><span className="p-1.5 rounded-lg" style={{ background: `${b.c}22`, color: b.c }}><b.I size={14} /></span><span className={`text-[10px] font-black uppercase tracking-wider ${t.textMuted}`}>{b.l}</span></div>
               <div className={`text-xl font-black mt-1 ${t.text}`}>{fmt(c.pzs)} <span className={`text-[10px] font-bold ${t.textMuted}`}>pzs</span></div>
-              <div className={`text-[10px] ${t.textMuted}`}>{c.n} OCs{c.ator ? <span className="text-rose-500 font-bold"> · {c.ator} atorados</span> : ''}</div>
+              <div className={`text-[10px] ${t.textMuted}`}>{c.ocs || 0} OCs · {fmt(c.n)} líneas{c.ator ? <span className="text-rose-500 font-bold"> · {c.ator} atorados</span> : ''}</div>
               <div className="h-1 rounded-full mt-1.5" style={{ background: isDark ? '#ffffff14' : '#eef1f6' }}><div className="h-1 rounded-full" style={{ width: `${(c.pzs / totPipe) * 100}%`, background: b.c }} /></div>
             </button>
           ); })}
@@ -454,6 +497,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
           <button onClick={() => setShowCfg((v) => !v)} className={`ml-auto px-2.5 py-1.5 rounded-lg text-[11px] font-bold border flex items-center gap-1 ${t.cardInner}`}><Settings size={12} /> Días para atorado</button>
           {showCfg && (
             <div className={`w-full flex flex-wrap gap-3 pt-2 border-t ${isDark ? 'border-white/10' : 'border-gray-200'}`}>
+              <p className={`w-full text-[10px] ${t.textMuted}`}>Atorado = lleva más días que el umbral en su etapa actual, contando desde su último registro. <b>Con proveedor</b> es distinto: solo cuenta si ya pasó la fecha compromiso (el número son días de tolerancia), así una OC para enero no sale como atorada hoy.</p>
               {Object.keys(DEF_UMBRAL).map((k) => (
                 <label key={k} className={`text-[11px] flex items-center gap-1.5 ${t.textMuted}`}>{SL[k]}
                   <input type="number" min="0" value={cfg.umbral[k] ?? ''} onChange={(e) => setCfg((c) => ({ ...c, umbral: { ...c.umbral, [k]: Math.max(0, Number(e.target.value)) } }))} className={`${inCls} w-14 text-center`} />
@@ -491,13 +535,6 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
             {Object.entries(TIPOS).map(([k, v]) => <button key={k} onClick={() => setFTipo(fTipo === k ? '' : k)} className={`flex items-center gap-2 text-[11px] font-bold py-0.5 ${fTipo && fTipo !== k ? 'opacity-40' : ''} ${t.text}`}><span className="w-5 h-1 rounded-full" style={{ background: v.c }} />{v.l} <span className={t.textMuted}>{units.filter((u) => u.tipo === k && u.etapa !== 'RECIBIDO').length}</span></button>)}
             <div className={`flex items-center gap-2 text-[11px] font-bold py-0.5 ${t.text}`}><span className="w-5 h-1 rounded-full bg-violet-500" />PLAN → tiendas</div>
           </div>
-          {/* Selector de sitio */}
-          <div className={`absolute top-3 flex items-center gap-2 rounded-xl border pl-2 pr-1 py-1 shadow-md ${glass} ${sel ? 'right-[444px] max-lg:right-16' : 'right-16'}`}>
-            <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-md ${isDark ? 'bg-violet-600 text-white' : 'bg-blue-600 text-white'}`}>{site === 'RED' ? 'RED' : site}</span>
-            <select value={site} onChange={(e) => camTo(e.target.value)} className={`text-xs font-bold bg-transparent outline-none pr-1 ${t.text}`} style={selStyle}>
-              {Object.entries(SITES).map(([k, v]) => <option key={k} value={k}>{v.l}</option>)}
-            </select>
-          </div>
           {/* Controles */}
           <div className={`absolute top-3 right-3 flex flex-col gap-1 rounded-xl border p-1 shadow-md ${glass} ${sel ? 'lg:right-[394px]' : ''}`}>
             <button onClick={() => setZoomCmd((z) => ({ n: z.n + 1, f: 1.25 }))} className="p-1.5"><ZoomIn size={15} /></button>
@@ -522,7 +559,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
                 </div>
               )}
               {(() => {
-                const ks = sel.stages; const us = units.filter((u) => ks.includes(u.etapa) && (!sel.zona || zonaDe(u) === sel.zona) && (!sel.ciudad || ciudadDe(u) === sel.ciudad));
+                const ks = sel.stages; const us = units.filter((u) => ks.includes(u.etapa) && (!sel.zona || zonaDe(u) === sel.zona) && (!sel.ciudad || ciudadDe(u) === sel.ciudad) && (!sel.tipo || u.tipo === sel.tipo));
                 const c = { n: us.length, pzs: us.reduce((a, u) => a + Math.max(0, u.pzs - u.pzsRec), 0), ator: us.filter((u) => u.atorado).length, maxDias: Math.max(0, ...us.map((u) => u.enEtapa || 0)) };
                 const tp = ks.length === 1 ? tramoProm[ks[0]] : null;
                 return (

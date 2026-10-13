@@ -34,6 +34,17 @@ export const CSV_SCHEMAS = [
     module: 'Pedidos',
     formats: [
       {
+        title: 'Extracto BigQuery PEDIDOS_TRACK (recomendado)',
+        desc: 'Una fila por OC × tienda. FCH_OC = colocada con proveedor; DT_CEDIS = recibida en PLAN (almacén); DT_PLAN = asignada (si es después de recibir pasa a cross dock / in process); DT_SALIDA = sale a tienda (in transit); DT_TIENDA = llegó a tienda. Las piezas por tienda salen de PZS_ASIG. TIPO NACIONAL / IMPORTACION; CENTRO_OC con número de tienda = directo a tienda. COMPROMISO es la fecha del proveedor: "a tiempo" se mide contra la llegada a CEDIS y "atorado con proveedor" solo cuenta si ya pasó. Para ver importación en tránsito o aduana hacen falta fechas de embarque y aduana (aún no vienen en el extracto).',
+        columns: ['OC*', 'TIPO', 'SECCION', 'GOA', 'PROVEEDOR', 'FCH_OC', 'COMPROMISO', 'PZS_PEDIDAS', 'PZS_REC_CEDIS', 'DT_CEDIS*', 'CENTRO_OC', 'TIENDA', 'PZS_ASIG', 'DT_PLAN', 'PZS_SALIDA', 'DT_SALIDA', 'PZS_TIENDA', 'DT_TIENDA', 'ESTATUS'],
+      },
+      {
+        title: 'Zonas de tiendas (opcional, botón "Zonas")',
+        desc: 'Agrupa las tiendas en el mapa. Si no lo cargas se usa la zona de la base de Traslados y, si tampoco hay, bloques por número de tienda.',
+        columns: ['TIENDA (o CENTRO)*', 'ZONA*'],
+        template: [['TIENDA', 'ZONA'], ['0491', 'NORTE']],
+      },
+      {
         title: 'Eventos de pedidos (una fila por evento)',
         desc: 'Cada vez que la OC cambia de etapa o de lugar. ETAPA se reconoce por texto: proveedor / on order, tránsito o embarque, aduana o pedimento, PLAN almacén (CEDIS), cross dock / in process, bodega regional (la ciudad va en UBICACION), fulfillment / e-commerce, foro fotográfico, ruta / in transit, tienda (sin entrada), recibido / entrada / GR. TIPO_PEDIDO: IMP, NAC o DIRECTO (si falta se deduce: con aduana = importación; a tienda sin pasar por PLAN = directo). ZONA agrupa tiendas en el mapa (hasta 6). Fechas AAAA-MM-DD o DD/MM/AAAA con hora opcional. También acepta formato ancho: una fila por OC con FECHA_PROVEEDOR, FECHA_ADUANA, FECHA_PLAN, FECHA_CROSS_DOCK, FECHA_TIENDA, FECHA_RECIBIDO.',
         columns: ['OC*', 'SKU', 'MODELO', 'PROVEEDOR', 'MARCA', 'TIPO_PEDIDO', 'PIEZAS_PEDIDAS', 'PIEZAS_EVENTO', 'ETAPA*', 'UBICACION', 'CENTRO', 'ZONA', 'FECHA_EVENTO*', 'FECHA_OC', 'FECHA_COMPROMISO', 'CONTENEDOR'],
