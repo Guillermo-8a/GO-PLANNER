@@ -7,6 +7,7 @@ import { useState, useEffect, useMemo, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { Upload, Download, Trash2, Settings, AlertTriangle, AlertOctagon, CheckCircle2, Search } from 'lucide-react';
 import ModuleHeader from '../components/ModuleHeader';
+import FilterMenu, { FilterSection } from '../components/FilterMenu';
 
 const LS_KEY = 'gop_allocation_meta';
 const DB_NAME = 'gop_allocation_db';
@@ -394,6 +395,30 @@ export default function ModuleAllocation({ t, isDark, navIcon, navLabel, navDesc
 
   const headerRight = (
     <>
+      {src && (
+        <FilterMenu isDark={isDark} count={(fRule ? 1 : 0) + (fSev !== 'all' ? 1 : 0) + (q ? 1 : 0)} width={560}>
+          <FilterSection label="Buscar" isDark={isDark}>
+            <div className="relative">
+              <Search size={12} className={`absolute left-2 top-1/2 -translate-y-1/2 ${t.textMuted}`} />
+              <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="SKU, tienda, estilo…" className={`pl-6 ${inCls}`} />
+            </div>
+          </FilterSection>
+          <FilterSection label="Severidad" isDark={isDark}>
+            <div className={`flex rounded-lg border p-0.5 ${t.toggle}`}>
+              {[['all', 'Todo'], ['error', 'Errores'], ['warn', 'Advertencias']].map(([k, l]) => (
+                <button key={k} onClick={() => setFSev(k)} className={`px-3 py-1 text-xs rounded-md ${fSev === k ? t.toggleActive : t.textMuted}`}>{l}</button>
+              ))}
+            </div>
+          </FilterSection>
+          <FilterSection label="Regla" isDark={isDark}>
+            <select value={fRule || ''} onChange={(e) => setFRule(e.target.value || null)} className={inCls} style={isDark ? { colorScheme: 'dark' } : undefined}>
+              <option value="">Todas las reglas</option>
+              {Object.entries(RULES).map(([k, r]) => <option key={k} value={k}>{r.label}{counts[k] ? ` (${counts[k]})` : ''}</option>)}
+            </select>
+            {(fRule || fSev !== 'all' || q) && <button onClick={() => { setFRule(null); setFSev('all'); setQ(''); }} className={`px-3 py-1.5 text-xs rounded-lg ${t.btnGhost}`}>✕ Limpiar</button>}
+          </FilterSection>
+        </FilterMenu>
+      )}
       <button onClick={() => fileRef.current?.click()} className={`flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg font-bold ${t.btn}`}><Upload size={14} />Cargar Excel</button>
       <button onClick={exportCorrected} disabled={!pRes} className={`flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg ${t.btnSec} disabled:opacity-40`}><Download size={14} />CSV corregido</button>
       <button onClick={() => setShowCfg((v) => !v)} className={`p-2 rounded-lg border ${t.btnEdit}`} title="Umbrales"><Settings size={14} /></button>
@@ -481,15 +506,6 @@ export default function ModuleAllocation({ t, isDark, navIcon, navLabel, navDesc
 
           <div className={card}>
             <div className="flex items-center gap-2 mb-3 flex-wrap">
-              <div className="relative">
-                <Search size={12} className={`absolute left-2 top-1/2 -translate-y-1/2 ${t.textMuted}`} />
-                <input value={q} onChange={(e) => setQ(e.target.value)} placeholder="SKU, tienda, estilo…" className={`pl-6 ${inCls}`} />
-              </div>
-              <div className={`flex rounded-lg border p-0.5 ${t.toggle}`}>
-                {[['all', 'Todo'], ['error', 'Errores'], ['warn', 'Advertencias']].map(([k, l]) => (
-                  <button key={k} onClick={() => setFSev(k)} className={`px-3 py-1 text-xs rounded-md ${fSev === k ? t.toggleActive : t.textMuted}`}>{l}</button>
-                ))}
-              </div>
               <span className={`text-xs ${t.textMuted}`}>{fmt(shown.length)} hallazgos{fRule ? ` · ${RULES[fRule].label}` : ''}</span>
               <button onClick={() => exportFindings(shown, RULES, `Hallazgos_${tab === 'param' ? 'Param' : 'OC'}.csv`)} disabled={!shown.length} className={`ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg ${t.btnGhost} disabled:opacity-40`}><Download size={12} />Hallazgos</button>
             </div>

@@ -5,6 +5,7 @@ import { jsPDF } from 'jspdf';
 import html2canvas from 'html2canvas';
 import * as XLSX from 'xlsx';
 import * as Icons from '../utils/icons';
+import FilterMenu, { FilterSection } from '../components/FilterMenu';
 import { useGlobal } from '../context/GlobalContext';
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
@@ -1069,7 +1070,7 @@ export default function ModuleEventos(){
             <svg> de Recharts por separado al exportar a PDF, así que un url(#id) que apunta a un <defs>
             en OTRO <svg> (aunque esté en el mismo documento) no resuelve — las barras salían invisibles.
             Se usan colores sólidos (CLASIF_COLOR) en su lugar, que no dependen de nada externo al <svg>. */}
-        <div className={`p-5 rounded-xl border ${t.card}`}>
+        <div className={`relative z-30 p-5 rounded-xl border ${t.card}`}>
           <div className="flex items-start justify-between gap-3 flex-wrap">
             <div>
               <div className="flex items-center gap-2">
@@ -1083,6 +1084,50 @@ export default function ModuleEventos(){
 
             {/* Carga de datos — compacto */}
             <div className="flex items-center gap-1 no-print">
+              {calc && (snapRows.length>0 || salesRows.length>0) && (
+                <FilterMenu isDark={isDark} count={nFiltrosActivos} width={720}>
+                  <FilterSection label="Filtros · aplican a todo el dashboard" isDark={isDark}>
+                    {filtroAbierto && <div className="fixed inset-0 z-10" onClick={()=>setFiltroAbierto(null)}/>}
+                    {FILTRO_DIMS.map(dim=>{
+                      const opts=calc.opcionesDinamicas[dim]||[];
+                      if(opts.length===0) return null;
+                      const n=filtros[dim].length;
+                      const dimLabel=val=>dim==='clasif'?(CLASIF_LABEL[val]||val):val;
+                      const optsF = filtroQuery.trim() ? opts.filter(v=>dimLabel(v).toUpperCase().includes(filtroQuery.trim().toUpperCase())) : opts;
+                      return (
+                        <div key={dim} className="relative">
+                          <button onClick={()=>{ setFiltroAbierto(o=>o===dim?null:dim); setFiltroQuery(''); }}
+                            className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold border ${n>0?t.badge:t.btnGhost}`}>
+                            {FILTRO_LABEL[dim]}{n>0?` (${n})`:''} <Icons.ChevronDown size={11}/>
+                          </button>
+                          {filtroAbierto===dim && (
+                            <div className={`absolute z-20 mt-1 w-56 max-h-72 overflow-y-auto p-2 rounded-lg border shadow-xl ${t.card}`}>
+                              {opts.length>6 && (
+                                <input autoFocus value={filtroQuery} onChange={e=>setFiltroQuery(e.target.value)} placeholder="Buscar..."
+                                  onClick={e=>e.stopPropagation()}
+                                  className={`w-full mb-1.5 px-2 py-1 rounded-md border text-[11px] ${t.input}`}/>
+                              )}
+                              {n>0 && <button onClick={()=>limpiarFiltro(dim)} className={`text-[10px] font-bold mb-1 ${t.textMuted} hover:underline`}>Limpiar</button>}
+                              {optsF.length===0 && <p className={`text-[10px] py-1 ${t.textMuted}`}>Sin resultados</p>}
+                              {optsF.map(val=>(
+                                <label key={val} className={`flex items-center gap-2 py-1 text-[11px] cursor-pointer ${t.textMain}`}>
+                                  <input type="checkbox" checked={filtros[dim].includes(val)} onChange={()=>toggleFiltroValor(dim,val)}/>
+                                  <span className="truncate">{dimLabel(val)}</span>
+                                </label>
+                              ))}
+                            </div>
+                          )}
+                        </div>
+                      );
+                    })}
+                    {nFiltrosActivos>0 && (
+                      <button onClick={limpiarFiltros} className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-bold border ${t.badgeRed}`}>
+                        <Icons.X size={11}/> Limpiar filtros ({nFiltrosActivos})
+                      </button>
+                    )}
+                  </FilterSection>
+                </FilterMenu>
+              )}
               <input ref={snapRef} type="file" accept=".xlsx,.xls,.csv,.txt" className="hidden" onChange={uploadSnapshot}/>
               <button onClick={()=>snapRef.current?.click()} title='Snapshot arranque (xlsx/csv) — si trae la pestaña "Vtas_Evento", las ventas se cargan solas'
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold border ${t.btnGhost}`}>
@@ -1116,48 +1161,6 @@ export default function ModuleEventos(){
                 <button key={k} onClick={()=>setReportTab(k)}
                   className={`px-4 py-2 rounded-lg text-xs font-bold border transition-all ${reportTab===k?t.btnPrimary:t.btnGhost}`}>{lbl}</button>
               ))}
-            </div>
-
-            {/* Filtros — aplican a todo el dashboard (resumen y desglose) */}
-            <div className="flex flex-wrap items-center gap-2 no-print relative">
-              {filtroAbierto && <div className="fixed inset-0 z-10" onClick={()=>setFiltroAbierto(null)}/>}
-              {FILTRO_DIMS.map(dim=>{
-                const opts=calc.opcionesDinamicas[dim]||[];
-                if(opts.length===0) return null;
-                const n=filtros[dim].length;
-                const dimLabel=val=>dim==='clasif'?(CLASIF_LABEL[val]||val):val;
-                const optsF = filtroQuery.trim() ? opts.filter(v=>dimLabel(v).toUpperCase().includes(filtroQuery.trim().toUpperCase())) : opts;
-                return (
-                  <div key={dim} className="relative">
-                    <button onClick={()=>{ setFiltroAbierto(o=>o===dim?null:dim); setFiltroQuery(''); }}
-                      className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold border ${n>0?t.badge:t.btnGhost}`}>
-                      {FILTRO_LABEL[dim]}{n>0?` (${n})`:''} <Icons.ChevronDown size={11}/>
-                    </button>
-                    {filtroAbierto===dim && (
-                      <div className={`absolute z-20 mt-1 w-56 max-h-72 overflow-y-auto p-2 rounded-lg border shadow-xl ${t.card}`}>
-                        {opts.length>6 && (
-                          <input autoFocus value={filtroQuery} onChange={e=>setFiltroQuery(e.target.value)} placeholder="Buscar..."
-                            onClick={e=>e.stopPropagation()}
-                            className={`w-full mb-1.5 px-2 py-1 rounded-md border text-[11px] ${t.input}`}/>
-                        )}
-                        {n>0 && <button onClick={()=>limpiarFiltro(dim)} className={`text-[10px] font-bold mb-1 ${t.textMuted} hover:underline`}>Limpiar</button>}
-                        {optsF.length===0 && <p className={`text-[10px] py-1 ${t.textMuted}`}>Sin resultados</p>}
-                        {optsF.map(val=>(
-                          <label key={val} className={`flex items-center gap-2 py-1 text-[11px] cursor-pointer ${t.textMain}`}>
-                            <input type="checkbox" checked={filtros[dim].includes(val)} onChange={()=>toggleFiltroValor(dim,val)}/>
-                            <span className="truncate">{dimLabel(val)}</span>
-                          </label>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-              {nFiltrosActivos>0 && (
-                <button onClick={limpiarFiltros} className={`flex items-center gap-1 px-3 py-1.5 rounded-lg text-[11px] font-bold border ${t.badgeRed}`}>
-                  <Icons.X size={11}/> Limpiar filtros ({nFiltrosActivos})
-                </button>
-              )}
             </div>
 
             {reportTab==='resumen' && (

@@ -7,6 +7,7 @@ import * as XLSX from 'xlsx';
 import { ResponsiveContainer, ComposedChart, LineChart, Bar, Line, XAxis, YAxis, Tooltip, CartesianGrid, Legend, ReferenceLine } from 'recharts';
 import { Upload, Download, Lock, RotateCcw, Check, AlertCircle, Trash2, Copy } from 'lucide-react';
 import ModuleHeader from '../components/ModuleHeader';
+import FilterMenu, { FilterSection } from '../components/FilterMenu';
 import { SEASONAL_CURVE_MX } from '../utils/fcstEngine';
 
 const LS_KEY = 'gop_suplementarios';
@@ -674,16 +675,6 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
             </div>
           )}
         </div>
-        <label className={`flex items-center gap-1.5 text-xs ${t.textMuted}`}>HIST (real) hasta
-          <select value={corte} onChange={(e) => setSt((s) => ({ ...s, corte: +e.target.value }))} style={selStyle} className={selCls}>
-            {rng(13).map((k) => <option key={k} value={k}>{k ? MONTHS[k - 1] : '—'}</option>)}
-          </select>
-        </label>
-        <label className={`flex items-center gap-1.5 text-xs ${t.textMuted}`}>Ordenar
-          <select value={sortBaj} onChange={(e) => setSt((s) => ({ ...s, sortBaj: e.target.value }))} style={selStyle} className={selCls}>
-            <option value="ly">Venta {cmpLbl}</option><option value="base">Share base</option><option value="plan">Plan</option><option value="az">A–Z</option>
-          </select>
-        </label>
         <button onClick={copyCfgToAll} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg ${t.btnGhost}`} title="Aplica share y estrategia de este ratio a todos"><Copy size={13} />Copiar ajustes a todos</button>
         <button onClick={() => clearLocks()} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg ${t.btnGhost}`}><RotateCcw size={13} />Liberar fijas</button>
       </div>
@@ -805,13 +796,6 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
 
   const AnalisisTab = (
     <div className="space-y-4">
-      <div className="flex items-center gap-2">
-        <span className={`text-xs ${t.textMuted}`}>{dim}:</span>
-        <select value={ent} onChange={(e) => setEnt(e.target.value)} style={selStyle} className={selCls}>
-          <option value="__total">Total OTB</option>
-          {[...activos].sort((a, b) => sum(byEnt[b.name].plan.vta) - sum(byEnt[a.name].plan.vta)).map((e) => <option key={e.name} value={e.name}>{e.name}</option>)}
-        </select>
-      </div>
       <div className="grid lg:grid-cols-2 gap-4">
         <div className={card}>
           <p className={`text-xs font-bold mb-2 ${t.text}`}>Venta LLY · LY (Real + IS) vs Plan · Inv inicial plan</p>
@@ -935,9 +919,33 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
     </div>
   );
 
+  // Filtros y vista en el menú del header
+  const filtroMenu = entities.length > 0 && (
+    <FilterMenu isDark={isDark} count={ent !== '__total' ? 1 : 0} width={520}>
+      <FilterSection label={`${dim} (Análisis)`} isDark={isDark}>
+        <select value={ent} onChange={(e) => setEnt(e.target.value)} style={selStyle} className={selCls}>
+          <option value="__total">Total OTB</option>
+          {[...activos].sort((a, b) => sum(byEnt[b.name].plan.vta) - sum(byEnt[a.name].plan.vta)).map((e) => <option key={e.name} value={e.name}>{e.name}</option>)}
+        </select>
+      </FilterSection>
+      <FilterSection label="Bajada" isDark={isDark}>
+        <label className={`flex items-center gap-1.5 text-xs ${t.textMuted}`}>HIST (real) hasta
+          <select value={corte} onChange={(e) => setSt((s) => ({ ...s, corte: +e.target.value }))} style={selStyle} className={selCls}>
+            {rng(13).map((k) => <option key={k} value={k}>{k ? MONTHS[k - 1] : '—'}</option>)}
+          </select>
+        </label>
+        <label className={`flex items-center gap-1.5 text-xs ${t.textMuted}`}>Ordenar
+          <select value={sortBaj} onChange={(e) => setSt((s) => ({ ...s, sortBaj: e.target.value }))} style={selStyle} className={selCls}>
+            <option value="ly">Venta {cmpLbl}</option><option value="base">Share base</option><option value="plan">Plan</option><option value="az">A–Z</option>
+          </select>
+        </label>
+      </FilterSection>
+    </FilterMenu>
+  );
+
   return (
     <div className="p-4 md:p-8 space-y-4">
-      <ModuleHeader Icon={navIcon} label={navLabel} desc={navDesc} t={t} isDark={isDark} right={headerRight} />
+      <ModuleHeader Icon={navIcon} label={navLabel} desc={navDesc} t={t} isDark={isDark} right={<>{filtroMenu}{headerRight}</>} />
       {exportOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 backdrop-blur-sm p-4" onClick={() => setExportOpen(false)}>
           <div className={`w-full max-w-lg rounded-2xl border p-5 space-y-3 ${isDark ? 'bg-[#1c1720] border-white/10' : 'bg-white border-gray-200'}`} onClick={(e) => e.stopPropagation()}>

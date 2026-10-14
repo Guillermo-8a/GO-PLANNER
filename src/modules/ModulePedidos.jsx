@@ -4,8 +4,9 @@
 // Tres tipos de pedido con ruta propia: importación, nacional y directo a tienda.
 // Entrada: CSV con una fila por evento (OC, SKU, ETAPA, FECHA_EVENTO…) o fechas por etapa en columnas.
 import { createElement, useState, useEffect, useMemo, useRef } from 'react';
-import { Upload, Download, Trash2, Search, Filter, AlertTriangle, Truck, Package, Clock, CheckCircle2, ZoomIn, ZoomOut, RotateCcw, Play, Pause, Settings, X, Store, Wand2, Warehouse as WhIcon, Camera, ShoppingBag, Factory, Activity } from 'lucide-react';
+import { Upload, Download, Trash2, Search, AlertTriangle, Truck, Package, Clock, CheckCircle2, ZoomIn, ZoomOut, RotateCcw, Play, Pause, Settings, X, Store, Wand2, Warehouse as WhIcon, Camera, ShoppingBag, Factory, Activity } from 'lucide-react';
 import { lazy, Suspense } from 'react';
+import FilterMenu, { FilterSection } from '../components/FilterMenu';
 import { siteOfKey } from './pedidos/layout';
 const Scene3D = lazy(() => import('./pedidos/Scene3D'));
 
@@ -306,9 +307,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
   const [sel, setSel] = useState(null); // { key, stages:[...], titulo, zona?, ciudad? }
   const [selUnit, setSelUnit] = useState(null);
   const [selTienda, setSelTienda] = useState('');
-  const [showCfg, setShowCfg] = useState(false); const [showFil, setShowFil] = useState(false); const hdrRef = useRef(null);
-  // cerrar el menú de filtros al hacer clic fuera del header
-  useEffect(() => { if (!showFil) return; const f = (e) => { if (!hdrRef.current?.contains(e.target)) setShowFil(false); }; document.addEventListener('mousedown', f); return () => document.removeEventListener('mousedown', f); }, [showFil]);
+  const [showCfg, setShowCfg] = useState(false);
   const [play, setPlay] = useState(() => !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches));
   const [zoomCmd, setZoomCmd] = useState({ n: 0, f: 1 });
   const [feedTab, setFeedTab] = useState('mov');
@@ -509,43 +508,26 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
   const nFil = [q, fSec, fProv, fMarca, fZona, fMes, fTipo, fSolo].filter(Boolean).length;
   const headerRight = (
     <>
-      {ev.length > 0 && <button onClick={() => setShowFil((v) => !v)} className={`px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 border ${showFil ? pill(true) : t.cardInner}`}><Filter size={14} /> Filtros{nFil ? <span className="ml-0.5 px-1.5 rounded-full bg-rose-500 text-white text-[10px]">{nFil}</span> : ''}</button>}
-      {baseAl && <span title="Fecha del registro más reciente de la base. Si tiene más de un día, los días en etapa y los atorados salen inflados." className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border flex items-center gap-1 ${baseDias > 1 ? 'bg-amber-500/15 border-amber-500/50 text-amber-500' : t.cardInner}`}><Clock size={12} /> Base al {fdate(baseAl)} · {baseDias <= 0 ? 'hoy' : baseDias === 1 ? 'ayer' : `hace ${baseDias} días`}</span>}
-      <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden" onChange={onFile} />
-      <button onClick={() => fileRef.current?.click()} className={`px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 ${isDark ? 'bg-violet-600 text-white hover:bg-violet-500' : 'bg-blue-600 text-white hover:bg-blue-500'}`}><Upload size={14} /> Cargar CSV</button>
-      <button onClick={() => { setEv(demoEventos()); setAviso(''); abrir(null); }} className={`px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 border ${t.cardInner}`}><Wand2 size={14} /> Datos de prueba</button>
-      {ev.length > 0 && <button onClick={exportar} className={`px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 border ${t.cardInner}`}><Download size={14} /> Exportar</button>}
-      {ev.length > 0 && <button onClick={() => { setEv([]); abrir(null); }} className={`p-2 rounded-lg border ${t.cardInner}`} title="Borrar datos"><Trash2 size={14} /></button>}
-    </>
-  );
-
-  return (
-    <div className="p-4 md:p-8">
-      {/* Header (mismo formato que Eventos) con filtros en menú flotante */}
-      <div ref={hdrRef} className={`relative z-30 p-5 rounded-2xl border flex items-center justify-between flex-wrap gap-4 mb-4 ${t.card}`}>
-        <div className="flex items-center gap-3">
-          <span className={`p-2 rounded-xl ${isDark ? 'bg-violet-500/20 text-violet-400' : 'bg-violet-50 text-violet-600'}`}>{navIcon ? createElement(navIcon, { size: 22 }) : <Truck size={22} />}</span>
-          <div><h1 className={`text-2xl font-black tracking-tight leading-none ${t.text}`}>{navLabel || 'Pedidos'}</h1><p className={`text-xs mt-1 ${t.textMuted}`}>{navDesc || 'Rastreador de OCs: dónde está la mercancía'}</p></div>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">{headerRight}</div>
-        {showFil && ev.length > 0 && (<>
-          <div className={`absolute right-5 top-full mt-2 z-40 w-[min(860px,calc(100vw-48px))] rounded-2xl border shadow-2xl p-3 flex flex-wrap items-center gap-2 backdrop-blur-md ${isDark ? 'bg-[#1a1520]/90 border-white/10' : 'bg-white/90 border-gray-200'}`}>
-
-          <div className="relative"><Search size={13} className={`absolute left-2 top-2 ${t.textMuted}`} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="OC, SKU, centro, contenedor…" className={`${inCls} pl-7 w-56`} /></div>
-          {[['Sección', fSec, setFSec, opts.seccion], ['Proveedor', fProv, setFProv, opts.prov], ['Marca', fMarca, setFMarca, opts.marca], ['Zona', fZona, setFZona, opts.zona]].map(([l, v, s, o]) => (
-            <select key={l} value={v} onChange={(e) => s(e.target.value)} className={inCls} style={selStyle}><option value="">{l}: todas</option>{o.map((x) => <option key={x} value={x}>{x}</option>)}</select>
-          ))}
-          <select value={fMes} onChange={(e) => setFMes(e.target.value)} className={inCls} style={selStyle} title="Mes de la fecha compromiso del proveedor"><option value="">Mes de recepción: todos</option>{opts.mes.map((m) => <option key={m} value={m}>{m === 'SIN' ? 'Sin compromiso' : new Date(`${m}-15`).toLocaleDateString('es-MX', { month: 'long', year: 'numeric' })}</option>)}</select>
-          <div className="flex gap-1 flex-wrap">
+      {ev.length > 0 && (
+        <FilterMenu isDark={isDark} count={nFil} width={860}>
+          <FilterSection label="Buscar y filtrar" isDark={isDark}>
+            <div className="relative"><Search size={13} className={`absolute left-2 top-2 ${t.textMuted}`} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="OC, SKU, centro, contenedor…" className={`${inCls} pl-7 w-56`} /></div>
+            {[['Sección', fSec, setFSec, opts.seccion], ['Proveedor', fProv, setFProv, opts.prov], ['Marca', fMarca, setFMarca, opts.marca], ['Zona', fZona, setFZona, opts.zona]].map(([l, v, s, o]) => (
+              <select key={l} value={v} onChange={(e) => s(e.target.value)} className={inCls} style={selStyle}><option value="">{l}: todas</option>{o.map((x) => <option key={x} value={x}>{x}</option>)}</select>
+            ))}
+            <select value={fMes} onChange={(e) => setFMes(e.target.value)} className={inCls} style={selStyle} title="Mes de la fecha compromiso del proveedor"><option value="">Mes de recepción: todos</option>{opts.mes.map((m) => <option key={m} value={m}>{m === 'SIN' ? 'Sin compromiso' : new Date(`${m}-15`).toLocaleDateString('es-MX', { month: 'long', year: 'numeric' })}</option>)}</select>
+          </FilterSection>
+          <FilterSection label="Ruta" isDark={isDark}>
             <button onClick={() => setFTipo('')} className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border ${pill(!fTipo)}`}>Todas las rutas</button>
             {Object.entries(TIPOS).map(([k, v]) => <button key={k} onClick={() => setFTipo(fTipo === k ? '' : k)} className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border flex items-center gap-1.5 ${pill(fTipo === k)}`}><span className="w-2 h-2 rounded-full" style={{ background: v.c }} />{v.l}</button>)}
-          </div>
-          <div className="flex gap-1">
+          </FilterSection>
+          <FilterSection label="Estado" isDark={isDark}>
             {[['', 'Todos'], ['activo', 'En camino'], ['atorado', 'Atorados'], ['vencido', 'Vencidos']].map(([k, l]) => <button key={k} onClick={() => setFSolo(k)} className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border ${pill(fSolo === k)}`}>{l}</button>)}
-          </div>
-          <button onClick={() => setShowCfg((v) => !v)} className={`ml-auto px-2.5 py-1.5 rounded-lg text-[11px] font-bold border flex items-center gap-1 ${t.cardInner}`}><Settings size={12} /> Días para atorado</button>
+            {nFil > 0 && <button onClick={() => { setQ(''); setFSec(''); setFProv(''); setFMarca(''); setFZona(''); setFMes(''); setFTipo(''); setFSolo(''); }} className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border ${t.cardInner}`}>✕ Limpiar</button>}
+            <button onClick={() => setShowCfg((v) => !v)} className={`ml-auto px-2.5 py-1.5 rounded-lg text-[11px] font-bold border flex items-center gap-1 ${showCfg ? pill(true) : t.cardInner}`}><Settings size={12} /> Días para atorado</button>
+          </FilterSection>
           {showCfg && (
-            <div className={`w-full flex flex-wrap gap-3 pt-2 border-t ${isDark ? 'border-white/10' : 'border-gray-200'}`}>
+            <div className={`flex flex-wrap gap-3 pt-2 border-t ${isDark ? 'border-white/10' : 'border-gray-200'}`}>
               <p className={`w-full text-[10px] ${t.textMuted}`}>Atorado = lleva más días que el umbral en su etapa actual, contando desde su último registro. <b>Con proveedor</b> es distinto: solo cuenta si ya pasó la fecha compromiso (el número son días de tolerancia), así una OC para enero no sale como atorada hoy.</p>
               {Object.keys(DEF_UMBRAL).map((k) => (
                 <label key={k} className={`text-[11px] flex items-center gap-1.5 ${t.textMuted}`}>{SL[k]}
@@ -559,9 +541,26 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
               </label>
             </div>
           )}
-            {nFil > 0 && <button onClick={() => { setQ(''); setFSec(''); setFProv(''); setFMarca(''); setFZona(''); setFMes(''); setFTipo(''); setFSolo(''); }} className="text-[11px] font-bold text-rose-500 underline">Limpiar filtros</button>}
-          </div>
-        </>)}
+        </FilterMenu>
+      )}
+      {baseAl && <span title="Fecha del registro más reciente de la base. Si tiene más de un día, los días en etapa y los atorados salen inflados." className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border flex items-center gap-1 ${baseDias > 1 ? 'bg-amber-500/15 border-amber-500/50 text-amber-500' : t.cardInner}`}><Clock size={12} /> Base al {fdate(baseAl)} · {baseDias <= 0 ? 'hoy' : baseDias === 1 ? 'ayer' : `hace ${baseDias} días`}</span>}
+      <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden" onChange={onFile} />
+      <button onClick={() => fileRef.current?.click()} className={`px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 ${isDark ? 'bg-violet-600 text-white hover:bg-violet-500' : 'bg-blue-600 text-white hover:bg-blue-500'}`}><Upload size={14} /> Cargar CSV</button>
+      <button onClick={() => { setEv(demoEventos()); setAviso(''); abrir(null); }} className={`px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 border ${t.cardInner}`}><Wand2 size={14} /> Datos de prueba</button>
+      {ev.length > 0 && <button onClick={exportar} className={`px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 border ${t.cardInner}`}><Download size={14} /> Exportar</button>}
+      {ev.length > 0 && <button onClick={() => { setEv([]); abrir(null); }} className={`p-2 rounded-lg border ${t.cardInner}`} title="Borrar datos"><Trash2 size={14} /></button>}
+    </>
+  );
+
+  return (
+    <div className="p-4 md:p-8">
+      {/* Header (mismo formato que Eventos) con filtros en menú flotante */}
+      <div className={`relative z-30 p-5 rounded-2xl border flex items-center justify-between flex-wrap gap-4 mb-4 ${t.card}`}>
+        <div className="flex items-center gap-3">
+          <span className={`p-2 rounded-xl ${isDark ? 'bg-violet-500/20 text-violet-400' : 'bg-violet-50 text-violet-600'}`}>{navIcon ? createElement(navIcon, { size: 22 }) : <Truck size={22} />}</span>
+          <div><h1 className={`text-2xl font-black tracking-tight leading-none ${t.text}`}>{navLabel || 'Pedidos'}</h1><p className={`text-xs mt-1 ${t.textMuted}`}>{navDesc || 'Rastreador de OCs: dónde está la mercancía'}</p></div>
+        </div>
+        <div className="flex items-center gap-2 flex-wrap">{headerRight}</div>
       </div>
       {aviso && <div className="mb-4 px-4 py-2 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-500 text-xs">{aviso}</div>}
 
