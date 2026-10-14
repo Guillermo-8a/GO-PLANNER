@@ -7,8 +7,12 @@
 import { useState, useRef, useEffect } from 'react';
 import { Filter, ChevronDown } from 'lucide-react';
 
-export default function FilterMenu({ isDark, count = 0, disabled = false, width = 680, label = 'Filtros', children }) {
+const docDark = () => typeof document !== 'undefined' && document.documentElement.classList.contains('dark');
+
+export default function FilterMenu({ isDark: isDarkP, count = 0, disabled = false, width = 680, label = 'Filtros', children }) {
+  const isDark = isDarkP ?? docDark();
   const [open, setOpen] = useState(false);
+  const [left, setLeft] = useState(false); // abre hacia la derecha si el botón está pegado a la izquierda
   const ref = useRef(null);
   useEffect(() => {
     if (!open) return;
@@ -22,11 +26,11 @@ export default function FilterMenu({ isDark, count = 0, disabled = false, width 
     : (isDark ? 'bg-zinc-800 text-gray-300 hover:text-white hover:bg-zinc-700 border-zinc-700' : 'bg-gray-100 text-gray-600 hover:text-gray-900 hover:bg-gray-200 border-gray-200');
   return (
     <div className="relative" ref={ref}>
-      <button type="button" onClick={() => !disabled && setOpen((v) => !v)} disabled={disabled} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all disabled:opacity-40 ${btn}`}>
+      <button type="button" onClick={() => { if (disabled) return; const r = ref.current?.getBoundingClientRect(); if (r) setLeft(r.right - Math.min(window.innerWidth * 0.92, width) < 16); setOpen((v) => !v); }} disabled={disabled} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all disabled:opacity-40 ${btn}`}>
         <Filter size={14} /> {label}{count ? ` (${count})` : ''}<ChevronDown size={12} />
       </button>
       {open && (
-        <div className={`absolute right-0 mt-2 z-40 p-4 rounded-2xl border space-y-3 backdrop-blur-xl text-left ${isDark ? 'bg-[#1c1720] border-white/10 shadow-[0_0_40px_-10px_rgba(139,92,246,0.5)]' : 'bg-white border-gray-200 shadow-2xl'}`} style={{ width: `min(92vw, ${width}px)` }}>
+        <div className={`absolute ${left ? 'left-0' : 'right-0'} mt-2 z-40 p-4 rounded-2xl border space-y-3 backdrop-blur-xl text-left ${isDark ? 'bg-[#1c1720] border-white/10 shadow-[0_0_40px_-10px_rgba(139,92,246,0.5)]' : 'bg-white border-gray-200 shadow-2xl'}`} style={{ width: `min(92vw, ${width}px)` }}>
           {children}
         </div>
       )}
@@ -34,7 +38,7 @@ export default function FilterMenu({ isDark, count = 0, disabled = false, width 
   );
 }
 
-export const FilterSection = ({ label, isDark, children }) => (
+export const FilterSection = ({ label, isDark = docDark(), children }) => (
   <div>
     {label && <div className={`text-[9px] font-black uppercase tracking-widest mb-1 ${isDark ? 'text-gray-400' : 'text-gray-500'}`}>{label}</div>}
     <div className="flex flex-wrap items-center gap-2">{children}</div>

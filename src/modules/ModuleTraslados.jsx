@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react'
 import { seasonalShift } from '../utils/fcstEngine';
 import { useAltTabs } from '../utils/excelNav';
 import * as Icons from '../utils/icons';
+import FilterMenu, { FilterSection } from '../components/FilterMenu';
 import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
@@ -1547,7 +1548,7 @@ export default function Traslados() {
     <div className={`min-h-screen p-4 md:p-6 ${t.appBg} animate-fade-in-up ${isDark ? 'trs-dark' : ''}`}>
 
       {/* ── HEADER ── */}
-      <div className={`p-5 rounded-2xl border mb-6 ${t.card}`}>
+      <div className={`relative z-30 p-5 rounded-2xl border mb-6 ${t.card}`}>
         <div className="flex items-start justify-between flex-wrap gap-4">
           <div>
             <h1 className={`text-2xl font-black tracking-tight flex items-center gap-2 ${t.textMain}`}>
@@ -1561,6 +1562,29 @@ export default function Traslados() {
             </p>
           </div>
           <div className="flex flex-wrap gap-2 items-center">
+            {rawData.length > 0 && (() => {
+              const F = [
+                { label: 'GOA', val: filterGoa, set: setFilterGoa, opts: opcionesGoa },
+                { label: 'SKU', val: filterSku, set: setFilterSku, opts: opcionesSku },
+                { label: 'Marca', val: filterMarca, set: setFilterMarca, opts: opcionesMarca },
+                { label: 'Sección', val: filterSeccion, set: setFilterSeccion, opts: opcionesSeccion },
+                { label: 'Tipo Centro', val: filterTipoCentro, set: setFilterTipoCentro, opts: opcionesTipoCentro },
+                { label: 'Zona', val: filterZona, set: setFilterZona, opts: opcionesZona },
+              ];
+              const n = F.filter((f) => f.val !== 'ALL').length;
+              return (
+                <FilterMenu isDark={isDark} count={n} width={620}>
+                  <FilterSection label="Filtros" isDark={isDark}>
+                    {F.map(({ label, val, set, opts }) => (
+                      <select key={label} value={val} onChange={e => set(e.target.value)} className={`text-xs px-3 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}>
+                        {opts.map(o => <option key={o} value={o}>{o === 'ALL' ? `${label}: Todos` : o}</option>)}
+                      </select>
+                    ))}
+                    {n > 0 && <button onClick={() => F.forEach((f) => f.set('ALL'))} className={`text-xs px-3 py-1.5 rounded-lg border font-bold ${t.btnGhost}`}>✕ Limpiar</button>}
+                  </FilterSection>
+                </FilterMenu>
+              );
+            })()}
             {/* Carga CSV principal */}
             <input ref={csvInputRef} type="file" accept=".csv,.txt" className="hidden" onChange={handleCSVUpload} />
             <button onClick={() => csvInputRef.current?.click()}
@@ -1688,29 +1712,6 @@ export default function Traslados() {
                     {opcionesGoa.filter(g => g !== 'ALL').length === 0 && (
                       <p className={`text-xs ${t.textMuted}`}>Carga el CSV primero para ver los GOAs disponibles.</p>
                     )}
-                  </div>
-
-                  {/* Filtros */}
-                  <div>
-                    <h3 className={`text-[10px] font-black uppercase tracking-widest mb-3 ${t.textMuted}`}>Filtros</h3>
-                    <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-                      {[
-                        { label: 'GOA',         val: filterGoa,        set: setFilterGoa,        opts: opcionesGoa },
-                        { label: 'SKU',         val: filterSku,        set: setFilterSku,        opts: opcionesSku },
-                        { label: 'Marca',       val: filterMarca,      set: setFilterMarca,      opts: opcionesMarca },
-                        { label: 'Sección',     val: filterSeccion,    set: setFilterSeccion,    opts: opcionesSeccion },
-                        { label: 'Tipo Centro', val: filterTipoCentro, set: setFilterTipoCentro, opts: opcionesTipoCentro },
-                        { label: 'Zona',        val: filterZona,       set: setFilterZona,       opts: opcionesZona },
-                      ].map(({ label, val, set, opts }) => (
-                        <div key={label}>
-                          <label className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} block mb-1`}>{label}</label>
-                          <select value={val} onChange={e => set(e.target.value)}
-                            className={`w-full text-xs px-3 py-2 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}>
-                            {opts.map(o => <option key={o} value={o}>{o === 'ALL' ? 'Todos' : o}</option>)}
-                          </select>
-                        </div>
-                      ))}
-                    </div>
                   </div>
 
                   {/* Letras de descuento a excluir */}

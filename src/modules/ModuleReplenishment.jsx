@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import FilterMenu from '../components/FilterMenu';
 import { 
   TrendingUp, Package, ShoppingCart, BarChart2, Box, Database, RefreshCw,
   Search, Calendar, Filter, CheckCircle2, AlertCircle, Upload, Download,
@@ -929,7 +930,7 @@ export default function App() {
         <div className="min-h-screen w-full p-4 md:p-6 transition-colors duration-300 text-gray-900 dark:text-gray-200">
 
             {/* HEADER */}
-            <header className="mb-6 p-5 rounded-2xl border bg-white border-gray-200 dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-colors">
+            <header className="relative z-30 mb-6 p-5 rounded-2xl border bg-white border-gray-200 dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] shadow-sm flex flex-col md:flex-row justify-between items-start md:items-center gap-4 transition-colors">
                 <div className="flex items-center gap-3">
                     <span className="p-2 rounded-xl bg-purple-100 dark:bg-purple-500/20">
                         <RefreshCw size={22} className="text-purple-600 dark:text-purple-400" />
@@ -941,6 +942,75 @@ export default function App() {
                 </div>
 
                 <div className="w-full md:w-auto flex flex-col sm:flex-row items-center gap-3">
+                    {data.length > 0 && (
+                        <FilterMenu count={[filterCentro, filterSeccion, filterMarca, filterGoa, filterModelo, filterNorma, filterSku].filter(Boolean).length} width={760}>
+                            <div className="text-[9px] font-black uppercase tracking-widest text-gray-500 dark:text-gray-400">Filtros</div>
+                            <div className="flex flex-wrap gap-3">
+                        <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
+                            <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1"><Filter className="w-3 h-3"/> Centro</label>
+                            <select value={filterCentro} onChange={(e) => { setFilterCentro(e.target.value); setFilterSeccion(''); setFilterMarca(''); setFilterGoa(''); setFilterModelo(''); setFilterNorma(''); setFilterSku(''); }} className="bg-gray-50 dark:bg-[#1c1720] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
+                                <option value="">Todos</option>
+                                {optionsCentros.map(c => <option key={c} value={c}>{c}</option>)}
+                            </select>
+                        </div>
+                        <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
+                            <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1"><Filter className="w-3 h-3"/> Sección</label>
+                            <select value={filterSeccion} onChange={(e) => { setFilterSeccion(e.target.value); setFilterMarca(''); setFilterGoa(''); setFilterModelo(''); setFilterNorma(''); setFilterSku(''); }} className="bg-gray-50 dark:bg-[#1c1720] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
+                                <option value="">Todas</option>
+                                {optionsSecciones.map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                        </div>
+                        <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
+                            <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1"><Filter className="w-3 h-3"/> Marca/Prov.</label>
+                            <select value={filterMarca} onChange={(e) => { setFilterMarca(e.target.value); setFilterGoa(''); setFilterModelo(''); setFilterNorma(''); setFilterSku(''); }} className="bg-gray-50 dark:bg-[#1c1720] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
+                                <option value="">Todas</option>
+                                {optionsMarcas.map(m => <option key={m} value={m}>{m}</option>)}
+                            </select>
+                        </div>
+                        <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
+                            <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1"><Filter className="w-3 h-3"/> GOA</label>
+                            <select value={filterGoa} onChange={(e) => { setFilterGoa(e.target.value); setFilterModelo(''); setFilterNorma(''); setFilterSku(''); }} className="bg-gray-50 dark:bg-[#1c1720] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
+                                <option value="">Todos</option>
+                                {optionsGoas.map(g => <option key={g} value={g}>{g}</option>)}
+                            </select>
+                        </div>
+                        <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
+                            <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1"><Filter className="w-3 h-3"/> Modelo</label>
+                            <select value={filterModelo} onChange={(e) => { setFilterModelo(e.target.value); setFilterNorma(''); setFilterSku(''); }} className="bg-gray-50 dark:bg-[#1c1720] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
+                                <option value="">Todos</option>
+                                {optionsModelos.map(m => <option key={m} value={m}>{m}</option>)}
+                            </select>
+                        </div>
+                        <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
+                            <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1"><Filter className="w-3 h-3"/> Norma</label>
+                            <select value={filterNorma} onChange={(e) => { setFilterNorma(e.target.value); setFilterSku(''); }} className="bg-gray-50 dark:bg-[#1c1720] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
+                                <option value="">Todas</option>
+                                {optionsNormas.map(n => <option key={n} value={n}>{n}</option>)}
+                            </select>
+                        </div>
+                        <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
+                            <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1"><Search className="w-3 h-3"/> SKU</label>
+                            <select value={filterSku} onChange={(e) => setFilterSku(e.target.value)} className="bg-gray-50 dark:bg-[#1c1720] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
+                                <option value="">Todos</option>
+                                {optionsSkus.map(s => <option key={s} value={s}>{s}</option>)}
+                            </select>
+                        </div>
+                        <div className="flex flex-col gap-1 flex-[2] min-w-[150px]">
+                            <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1" title={`Periodos ${nPer <= 12 ? 'mensuales (1 = Ene … 12 = Dic; 13 = Ene del año siguiente)' : 'semanales (1–52; 53 = S1 del año siguiente)'}`}><Calendar className="w-3 h-3"/> Rango · {rangoTxt}</label>
+                            <div className="flex items-center gap-1">
+                                <div className="flex items-center gap-1 w-full bg-gray-50 dark:bg-white/[0.045] dark:backdrop-blur-xl transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] border border-gray-300 dark:border-[#333] rounded-lg p-1 px-2 transition-colors">
+                                    <span className="text-xs text-gray-500 dark:text-gray-400">De:</span>
+                                    <input type="number" min="1" max={periodEnd} value={periodStart} onChange={(e) => setPeriodStart(Number(e.target.value))} className="bg-transparent border-none text-gray-900 dark:text-white w-8 text-center outline-none font-bold text-xs" />
+                                </div>
+                                <div className="flex items-center gap-1 w-full bg-gray-50 dark:bg-white/[0.045] dark:backdrop-blur-xl transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] border border-gray-300 dark:border-[#333] rounded-lg p-1 px-2 transition-colors">
+                                    <span className="text-xs text-gray-500 dark:text-gray-400">A:</span>
+                                    <input type="number" min={periodStart} max={nPer * 2} value={periodEnd} onChange={(e) => setPeriodEnd(Number(e.target.value))} className="bg-transparent border-none text-gray-900 dark:text-white w-8 text-center outline-none font-bold text-xs" />
+                                </div>
+                            </div>
+                        </div>
+                                                </div>
+                        </FilterMenu>
+                    )}
                     <div className="flex flex-col sm:flex-row items-center gap-3 bg-gray-50 dark:bg-white/[0.045] dark:backdrop-blur-xl transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] p-2 rounded-lg border border-gray-200 dark:border-[#333] transition-colors w-full sm:w-auto">
                         <label className="cursor-pointer flex items-center justify-center gap-2 px-4 py-2 rounded-md font-medium text-sm transition-all bg-purple-600 hover:bg-purple-700 dark:hover:bg-purple-500 text-white w-full sm:w-auto whitespace-nowrap shadow-sm">
                             <Upload className="w-4 h-4" />
@@ -1085,72 +1155,6 @@ export default function App() {
                                 ))}
                             </div>
                         )}
-                    </div>
-
-                    {/* FILTERS */}
-                    <div className="flex flex-wrap gap-3 mb-6 bg-white border border-gray-200 dark:bg-white/[0.045] dark:backdrop-blur-xl dark:border-white/10 transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] shadow-sm dark:shadow-none rounded-xl p-4 transition-colors">
-                        <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
-                            <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1"><Filter className="w-3 h-3"/> Centro</label>
-                            <select value={filterCentro} onChange={(e) => { setFilterCentro(e.target.value); setFilterSeccion(''); setFilterMarca(''); setFilterGoa(''); setFilterModelo(''); setFilterNorma(''); setFilterSku(''); }} className="bg-gray-50 dark:bg-[#1c1720] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
-                                <option value="">Todos</option>
-                                {optionsCentros.map(c => <option key={c} value={c}>{c}</option>)}
-                            </select>
-                        </div>
-                        <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
-                            <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1"><Filter className="w-3 h-3"/> Sección</label>
-                            <select value={filterSeccion} onChange={(e) => { setFilterSeccion(e.target.value); setFilterMarca(''); setFilterGoa(''); setFilterModelo(''); setFilterNorma(''); setFilterSku(''); }} className="bg-gray-50 dark:bg-[#1c1720] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
-                                <option value="">Todas</option>
-                                {optionsSecciones.map(s => <option key={s} value={s}>{s}</option>)}
-                            </select>
-                        </div>
-                        <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
-                            <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1"><Filter className="w-3 h-3"/> Marca/Prov.</label>
-                            <select value={filterMarca} onChange={(e) => { setFilterMarca(e.target.value); setFilterGoa(''); setFilterModelo(''); setFilterNorma(''); setFilterSku(''); }} className="bg-gray-50 dark:bg-[#1c1720] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
-                                <option value="">Todas</option>
-                                {optionsMarcas.map(m => <option key={m} value={m}>{m}</option>)}
-                            </select>
-                        </div>
-                        <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
-                            <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1"><Filter className="w-3 h-3"/> GOA</label>
-                            <select value={filterGoa} onChange={(e) => { setFilterGoa(e.target.value); setFilterModelo(''); setFilterNorma(''); setFilterSku(''); }} className="bg-gray-50 dark:bg-[#1c1720] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
-                                <option value="">Todos</option>
-                                {optionsGoas.map(g => <option key={g} value={g}>{g}</option>)}
-                            </select>
-                        </div>
-                        <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
-                            <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1"><Filter className="w-3 h-3"/> Modelo</label>
-                            <select value={filterModelo} onChange={(e) => { setFilterModelo(e.target.value); setFilterNorma(''); setFilterSku(''); }} className="bg-gray-50 dark:bg-[#1c1720] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
-                                <option value="">Todos</option>
-                                {optionsModelos.map(m => <option key={m} value={m}>{m}</option>)}
-                            </select>
-                        </div>
-                        <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
-                            <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1"><Filter className="w-3 h-3"/> Norma</label>
-                            <select value={filterNorma} onChange={(e) => { setFilterNorma(e.target.value); setFilterSku(''); }} className="bg-gray-50 dark:bg-[#1c1720] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
-                                <option value="">Todas</option>
-                                {optionsNormas.map(n => <option key={n} value={n}>{n}</option>)}
-                            </select>
-                        </div>
-                        <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
-                            <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1"><Search className="w-3 h-3"/> SKU</label>
-                            <select value={filterSku} onChange={(e) => setFilterSku(e.target.value)} className="bg-gray-50 dark:bg-[#1c1720] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
-                                <option value="">Todos</option>
-                                {optionsSkus.map(s => <option key={s} value={s}>{s}</option>)}
-                            </select>
-                        </div>
-                        <div className="flex flex-col gap-1 flex-[2] min-w-[150px]">
-                            <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1" title={`Periodos ${nPer <= 12 ? 'mensuales (1 = Ene … 12 = Dic; 13 = Ene del año siguiente)' : 'semanales (1–52; 53 = S1 del año siguiente)'}`}><Calendar className="w-3 h-3"/> Rango · {rangoTxt}</label>
-                            <div className="flex items-center gap-1">
-                                <div className="flex items-center gap-1 w-full bg-gray-50 dark:bg-white/[0.045] dark:backdrop-blur-xl transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] border border-gray-300 dark:border-[#333] rounded-lg p-1 px-2 transition-colors">
-                                    <span className="text-xs text-gray-500 dark:text-gray-400">De:</span>
-                                    <input type="number" min="1" max={periodEnd} value={periodStart} onChange={(e) => setPeriodStart(Number(e.target.value))} className="bg-transparent border-none text-gray-900 dark:text-white w-8 text-center outline-none font-bold text-xs" />
-                                </div>
-                                <div className="flex items-center gap-1 w-full bg-gray-50 dark:bg-white/[0.045] dark:backdrop-blur-xl transition-all duration-300 dark:hover:border-white/20 dark:hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)] border border-gray-300 dark:border-[#333] rounded-lg p-1 px-2 transition-colors">
-                                    <span className="text-xs text-gray-500 dark:text-gray-400">A:</span>
-                                    <input type="number" min={periodStart} max={nPer * 2} value={periodEnd} onChange={(e) => setPeriodEnd(Number(e.target.value))} className="bg-transparent border-none text-gray-900 dark:text-white w-8 text-center outline-none font-bold text-xs" />
-                                </div>
-                            </div>
-                        </div>
                     </div>
 
                     {/* KPIS */}

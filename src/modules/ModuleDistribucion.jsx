@@ -1,6 +1,7 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useAltTabs } from '../utils/excelNav';
 import * as Icons from '../utils/icons';
+import FilterMenu, { FilterSection } from '../components/FilterMenu';
 import { scoreItems, assignClusters, DEFAULT_SCORE_WEIGHTS, DEFAULT_CLUSTER_STRATEGY } from '../utils/clusterScore';
 import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
@@ -2839,13 +2840,40 @@ useEffect(() => {
     <div className={`min-h-screen w-full flex flex-col font-sans transition-colors duration-300 ${t.appBg}`}>  
       
       {/* HEADER */}
-      <header className={`mx-4 md:mx-6 mt-4 mb-2 p-5 rounded-2xl border flex items-center gap-3 transition-colors ${t.card}`}>
+      <header className={`relative z-30 mx-4 md:mx-6 mt-4 mb-2 p-5 rounded-2xl border flex items-center gap-3 transition-colors ${t.card}`}>
         <span className={`p-2 rounded-xl ${theme === 'dark' ? 'bg-violet-500/20' : 'bg-violet-50'}`}>
           <Icons.MapIcon size={22} className={t.textAccent1} />
         </span>
         <div>
           <h1 className={`text-2xl font-black tracking-tight leading-none ${t.textMain}`}>Distribución</h1>
           <p className={`text-xs mt-1 ${t.textMuted}`}>Surtido a tiendas · Clústeres y distribución por store</p>
+        </div>
+        <div className="ml-auto">
+          {activeTab === 1 && stores.length > 0 && (
+            <FilterMenu isDark={theme === 'dark'} count={(storeNameFilter ? 1 : 0) + (selectedGoaFilter !== 'ALL' ? 1 : 0)} width={520}>
+              <FilterSection label="Base de tiendas" isDark={theme === 'dark'}>
+                <input type="text" placeholder="Buscar tienda…" value={storeNameFilter} onChange={e => setStoreNameFilter(e.target.value)} className={`px-3 py-1.5 rounded-lg border text-xs outline-none w-48 ${t.input}`} />
+                <select value={selectedGoaFilter} onChange={(e) => setSelectedGoaFilter(e.target.value)} className={`px-3 py-1.5 rounded-lg text-xs font-bold border outline-none cursor-pointer max-w-[180px] truncate ${t.input}`}>
+                  <option value="ALL">Todos los GOAs</option>
+                  {goas.map(g => <option key={`filt-${g.id}`} value={g.name.toUpperCase()}>{g.name}</option>)}
+                </select>
+                {(storeNameFilter || selectedGoaFilter !== 'ALL') && <button onClick={() => { setStoreNameFilter(''); setSelectedGoaFilter('ALL'); }} className={`px-3 py-1.5 rounded-lg border text-xs font-bold ${t.input}`}>✕ Limpiar</button>}
+              </FilterSection>
+            </FilterMenu>
+          )}
+          {activeTab === 2 && summaryData.rows.length > 0 && (
+            <FilterMenu isDark={theme === 'dark'} count={summaryFilter ? 1 : 0} width={560}>
+              <FilterSection label="Resumen de combinaciones" isDark={theme === 'dark'}>
+                <input type="text" placeholder="Filtrar por tienda, modelo, GOA, talla…" value={summaryFilter} onChange={e => setSummaryFilter(e.target.value)} className={`px-3 py-1.5 rounded-lg border text-xs outline-none w-64 ${t.input}`} />
+                <select value={summarySortBy} onChange={e => setSummarySortBy(e.target.value)} className={`px-2 py-1.5 rounded border text-xs outline-none ${t.input}`}>
+                  <option value="qty">Ordenar por: Qty</option>
+                  <option value="venta">Ordenar por: Venta anual</option>
+                  <option value="mos">Ordenar por: MOS</option>
+                </select>
+                <button onClick={() => setSummarySortDir(summarySortDir === 'desc' ? 'asc' : 'desc')} className={`px-3 py-1.5 rounded border text-xs font-bold ${t.input}`} title={summarySortDir === 'desc' ? 'Mayor a menor' : 'Menor a mayor'}>{summarySortDir === 'desc' ? '↓' : '↑'}</button>
+              </FilterSection>
+            </FilterMenu>
+          )}
         </div>
       </header>
 
@@ -3577,33 +3605,12 @@ useEffect(() => {
                     <p className={`text-sm mt-1 ${t.textMuted}`}>Los clústeres son otorgados de acuerdo al Score. (0 a 100).</p>
                   </div>
                   <div className="flex flex-wrap gap-2">
-                    <div className={`flex items-center gap-2 px-3 py-1.5 rounded-lg border ${t.cardInner}`}>
-                      <Icons.Filter size={14} className={t.textMuted} />
-                      <input
-                        type="text"
-                        placeholder="Buscar tienda…"
-                        value={storeNameFilter}
-                        onChange={e => setStoreNameFilter(e.target.value)}
-                        className={`bg-transparent outline-none text-xs w-40 ${t.textMain}`}
-                      />
-                      {storeNameFilter && (
-                        <button onClick={() => setStoreNameFilter('')} className="text-gray-400 hover:text-red-500"><Icons.X size={12}/></button>
-                      )}
-                    </div>
                     <div className={`flex rounded-lg p-1 border ${t.cardInner}`}>
                       <button onClick={()=>toggleSort('score')} className={`px-3 py-1.5 text-[10px] font-bold rounded flex items-center transition ${storeSortBy==='score'? (theme==='dark'?'bg-zinc-800 text-yellow-400':'bg-white shadow text-blue-600') : t.textMuted}`}>Score <Icons.Filter size={12} className="ml-1"/></button>
                       <button onClick={()=>toggleSort('sales')} className={`px-3 py-1.5 text-[10px] font-bold rounded flex items-center transition ${storeSortBy==='sales'? (theme==='dark'?'bg-zinc-800 text-yellow-400':'bg-white shadow text-blue-600') : t.textMuted}`}>Vtas <Icons.Filter size={12} className="ml-1"/></button>
                       <button onClick={()=>toggleSort('totalOH')} className={`px-3 py-1.5 text-[10px] font-bold rounded flex items-center transition ${storeSortBy==='totalOH'? (theme==='dark'?'bg-zinc-800 text-yellow-400':'bg-white shadow text-blue-600') : t.textMuted}`}>OH <Icons.Filter size={12} className="ml-1"/></button>
                     </div>
                     
-                    <select 
-                      value={selectedGoaFilter} 
-                      onChange={(e) => setSelectedGoaFilter(e.target.value)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold border outline-none cursor-pointer max-w-[150px] truncate ${t.input}`}
-                    >
-                      <option value="ALL">Todos los GOAs</option>
-                      {goas.map(g => <option key={`filt-${g.id}`} value={g.name.toUpperCase()}>{g.name}</option>)}
-                    </select>
 
                     <button 
                       onClick={downloadClusterMatrix}
@@ -4309,27 +4316,6 @@ useEffect(() => {
                         <Icons.Table size={16} className="mr-2"/> Resumen de Combinaciones
                         <span className={`ml-2 text-[10px] font-mono ${t.textMuted}`}>{summaryFiltered.length} de {summaryData.rows.length}</span>
                       </h4>
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <input
-                          type="text"
-                          placeholder="Filtrar por tienda, modelo, GOA, talla…"
-                          value={summaryFilter}
-                          onChange={e => setSummaryFilter(e.target.value)}
-                          className={`px-3 py-1.5 rounded-lg border text-xs outline-none w-64 ${t.input}`}
-                        />
-                        <select value={summarySortBy} onChange={e => setSummarySortBy(e.target.value)} className={`px-2 py-1.5 rounded border text-xs outline-none ${t.input}`}>
-                          <option value="qty">Ordenar por: Qty</option>
-                          <option value="venta">Ordenar por: Venta anual</option>
-                          <option value="mos">Ordenar por: MOS</option>
-                        </select>
-                        <button
-                          onClick={() => setSummarySortDir(summarySortDir === 'desc' ? 'asc' : 'desc')}
-                          className={`px-3 py-1.5 rounded border text-xs font-bold ${t.input}`}
-                          title={summarySortDir === 'desc' ? 'Mayor a menor' : 'Menor a mayor'}
-                        >
-                          {summarySortDir === 'desc' ? '↓' : '↑'}
-                        </button>
-                      </div>
                     </div>
 
                     <div className={`mb-3 flex flex-wrap gap-3 text-[10px] ${t.textMuted}`}>
