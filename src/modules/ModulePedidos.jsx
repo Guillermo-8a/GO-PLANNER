@@ -168,7 +168,7 @@ function parseEventos(text) {
         if (es === 'IT BI') { ev.push({ ...base, etapa: 'TRANSITO_TDA', fecha: new Date(), pzsEv: 0, itbi: true, pzsPed: numv(v(r, 'PZS PEDIDAS')), valor: numv(v(r, 'PV PEDIDO')) }); return; }
         // 880S = cross dock de PLAN; 895S y demás CEDIS = bodega (almacén); CR = fulfillment
         const etapa = es === 'EMBARCADA' ? 'TRANSITO_INT' : v(r, 'TIPO DESTINO') === 'CR' ? 'FULFILLMENT' : cOc === '1007' ? 'FORO' : cOc === '880S' ? 'CROSSDOCK' : 'ALMACEN';
-        base.inv = true; // inventario, no OC: no cuenta para atorados, lead ni a tiempo
+        base.inv = true; base.sku = [v(r, 'GOA'), v(r, 'MARCA'), v(r, 'SECCION'), v(r, 'DIV')].join(' · '); // inventario, no OC (no cuenta para atorados, lead ni a tiempo); llave única para no fusionar líneas
         add(etapa, 'DT CEDIS', 0, es === 'EMBARCADA' ? cOc : `${CENTROS[cOc] || cOc} · ${es === 'INV ASIGNADO' ? 'con traslado' : 'sin traslado'}`);
         return;
       }
@@ -436,6 +436,18 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
     const seg = BASE_ROUTE[tp].slice(0, -1).flatMap((k) => (k === 'CROSSDOCK' ? ['ALMACEN', 'CROSSDOCK'] : [k])).filter((k) => tr[k]).map((k) => ({ k, v: tr[k].reduce((a, b) => a + b, 0) / tr[k].length }));
     return { tp, seg, total: seg.reduce((a, s) => a + s.v, 0), n: us.length };
   }), [allUnits]);
+  // Inventario en CEDIS (filas INV del extracto): OC = 'ASG|INV 880S 61-90 PROVEEDOR' → con/sin traslado, centro y rango de días desde su entrada
+  const INV_B = ['00-15', '16-30', '31-60', '61-90', '90+', 'SIN'];
+  const invCedis = useMemo(() => {
+    const us = units.filter((u) => u.inv && u.etapa !== 'TRANSITO_INT'); if (!us.length) return null;
+    const rows = {}, viejo = {};
+    us.forEach((u) => {
+      const [pre, cen, b] = u.oc.split(' '), con = pre === 'ASG', k = `${cen}|${con ? 1 : 0}`;
+      const o = (rows[k] = rows[k] || { cen, con, b: {}, tot: 0 }); o.b[b] = (o.b[b] || 0) + u.pzs; o.tot += u.pzs;
+      if (!con && b === '90+') { const kv = `${u.prov}|${u.goa}|${cen}`; viejo[kv] = (viejo[kv] || 0) + u.pzs; }
+    });
+    return { rows: Object.values(rows).sort((a, b) => a.cen.localeCompare(b.cen) || b.con - a.con), viejo: Object.entries(viejo).sort((a, b) => b[1] - a[1]).slice(0, 8) };
+  }, [units]);
   const aging = useMemo(() => {
     const B = [[0, 3], [3, 7], [7, 15], [15, 30], [30, 1e9]];
     return STAGES.filter((s) => s.k !== 'RECIBIDO').map((s) => {
@@ -777,6 +789,31 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
             </div>
           )}
         </div>
+
+        {/* Inventario en CEDIS */}
+        {invCedis && (
+          <div className={`rounded-2xl border p-4 mt-4 ${t.card}`}>
+            <div className={`text-sm font-black ${t.text}`}>Inventario en CEDIS</div>
+            <div className={`text-[11px] mb-3 ${t.textMuted}`}>Piezas guardadas por antigüedad (días desde que entraron). <b>Con traslado</b> = ya asignadas a tiendas, esperando salir · <b>Sin traslado</b> = guardadas sin destino. Sin = sin fecha.</div>
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-4">
+              <div className="xl:col-span-2 overflow-x-auto">
+                <table className="w-full text-[11px]">
+                  <thead><tr className={t.textMuted}><th className="text-left py-1 font-black uppercase text-[9px]">CEDIS</th>{INV_B.map((b) => <th key={b} className="text-right py-1 font-black uppercase text-[9px]">{b === 'SIN' ? 'Sin fecha' : `${b} d`}</th>)}<th className="text-right py-1 font-black uppercase text-[9px]">Total</th></tr></thead>
+                  <tbody>{invCedis.rows.map((r) => (
+                    <tr key={`${r.cen}${r.con}`} className={`border-t ${isDark ? 'border-white/5' : 'border-gray-100'}`}>
+                      <td className={`py-1.5 font-bold ${t.text}`}>{CENTROS[r.cen] || r.cen} <span className={`font-semibold ${r.con ? 'text-violet-500' : 'text-amber-500'}`}>· {r.con ? 'con traslado' : 'sin traslado'}</span></td>
+                      {INV_B.map((b) => { const v = r.b[b] || 0, old = b === '90+' || b === '61-90'; return <td key={b} className={`text-right py-1.5 tabular-nums ${v && old && !r.con ? 'text-rose-500 font-bold' : v ? t.text : t.textMuted}`}>{v ? fmt(v) : '·'}</td>; })}
+                      <td className={`text-right py-1.5 font-black tabular-nums ${t.text}`}>{fmt(r.tot)}</td>
+                    </tr>))}</tbody>
+                </table>
+              </div>
+              <div>
+                <div className={`text-[9px] font-black uppercase tracking-wider mb-1 ${t.textMuted}`}>Lo más viejo sin traslado (90+ días)</div>
+                {invCedis.viejo.length ? invCedis.viejo.map(([k, v]) => { const [prov, goa, cen] = k.split('|'); return <div key={k} className={`flex justify-between gap-2 text-[11px] py-0.5 ${t.text}`}><span className="truncate">{prov} · <span className={t.textMuted}>{goa} · {cen}</span></span><b className="text-rose-500 tabular-nums">{fmt(v)}</b></div>; }) : <div className={`text-[11px] ${t.textMuted}`}>Nada con más de 90 días.</div>}
+              </div>
+            </div>
+          </div>
+        )}
 
         {/* Gráficos */}
         <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 mt-4">
