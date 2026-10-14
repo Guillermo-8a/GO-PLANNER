@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import FilterMenu, { FilterSection } from '../components/FilterMenu';
 import { useAltTabs } from '../utils/excelNav';
 import { Settings, Store, Package, Upload, ArrowUpDown, Sliders, Layers, MoreVertical, Sun, Moon, Info, Map as MapIcon, Database, ShoppingCart, BarChart3, Plus, Trash2, Save, Download, Zap, DollarSign, Target, FileSpreadsheet, Edit3, Lightbulb, CalendarDays, Compass, Activity, Wand2, RefreshCw, ClipboardList, Calculator, ChevronDown, ChevronRight, LayoutList } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -1989,6 +1990,17 @@ export default function App() {
               </div>
             </div>
             
+            <div className="flex items-center gap-2">
+            {activeTab === 'data' && (goas || []).length > 0 && (
+              <FilterMenu isDark={theme === 'dark'} count={filterGoa !== 'ALL' ? 1 : 0} width={360}>
+                <FilterSection label="Base de tiendas" isDark={theme === 'dark'}>
+                  <select value={filterGoa} onChange={(e) => setFilterGoa(e.target.value)} className={`px-3 py-1.5 rounded-lg border text-xs font-bold ${t.input}`}>
+                    <option value="ALL">Todos los GOAs</option>
+                    {(goas || []).map(g => <option key={g.id} value={g.name}>{g.name}</option>)}
+                  </select>
+                </FilterSection>
+              </FilterMenu>
+            )}
             <div className="relative">
               <button onClick={() => setIsMenuOpen(!isMenuOpen)} className={`p-2 rounded-lg transition-all focus:outline-none ${t.btnMenu}`} title="Ajustes">
                 <MoreVertical size={20} />
@@ -2008,6 +2020,7 @@ export default function App() {
                   </div>
                 </>
               )}
+            </div>
             </div>
           </div>
           <div className="flex space-x-6 mt-2 overflow-x-auto custom-scrollbar">
@@ -2119,13 +2132,6 @@ export default function App() {
                     </div>
                     <div className="flex flex-wrap gap-2 items-center">
                       
-                      {/* FILTRO POR GOA */}
-                      <div className={`flex rounded-lg p-1 border ${t.cardInner}`}>
-                        <select value={filterGoa} onChange={(e) => setFilterGoa(e.target.value)} className={`bg-transparent outline-none text-[10px] font-bold ${t.textMain} px-2 py-1`}>
-                          <option value="ALL">Todos los GOAs</option>
-                          {(goas || []).map(g => <option key={g.id} value={g.name}>{g.name}</option>)}
-                        </select>
-                      </div>
 
                       <div className={`flex rounded-lg p-1 border ${t.cardInner}`}>
                         <button onClick={()=>toggleSort('score')} className={`px-2 py-1 text-[10px] font-bold rounded flex items-center transition ${storeSortBy==='score'? (theme==='dark'?'bg-zinc-800 text-yellow-400':'bg-white shadow text-blue-600') : t.textMuted}`}>Score <ArrowUpDown size={10} className="ml-1"/></button>

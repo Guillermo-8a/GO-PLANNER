@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useEffect, useCallback, startTransiti
 import { bestForecast } from '../utils/fcstEngine';
 import { useAltTabs } from '../utils/excelNav';
 import * as Icons from '../utils/icons';
+import FilterMenu, { FilterSection } from '../components/FilterMenu';
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
 
@@ -2392,7 +2393,7 @@ export default function Forecast() {
     <div className={`min-h-screen p-4 md:p-6 ${t.appBg} animate-fade-in-up`}>
 
       {/* ── HEADER ── */}
-      <div className={`p-5 rounded-2xl border mb-6 ${t.card}`}>
+      <div className={`relative z-30 p-5 rounded-2xl border mb-6 ${t.card}`}>
         <div className="flex items-start justify-between flex-wrap gap-4">
           <div>
             <h1 className={`text-2xl font-black tracking-tight flex items-center gap-2 ${t.textMain}`}>
@@ -2419,6 +2420,27 @@ export default function Forecast() {
             )}
           </div>
           <div className="flex flex-wrap gap-2 items-center">
+            {centrosLista.length > 0 && (
+              <FilterMenu isDark={isDark} count={(filtroTexto ? 1 : 0) + (filtroTipo !== 'TODOS' ? 1 : 0) + (filtroTipoTda !== 'TODOS' ? 1 : 0)} width={560}>
+                <FilterSection label="Catálogo de centros" isDark={isDark}>
+                  <div className="relative">
+                    <Icons.Search size={13} className={`absolute left-3 top-1/2 -translate-y-1/2 ${t.textMuted}`} />
+                    <input type="text" placeholder="Buscar centro o nombre..." value={filtroTexto} onChange={e => setFiltroTexto(e.target.value)} className={`w-56 text-xs pl-9 pr-3 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`} />
+                  </div>
+                  <select value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)} className={`text-xs px-3 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}>
+                    <option value="TODOS">Todos los tipos</option>
+                    <option value="NORMAL">Normal</option>
+                    <option value="APERTURA">Apertura</option>
+                    <option value="NUEVA">Nueva</option>
+                  </select>
+                  <select value={filtroTipoTda} onChange={e => setFiltroTipoTda(e.target.value)} className={`text-xs px-3 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}>
+                    <option value="TODOS">Todos los Tipo Tda</option>
+                    {tiposTdaUnicos.map(tt => <option key={tt} value={tt}>{tt}</option>)}
+                  </select>
+                  {(filtroTexto || filtroTipo !== 'TODOS' || filtroTipoTda !== 'TODOS') && <button onClick={() => { setFiltroTexto(''); setFiltroTipo('TODOS'); setFiltroTipoTda('TODOS'); }} className={`text-xs px-3 py-1.5 rounded-lg border font-bold ${t.btnGhost}`}>✕ Limpiar</button>}
+                </FilterSection>
+              </FilterMenu>
+            )}
             <input ref={histInputRef} type="file" accept=".csv,.txt" className="hidden" onChange={handleHistUpload} />
             <input ref={sesionInputRef} type="file" accept=".json" className="hidden" onChange={cargarSesion} />
 
@@ -2560,37 +2582,6 @@ export default function Forecast() {
                       Catálogo de Centros · {centrosListaFiltrada.length} de {centrosLista.length}
                     </h3>
                   </div>
-
-                  {/* Barra de filtros */}
-                  <div className="grid grid-cols-1 md:grid-cols-4 gap-2 mb-3">
-                    <div className="relative md:col-span-2">
-                      <Icons.Search size={13} className={`absolute left-3 top-1/2 -translate-y-1/2 ${t.textMuted}`} />
-                      <input type="text" placeholder="Buscar centro o nombre..." value={filtroTexto}
-                        onChange={e => setFiltroTexto(e.target.value)}
-                        className={`w-full text-xs pl-9 pr-3 py-2 rounded-lg border ${t.input} focus:outline-none focus:ring-1`} />
-                    </div>
-                    <select value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)}
-                      className={`text-xs px-3 py-2 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}>
-                      <option value="TODOS">Todos los tipos</option>
-                      <option value="NORMAL">Normal</option>
-                      <option value="APERTURA">Apertura</option>
-                      <option value="NUEVA">Nueva</option>
-                    </select>
-                    <select value={filtroTipoTda} onChange={e => setFiltroTipoTda(e.target.value)}
-                      className={`text-xs px-3 py-2 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}>
-                      <option value="TODOS">Todos los Tipo Tda</option>
-                      {tiposTdaUnicos.map(tt => <option key={tt} value={tt}>{tt}</option>)}
-                    </select>
-                  </div>
-
-                  {(filtroTexto || filtroTipo !== 'TODOS' || filtroTipoTda !== 'TODOS') && (
-                    <div className="flex items-center gap-2 mb-2">
-                      <button onClick={() => { setFiltroTexto(''); setFiltroTipo('TODOS'); setFiltroTipoTda('TODOS'); }}
-                        className={`text-[10px] font-bold px-2 py-1 rounded ${t.btnGhost}`}>
-                        ✕ Limpiar filtros
-                      </button>
-                    </div>
-                  )}
 
                   <div className="overflow-x-auto max-h-[45vh] custom-scrollbar">
                     <table className="w-full text-left min-w-max">
