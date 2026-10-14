@@ -164,6 +164,8 @@ function parseEventos(text) {
       // Inventario en CEDIS / CR (sin traslado, asignado) y mercancía embarcada: una sola foto fechada en la última entrada
       if (v(r, 'CLASE DOC') === 'INV') {
         const es = v(r, 'ESTATUS');
+        // Tránsito a tienda según BI/SAP (IT_Unidades): solo alimenta la tarjeta "En tránsito a tiendas", no crea unidades
+        if (es === 'IT BI') { ev.push({ ...base, etapa: 'TRANSITO_TDA', fecha: new Date(), pzsEv: 0, itbi: true, pzsPed: numv(v(r, 'PZS PEDIDAS')), valor: numv(v(r, 'PV PEDIDO')) }); return; }
         // 880S = cross dock de PLAN; 895S y demás CEDIS = bodega (almacén); CR = fulfillment
         const etapa = es === 'EMBARCADA' ? 'TRANSITO_INT' : v(r, 'TIPO DESTINO') === 'CR' ? 'FULFILLMENT' : cOc === '1007' ? 'FORO' : cOc === '880S' ? 'CROSSDOCK' : 'ALMACEN';
         base.inv = true; // inventario, no OC: no cuenta para atorados, lead ni a tiempo
@@ -344,7 +346,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
   const tcDe = useMemo(() => { const ks = Object.keys(fx).sort(); return (d) => { if (!d || !ks.length) return null; const k = new Date(d).toISOString().slice(0, 10); let r = null; for (const x of ks) { if (x > k) break; r = fx[x]; } return r ?? fx[ks[0]]; }; }, [fx]);
   const zonaTraslados = useMemo(() => { try { const d = JSON.parse(localStorage.getItem('gop_traslados_exc') || 'null'); const m = {}; (d?.rawData || []).forEach((r) => { if (r.centro && r.zona) m[ctr(r.centro)] = norm(r.zona); }); return m; } catch { return {}; } }, []);
   const allUnits = useMemo(() => {
-    const us = buildUnits(ev, cfg.umbral, hoy);
+    const us = buildUnits(ev.filter((e) => !e.itbi), cfg.umbral, hoy);
     us.forEach((u) => { if (u.eventos[0]?.inv) Object.assign(u, { inv: true, atorado: false, lead: null, aTiempo: null, vencido: false }); if (!u.zona && u.centro) u.zona = zonaTraslados[u.centro] || ''; if (u.valor && u.eventos[0]?.mon === 'USD') { u.valorUSD = u.valor; u.tc = tcDe(u.inicio) || cfg.tc || 18.5; u.valor *= u.tc; } });
     // Sin zona: se agrupan por número de tienda en hasta 6 bloques para que el mapa no quede en un solo edificio
     const sinZ = [...new Set(us.filter((u) => !u.zona && u.centro).map((u) => u.centro))].sort();
@@ -409,6 +411,8 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
     });
     return Object.values(m).sort((a, b) => b.pzsTr - a.pzsTr);
   }, [units]);
+  // Tránsito a tiendas como lo reportan SAP y el OTB (IT_Unidades); si el CSV no lo trae se usa el calculado por movimientos
+  const itBI = useMemo(() => { const xs = ev.filter((e) => e.itbi && (!fProv || e.prov === fProv) && (!fMarca || e.marca === fMarca) && (!fZona || e.zona === fZona) && (!fSec || e.seccion === fSec)); return ev.some((e) => e.itbi) ? { pzs: xs.reduce((a, e) => a + e.pzsPed, 0), val: xs.reduce((a, e) => a + e.valor, 0) } : null; }, [ev, fProv, fMarca, fZona, fSec]);
   const kpi = useMemo(() => {
     const rec = units.filter((u) => u.lead != null);
     const conComp = units.filter((u) => u.aTiempo != null);
@@ -585,7 +589,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
               return [
                 { l: 'Atorados', v: fmt(kpi.ator), s: `${fmt(kpi.pzsAtor)} pzs${kpi.valAtor ? ` · $${fk(kpi.valAtor)}` : ''} · clic para ver`, I: AlertTriangle, bad: kpi.ator > 0, f: 'atorado', c: '#E5484D' },
                 { l: 'Vencen en 7 días', v: fmt(kpi.vencen7), s: kpi.compFuturo ? 'OCs aún sin llegar a CEDIS' : 'la base no trae compromisos futuros', I: Clock, c: '#F59E0B', f: 'activo' },
-                { l: 'En tránsito a tiendas', v: fk(kpi.pzsTransito), s: `pzs${kpi.valTransito ? ` · $${fk(kpi.valTransito)}` : ''}`, I: Truck, c: '#3B82F6', onClick: () => abrir(BUCKET_SEL.TRN) },
+                { l: 'En tránsito a tiendas', v: fk(itBI ? itBI.pzs : kpi.pzsTransito), s: itBI ? `pzs · $${fk(itBI.val)} precio s/IVA` : `pzs${kpi.valTransito ? ` · $${fk(kpi.valTransito)}` : ''}`, I: Truck, c: '#3B82F6', onClick: () => abrir(BUCKET_SEL.TRN) },
                 { l: 'Lead time', v: ld != null ? `${ld.toFixed(0)} d` : '—', s: <>obj. {SEMAFORO.leadObjetivo} d{dl != null && <> · <span style={{ color: dl > 0 ? '#E5484D' : '#22C55E', fontWeight: 700 }}>{dl > 0 ? '▲' : '▼'} {Math.abs(dl).toFixed(1)}</span> vs sem. ant.</>}</>, I: Clock, c: ldC },
                 { l: 'A tiempo', v: ot != null ? `${ot.toFixed(0)}%` : '—', s: `${kpi.vencidos} vencidos hoy`, I: ot != null && ot < SEMAFORO.aTiempo.riesgo ? AlertTriangle : CheckCircle2, f: 'vencido', c: otC, color: otC },
               ];
