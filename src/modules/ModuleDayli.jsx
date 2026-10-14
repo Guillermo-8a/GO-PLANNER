@@ -315,6 +315,9 @@ export default function ModuleDaily(){
   const [dateFrom,setDateFrom]=useState(''); const [dateTo,setDateTo]=useState('');
   const [fCanal,setFCanal]=useState([]),[fDiv,setFDiv]=useState([]),[fSec,setFSec]=useState([]);
   const [fMarca,setFMarca]=useState([]),[fNorma,setFNorma]=useState([]),[fPago,setFPago]=useState([]),[fGoa,setFGoa]=useState([]);
+  // Menú de filtros en el header (se cierra al dar clic fuera)
+  const [showFil,setShowFil]=useState(false); const hdrRef=useRef(null);
+  useEffect(()=>{ if(!showFil) return; const h=e=>{ if(!hdrRef.current?.contains(e.target)) setShowFil(false); }; document.addEventListener('mousedown',h); return ()=>document.removeEventListener('mousedown',h); },[showFil]);
   const [usarPromosFijas,setUsarPromosFijas]=useState(true);
   const [showInv,setShowInv]=useState(true);
   const [fcstOverridePct,setFcstOverridePct]=useState(0);
@@ -667,7 +670,7 @@ export default function ModuleDaily(){
 
   // ── Sub-componentes UI ──
   const FilterBar=()=>(
-    <div className={`flex flex-wrap gap-2 p-3 rounded-xl border items-center ${t.cardInner}`}>
+    <div className="flex flex-wrap gap-2 items-center">
       <div className="flex items-center gap-1">
         <input type="date" value={dateFrom} onChange={e=>setDateFrom(e.target.value)} style={{colorScheme:isDark?'dark':'light'}} className={`text-xs px-2 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}/>
         <span className={`text-xs ${t.textMuted}`}>→</span>
@@ -772,7 +775,7 @@ export default function ModuleDaily(){
   return (
     <div className={`min-h-screen p-4 md:p-6 ${t.appBg} animate-fade-in-up`}>
       {/* HEADER */}
-      <div className={`p-5 rounded-2xl border mb-6 ${t.card}`}>
+      <div ref={hdrRef} className={`relative z-30 p-5 rounded-2xl border mb-6 ${t.card}`}>
         <div className="flex items-start justify-between flex-wrap gap-4">
           <div>
             <h1 className={`text-2xl font-black tracking-tight flex items-center gap-2 ${t.textMain}`}>
@@ -782,6 +785,8 @@ export default function ModuleDaily(){
             <p className={`text-xs mt-1 ml-10 ${t.textMuted}`}>Desempeño diario · Venta, margen e inventario · {tyYear} vs {lyYear}</p>
           </div>
           <div className="flex flex-wrap gap-2 items-center">
+            {hasData&&(()=>{ const n=[fCanal,fDiv,fSec,fGoa,fMarca,fNorma,fPago].filter(a=>a.length).length+(dateFrom||dateTo?1:0);
+              return <button onClick={()=>setShowFil(v=>!v)} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${showFil?t.badge:t.btnGhost}`}><Icons.Filter size={14}/> Filtros{n?<span className="px-1.5 rounded-full bg-rose-500 text-white text-[10px]">{n}</span>:null}</button>; })()}
             <input ref={salesRef} type="file" accept=".csv,.txt" className="hidden" onChange={upload(salesRef,setAllData,parseSalesCSV)}/>
             <button onClick={()=>salesRef.current?.click()} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${t.btnGhost}`}><UpIcon size={14}/> CSV Ventas</button>
             <input ref={invRef} type="file" accept=".csv,.txt" className="hidden" onChange={upload(invRef,setInvData,parseInvCSV)}/>
@@ -796,6 +801,9 @@ export default function ModuleDaily(){
                 className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${t.btnGhost} opacity-40 hover:opacity-100`}><TrashIcon size={14}/></button>)}
           </div>
         </div>
+        {showFil&&hasData&&(
+          <div className={`absolute right-5 top-full mt-2 z-40 w-[min(920px,calc(100vw-48px))] rounded-2xl border shadow-2xl p-3 backdrop-blur-md ${isDark?'bg-[#1a1520]/90 border-white/10':'bg-white/90 border-gray-200'}`}>{FilterBar()}</div>
+        )}
       </div>
 
       {!hasData?(
@@ -804,7 +812,6 @@ export default function ModuleDaily(){
         </div>
       ):(
         <div className="space-y-5">
-          {FilterBar()}
           {KPIStrip()}
           <p className={`text-[10px] -mt-2 ${t.textMuted}`}>
             TY hasta <strong className={t.textAccent1}>{lastTYAll?fmtDate(lastTYAll):'—'}</strong> (último día con data) vs LY topado al mismo día. Así la desv% es justa (no compara año parcial contra año completo).

@@ -4,7 +4,7 @@
 // Tres tipos de pedido con ruta propia: importación, nacional y directo a tienda.
 // Entrada: CSV con una fila por evento (OC, SKU, ETAPA, FECHA_EVENTO…) o fechas por etapa en columnas.
 import { createElement, useState, useEffect, useMemo, useRef } from 'react';
-import { Upload, Download, Trash2, Search, AlertTriangle, Truck, Package, Clock, CheckCircle2, ZoomIn, ZoomOut, RotateCcw, Play, Pause, Settings, X, Store, Wand2, Warehouse as WhIcon, Camera, ShoppingBag, Factory, Activity } from 'lucide-react';
+import { Upload, Download, Trash2, Search, Filter, AlertTriangle, Truck, Package, Clock, CheckCircle2, ZoomIn, ZoomOut, RotateCcw, Play, Pause, Settings, X, Store, Wand2, Warehouse as WhIcon, Camera, ShoppingBag, Factory, Activity } from 'lucide-react';
 import { lazy, Suspense } from 'react';
 import { siteOfKey } from './pedidos/layout';
 const Scene3D = lazy(() => import('./pedidos/Scene3D'));
@@ -509,7 +509,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
   const nFil = [q, fSec, fProv, fMarca, fZona, fMes, fTipo, fSolo].filter(Boolean).length;
   const headerRight = (
     <>
-      {ev.length > 0 && <button onClick={() => setShowFil((v) => !v)} className={`px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 border ${showFil ? pill(true) : t.cardInner}`}><Search size={14} /> Filtros{nFil ? <span className="ml-0.5 px-1.5 rounded-full bg-rose-500 text-white text-[10px]">{nFil}</span> : ''}</button>}
+      {ev.length > 0 && <button onClick={() => setShowFil((v) => !v)} className={`px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 border ${showFil ? pill(true) : t.cardInner}`}><Filter size={14} /> Filtros{nFil ? <span className="ml-0.5 px-1.5 rounded-full bg-rose-500 text-white text-[10px]">{nFil}</span> : ''}</button>}
       {baseAl && <span title="Fecha del registro más reciente de la base. Si tiene más de un día, los días en etapa y los atorados salen inflados." className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border flex items-center gap-1 ${baseDias > 1 ? 'bg-amber-500/15 border-amber-500/50 text-amber-500' : t.cardInner}`}><Clock size={12} /> Base al {fdate(baseAl)} · {baseDias <= 0 ? 'hoy' : baseDias === 1 ? 'ayer' : `hace ${baseDias} días`}</span>}
       <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden" onChange={onFile} />
       <button onClick={() => fileRef.current?.click()} className={`px-3 py-2 rounded-lg text-xs font-bold flex items-center gap-1.5 ${isDark ? 'bg-violet-600 text-white hover:bg-violet-500' : 'bg-blue-600 text-white hover:bg-blue-500'}`}><Upload size={14} /> Cargar CSV</button>
