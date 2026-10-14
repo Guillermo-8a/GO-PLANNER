@@ -34,13 +34,25 @@ const signTex = (text, bg, fg) => canvasTex(`sign:${text}:${bg}:${fg}`, 256, 64,
 const pinTex = (n) => canvasTex(`pin:${n}`, 96, 128, (g) => { g.shadowColor = 'rgba(0,0,0,0.35)'; g.shadowBlur = 8; g.fillStyle = '#E5484D'; g.beginPath(); g.moveTo(48, 122); g.bezierCurveTo(12, 78, 6, 58, 6, 44); g.arc(48, 44, 42, Math.PI, 0); g.bezierCurveTo(90, 58, 84, 78, 48, 122); g.fill(); g.shadowBlur = 0; g.strokeStyle = '#fff'; g.lineWidth = 5; g.stroke(); g.fillStyle = '#fff'; g.beginPath(); g.arc(48, 44, 25, 0, Math.PI * 2); g.fill(); g.fillStyle = '#E5484D'; g.font = '900 30px Inter, system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(n), 48, 46); });
 const flowTex = (color) => canvasTex(`flow:${color}`, 64, 8, (g) => { g.clearRect(0, 0, 64, 8); g.fillStyle = color; g.beginPath(); g.roundRect(4, 1, 24, 6, 3); g.fill(); });
 
+// Halo radial de semáforo (centro suave, borde marcado)
+const haloTex = (color) => canvasTex(`halo:${color}`, 128, 128, (g) => {
+  const grd = g.createRadialGradient(64, 64, 10, 64, 64, 62);
+  grd.addColorStop(0, `${color}88`); grd.addColorStop(0.65, `${color}44`); grd.addColorStop(0.9, `${color}99`); grd.addColorStop(1, `${color}00`);
+  g.fillStyle = grd; g.fillRect(0, 0, 128, 128);
+});
+// Oclusión de contacto: sombra suave bajo edificios para que no "floten"
+const aoTex = () => canvasTex('ao', 64, 64, (g) => { const grd = g.createRadialGradient(32, 32, 8, 32, 32, 32); grd.addColorStop(0, 'rgba(0,0,0,0.38)'); grd.addColorStop(1, 'rgba(0,0,0,0)'); g.fillStyle = grd; g.fillRect(0, 0, 64, 64); });
 const mesh = (geo, m, shadow = true) => { const o = new THREE.Mesh(geo, m); o.castShadow = shadow; o.receiveShadow = true; return o; };
 // Caja con esquina (x, y) de mundo, tamaño w (x) × d (y) × h, sobre z
+const aoPad = (x, y, w, d, z = 0.075) => {
+  const m = new THREE.Mesh(memo(`aoG:${w}:${d}`, () => { const p = new THREE.PlaneGeometry(w + 0.9, d + 0.9); p.rotateX(-Math.PI / 2); return p; }), memo('aoM', () => new THREE.MeshBasicMaterial({ map: aoTex(), transparent: true, depthWrite: false })));
+  m.position.copy(W(x + w / 2, y + d / 2, z)); return m;
+};
 const boxAt = (x, y, z, w, d, h, m, r = 0.05) => { const o = mesh(rbox(w, h, d, r), m); o.position.copy(W(x + w / 2, y + d / 2, z + h / 2)); return o; };
 
 // ── Modelos ──────────────────────────────────────────────────────────────────
 function warehouse(P, { x, y, w, d, h, roof, doors = 3, logo, rh = 0.55, windows = true }) {
-  const g = new THREE.Group();
+  const g = new THREE.Group(); g.add(aoPad(x, y, w, d));
   g.add(boxAt(x, y, 0, w, d, h, mat(P.wall), 0.04));
   g.add(boxAt(x - 0.02, y - 0.02, 0, w + 0.04, d + 0.04, 0.16, mat(roof, { roughness: 0.5 }), 0.02));
   // techo de dos aguas
@@ -79,12 +91,24 @@ function container(color, L = 1.9) {
 }
 function truck(color, cont, dark) {
   const g = new THREE.Group();
-  const trailerM = cont ? new THREE.MeshStandardMaterial({ map: stripes('#2BB3A8', '#22948B', 18), roughness: 0.5, metalness: 0.2 }) : dark ? mat('#B9B4C8', { roughness: 0.7 }) : mat('#FFFFFF', { roughness: 0.35 });
+  const trailerM = cont ? new THREE.MeshStandardMaterial({ map: stripes('#2BB3A8', '#22948B', 18), roughness: 0.45, metalness: 0.25 }) : dark ? mat('#B9B4C8', { roughness: 0.65 }) : mat('#FFFFFF', { roughness: 0.3 });
   const tr = mesh(rbox(1.2, 0.74, 0.64, 0.06), trailerM); tr.position.set(-0.26, 0.6, 0); g.add(tr);
   if (!cont) { const st = mesh(rbox(1.21, 0.13, 0.65, 0.02), mat(color)); st.position.set(-0.26, 0.5, 0); g.add(st); }
+  const aero = mesh(rbox(0.28, 0.14, 0.56, 0.04), mat(color)); aero.position.set(0.52, 0.88, 0); aero.rotation.z = -0.25; g.add(aero); // deflector
   const ch = mesh(rbox(1.78, 0.1, 0.5, 0.02), mat('#2A2733')); ch.position.set(-0.05, 0.2, 0); g.add(ch);
-  const cab = mesh(rbox(0.5, 0.62, 0.62, 0.1), mat(color, dark ? { roughness: 0.6, metalness: 0.1 } : { roughness: 0.35, metalness: 0.2 })); cab.position.set(0.6, 0.53, 0); g.add(cab);
-  const ws = mesh(rbox(0.04, 0.24, 0.52, 0.02), mat('#1E2A44', { roughness: 0.1, metalness: 0.6 }), false); ws.position.set(0.86, 0.66, 0); g.add(ws);
+  const cab = mesh(rbox(0.5, 0.62, 0.62, 0.1), mat(color, dark ? { roughness: 0.5, metalness: 0.15 } : { roughness: 0.3, metalness: 0.25 })); cab.position.set(0.6, 0.53, 0); g.add(cab);
+  const ws = mesh(rbox(0.04, 0.24, 0.52, 0.02), mat('#1E2A44', { roughness: 0.08, metalness: 0.7 }), false); ws.position.set(0.86, 0.66, 0); g.add(ws);
+  const grill = mesh(rbox(0.03, 0.22, 0.36, 0.01), mat('#D1D5DB', { metalness: 0.8, roughness: 0.2 }), false); grill.position.set(0.86, 0.38, 0); g.add(grill);
+  const hlM = mat('#FFFBEB', { emissive: '#FDE68A', emissiveIntensity: dark ? 3.5 : 0.2 }), tlM = mat('#EF4444', { emissive: '#EF4444', emissiveIntensity: dark ? 2.2 : 0.2 });
+  [-0.2, 0.2].forEach((z) => {
+    const hl = mesh(memo('thl', () => new THREE.BoxGeometry(0.03, 0.07, 0.1)), hlM, false); hl.position.set(0.86, 0.34, z); g.add(hl);
+    const tl = mesh(memo('ttl', () => new THREE.BoxGeometry(0.03, 0.06, 0.1)), tlM, false); tl.position.set(-0.86, 0.28, z); g.add(tl);
+  });
+  if (dark) { // haz de los faros sobre el asfalto
+    const beamGeo = memo('tbeam', () => { const sh = new THREE.Shape(); sh.moveTo(0.85, -0.22); sh.lineTo(2.1, -0.65); sh.lineTo(2.1, 0.65); sh.lineTo(0.85, 0.22); sh.closePath(); return new THREE.ShapeGeometry(sh); });
+    const beam = new THREE.Mesh(beamGeo, memo('tbeamM', () => new THREE.MeshBasicMaterial({ color: '#FEF08A', transparent: true, opacity: 0.16, depthWrite: false, side: THREE.DoubleSide })));
+    beam.rotation.x = -Math.PI / 2; beam.position.y = 0.025; g.add(beam);
+  }
   const wg = memo('wheel', () => new THREE.CylinderGeometry(0.15, 0.15, 0.12, 14));
   [[-0.66, 0.29], [-0.66, -0.29], [-0.3, 0.29], [-0.3, -0.29], [0.62, 0.29], [0.62, -0.29]].forEach(([wx, wz]) => { const w = mesh(wg, mat('#16151C', { roughness: 0.9 })); w.rotation.x = Math.PI / 2; w.position.set(wx, 0.15, wz); g.add(w); });
   return g;
@@ -123,11 +147,18 @@ function pallet(alert) {
   const bx = mesh(rbox(0.5, 0.38, 0.5, 0.03), new THREE.MeshStandardMaterial({ map: cartonTex(alert), roughness: 0.85 })); bx.position.y = 0.27; g.add(bx);
   return g;
 }
-function tree(P, s = 1) {
+function tree(P, s = 1, variant = 1) {
   const g = new THREE.Group();
   const tr = mesh(memo('trunk', () => new THREE.CylinderGeometry(0.06, 0.09, 0.5, 8)), mat('#8B6B4A')); tr.position.y = 0.25; g.add(tr);
-  const c1 = mesh(memo('crown', () => new THREE.IcosahedronGeometry(0.42, 1)), mat(P.tree, { flatShading: true, roughness: 0.8 })); c1.position.y = 0.78; g.add(c1);
-  const c2 = mesh(memo('crown2', () => new THREE.IcosahedronGeometry(0.28, 1)), mat(new THREE.Color(P.tree).offsetHSL(0, 0, 0.06).getStyle(), { flatShading: true, roughness: 0.8 })); c2.position.set(0.12, 1.08, 0.05); g.add(c2);
+  const hs = ((variant % 5) - 2) * 0.015;
+  const col1 = new THREE.Color(P.tree).offsetHSL(hs, 0, 0).getStyle(), col2 = new THREE.Color(P.tree).offsetHSL(hs, 0, 0.07).getStyle();
+  if (variant % 3 === 0) { // pino
+    const p1 = mesh(memo('pine1', () => new THREE.ConeGeometry(0.38, 0.75, 7)), mat(col1, { flatShading: true, roughness: 0.8 })); p1.position.y = 0.72;
+    const p2 = mesh(memo('pine2', () => new THREE.ConeGeometry(0.28, 0.6, 7)), mat(col2, { flatShading: true, roughness: 0.8 })); p2.position.y = 1.08; g.add(p1, p2);
+  } else { // frondoso
+    const c1 = mesh(memo('crown', () => new THREE.IcosahedronGeometry(0.42, 1)), mat(col1, { flatShading: true, roughness: 0.8 })); c1.position.y = 0.78;
+    const c2 = mesh(memo('crown2', () => new THREE.IcosahedronGeometry(0.28, 1)), mat(col2, { flatShading: true, roughness: 0.8 })); c2.position.set(0.12, 1.08, 0.05); g.add(c1, c2);
+  }
   g.scale.setScalar(s); return g;
 }
 // Plaza de tiendas de una zona: local principal con letrero + dos locales chicos
@@ -143,7 +174,7 @@ function plaza(P, x, y, name, seed) {
   return g;
 }
 function store(P, x, y, name) {
-  const g = new THREE.Group(), w = 2.4, d = 1.9, h = 1.05;
+  const g = new THREE.Group(), w = 2.4, d = 1.9, h = 1.05; g.add(aoPad(x, y, w, d));
   g.add(boxAt(x, y, 0, w, d, h, mat(P.wall), 0.05));
   g.add(boxAt(x - 0.05, y - 0.05, h, w + 0.1, d + 0.1, 0.2, mat('#E0BB3E', { roughness: 0.4 }), 0.04));
   g.add(boxAt(x + 0.25, y + d - 0.01, 0.02, 0.75, 0.04, 0.6, mat(P.glass, { roughness: 0.1, metalness: 0.5, emissive: P.glass, emissiveIntensity: P === PALETTE.dark ? 0.4 : 0 }), 0.01));
@@ -155,7 +186,7 @@ function store(P, x, y, name) {
   return g;
 }
 function factory(P, n = N.PROV, roofC) {
-  const g = new THREE.Group();
+  const g = new THREE.Group(); g.add(aoPad(n.x, n.y, n.w, n.d));
   g.add(boxAt(n.x, n.y, 0, n.w, n.d, n.h, mat(P === PALETTE.dark ? '#B9B3CC' : '#C9D1DE'), 0.04));
   for (let i = 0; i < 4; i++) {
     const x0 = n.x + i * (n.w / 4), sw = n.w / 4;
@@ -187,10 +218,23 @@ function lighthouse(P) {
   for (let i = 0; i < 4; i++) { const b = mesh(memo(`lh${i}`, () => new THREE.CylinderGeometry(0.3 - i * 0.04 - 0.04, 0.3 - i * 0.04, 0.5, 14)), mat(i % 2 ? '#E5484D' : '#F4F6FB', { roughness: 0.5 })); b.position.y = 0.25 + i * 0.5; g.add(b); }
   const lamp = mesh(memo('lhL', () => new THREE.CylinderGeometry(0.16, 0.16, 0.26, 12)), mat('#FFE9A8', { emissive: '#FFD66B', emissiveIntensity: P === PALETTE.dark ? 3 : 0.5 }), false); lamp.position.y = 2.13; g.add(lamp);
   const cap = mesh(memo('lhC', () => new THREE.ConeGeometry(0.22, 0.25, 12)), mat('#2A2733')); cap.position.y = 2.38; g.add(cap);
+  if (P === PALETTE.dark) { // haz giratorio de noche
+    const coneGeo = memo('lhBeam', () => { const cg = new THREE.ConeGeometry(0.85, 3.8, 16, 1, true); cg.translate(0, -1.9, 0); cg.rotateZ(-Math.PI / 2); return cg; });
+    const beam = new THREE.Mesh(coneGeo, new THREE.MeshBasicMaterial({ color: '#FFE9A8', transparent: true, opacity: 0.14, side: THREE.DoubleSide, depthWrite: false }));
+    beam.position.y = 2.13; beam.name = 'lhBeam'; g.add(beam);
+  }
   return g;
 }
 // Barco centrado en su origen (para girarlo sobre la ruta)
-function shipC() { const g = new THREE.Group(); const s = ship(); s.position.set(-2.2, 0, -0.575); g.add(s); return g; }
+function shipC(wake = true) {
+  const g = new THREE.Group(); const s = ship(); s.position.set(-2.2, 0, -0.575); g.add(s);
+  if (wake) { // estela de espuma en V detrás de la popa
+    const wakeGeo = memo('shipWake', () => { const sh = new THREE.Shape(); sh.moveTo(-2.2, 0); sh.lineTo(-4.0, 0.72); sh.lineTo(-3.6, 0); sh.lineTo(-4.0, -0.72); sh.closePath(); return new THREE.ShapeGeometry(sh); });
+    const w = new THREE.Mesh(wakeGeo, memo('shipWakeM', () => new THREE.MeshBasicMaterial({ color: '#FFFFFF', transparent: true, opacity: 0.42, depthWrite: false, side: THREE.DoubleSide })));
+    w.rotation.x = -Math.PI / 2; w.position.y = 0.04; g.add(w);
+  }
+  return g;
+}
 
 export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey, site, panelOpen, play, onPick, zoomCmd, semaforo }) {
   const host = useRef(null);
@@ -234,9 +278,32 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
 
     // Clic sin arrastre → raycast al objeto con userData.pick
     const ray = new THREE.Raycaster(), ndc = new THREE.Vector2(); let down = null;
+    // Hover: el nodo bajo el cursor se ilumina y sube un poco (máx. un raycast por cuadro)
+    let hovObj = null, moveEv = null;
+    const setHover = (obj, on) => {
+      if (!obj) return;
+      obj.userData.baseY = obj.userData.baseY ?? obj.position.y; obj.position.y = obj.userData.baseY + (on ? 0.08 : 0);
+      obj.traverse((c) => {
+        if (!c.isMesh || !c.material || !('emissive' in c.material)) return;
+        if (on && !c.userData._origMat) { c.userData._origMat = c.material; c.material = c.material.clone(); c.material.emissive = new THREE.Color('#8B6CF6'); c.material.emissiveIntensity = (c.userData._origMat.emissiveIntensity || 0) + 0.28; }
+        else if (!on && c.userData._origMat) { c.material.dispose(); c.material = c.userData._origMat; delete c.userData._origMat; }
+      });
+    };
+    const doHover = () => {
+      const e = moveEv; moveEv = null; if (!e || down) return;
+      const r = renderer.domElement.getBoundingClientRect(); ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
+      ray.setFromCamera(ndc, cam);
+      const hit = ray.intersectObjects([staticG, dynG], true).find((h) => { let o = h.object; while (o && !o.userData.pick) o = o.parent; return o; });
+      let root = hit ? hit.object : null; while (root && !root.userData.pick) root = root.parent;
+      const k = root?.userData?.pick || '';
+      if (root !== hovObj) { setHover(hovObj, false); hovObj = root; setHover(hovObj, true); renderer.domElement.style.cursor = k ? 'pointer' : 'grab'; S.dirty = true; }
+    };
+    const onMove = (e) => { if (!moveEv) requestAnimationFrame(doHover); moveEv = e; };
+    renderer.domElement.addEventListener('pointermove', onMove); renderer.domElement.style.cursor = 'grab';
     const onDown = (e) => { down = [e.clientX, e.clientY]; };
     const onUp = (e) => {
-      if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 5) return;
+      const d0 = down; down = null;
+      if (!d0 || Math.hypot(e.clientX - d0[0], e.clientY - d0[1]) > 5) return;
       const r = renderer.domElement.getBoundingClientRect(); ndc.set(((e.clientX - r.left) / r.width) * 2 - 1, -((e.clientY - r.top) / r.height) * 2 + 1);
       ray.setFromCamera(ndc, cam);
       const hit = ray.intersectObjects([staticG, dynG], true).find((h) => { let o = h.object; while (o && !o.userData.pick) o = o.parent; return o; });
@@ -303,16 +370,26 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     for (let i = 0; i < 10; i++) { const o = boxAt(8.4 + i * 1.05, 2.4, 0.07, 0.05, 1.2, 0.01, mat(P.padLine, { roughness: 0.6 }), 0); o.castShadow = false; G.add(o); }
     { const o = boxAt(8.4, 2.38, 0.07, 10.5, 0.05, 0.01, mat(P.padLine), 0); o.castShadow = false; G.add(o); }
     // agua con oleaje
-    const wg = new THREE.PlaneGeometry(21.2, yBot - 4.4, 48, 36); wg.rotateX(-Math.PI / 2);
-    const water = new THREE.Mesh(wg, new THREE.MeshStandardMaterial({ color: P.water, roughness: 0.6, metalness: 0, envMapIntensity: 0.15, flatShading: true, transparent: true, opacity: 0.96 }));
+    const wg = new THREE.PlaneGeometry(21.2, yBot - 4.4, 56, 42); wg.rotateX(-Math.PI / 2);
+    const water = new THREE.Mesh(wg, new THREE.MeshPhysicalMaterial({ color: P.water, roughness: isDark ? 0.22 : 0.16, metalness: 0.08, clearcoat: 0.85, clearcoatRoughness: 0.2, envMapIntensity: isDark ? 0.9 : 0.65, flatShading: true, transparent: true, opacity: 0.94 }));
     water.position.copy(W(-16 + 10.6, 6.4 + (yBot - 4.4) / 2, 0.16)); water.receiveShadow = true; G.add(water);
+    // espuma que va y viene en la playa y alrededor de la isla
+    const shoreFoam = boxAt(-16, 6.28, 0.175, 12.5, 0.26, 0.015, new THREE.MeshBasicMaterial({ color: '#FFFFFF', transparent: true, opacity: 0.65 }), 0.06); shoreFoam.castShadow = false; shoreFoam.receiveShadow = false;
+    const islFoam = new THREE.Mesh(memo('islFoam', () => new THREE.RingGeometry(1.72, 2.05, 24)), new THREE.MeshBasicMaterial({ color: '#FFFFFF', transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false }));
+    islFoam.rotation.x = -Math.PI / 2; islFoam.position.copy(W(-9.5, 18, 0.175)); G.add(shoreFoam, islFoam);
     const base = wg.attributes.position.array.slice();
-    addAnim((t) => { const a = wg.attributes.position.array; for (let i = 0; i < a.length; i += 3) a[i + 1] = base[i + 1] + Math.sin(base[i] * 0.9 + t * 1.4) * 0.05 + Math.cos(base[i + 2] * 1.1 + t * 1.1) * 0.04; wg.attributes.position.needsUpdate = true; wg.computeVertexNormals(); });
+    addAnim((t) => {
+      const a = wg.attributes.position.array; for (let i = 0; i < a.length; i += 3) a[i + 1] = base[i + 1] + Math.sin(base[i] * 0.85 + t * 1.6) * 0.055 + Math.cos(base[i + 2] * 1.05 + t * 1.2) * 0.045;
+      wg.attributes.position.needsUpdate = true; wg.computeVertexNormals();
+      shoreFoam.position.z = 6.38 + Math.sin(t * 1.6) * 0.08; shoreFoam.material.opacity = 0.4 + (Math.sin(t * 1.6) + 1) * 0.22;
+      const k = 1 + Math.sin(t * 1.8) * 0.04; islFoam.scale.set(k, k, 1); islFoam.material.opacity = 0.35 + (Math.cos(t * 1.8) + 1) * 0.2;
+    });
     { // playa con palmeras, sombrillas y faro
       const sand = boxAt(-16, 5.1, 0, 12.5, 1.6, 0.2, mat(isDark ? '#8A7858' : '#EBD7A6', { roughness: 1 }), 0.1); sand.castShadow = false; G.add(sand);
       [[-15.3, 5.5, 1], [-11.6, 5.3, 0.9], [-8.2, 5.4, 1.1], [-5.2, 5.3, 0.95]].forEach(([x, y, k], i) => { const pm = palm(k); pm.position.copy(W(x, y, 0.2)); pm.rotation.y = i * 1.7; G.add(pm); });
       [[-10.2, 5.9, '#E5484D'], [-7.4, 6.0, '#3B82F6'], [-6.2, 5.8, '#F2B705']].forEach(([x, y, c]) => { const u = umbrella(c); u.position.copy(W(x, y, 0.2)); G.add(u); });
       const lh = lighthouse(P); lh.position.copy(W(-14.6, 5.6, 0.2)); G.add(lh);
+      const lhBeam = lh.getObjectByName('lhBeam'); if (lhBeam) addAnim((t) => { lhBeam.rotation.y = t * 0.7; });
       // muelle del proveedor de importación
       G.add(boxAt(-13.6, 5.4, 0, 1.0, 4.3, 0.34, mat('#A47B4F', { roughness: 0.9 }), 0.03));
       for (let i = 0; i < 4; i++) [[-13.62, 6.2 + i], [-12.68, 6.2 + i]].forEach(([x, y]) => G.add(boxAt(x, y, -0.3, 0.1, 0.1, 0.7, mat('#6B4F33'), 0.02)));
@@ -387,7 +464,14 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     crane.add(boxAt(gx, gy - 1.3, 2.7, 2.76, 1.46, 0.2, mat('#F2B705', { roughness: 0.4, metalness: 0.3 }), 0.03));
     const trolley = boxAt(gx + 0.8, gy - 1.0, 2.3, 0.55, 0.8, 0.38, mat('#3A3A44'), 0.04); crane.add(trolley);
     const spreader = container('#E5484D', 1.2); spreader.scale.set(1, 0.8, 0.8); crane.add(spreader);
-    addAnim((t) => { const f = (Math.sin(t * 0.5) + 1) / 2; trolley.position.x = gx + 0.6 + f * 1.6; spreader.position.set(trolley.position.x, 1.1 + Math.abs(Math.sin(t * 0.5)) * 0.9, trolley.position.z); });
+    const cableGeo = memo('crCable', () => new THREE.CylinderGeometry(0.015, 0.015, 1, 6)), cableMat = mat('#1F2937', { metalness: 0.8 });
+    const cb1 = new THREE.Mesh(cableGeo, cableMat), cb2 = new THREE.Mesh(cableGeo, cableMat); crane.add(cb1, cb2);
+    addAnim((t) => {
+      const f = (Math.sin(t * 0.5) + 1) / 2, tx = gx + 0.6 + f * 1.6, sy = 1.1 + Math.abs(Math.sin(t * 0.5)) * 0.9;
+      trolley.position.x = tx; spreader.position.set(tx, sy, trolley.position.z);
+      const len = Math.max(0.1, 2.3 - (sy + 0.25));
+      [[-0.35, cb1], [0.35, cb2]].forEach(([dx, cb]) => { cb.scale.set(1, len, 1); cb.position.set(tx + dx, 2.3 - len / 2, trolley.position.z); });
+    });
     G.add(crane);
     // racks junto al almacén
     const a = N.ALM;
@@ -405,7 +489,7 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     const fk1 = forklift(true), fk2 = forklift(false); G.add(fk1, fk2);
     addAnim((t) => { const u = (Math.sin(t * 0.8) + 1) / 2; fk1.position.copy(W(a.x + 0.6 + u * 3.2, a.y + a.d + 1.7, 0)); fk1.rotation.y = Math.cos(t * 0.8) > 0 ? 0 : Math.PI; const v = (Math.sin(t * 0.6 + 2) + 1) / 2; fk2.position.copy(W(N.XD.x + 0.4 + v * 2.4, N.XD.y + N.XD.d + 1.75, 0)); fk2.rotation.y = Math.cos(t * 0.6 + 2) > 0 ? 0 : Math.PI; });
     // árboles y autos
-    [[-4, -14], [-3.6, -8], [3.8, -12.5], [4.2, -2.5], [2.8, -1.4], [8, -12.5], [11, -13.4], [15, -12.8], [18.5, -13.4], [9, 7.5], [12, 8.6], [16, 7.2], [18.6, 10.4], [24.6, -4.6], [-4.6, -3], [10.5, 12], [16.8, 20.5], [9, 21], [-14.5, -15], [-7, -15.6], [-14.8, -7], [-7.2, -6.5], [-14.6, -2], [-6.6, 2.6], [-9.5, -8.8], [-12.6, -13.2], [33, -10], [33.2, -3], [33.4, 6], [33.2, 16]].forEach(([x, y], i) => { const tr = tree(P, 0.85 + ((i * 37) % 10) / 22); tr.position.copy(W(x, y, 0.05)); tr.rotation.y = i; G.add(tr); });
+    [[-4, -14], [-3.6, -8], [3.8, -12.5], [4.2, -2.5], [2.8, -1.4], [8, -12.5], [11, -13.4], [15, -12.8], [18.5, -13.4], [9, 7.5], [12, 8.6], [16, 7.2], [18.6, 10.4], [24.6, -4.6], [-4.6, -3], [10.5, 12], [16.8, 20.5], [9, 21], [-14.5, -15], [-7, -15.6], [-14.8, -7], [-7.2, -6.5], [-14.6, -2], [-6.6, 2.6], [-9.5, -8.8], [-12.6, -13.2], [33, -10], [33.2, -3], [33.4, 6], [33.2, 16]].forEach(([x, y], i) => { const tr = tree(P, 0.85 + ((i * 37) % 10) / 22, i); tr.position.copy(W(x, y, 0.05)); tr.rotation.y = i; G.add(tr); });
     // postes de luz a lo largo de los caminos principales
     const bulbM = mat('#FFE9A8', { emissive: '#FFD66B', emissiveIntensity: isDark ? 4 : 0.4 });
     [[5.2, -9], [5.2, -2], [5.2, 3], [10, -4.9], [16, -4.9], [19.7, 0], [19.7, 6], [19.7, 12], [2.5, 5.7], [19.7, -9]].forEach(([lx, ly]) => {
@@ -432,14 +516,15 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     const anim = (f) => S.anim.push(f);
     const label = (key, x, y, z, title, sub, color, n = 1, ator = 0, pzs = 0, grp = '') => {
       const el = document.createElement('div'); const active = selKey === key; const idle = !n;
-      el.style.cssText = `pointer-events:auto;cursor:pointer;background:${active ? (isDark ? 'rgba(58,47,85,0.96)' : 'rgba(238,243,255,0.98)') : P.card};border:1px solid ${active ? color : P.cardB};border-radius:10px;padding:4px 9px;font-family:Inter,system-ui,sans-serif;box-shadow:0 6px 18px rgba(0,0,0,0.18);white-space:nowrap;transform:translateY(-14px);backdrop-filter:blur(6px);opacity:${idle && !active ? (isDark ? 0.72 : 1) : 1};`;
-      const sh = (sub || '').split(' · ')[0];
-      el.innerHTML = `<div style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:800;color:${idle && !isDark ? '#374151' : P.text}"><span style="width:7px;height:7px;border-radius:9px;background:${color}"></span>${title}<span class="sm" style="font-weight:600;color:${P.sub}">${sh}</span></div><div class="lg" style="font-size:9.5px;color:${P.sub};margin-top:1px">${sub || ''}</div>`;
+      const sh = (sub || '').split(' · ')[0], atR = n > 0 ? Math.min(100, Math.round((ator / n) * 100)) : 0, dot = ator > 0 ? '#E5484D' : color;
+      el.style.cssText = `pointer-events:auto;cursor:pointer;background:${active ? (isDark ? 'rgba(48,36,78,0.96)' : 'rgba(238,243,255,0.98)') : P.card};border:1px solid ${active ? color : ator > 0 ? '#E5484D88' : P.cardB};border-radius:11px;padding:5px 10px;font-family:Inter,system-ui,sans-serif;box-shadow:${active ? `0 0 0 2px ${color}55, ` : ''}0 8px 20px rgba(0,0,0,0.24);white-space:nowrap;transform:translateY(-14px);backdrop-filter:blur(8px);opacity:${idle && !active ? (isDark ? 0.68 : 0.9) : 1};`;
+      // nombre + dato corto · detalle · barra de salud (rojo = % de líneas atoradas)
+      el.innerHTML = `<div style="display:flex;align-items:center;gap:6px;font-size:11px;font-weight:800;letter-spacing:-0.01em;color:${idle && !isDark ? '#374151' : P.text};font-variant-numeric:tabular-nums"><span style="width:8px;height:8px;border-radius:9px;background:${dot};box-shadow:0 0 8px ${dot}"></span><span>${title}</span><span class="sm" style="font-weight:700;color:${ator > 0 ? '#F87171' : P.sub};background:${isDark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.05)'};padding:1px 5px;border-radius:5px;font-size:10px">${sh}</span></div><div class="lg" style="font-size:9.5px;color:${P.sub};margin-top:2px;font-variant-numeric:tabular-nums">${sub || ''}</div>${!idle ? `<div style="height:2.5px;width:100%;background:${isDark ? 'rgba(255,255,255,0.08)' : 'rgba(0,0,0,0.08)'};border-radius:2px;margin-top:4px;overflow:hidden"><div style="height:100%;width:${ator > 0 ? Math.max(18, atR) : 100}%;background:${ator > 0 ? '#E5484D' : color}"></div></div>` : ''}`;
       el.onclick = (e) => { e.stopPropagation(); props.current.onPick?.(key); };
       const o = new CSS2DObject(el); o.position.copy(W(x, y, z)); G.add(o);
       const sm = el.querySelector('.sm'), lg = el.querySelector('.lg');
       const setDetail = (d) => {
-        const on = (d || active) && !idle; lg.style.display = on ? 'block' : 'none'; sm.style.display = on || idle ? 'none' : 'inline';
+        const on = (d || active) && !idle; lg.style.display = on ? 'block' : 'none'; sm.style.display = on || idle ? 'none' : 'inline-block';
         // zonas: en vista general solo la etiqueta agrupada 'Tiendas'; con zoom o selección, una por zona
         if (grp === 'zona') o.visible = !!(d || active || selKey.startsWith('Z|')); // CSS2DRenderer controla display según .visible
         if (grp === 'agg') o.visible = !(d || selKey.startsWith('Z|'));
@@ -447,13 +532,19 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
       S.labelEls.push({ setDetail, el, obj: o, pri: active ? 1e9 : idle ? -1 : ator * 1000 + pzs });
     };
     const pin = (n, x, y, z, key) => { if (!n) return; const sp = new THREE.Sprite(new THREE.SpriteMaterial({ map: pinTex(n), depthTest: false })); sp.scale.set(0.62, 0.83, 1); if (key) sp.userData.pick = key; sp.center.set(0.5, 0); sp.renderOrder = 10; G.add(sp); anim((t) => { sp.position.copy(W(x, y, z + 0.15 + Math.abs(Math.sin(t * 2.6 + x)) * 0.35)); }); };
-    const stack = (x0, y0, pzs, alert, cols = 3) => { const n = pzs > 0 ? Math.min(14, Math.max(1, Math.round(Math.log2(pzs / 60 + 1) * 2.4))) : 0; for (let i = 0; i < n; i++) { const c = i % cols, r = Math.floor(i / cols) % 2, l = Math.floor(i / (cols * 2)); const p = pallet(alert); p.position.copy(W(x0 + c * 0.68 + 0.28, y0 + r * 0.68 + 0.28, 0.07 + l * 0.46)); G.add(p); } };
+    // tarimas: se juntan y se dibujan con 3 InstancedMesh (base, caja normal, caja alerta)
+    const palletData = [];
+    const stack = (x0, y0, pzs, alert, cols = 3) => { const n = pzs > 0 ? Math.min(14, Math.max(1, Math.round(Math.log2(pzs / 60 + 1) * 2.4))) : 0; for (let i = 0; i < n; i++) { const c = i % cols, r = Math.floor(i / cols) % 2, l = Math.floor(i / (cols * 2)); palletData.push({ pos: W(x0 + c * 0.68 + 0.28, y0 + r * 0.68 + 0.28, 0.07 + l * 0.46), alert }); } };
     const SM = semaforo?.nodo || { riesgo: 0.05, atorado: 0.2 };
-    const halo = (x, y, w, d, c) => { // anillo en el piso: verde OK · ámbar riesgo · rojo atorado (pulsa)
+    const halo = (x, y, w, d, c) => { // campo radial en el piso: verde OK · ámbar riesgo · rojo atorado (onda expansiva)
       if (!c.n) return; const sh = c.ator / c.n; const col = sh >= SM.atorado ? '#E5484D' : sh >= SM.riesgo ? '#F59E0B' : '#22C55E';
-      const m = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.32, depthWrite: false });
-      const o = new THREE.Mesh(rbox(w + 1.1, 0.02, d + 1.1, 0.4), m); o.position.copy(W(x + w / 2, y + d / 2, 0.09)); o.renderOrder = 2; G.add(o);
-      if (sh >= SM.atorado) anim((t) => { m.opacity = 0.22 + (Math.sin(t * 3.5) + 1) * 0.16; });
+      const m = new THREE.MeshBasicMaterial({ map: haloTex(col), transparent: true, opacity: 0.85, depthWrite: false });
+      const o = new THREE.Mesh(memo(`hplane:${w}:${d}`, () => { const g = new THREE.PlaneGeometry(w + 1.8, d + 1.8); g.rotateX(-Math.PI / 2); return g; }), m);
+      o.position.copy(W(x + w / 2, y + d / 2, 0.085)); o.renderOrder = 2; G.add(o);
+      if (sh >= SM.atorado) {
+        const pulse = new THREE.Mesh(o.geometry, m.clone()); pulse.position.copy(o.position); pulse.renderOrder = 2; G.add(pulse);
+        anim((t) => { const ph = (t * 0.85) % 1; pulse.scale.set(1 + ph * 0.35, 1, 1 + ph * 0.35); pulse.material.opacity = (1 - ph) * 0.65; });
+      }
     };
     const ring = (x, y, w, d) => { const g = new THREE.Group(); const m = new THREE.MeshBasicMaterial({ color: isDark ? '#A78BFA' : '#3B6FE0', transparent: true, opacity: 0.8 }); [[x - 0.25, y - 0.25, w + 0.5, 0.08], [x - 0.25, y + d + 0.17, w + 0.5, 0.08], [x - 0.25, y - 0.25, 0.08, d + 0.5], [x + w + 0.17, y - 0.25, 0.08, d + 0.5]].forEach(([a, b, c, e]) => { const s = new THREE.Mesh(new THREE.BoxGeometry(c, 0.02, e), m); s.position.copy(W(a + c / 2, b + e / 2, 0.1)); g.add(s); }); G.add(g); anim((t) => { m.opacity = 0.45 + Math.sin(t * 4) * 0.35; }); };
 
@@ -495,6 +586,17 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
       const mid = zs[Math.floor((zs.length - 1) / 2)] || { x: 23.2, y: 0 };
       label('ZAGG', mid.x + 1.2, mid.y + 0.95, 2.6, `Tiendas · ${fmtN(tot.ru)} en ruta`, `${zs.length} zonas · ${fk(tot.ti)} pzs sin entrada · ${fmtN(tot.re)} recibidos`, '#F59E0B', tot.n, tot.at, tot.ru, 'agg');
     }
+    if (palletData.length) {
+      const baseIM = new THREE.InstancedMesh(memo('pb', () => new THREE.BoxGeometry(0.56, 0.08, 0.56)), mat('#A47B4F', { roughness: 0.9 }), palletData.length);
+      const okL = palletData.filter((p) => !p.alert), alL = palletData.filter((p) => p.alert), boxGeo = rbox(0.5, 0.38, 0.5, 0.03);
+      const okIM = okL.length ? new THREE.InstancedMesh(boxGeo, memo('mCartOk', () => new THREE.MeshStandardMaterial({ map: cartonTex(false), roughness: 0.85 })), okL.length) : null;
+      const alIM = alL.length ? new THREE.InstancedMesh(boxGeo, memo('mCartAl', () => new THREE.MeshStandardMaterial({ map: cartonTex(true), roughness: 0.85 })), alL.length) : null;
+      const m4 = new THREE.Matrix4();
+      palletData.forEach((p, i) => { m4.makeTranslation(p.pos.x, p.pos.y + 0.04, p.pos.z); baseIM.setMatrixAt(i, m4); });
+      okL.forEach((p, i) => { m4.makeTranslation(p.pos.x, p.pos.y + 0.27, p.pos.z); okIM.setMatrixAt(i, m4); });
+      alL.forEach((p, i) => { m4.makeTranslation(p.pos.x, p.pos.y + 0.27, p.pos.z); alIM.setMatrixAt(i, m4); });
+      [baseIM, okIM, alIM].forEach((im) => { if (im) { im.castShadow = true; im.receiveShadow = true; G.add(im); } });
+    }
     // rutas de color (tubo con flujo animado)
     const route = (path, color, op, vol = 0.3) => {
       const cp = new THREE.CurvePath(); for (let i = 0; i < path.length - 1; i++) cp.add(new THREE.LineCurve3(W(path[i][0], path[i][1], 0.1), W(path[i + 1][0], path[i + 1][1], 0.1)));
@@ -522,7 +624,7 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     };
     const mkT = (it) => tkOp(it.color, it.cont, it.op);
     const nShip = Math.min(3, cT.n);
-    if (!nShip && cPI.n) { const sh = add(shipC(), 'MAR'); anim((t) => { sh.position.copy(W(-10.2, 8.3, 0.2 + Math.sin(t * 1.2) * 0.05)); sh.rotation.z = Math.sin(t) * 0.02; }); } // barco en el muelle del proveedor: importación aún con proveedor
+    if (!nShip && cPI.n) { const sh = add(shipC(false), 'MAR'); anim((t) => { sh.position.copy(W(-10.2, 8.3, 0.2 + Math.sin(t * 1.2) * 0.05)); sh.rotation.z = Math.sin(t) * 0.02; }); } // barco en el muelle del proveedor: importación aún con proveedor
     fleet(many(nShip, { path: paths.SHIP, key: 'MAR' }), 0.35, 5.6, shipC, 0.2);
     fleet(rr([many(Math.min(3, Math.ceil(cnt('PROVEEDOR|NAC').n / 6)), { path: paths.NAC, color: TIPO_C.NAC, op: hl('NAC'), key: 'PROV' }), many(Math.min(3, cnt('ADUANA').n), { path: paths.IMP, color: TIPO_C.IMP, op: hl('IMP'), cont: true, key: 'ADU' })]), 0.5, 2.4, mkT);
     fleet([...(cnt('FORO').n ? [{ path: paths.FORO, color: '#EC4899', op: 1, key: 'FORO' }] : []), ...(cnt('FULFILLMENT').n ? [{ path: paths.FUL, color: '#14B8A6', op: 1, key: 'FUL' }] : [])], 0.5, 2.4, mkT);
