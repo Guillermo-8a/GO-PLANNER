@@ -23,10 +23,11 @@ import ModuleEventos from "./modules/ModuleEventos" ;
 import ModuleSuplementarios from "./modules/ModuleSuplementarios" ;
 import ModuleAllocation from "./modules/ModuleAllocation" ;
 import ModulePedidos from "./modules/ModulePedidos";
+import ModuleNulo from "./modules/ModuleNulo";
 
 import {
   Layers, Bell, Sun, Moon, ShoppingCart, Map, LayoutDashboard,
-  HelpCircle, Wallet, Zap, Search, Mail, Circle, Tag, PieChart, ListChecks, Truck,} from 'lucide-react';
+  HelpCircle, Wallet, Zap, Search, Mail, Circle, Tag, PieChart, ListChecks, Truck, Hourglass,} from 'lucide-react';
 
 // ─── Paletas de tema ──────────────────────────────────────────────────────────
 export const THEMES = {
@@ -118,6 +119,7 @@ const NAV_ITEMS = [
   { id: 'eventos', label: 'Eventos', Icon: Tag, desc: 'Eventos promocionales', dataKey: null },
   { id: 'allocation', label: 'Allocation', Icon: ListChecks, desc: 'Revisión parametrización y OC', dataKey: null },
   { id: 'pedidos', label: 'Pedidos', Icon: Truck, desc: 'Rastreador de OCs: dónde está la mercancía', dataKey: null },
+  { id: 'nulo', label: 'Nulo Movimiento', Icon: Hourglass, desc: 'Mercancía sin venta por SKU × centro', dataKey: null },
 ];
 
 // Módulos que no guardan su data en el estado global (dataKey: null) sino en
@@ -131,6 +133,7 @@ const LOCAL_DATA_KEYS = {
   suplementarios: ['gop_suplementarios'],
   allocation: ['gop_allocation_files'],
   pedidos: ['gop_pedidos_has'],
+  nulo: ['gop_nulo_files'],
 };
 function moduleHasData(m, global) {
   return m.dataKey ? !!global[m.dataKey] : hasLocalData(m.id);
@@ -159,7 +162,7 @@ const NAV_GROUPS = [
   { id: 'financial',  label: 'Financial',        Icon: Calculator,   color: '#B39DDB', items: ['planning', 'suplementarios'] },
   { id: 'demand',     label: 'Demand Planner',   Icon: TrendingUp,   color: '#E0BB3E', items: ['assortment', 'forecast', 'distribucion', 'resurtido'] },
   { id: 'inventory',  label: 'Inventory Control',Icon: Boxes,        color: '#8A73AD', items: ['dispersion', 'traslados', 'chequera'] },
-  { id: 'checkcoo',   label: 'Check Coo',        Icon: CircleCheck,  color: '#9A9CA3', items: ['dayli', 'eventos', 'allocation', 'pedidos'] },
+  { id: 'checkcoo',   label: 'Check Coo',        Icon: CircleCheck,  color: '#9A9CA3', items: ['dayli', 'eventos', 'allocation', 'pedidos', 'nulo'] },
 ];
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
@@ -488,6 +491,7 @@ function Shell() {
       case 'suplementarios': return <ModuleSuplementarios {...moduleProps} />;
       case 'allocation': return <ModuleAllocation {...moduleProps} />;
       case 'pedidos': return <ModulePedidos {...moduleProps} />;
+      case 'nulo': return <ModuleNulo {...moduleProps} />;
       default:             return <Dashboard {...moduleProps} />;
     }
   };

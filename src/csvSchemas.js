@@ -47,6 +47,17 @@ export const CSV_SCHEMAS = [
     ],
   },
   {
+    module: 'Nulo Movimiento',
+    formats: [
+      {
+        title: 'Base SKU × centro (CSV de BigQuery u hoja BASE del Excel Nulo Propuesta)',
+        desc: 'Una fila por SKU × centro con inventario (tiendas y bodegas: centros con S al final o CR / PLAN se marcan como bodega). Nulo = #Meses desde Ult Vta > umbral (3 por default, editable por sección). Si no trae #Meses, se calcula con Mes Ultima Vta (JUL 2026, fecha o AAAA-MM) contra el mes de corte. ">14 meses" / sin venta → cuenta la antigüedad desde Mes 1a Recepción + Año Recepción (o Fecha de Primera Rec semana.año). Se lee por streaming: CSV recomendado para 1M+ filas.',
+        columns: ['# Sección', 'Sección', 'Zona de ventas', 'Centro*', 'Tienda', 'Proveedor', 'Grupo artículos', 'Marca', 'Estatus del Artículo', 'Norma de Aprovisionamiento', 'Letra Actual', 'SKU*', 'Artículo', 'Pzs*', 'Monto*', 'Mes Ultima Vta', '#Meses desde Ult Vta*', 'Mes 1a Recepción', 'Año Recepción', 'Fecha de Primera Rec'],
+        template: [['# Sección', 'Sección', 'Zona de ventas', 'Centro', 'Tienda', 'Proveedor', 'Grupo artículos', 'Marca', 'Estatus del Artículo', 'Norma de Aprovisionamiento', 'Letra Actual', 'SKU', 'Artículo', 'Pzs', 'Monto', 'Mes Ultima Vta', '#Meses desde Ult Vta', 'Mes 1a Recepción', 'Año Recepción'], ['892', 'ZAPATOS NIÑO', 'METRO NORTE', '0529', 'SATELITE', 'ADIDAS DE MEXICO SA DE CV', 'TENIS NIÑO', 'ADIDAS', 'ACTIVO', 'Compra única', 'RG', '5012345678', 'TENIS NIÑO 20', '3', '1499.1', 'ABR 2026', '4', 'Octubre', '2025']],
+      },
+    ],
+  },
+  {
     module: 'Allocation',
     formats: [
       {
