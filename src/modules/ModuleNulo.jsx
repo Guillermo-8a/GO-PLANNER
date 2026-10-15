@@ -67,6 +67,8 @@ const ALIAS = {
   fecUlt: ['FECHA ULTIMA VENTA', 'FECHA ULT VTA', 'FECHA ULTIMA VTA', 'ULTIMA VENTA'],
   mesRec: ['MES 1A RECEPCION', 'MES PRIMERA RECEPCION'],
   anioRec: ['ANO RECEPCION', 'ANIO RECEPCION'],
+  accion: ['ACCION', 'ACCION SUGERIDA'],
+  destinos: ['DESTINOS', 'DESTINOS SUGERIDOS'],
   fecRec: ['FECHA DE PRIMERA REC', 'FECHA PRIMERA RECEPCION', 'FECHA 1A RECEPCION', 'FECHA DE PRIMERA RECEPCION'],
 };
 const mapHeader = (h) => { const n = h.map(norm), c = {}; Object.entries(ALIAS).forEach(([k, al]) => { const i = n.findIndex((x) => al.includes(x)); if (i >= 0) c[k] = i; }); return c; };
@@ -89,7 +91,9 @@ function makeBuilder() {
     const sec = str(r[c.seccion]) || '—';
     if (c.secNum != null && !info.secNum[sec]) info.secNum[sec] = str(r[c.secNum]);
     if (!info.centro[centro]) info.centro[centro] = str(r[c.tienda]) || centro;
-    if (!info.sku[sku]) info.sku[sku] = { desc: str(r[c.desc]), modelo: c.modelo != null ? str(r[c.modelo]) : '', precio: c.precio != null ? num(r[c.precio]) : null };
+    if (!info.sku[sku]) info.sku[sku] = { desc: str(r[c.desc]), modelo: c.modelo != null ? str(r[c.modelo]) : '', precio: c.precio != null ? num(r[c.precio]) : null, acc: {} };
+    // Acción sugerida (por modelo) y destinos de traslado: vienen del extracto BigQuery, solo en filas en nulo
+    if (c.accion != null && str(r[c.accion])) info.sku[sku].acc[centro] = [str(r[c.accion]), c.destinos != null ? str(r[c.destinos]) : ''];
     A.sec.push(enc('sec', sec)); A.zona.push(enc('zona', str(r[c.zona]) || (isBodega(centro, info.centro[centro]) ? 'BODEGAS' : '—'))); A.centro.push(enc('centro', centro));
     A.prov.push(enc('prov', str(r[c.prov]) || '—')); A.goa.push(enc('goa', str(r[c.goa]) || '—')); A.marca.push(enc('marca', str(r[c.marca]) || '—'));
     A.estatus.push(enc('estatus', str(r[c.estatus]) || 'Sin asignar')); A.norma.push(enc('norma', str(r[c.norma]) || 'Sin asignar')); A.letra.push(enc('letra', str(r[c.letra]) || '—'));
@@ -346,12 +350,12 @@ export default function ModuleNulo({ t, isDark, navIcon, navLabel, navDesc }) {
 
   const DET_COLS = [
     ['sec', 'Sección'], ['zona', 'Zona'], ['centro', 'Centro'], [null, 'Tienda / bodega'], [null, 'Tipo'], [null, 'Proveedor'], [null, 'GOA'], ['marca', 'Marca'],
-    ['sku', 'SKU'], [null, 'Artículo'], [null, 'Estatus'], [null, 'Norma'], [null, 'Letra'], [null, 'Últ. venta'], ['meses', 'Meses s/vta'], ['rec', 'Meses desde 1a rec.'], ['pzs', 'Pzs'], ['monto', 'Monto $'], [null, 'Estado'],
+    ['sku', 'SKU'], [null, 'Artículo'], [null, 'Estatus'], [null, 'Norma'], [null, 'Letra'], [null, 'Últ. venta'], ['meses', 'Meses s/vta'], ['rec', 'Meses desde 1a rec.'], ['pzs', 'Pzs'], ['monto', 'Monto $'], [null, 'Estado'], [null, 'Acción'], [null, 'Destinos sugeridos'],
   ];
   const detRow = (i) => {
     const { C, D, info, tipo } = X, sk = D.sku[C.sku[i]], ce = D.centro[C.centro[i]], u = E.mU[i];
     return [D.sec[C.sec[i]], D.zona[C.zona[i]], ce, info.centro[ce], tipo[C.centro[i]] ? 'Bodega' : 'Tienda', D.prov[C.prov[i]], D.goa[C.goa[i]], D.marca[C.marca[i]], sk, info.sku[sk]?.desc || '',
-      D.estatus[C.estatus[i]], D.norma[C.norma[i]], D.letra[C.letra[i]], u < 0 ? 'Sin venta en ventana' : miTxt(E.corte - u), u < 0 ? '' : u, E.mR[i] < 0 ? '' : E.mR[i], C.pzs[i], Math.round(C.monto[i] * 100) / 100, E.nulo[i] ? 'Nulo' : 'Con movimiento'];
+      D.estatus[C.estatus[i]], D.norma[C.norma[i]], D.letra[C.letra[i]], u < 0 ? 'Sin venta en ventana' : miTxt(E.corte - u), u < 0 ? '' : u, E.mR[i] < 0 ? '' : E.mR[i], C.pzs[i], Math.round(C.monto[i] * 100) / 100, E.nulo[i] ? 'Nulo' : 'Con movimiento', ...(E.nulo[i] && info.sku[sk]?.acc?.[ce] ? info.sku[sk].acc[ce] : ['', ''])];
   };
   const exportDetail = () => downloadCSV(`Nulo_Movimiento_detalle_${miTxt(E.corte).replace(' ', '')}.csv`, [DET_COLS.map((c) => c[1]).map(csvCell).join(','), ...detail.map((i) => detRow(i).map(csvCell).join(','))]);
   const exportSecs = () => downloadCSV('Nulo_Movimiento_secciones.csv', [['# Sección', 'Sección', 'No de tiendas con NM', 'No de GOAs con NM', 'SKU', 'Monto', 'Pzs', '% del inventario de la sección'].join(','), ...R.secs.map((s) => [s.num, s.name, s.c, s.g, s.k, Math.round(s.m), s.p, s.part != null ? (s.part * 100).toFixed(1) + '%' : ''].map(csvCell).join(','))]);
