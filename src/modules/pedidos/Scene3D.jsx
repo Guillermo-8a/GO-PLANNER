@@ -20,8 +20,8 @@ const fk = (v) => (v >= 1e6 ? `${(v / 1e6).toFixed(1)}M` : v >= 1e4 ? `${(v / 1e
 const W = (x, y, z = 0) => new THREE.Vector3(x, z, y); // mundo (x, y, z) → three (x, z, y)
 
 const PALETTE = {
-  dark: { bg: '#15111C', plate: '#2A2238', grass: '#24382D', grass2: '#284033', road: '#383149', line: '#9A92B4', pad: '#2B2439', padLine: '#E0BB3E', water: '#1B4466', wall: '#EAE7F2', wall2: '#D9D4E6', roofA: '#6D4FD8', roofX: '#8B6CF6', tree: '#46A86C', hemi: 1.05, sun: 2.1, glass: '#F5D06B', text: '#EDEBF2', sub: '#A9A2B8', card: 'rgba(30,24,41,0.92)', cardB: '#3E3555' },
-  light: { bg: '#E7EDF7', plate: '#F4F6FB', grass: '#D5E8CD', grass2: '#CBE2C2', road: '#C6D0E0', line: '#FFFFFF', pad: '#E4E9F2', padLine: '#F2B705', water: '#8FC3EC', wall: '#FFFFFF', wall2: '#EEF2F8', roofA: '#2F6BE8', roofX: '#7C5CF0', tree: '#5DBB7A', hemi: 1.05, sun: 1.9, glass: '#BFD9F7', text: '#1E2A44', sub: '#5B6680', card: 'rgba(255,255,255,0.95)', cardB: '#D5DDEB' },
+  dark: { bg: '#15111C', plate: '#2A2238', grass: '#24382D', grass2: '#284033', road: '#383149', line: '#9A92B4', pad: '#2B2439', padLine: '#E0BB3E', water: '#1B4466', wall: '#EAE7F2', wall2: '#D9D4E6', roofA: '#6D4FD8', roofX: '#8B6CF6', tree: '#46A86C', hemi: 0.65, sun: 2.3, glass: '#F5D06B', text: '#EDEBF2', sub: '#A9A2B8', card: 'rgba(30,24,41,0.92)', cardB: '#3E3555' },
+  light: { bg: '#E7EDF7', plate: '#F4F6FB', grass: '#D5E8CD', grass2: '#CBE2C2', road: '#C6D0E0', line: '#FFFFFF', pad: '#E4E9F2', padLine: '#F2B705', water: '#8FC3EC', wall: '#FFFFFF', wall2: '#EEF2F8', roofA: '#2F6BE8', roofX: '#7C5CF0', tree: '#5DBB7A', hemi: 0.65, sun: 2.2, glass: '#BFD9F7', text: '#1E2A44', sub: '#5B6680', card: 'rgba(255,255,255,0.95)', cardB: '#D5DDEB' },
 };
 
 // ── Caché de geometrías / materiales / texturas ─────────────────────────────
@@ -292,7 +292,7 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
   useEffect(() => {
     const el = host.current; const S = st.current;
     const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: false, powerPreference: 'high-performance' });
-    renderer.setPixelRatio(Math.min(2, window.devicePixelRatio || 1));
+    const isMob = window.innerWidth < 768; renderer.setPixelRatio(Math.min(isMob ? 1.5 : 1.75, window.devicePixelRatio || 1)); // menos calor en cel/laptop
     renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     renderer.toneMapping = THREE.ACESFilmicToneMapping; renderer.toneMappingExposure = 1.05;
     renderer.outputColorSpace = THREE.SRGBColorSpace;
@@ -309,11 +309,11 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
     controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
     const pmrem = new THREE.PMREMGenerator(renderer); scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture; scene.environmentIntensity = 0.85; // reflejos tipo maqueta en techos, metales y agua
-    const hemi = new THREE.HemisphereLight('#e0f2fe', '#3b2d54', 1); scene.add(hemi);
-    const sun = new THREE.DirectionalLight('#ffedd5', 1.8); sun.castShadow = true; const shRes = window.innerWidth < 768 ? 2048 : 4096; sun.shadow.mapSize.set(shRes, shRes);
-    Object.assign(sun.shadow.camera, { left: -32, right: 32, top: 32, bottom: -32, near: 1, far: 140 }); sun.shadow.bias = -0.0003; sun.shadow.normalBias = 0.015; sun.shadow.radius = 1.5;
+    const hemi = new THREE.HemisphereLight('#E2EDF8', '#2D263B', 0.65); scene.add(hemi);
+    const sun = new THREE.DirectionalLight('#FFF5E6', 2.2); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048); // 4096 calienta GPUs integradas
+    Object.assign(sun.shadow.camera, { left: -32, right: 32, top: 32, bottom: -32, near: 1, far: 140 }); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.02; sun.shadow.radius = 2.5;
     scene.add(sun); scene.add(sun.target);
-    const fill = new THREE.DirectionalLight('#a78bfa', 0.65); fill.position.set(45, 18, -35); scene.add(fill); // contraluz violeta
+    const fill = new THREE.DirectionalLight('#8B6CF6', 0.45); fill.position.set(40, 16, -25); scene.add(fill); // relleno violeta en caras en sombra
     const staticG = new THREE.Group(), dynG = new THREE.Group(); scene.add(staticG, dynG);
     composer.addPass(new RenderPass(scene, cam));
     // GTAO: sombra de contacto en esquinas, llantas y contenedores (solo escritorio)
@@ -381,14 +381,18 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     renderer.domElement.addEventListener('pointerdown', onDown); renderer.domElement.addEventListener('pointerup', onUp);
 
     let raf, last = performance.now();
+    const FRAME_MIN = 1000 / 38; // reproduciendo sin mover la cámara: tope ~38 FPS (menos calor)
     const loop = (now) => {
+      raf = requestAnimationFrame(loop);
+      if (props.current.play && !S.tween && now - last < FRAME_MIN) return;
       const dt = Math.min(0.05, (now - last) / 1000); last = now;
       if (props.current.play) S.t += dt;
       const t = S.t;
       if (S.tween) { const k = Math.min(1, (now - S.tween.t0) / 700), e = 1 - Math.pow(1 - k, 3); controls.target.lerpVectors(S.tween.a, S.tween.b, e); cam.position.copy(controls.target).add(S.tween.off); cam.zoom = S.tween.za + (S.tween.zb - S.tween.za) * e; cam.updateProjectionMatrix(); if (k >= 1) S.tween = null; }
       const moved = controls.update();
       // En pausa solo se dibuja si la cámara se movió o cambió la escena (ahorra batería)
-      if (!props.current.play && !S.tween && !moved && !S.dirty && S.frame > 2) { raf = requestAnimationFrame(loop); return; }
+      if (!props.current.play && !S.tween && !moved && !S.dirty && S.frame > 2) return;
+      if (moved || S.tween || S.dirty || !S.sunReady) { sun.position.copy(controls.target).add(new THREE.Vector3(-24, 30, 18)); sun.target.position.copy(controls.target); S.sunReady = true; } // sol en diagonal rasante
       S.dirty = false;
       // Monitor de rendimiento: si va lento, quita el brillo y baja la resolución
       S.fpsAcc = (S.fpsAcc || 0) + dt; S.fpsN = (S.fpsN || 0) + 1;
@@ -409,10 +413,8 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
           l.el.style.visibility = hit ? 'hidden' : 'visible'; if (!hit) placed.push({ x, y, w, h });
         });
       }
-      sun.position.copy(controls.target).add(new THREE.Vector3(-18, 34, 14)); sun.target.position.copy(controls.target);
       if (!S.lowPerf) S.composer.render(); else renderer.render(scene, cam);
       labels.render(scene, cam);
-      raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
     return () => { cancelAnimationFrame(raf); ro.disconnect(); controls.dispose(); composer.dispose(); renderer.dispose(); el.innerHTML = ''; };
@@ -426,7 +428,9 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     if (S.bloom) S.bloom.enabled = isDark && !S.lowPerf; // brillo de ventanas y postes solo de noche
     if (S.dioramaPass) S.dioramaPass.uniforms.uDark.value = isDark ? 1 : 0;
     S.dirty = true;
-    S.hemi.intensity = P.hemi; S.hemi.groundColor.set(isDark ? '#3a3350' : '#b9c3d6'); S.sun.intensity = P.sun;
+    S.hemi.intensity = P.hemi; S.hemi.groundColor.set(isDark ? '#2D263B' : '#9AA5BB'); S.sun.intensity = P.sun;
+    S.scene.environmentIntensity = isDark ? 0.85 : 0.5; // de día el entorno lavaba las sombras
+    S.renderer.toneMappingExposure = isDark ? 1.0 : (window.innerWidth < 768 ? 1.05 : 1.15); // negros profundos de noche, nitidez de día
     const G = S.staticG; while (G.children.length) G.remove(G.children[0]);
     S.anim = S.anim.filter((f) => !f.isStatic);
     const zs = zonas.map((z, i) => ({ z, ...zonaPos(i) })), cs = ciudades.map((c, i) => ({ c, ...ciudadPos(i) }));
@@ -464,19 +468,17 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     for (let i = 0; i < 10; i++) { const o = boxAt(8.4 + i * 1.05, 2.4, 0.07, 0.05, 1.2, 0.01, mat(P.padLine, { roughness: 0.6 }), 0); o.castShadow = false; G.add(o); }
     { const o = boxAt(8.4, 2.38, 0.07, 10.5, 0.05, 0.01, mat(P.padLine), 0); o.castShadow = false; G.add(o); }
     // agua con oleaje
-    const wg = new THREE.PlaneGeometry(21.2, yBot - 4.4, 56, 42); wg.rotateX(-Math.PI / 2);
+    const wg = new THREE.PlaneGeometry(21.2, yBot - 4.4, 1, 1); wg.rotateX(-Math.PI / 2); // sin deformar vértices en CPU: el oleaje lo hace la textura
     const wMap = waterTex(isDark); wMap.wrapS = wMap.wrapT = THREE.RepeatWrapping; wMap.repeat.set(5, 7);
     // sombreado suave (sin facetas) + textura de oleaje que se desplaza; un poco más alto para no chocar con el pasto
     const water = new THREE.Mesh(wg, new THREE.MeshPhysicalMaterial({ map: wMap, color: isDark ? '#6FA6D2' : '#8FC3EC', roughness: 0.28, metalness: 0.05, clearcoat: 0.5, clearcoatRoughness: 0.35, envMapIntensity: isDark ? 0.7 : 0.5, transparent: true, opacity: 0.95 }));
-    water.position.copy(W(-16 + 10.6, 6.4 + (yBot - 4.4) / 2, 0.19)); water.receiveShadow = true; G.add(water);
+    water.position.copy(W(-16 + 10.6, 6.4 + (yBot - 4.4) / 2, 0.212)); water.receiveShadow = true; G.add(water); // arriba del piso (0.19): el plano liso ya no sube con las olas
     // espuma que va y viene en la playa y alrededor de la isla
     const shoreFoam = boxAt(-16, 6.28, 0.205, 12.5, 0.26, 0.015, new THREE.MeshBasicMaterial({ color: '#FFFFFF', transparent: true, opacity: 0.65 }), 0.06); shoreFoam.castShadow = false; shoreFoam.receiveShadow = false;
     const islFoam = new THREE.Mesh(memo('islFoam', () => new THREE.RingGeometry(1.72, 2.05, 24)), new THREE.MeshBasicMaterial({ color: '#FFFFFF', transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false }));
-    islFoam.rotation.x = -Math.PI / 2; islFoam.position.copy(W(-9.5, 18, 0.205)); G.add(shoreFoam, islFoam);
-    const base = wg.attributes.position.array.slice();
+    islFoam.rotation.x = -Math.PI / 2; islFoam.position.copy(W(-9.5, 18, 0.22)); G.add(shoreFoam, islFoam);
     addAnim((t) => {
-      const a = wg.attributes.position.array; for (let i = 0; i < a.length; i += 3) a[i + 1] = base[i + 1] + Math.sin(base[i] * 0.65 + t * 1.3) * 0.038 + Math.cos(base[i + 2] * 0.75 + t * 1.0) * 0.032;
-      wg.attributes.position.needsUpdate = true; wg.computeVertexNormals(); wMap.offset.set(t * 0.018, t * 0.012);
+      wMap.offset.set(Math.sin(t * 0.4) * 0.04 + t * 0.015, t * 0.01);
       shoreFoam.position.z = 6.38 + Math.sin(t * 1.6) * 0.08; shoreFoam.material.opacity = 0.4 + (Math.sin(t * 1.6) + 1) * 0.22;
       const k = 1 + Math.sin(t * 1.8) * 0.04; islFoam.scale.set(k, k, 1); islFoam.material.opacity = 0.35 + (Math.cos(t * 1.8) + 1) * 0.2;
     });
@@ -502,23 +504,21 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
         G.add(sb); addAnim((t) => { const a = t * 0.12 + ph; sb.position.copy(W(x + Math.cos(a) * 1.6, y + Math.sin(a) * 1.1, 0.16 + Math.sin(t * 1.4 + ph) * 0.04)); sb.rotation.y = -a - Math.PI / 2; });
       });
       [[-6, 8.6], [-4.6, 15.5], [-14, 10.5]].forEach(([x, y], i) => { const b = mesh(memo('buoy', () => new THREE.CylinderGeometry(0.1, 0.14, 0.3, 10)), mat(i % 2 ? '#F2B705' : '#E5484D', { emissive: i % 2 ? '#F2B705' : '#E5484D', emissiveIntensity: isDark ? 0.8 : 0 })); G.add(b); addAnim((t) => { b.position.copy(W(x, y, 0.25 + Math.sin(t * 2 + i) * 0.05)); }); });
-      // Letrero GO PLANNER: base escalonada, respaldo de cristal con postes dorados y logo en relieve (26 capas)
+      // Tótem GO PLANNER compacto (antes 6×3 a escala 1.3; ahora 2.6×1.3 a escala 0.75)
       const logo = memo('billLogo', () => new THREE.TextureLoader().load('/logov.png', (tx) => { tx.colorSpace = THREE.SRGBColorSpace; tx.anisotropy = 16; tx.minFilter = THREE.LinearMipmapLinearFilter; S.dirty = true; }));
       const sign = new THREE.Group();
-      const plinth1 = mesh(rbox(7.4, 0.28, 1.4, 0.08), mat('#14121A', { roughness: 0.5, metalness: 0.2 })); plinth1.position.y = 0.14; sign.add(plinth1);
-      const plinth2 = mesh(rbox(6.8, 0.42, 1.0, 0.1), mat(isDark ? '#24153D' : '#2E1A47', { roughness: 0.4, metalness: 0.15 })); plinth2.position.y = 0.42; sign.add(plinth2);
-      const strip = mesh(memo('strip', () => new THREE.BoxGeometry(6.2, 0.04, 0.02)), mat('#E0BB3E', { emissive: '#E0BB3E', emissiveIntensity: isDark ? 1.8 : 0.25, roughness: 0.3 }), false); strip.position.set(0, 0.52, 0.505); sign.add(strip);
-      const backGlass = mesh(rbox(6.3, 3.15, 0.08, 0.04), mat('#120E1A', { roughness: 0.15, metalness: 0.6, transparent: true, opacity: isDark ? 0.78 : 0.88 })); backGlass.position.set(0, 2.15, -0.22); sign.add(backGlass);
-      [-3.22, 3.22].forEach((px) => { const pillar = mesh(rbox(0.16, 3.3, 0.22, 0.04), mat('#E0BB3E', { roughness: 0.25, metalness: 0.7 })); pillar.position.set(px, 2.15, -0.18); sign.add(pillar); });
-      const lg = memo('logoG', () => new THREE.PlaneGeometry(6, 3)), NL = 26;
+      const plinth = mesh(rbox(3.2, 0.22, 0.6, 0.05), mat('#14121A', { roughness: 0.5, metalness: 0.2 })); plinth.position.y = 0.11; sign.add(plinth);
+      const strip = mesh(memo('stripSm', () => new THREE.BoxGeometry(2.8, 0.03, 0.02)), mat('#E0BB3E', { emissive: '#E0BB3E', emissiveIntensity: isDark ? 1.5 : 0.2 }), false); strip.position.set(0, 0.23, 0.25); sign.add(strip);
+      const backGlass = mesh(rbox(2.8, 1.4, 0.04, 0.03), mat('#120E1A', { roughness: 0.2, metalness: 0.5, transparent: true, opacity: isDark ? 0.75 : 0.85 })); backGlass.position.set(0, 0.95, -0.08); sign.add(backGlass);
+      const lg = memo('logoGSm', () => new THREE.PlaneGeometry(2.6, 1.3)), NL = 16;
       for (let i = 0; i < NL; i++) {
         const front = i === NL - 1;
-        const m = new THREE.MeshStandardMaterial({ map: logo, alphaTest: front ? 0.02 : 0.45, transparent: front, side: THREE.DoubleSide, color: front ? '#ffffff' : '#6D4FD8', roughness: front ? 0.2 : 0.4, metalness: front ? 0.15 : 0.45, ...(front && isDark ? { emissive: '#ffffff', emissiveMap: logo, emissiveIntensity: 0.65 } : {}) });
-        const p = new THREE.Mesh(lg, m); p.position.set(0, 2.15, -0.14 + i * 0.011); p.castShadow = i % 4 === 0 || front; p.receiveShadow = !front; sign.add(p);
+        const m = new THREE.MeshStandardMaterial({ map: logo, alphaTest: front ? 0.02 : 0.45, transparent: front, side: THREE.DoubleSide, color: front ? '#ffffff' : '#6D4FD8', roughness: front ? 0.2 : 0.4, metalness: front ? 0.15 : 0.4, ...(front && isDark ? { emissive: '#ffffff', emissiveMap: logo, emissiveIntensity: 0.5 } : {}) });
+        const p = new THREE.Mesh(lg, m); p.position.set(0, 0.95, -0.06 + i * 0.007); p.castShadow = i % 4 === 0 || front; p.receiveShadow = !front; sign.add(p);
       }
-      [-2, 2].forEach((lx) => { const lamp = mesh(rbox(0.3, 0.16, 0.22, 0.04), mat('#14121A'), false); lamp.position.set(lx, 0.12, 1.35); lamp.rotation.x = -0.5; sign.add(lamp); const lens = mesh(memo('lens', () => new THREE.CircleGeometry(0.08, 14)), mat('#FFF3C4', { emissive: '#FFE08A', emissiveIntensity: isDark ? 3.5 : 0.4 }), false); lens.position.set(lx, 0.18, 1.25); lens.rotation.x = -1.07; sign.add(lens); });
-      if (isDark) { const sp = new THREE.SpotLight('#FFE6B0', 34, 10, 0.8, 0.7, 1.4); sp.position.set(0, 0.4, 1.8); sp.target.position.set(0, 2.15, 0); sign.add(sp, sp.target); }
-      sign.position.copy(W(12.5, 16, 0.05 + GZ)); sign.rotation.y = Math.PI / 4; sign.scale.setScalar(1.3); G.add(sign);
+      [-0.85, 0.85].forEach((lx) => { const lamp = mesh(rbox(0.14, 0.08, 0.1, 0.02), mat('#14121A'), false); lamp.position.set(lx, 0.06, 0.5); lamp.rotation.x = -0.5; sign.add(lamp); const lens = mesh(memo('lensSm', () => new THREE.CircleGeometry(0.04, 10)), mat('#FFF3C4', { emissive: '#FFE08A', emissiveIntensity: isDark ? 2.5 : 0.3 }), false); lens.position.set(lx, 0.1, 0.45); lens.rotation.x = -1.07; sign.add(lens); });
+      if (isDark) { const sp = new THREE.SpotLight('#FFE6B0', 16, 6, 0.7, 0.7, 1.4); sp.position.set(0, 0.3, 0.9); sp.target.position.set(0, 0.95, 0); sign.add(sp, sp.target); }
+      sign.position.copy(W(12.5, 16, 0.05 + GZ)); sign.rotation.y = Math.PI / 4; sign.scale.setScalar(0.75); G.add(sign);
     }
     const quay = boxAt(-3.4, 6.2, -0.4, 8.6, 0.3, 0.47, mat(isDark ? '#3A3350' : '#B9C3D3'), 0.04); G.add(quay);
     // caminos + líneas
