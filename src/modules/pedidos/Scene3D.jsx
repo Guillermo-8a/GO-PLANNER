@@ -10,6 +10,8 @@ import { RoomEnvironment } from 'three/examples/jsm/environments/RoomEnvironment
 import { RenderPass } from 'three/examples/jsm/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/examples/jsm/postprocessing/UnrealBloomPass.js';
 import { OutputPass } from 'three/examples/jsm/postprocessing/OutputPass.js';
+import { GTAOPass } from 'three/examples/jsm/postprocessing/GTAOPass.js';
+import { ShaderPass } from 'three/examples/jsm/postprocessing/ShaderPass.js';
 import { N, SITES, paths, roadsFor, pathAt, pathLen, zonaPos, ciudadPos } from './layout';
 
 const TIPO_C = { IMP: '#14B8A6', NAC: '#3B82F6', DIR: '#F59E0B' };
@@ -306,16 +308,39 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     controls.minZoom = 0.6; controls.maxZoom = 5; controls.minPolarAngle = 0.45; controls.maxPolarAngle = 1.2;
     controls.mouseButtons = { LEFT: THREE.MOUSE.PAN, MIDDLE: THREE.MOUSE.DOLLY, RIGHT: THREE.MOUSE.ROTATE };
     controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
-    const pmrem = new THREE.PMREMGenerator(renderer); scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture; scene.environmentIntensity = 0.45; // luz ambiental suave
-    const hemi = new THREE.HemisphereLight('#ffffff', '#5a5470', 1); scene.add(hemi);
-    const sun = new THREE.DirectionalLight('#fff6e8', 1.8); sun.castShadow = true; const shRes = window.innerWidth < 768 ? 2048 : 4096; sun.shadow.mapSize.set(shRes, shRes);
-    Object.assign(sun.shadow.camera, { left: -32, right: 32, top: 32, bottom: -32, near: 1, far: 140 }); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.02; sun.shadow.radius = 2;
+    const pmrem = new THREE.PMREMGenerator(renderer); scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture; scene.environmentIntensity = 0.85; // reflejos tipo maqueta en techos, metales y agua
+    const hemi = new THREE.HemisphereLight('#e0f2fe', '#3b2d54', 1); scene.add(hemi);
+    const sun = new THREE.DirectionalLight('#ffedd5', 1.8); sun.castShadow = true; const shRes = window.innerWidth < 768 ? 2048 : 4096; sun.shadow.mapSize.set(shRes, shRes);
+    Object.assign(sun.shadow.camera, { left: -32, right: 32, top: 32, bottom: -32, near: 1, far: 140 }); sun.shadow.bias = -0.0003; sun.shadow.normalBias = 0.015; sun.shadow.radius = 1.5;
     scene.add(sun); scene.add(sun.target);
-    const fill = new THREE.DirectionalLight('#b9a8ff', 0.35); fill.position.set(40, 20, -30); scene.add(fill);
+    const fill = new THREE.DirectionalLight('#a78bfa', 0.65); fill.position.set(45, 18, -35); scene.add(fill); // contraluz violeta
     const staticG = new THREE.Group(), dynG = new THREE.Group(); scene.add(staticG, dynG);
     composer.addPass(new RenderPass(scene, cam));
-    const bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.3, 0.4, 1.2); composer.addPass(bloom); composer.addPass(new OutputPass());
-    Object.assign(S, { renderer, labels, scene, cam, controls, hemi, sun, staticG, dynG, anim: [], movers: [], t: 0, labelEls: [], detail: null, composer, bloom });
+    // GTAO: sombra de contacto en esquinas, llantas y contenedores (solo escritorio)
+    let gtao = null;
+    if (window.innerWidth >= 768) {
+      gtao = new GTAOPass(scene, cam, el.clientWidth, el.clientHeight);
+      gtao.updateGtaoMaterial({ radius: 0.45, distanceExponent: 1.8, thickness: 1.2, scale: 1.1, samples: 16 });
+      gtao.updatePdMaterial({ lumaPhi: 10, depthPhi: 2, normalPhi: 3, radius: 4, rings: 2 });
+      // pines (sprites) y piezas transparentes fuera del cálculo de AO: si no, salen como rectángulos negros
+      const ov = gtao._overrideVisibility.bind(gtao);
+      gtao._overrideVisibility = () => { ov(); scene.traverse((o) => { if (o.visible && (o.isSprite || o.material?.transparent)) { o.visible = false; gtao._visibilityCache.push(o); } }); };
+      composer.addPass(gtao);
+    }
+    const bloom = new UnrealBloomPass(new THREE.Vector2(512, 512), 0.3, 0.4, 1.2); composer.addPass(bloom);
+    // Lente diorama: curva S suave + viñeta
+    const dioramaPass = new ShaderPass({
+      uniforms: { tDiffuse: { value: null }, uDark: { value: 1 } },
+      vertexShader: 'varying vec2 vUv; void main(){ vUv = uv; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }',
+      fragmentShader: `uniform sampler2D tDiffuse; uniform float uDark; varying vec2 vUv;
+        void main(){ vec4 col = texture2D(tDiffuse, vUv);
+          col.rgb = mix(col.rgb, smoothstep(0.0, 1.0, col.rgb), 0.16);
+          float vig = smoothstep(0.82, 0.28, distance(vUv, vec2(0.5)) * (uDark > 0.5 ? 0.95 : 0.75));
+          col.rgb *= mix(uDark > 0.5 ? 0.72 : 0.95, 1.0, vig);
+          gl_FragColor = col; }`,
+    });
+    composer.addPass(new OutputPass()); composer.addPass(dioramaPass); // diorama después del tone mapping/sRGB
+    Object.assign(S, { renderer, labels, scene, cam, controls, hemi, sun, staticG, dynG, anim: [], movers: [], t: 0, labelEls: [], detail: null, composer, bloom, gtao, dioramaPass });
 
     const resize = () => { const w = el.clientWidth, h = el.clientHeight, a = w / h, vs = 30; cam.left = (-vs * a) / 2; cam.right = (vs * a) / 2; cam.top = vs / 2; cam.bottom = -vs / 2; cam.updateProjectionMatrix(); renderer.setSize(w, h); labels.setSize(w, h); S.composer?.setSize(w, h); };
     const ro = new ResizeObserver(resize); ro.observe(el); resize();
@@ -367,7 +392,7 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
       S.dirty = false;
       // Monitor de rendimiento: si va lento, quita el brillo y baja la resolución
       S.fpsAcc = (S.fpsAcc || 0) + dt; S.fpsN = (S.fpsN || 0) + 1;
-      if (S.fpsAcc > 3) { const fps = S.fpsN / S.fpsAcc; if (fps < 32 && !S.lowPerf) { S.lowPerf = true; if (S.bloom) S.bloom.enabled = false; renderer.setPixelRatio(1); resize(); if (sun.shadow.mapSize.x > 2048) { sun.shadow.mapSize.set(2048, 2048); sun.shadow.map?.dispose(); sun.shadow.map = null; } } S.fpsAcc = 0; S.fpsN = 0; }
+      if (S.fpsAcc > 3) { const fps = S.fpsN / S.fpsAcc; if (fps < 32 && !S.lowPerf) { S.lowPerf = true; if (S.bloom) S.bloom.enabled = false; if (S.gtao) S.gtao.enabled = false; renderer.setPixelRatio(1); resize(); if (sun.shadow.mapSize.x > 2048) { sun.shadow.mapSize.set(2048, 2048); sun.shadow.map?.dispose(); sun.shadow.map = null; } } S.fpsAcc = 0; S.fpsN = 0; }
       S.anim.forEach((f) => f(t, dt));
       // detalle de etiquetas según zoom
       const det = cam.zoom > 1.55; if (det !== S.detail) { S.detail = det; S.labelEls.forEach((l) => l.setDetail(det)); S.frame = 0; }
@@ -385,12 +410,12 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
         });
       }
       sun.position.copy(controls.target).add(new THREE.Vector3(-18, 34, 14)); sun.target.position.copy(controls.target);
-      if (S.bloom?.enabled) S.composer.render(); else renderer.render(scene, cam);
+      if (!S.lowPerf) S.composer.render(); else renderer.render(scene, cam);
       labels.render(scene, cam);
       raf = requestAnimationFrame(loop);
     };
     raf = requestAnimationFrame(loop);
-    return () => { cancelAnimationFrame(raf); ro.disconnect(); controls.dispose(); renderer.dispose(); el.innerHTML = ''; };
+    return () => { cancelAnimationFrame(raf); ro.disconnect(); controls.dispose(); composer.dispose(); renderer.dispose(); el.innerHTML = ''; };
   }, []);
 
   // ── Escena estática (piso, caminos, edificios) ──
@@ -399,6 +424,7 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     const P = isDark ? PALETTE.dark : PALETTE.light;
     S.renderer.setClearColor(P.bg); S.scene.fog = new THREE.Fog(P.bg, 90, 200);
     if (S.bloom) S.bloom.enabled = isDark && !S.lowPerf; // brillo de ventanas y postes solo de noche
+    if (S.dioramaPass) S.dioramaPass.uniforms.uDark.value = isDark ? 1 : 0;
     S.dirty = true;
     S.hemi.intensity = P.hemi; S.hemi.groundColor.set(isDark ? '#3a3350' : '#b9c3d6'); S.sun.intensity = P.sun;
     const G = S.staticG; while (G.children.length) G.remove(G.children[0]);
