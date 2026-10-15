@@ -160,7 +160,7 @@ function parseEventos(text) {
         oc, pos: '', sku: v(r, 'GOA'), modelo: '', prov: v(r, 'PROVEEDOR') || 'Sin proveedor', marca: v(r, 'MARCA') || '—', seccion: v(r, 'SECCION'), goa: v(r, 'GOA'), origen,
         pzsPed: asig || numv(v(r, 'PZS PEDIDAS')), pzsEv: 0, valor: numv(v(r, 'COSTO ASIG')) || numv(v(r, 'COSTO PEDIDO')), ubic: '', centro: ctr(tienda), zona: norm(v(r, 'ZONA')), cont: '', mon: origen === 'IMP' ? 'USD' : '', // el costo de importación viene en dólares
         fechaOc: toDate(v(r, 'FCH OC')), fechaComp: comp && !comp.startsWith('1900') ? toDate(comp) : null,
-        traslado: v(r, 'NUM TRASLADO'), fechaEntPlan: ((x) => (x && !x.startsWith('1900') ? toDate(x) : null))(v(r, 'DT ENTREGA PLAN')),
+        traslado: v(r, 'NUM TRASLADO'), fechaEntPlan: comp && !comp.startsWith('1900') ? toDate(comp) : null, // el traslado vence con la fecha fin de la OC (no la del traslado, que SAP pone a +1 día)
       };
       const add = (etapa, h, pzsEv, ubic) => { const f = toDate(v(r, h)); if (f) ev.push({ ...base, etapa, fecha: f, pzsEv, ubic }); };
       // Inventario en CEDIS / CR (sin traslado, asignado) y mercancía embarcada: una sola foto fechada en la última entrada
