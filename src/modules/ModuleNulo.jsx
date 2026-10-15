@@ -28,12 +28,14 @@ const mi = (y, m) => y * 12 + (m - 1);
 const miTxt = (x) => (x == null || !isFinite(x) ? '—' : `${MES_TXT[((x % 12) + 12) % 12]} ${Math.floor(x / 12)}`);
 const isoMonday = (w, y) => { const d = new Date(Date.UTC(y, 0, 4)); d.setUTCDate(d.getUTCDate() - (d.getUTCDay() || 7) + 1 + (w - 1) * 7); return d; };
 const isoWeekMi = (w, y) => { const d = isoMonday(w, y); return mi(d.getUTCFullYear(), d.getUTCMonth() + 1); };
-const weekIdx = (v) => { const m = str(v).match(/^(\d{1,2})\.(\d{4})$/); return m ? Math.round(isoMonday(+m[1], +m[2]) / 6048e5) : null; }; // semana absoluta
+// Semana de 1a recepción: 'SS.AAAA' (Excel) o 'AAAASS' (BigQuery) → [semana, año]
+const wkParts = (v) => { const t = str(v); let m = t.match(/^(\d{1,2})\.(\d{4})$/); if (m) return [+m[1], +m[2]]; m = t.match(/^(20\d{2}|19\d{2})(\d{2})$/); return m && +m[2] >= 1 && +m[2] <= 53 ? [+m[2], +m[1]] : null; };
+const weekIdx = (v) => { const w = wkParts(v); return w ? Math.round(isoMonday(w[0], w[1]) / 6048e5) : null; }; // semana absoluta
 function parseMes(v) {
   if (v instanceof Date) return mi(v.getFullYear(), v.getMonth() + 1);
   if (typeof v === 'number' && v > 20000 && v < 80000) { const d = new Date(Math.round((v - 25569) * 864e5)); return mi(d.getUTCFullYear(), d.getUTCMonth() + 1); }
   const raw = str(v); let m;
-  if ((m = raw.match(/^(\d{1,2})\.(\d{4})$/))) return isoWeekMi(+m[1], +m[2]); // semana.año (Fecha de Primera Rec)
+  const wk = wkParts(raw); if (wk) return isoWeekMi(wk[0], wk[1]); // semana (Fecha de Primera Rec)
   const s = norm(raw);
   if ((m = s.match(/^(\d{4})[-/ ](\d{1,2})\b/))) return mi(+m[1], +m[2]);
   if ((m = s.match(/^(\d{1,2})[-/](\d{1,2})[-/](\d{4})/))) return mi(+m[3], +m[2]);
@@ -355,7 +357,7 @@ export default function ModuleNulo({ t, isDark, navIcon, navLabel, navDesc }) {
   const detRow = (i) => {
     const { C, D, info, tipo } = X, sk = D.sku[C.sku[i]], ce = D.centro[C.centro[i]], u = E.mU[i];
     return [D.sec[C.sec[i]], D.zona[C.zona[i]], ce, info.centro[ce], tipo[C.centro[i]] ? 'Bodega' : 'Tienda', D.prov[C.prov[i]], D.goa[C.goa[i]], D.marca[C.marca[i]], sk, info.sku[sk]?.desc || '',
-      D.estatus[C.estatus[i]], D.norma[C.norma[i]], D.letra[C.letra[i]], u < 0 ? 'Sin venta en ventana' : miTxt(E.corte - u), u < 0 ? '' : u, E.mR[i] < 0 ? '' : E.mR[i], C.pzs[i], Math.round(C.monto[i] * 100) / 100, E.nulo[i] ? 'Nulo' : 'Con movimiento', ...(E.nulo[i] && info.sku[sk]?.acc?.[ce] ? info.sku[sk].acc[ce] : ['', ''])];
+      D.estatus[C.estatus[i]], D.norma[C.norma[i]], D.letra[C.letra[i]], u < 0 ? 'Sin venta en ventana' : miTxt(E.corte - u), u < 0 ? '>14' : u, E.mR[i] < 0 ? '' : E.mR[i], C.pzs[i], Math.round(C.monto[i] * 100) / 100, E.nulo[i] ? 'Nulo' : 'Con movimiento', ...(E.nulo[i] && info.sku[sk]?.acc?.[ce] ? info.sku[sk].acc[ce] : ['', ''])];
   };
   const exportDetail = () => downloadCSV(`Nulo_Movimiento_detalle_${miTxt(E.corte).replace(' ', '')}.csv`, [DET_COLS.map((c) => c[1]).map(csvCell).join(','), ...detail.map((i) => detRow(i).map(csvCell).join(','))]);
   const exportSecs = () => downloadCSV('Nulo_Movimiento_secciones.csv', [['# Sección', 'Sección', 'No de tiendas con NM', 'No de GOAs con NM', 'SKU', 'Monto', 'Pzs', '% del inventario de la sección'].join(','), ...R.secs.map((s) => [s.num, s.name, s.c, s.g, s.k, Math.round(s.m), s.p, s.part != null ? (s.part * 100).toFixed(1) + '%' : ''].map(csvCell).join(','))]);
