@@ -5,6 +5,7 @@ import App from './App.jsx'
 import TeamTrackerPage from './TeamTrackerPage.jsx'
 import AboutPage from './AboutPage.jsx'
 import './Index.css'
+import './utils/loadBar.js'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
   <React.StrictMode>
