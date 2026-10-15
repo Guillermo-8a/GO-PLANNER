@@ -678,7 +678,7 @@ function Shell() {
         </main>
 
         {/* ══════════ RAIL DERECHO ══════════ */}
-        <aside className={`flex flex-col items-center gap-2 py-4 px-2 border-l shrink-0 ${t.sidebar}`}>
+        <aside className={`relative z-40 flex flex-col items-center gap-2 py-4 px-2 border-l shrink-0 ${t.sidebar}`}>
           {/* Grabar */}
           <div className="relative" ref={recordRef}>
             <button

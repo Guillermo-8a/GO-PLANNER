@@ -55,6 +55,12 @@ const grassMap = (base, alt, dark) => rep(canvasTex(`gmap:${base}:${dark}`, 256,
 }), 6);
 const roadMap = (base) => rep(canvasTex(`rmap:${base}`, 256, 256, (g, w, h) => { g.fillStyle = base; g.fillRect(0, 0, w, h); for (let i = 0; i < 400; i++) { g.fillStyle = i % 3 === 0 ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.12)'; g.fillRect((i * 73) % w, (i * 137) % h, 3 + (i % 4), 3 + (i % 4)); } }), 8);
 const padMap = (base, dark) => rep(canvasTex(`pmap:${base}:${dark}`, 256, 256, (g, w, h) => { g.fillStyle = base; g.fillRect(0, 0, w, h); g.strokeStyle = dark ? 'rgba(255,255,255,0.06)' : 'rgba(0,0,0,0.08)'; g.lineWidth = 2; for (let k = 0; k <= w; k += 64) { g.beginPath(); g.moveTo(k, 0); g.lineTo(k, h); g.moveTo(0, k); g.lineTo(w, k); g.stroke(); } }), 5);
+const plazaTileMap = (base, dark) => rep(canvasTex(`ptile:${base}:${dark}`, 256, 256, (g, w, h) => {
+  g.fillStyle = base; g.fillRect(0, 0, w, h);
+  g.strokeStyle = dark ? 'rgba(255,255,255,0.055)' : 'rgba(15,23,42,0.065)'; g.lineWidth = 2; for (let k = 0; k <= w; k += 64) { g.beginPath(); g.moveTo(k, 0); g.lineTo(k, h); g.moveTo(0, k); g.lineTo(w, k); g.stroke(); }
+  g.strokeStyle = dark ? 'rgba(255,255,255,0.025)' : 'rgba(15,23,42,0.03)'; g.lineWidth = 1; for (let k = 32; k < w; k += 64) { g.beginPath(); g.moveTo(k, 0); g.lineTo(k, h); g.moveTo(0, k); g.lineTo(w, k); g.stroke(); }
+  for (let i = 0; i < 16; i++) { g.fillStyle = i % 2 ? (dark ? 'rgba(255,255,255,0.02)' : 'rgba(255,255,255,0.25)') : 'rgba(0,0,0,0.03)'; g.fillRect(((i * 3) % 4) * 64 + 2, Math.floor(((i * 7) % 16) / 4) * 64 + 2, 60, 60); }
+}), 16);
 const wallMap = (base, dark) => canvasTex(`wmap:${base}:${dark}`, 128, 128, (g, w, h) => { g.fillStyle = base; g.fillRect(0, 0, w, h); g.fillStyle = dark ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.045)'; for (let y = 0; y < h; y += 16) g.fillRect(0, y, w, 2); for (let x = 0; x < w; x += 32) g.fillRect(x, 0, 1, h); });
 // Halo radial de semáforo (centro suave, borde marcado)
 const haloTex = (color) => canvasTex(`halo:${color}`, 128, 128, (g) => {
@@ -402,16 +408,27 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     const pick = (o, k) => { o.userData.pick = k; o.traverse((c) => { c.userData.pickParent = k; }); return o; };
     const addAnim = (f) => { f.isStatic = true; S.anim.push(f); };
     // piso
-    const plate = boxAt(-16, -17, -0.4, 51, yBot + 19, 0.4, mat(P.plate, { roughness: 0.95 }), 0.3); plate.castShadow = false; G.add(plate);
+    // base de maqueta: zócalo oscuro + filete morado + explanada con loseta
+    const plinthBase = boxAt(-16.6, -17.6, -0.75, 52.2, yBot + 20.2, 0.42, mat(isDark ? '#120E1A' : '#CBD5E1', { roughness: 0.6, metalness: 0.2 }), 0.35);
+    const plinthTrim = boxAt(-16.25, -17.25, -0.36, 51.5, yBot + 19.5, 0.08, mat('#6D4FD8', { roughness: 0.4, metalness: 0.3 }), 0.3);
+    const plate = boxAt(-16, -17, -0.3, 51, yBot + 19, 0.3, memo(`plMat:${isDark}`, () => new THREE.MeshStandardMaterial({ map: plazaTileMap(P.plate, isDark), roughness: 0.85 })), 0.25);
+    plinthBase.castShadow = false; plinthTrim.castShadow = false; plate.castShadow = false; G.add(plinthBase, plinthTrim, plate);
+    // malecón entre el mar y el jardín del letrero, con bolardos luminosos
+    { const seaWall = boxAt(5.05, 5.8, -0.15, 2.25, yBot - 4.4, 0.32, mat(isDark ? '#3E3554' : '#CFD8E6', { roughness: 0.75 }), 0.06), seaWalk = boxAt(5.25, 6.0, 0.17, 1.85, yBot - 4.8, 0.05, memo(`pmat:${isDark}`, () => new THREE.MeshStandardMaterial({ map: padMap(P.pad, isDark), roughness: 0.85 })), 0.04);
+      seaWall.receiveShadow = true; seaWalk.receiveShadow = true; G.add(seaWall, seaWalk);
+      for (let by = 7.2; by < yBot - 0.5; by += 2.6) { G.add(boxAt(5.35, by, 0.22, 0.12, 0.12, 0.28, mat('#1E1B26'), 0.02)); const tb = boxAt(5.36, by + 0.01, 0.5, 0.1, 0.1, 0.06, mat('#FFE08A', { emissive: '#FFE08A', emissiveIntensity: isDark ? 2.5 : 0.3 }), 0.01); tb.castShadow = false; G.add(tb); } }
+    // jardín del letrero en terraza elevada (lo de adentro sube GZ)
+    const GZ = 0.19, inG = (x, y) => x >= 7.1 && x <= 19.6 && y >= 5.8;
     const gMat1 = memo(`gm1:${isDark}`, () => new THREE.MeshStandardMaterial({ map: grassMap(P.grass, P.grass2, isDark), roughness: 0.92 }));
     const gMat2 = memo(`gm2:${isDark}`, () => new THREE.MeshStandardMaterial({ map: grassMap(P.grass, P.grass2, isDark), color: isDark ? '#D1FAE5' : '#ECFDF5', roughness: 0.92 }));
-    [[-5, -16.5, 10, 9.7, gMat1], [7.2, -16.5, 12.4, 6.5, gMat1], [7.2, 5.8, 12.4, yBot - 4.8, gMat2], [21.3, -16.5, 5.1, 12.5, gMat1], [-15.6, -16.5, 10.2, 21.7, gMat2], [27.9, -16.5, 6.7, yBot + 18, gMat2]].forEach(([x, y, w, d, m]) => {
+    [[-5, -16.5, 10, 9.7, gMat1], [7.2, -16.5, 12.4, 6.5, gMat1], [21.3, -16.5, 5.1, 12.5, gMat1], [-15.6, -16.5, 10.2, 21.7, gMat2], [27.9, -16.5, 6.7, yBot + 18, gMat2]].forEach(([x, y, w, d, m]) => {
       const curb = boxAt(x - 0.08, y - 0.08, 0, w + 0.16, d + 0.16, 0.03, mat(isDark ? '#383247' : '#CBD5E1', { roughness: 0.9 }), 0.1); // borde de jardinera
       const o = boxAt(x, y, 0.02, w, d, 0.03, m, 0.08); curb.castShadow = false; o.castShadow = false; G.add(curb, o);
     });
+    { const wall = boxAt(7.0, 5.68, 0, 12.74, yBot - 4.56, 0.17, mat(isDark ? '#4A3F5C' : '#94A3B8', { roughness: 0.9 }), 0.08), turf = boxAt(7.1, 5.8, 0.16, 12.5, yBot - 4.8, 0.08, gMat2, 0.06); wall.receiveShadow = true; turf.receiveShadow = true; turf.castShadow = false; G.add(wall, turf); }
     // lomas escalonadas y rocas low-poly para romper lo plano
-    [[-12.5, -13.5, 5.2, 4.2, 0.14], [-11.8, -12.8, 3.2, 2.4, 0.24], [-3.8, -14.8, 4.5, 3.2, 0.14], [11.5, 11.5, 5.5, 4.0, 0.14], [30.5, -13, 3.5, 6.0, 0.15], [30.8, 8, 3.2, 7.5, 0.15]].forEach(([hx, hy, hw, hd, hz]) => { const hill = boxAt(hx, hy, 0.05, hw, hd, hz, gMat1, Math.min(0.4, hz * 0.8)); hill.receiveShadow = true; G.add(hill); });
-    [[-13.2, -11.5, 0.35], [-10.2, -14.2, 0.25], [-1.5, -13.8, 0.3], [14.2, 12.4, 0.32], [32.2, -6.5, 0.35], [32.5, 13.5, 0.28]].forEach(([rx, ry, rs], i) => { const rock = mesh(memo('rockG', () => new THREE.DodecahedronGeometry(1, 0)), mat(isDark ? '#4B5563' : '#94A3B8', { flatShading: true, roughness: 0.85 })); rock.scale.set(rs * 1.3, rs * 0.75, rs); rock.position.copy(W(rx, ry, 0.12)); rock.rotation.y = i * 1.1; G.add(rock); });
+    [[-12.5, -13.5, 5.2, 4.2, 0.14], [-11.8, -12.8, 3.2, 2.4, 0.24], [-3.8, -14.8, 4.5, 3.2, 0.14], [11.5, 11.5, 5.5, 4.0, 0.14], [30.5, -13, 3.5, 6.0, 0.15], [30.8, 8, 3.2, 7.5, 0.15]].forEach(([hx, hy, hw, hd, hz]) => { const hill = boxAt(hx, hy, 0.05 + (inG(hx, hy) ? GZ : 0), hw, hd, hz, gMat1, Math.min(0.4, hz * 0.8)); hill.receiveShadow = true; G.add(hill); });
+    [[-13.2, -11.5, 0.35], [-10.2, -14.2, 0.25], [-1.5, -13.8, 0.3], [14.2, 12.4, 0.32], [32.2, -6.5, 0.35], [32.5, 13.5, 0.28]].forEach(([rx, ry, rs], i) => { const rock = mesh(memo('rockG', () => new THREE.DodecahedronGeometry(1, 0)), mat(isDark ? '#4B5563' : '#94A3B8', { flatShading: true, roughness: 0.85 })); rock.scale.set(rs * 1.3, rs * 0.75, rs); rock.position.copy(W(rx, ry, 0.12 + (inG(rx, ry) ? GZ : 0))); rock.rotation.y = i * 1.1; G.add(rock); });
     // patios de concreto con losas y guarnición
     const pMat = memo(`pmat:${isDark}`, () => new THREE.MeshStandardMaterial({ map: padMap(P.pad, isDark), roughness: 0.85 }));
     [[-3.4, 0.6, 8.6, 5.8], [7.2, -4, 12.2, 7.8], [7.6, -10, 9.4, 3.4], [-2.4, -10.6, 6, 4.2]].forEach(([x, y, w, d]) => {
@@ -475,7 +492,7 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
       }
       [-2, 2].forEach((lx) => { const lamp = mesh(rbox(0.3, 0.16, 0.22, 0.04), mat('#14121A'), false); lamp.position.set(lx, 0.12, 1.35); lamp.rotation.x = -0.5; sign.add(lamp); const lens = mesh(memo('lens', () => new THREE.CircleGeometry(0.08, 14)), mat('#FFF3C4', { emissive: '#FFE08A', emissiveIntensity: isDark ? 3.5 : 0.4 }), false); lens.position.set(lx, 0.18, 1.25); lens.rotation.x = -1.07; sign.add(lens); });
       if (isDark) { const sp = new THREE.SpotLight('#FFE6B0', 34, 10, 0.8, 0.7, 1.4); sp.position.set(0, 0.4, 1.8); sp.target.position.set(0, 2.15, 0); sign.add(sp, sp.target); }
-      sign.position.copy(W(12.5, 16, 0.05)); sign.rotation.y = Math.PI / 4; sign.scale.setScalar(1.3); G.add(sign);
+      sign.position.copy(W(12.5, 16, 0.05 + GZ)); sign.rotation.y = Math.PI / 4; sign.scale.setScalar(1.3); G.add(sign);
     }
     const quay = boxAt(-3.4, 6.2, -0.4, 8.6, 0.3, 0.47, mat(isDark ? '#3A3350' : '#B9C3D3'), 0.04); G.add(quay);
     // caminos + líneas
@@ -552,7 +569,7 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     const fk1 = forklift(true), fk2 = forklift(false); G.add(fk1, fk2);
     addAnim((t) => { const u = (Math.sin(t * 0.8) + 1) / 2; fk1.position.copy(W(a.x + 0.6 + u * 3.2, a.y + a.d + 1.7, 0)); fk1.rotation.y = Math.cos(t * 0.8) > 0 ? 0 : Math.PI; const v = (Math.sin(t * 0.6 + 2) + 1) / 2; fk2.position.copy(W(N.XD.x + 0.4 + v * 2.4, N.XD.y + N.XD.d + 1.75, 0)); fk2.rotation.y = Math.cos(t * 0.6 + 2) > 0 ? 0 : Math.PI; });
     // árboles y autos
-    [[-4, -14], [-3.6, -8], [3.8, -12.5], [4.2, -2.5], [2.8, -1.4], [8, -12.5], [11, -13.4], [15, -12.8], [18.5, -13.4], [9, 7.5], [12, 8.6], [16, 7.2], [18.6, 10.4], [24.6, -4.6], [-4.6, -3], [10.5, 12], [16.8, 20.5], [9, 21], [-14.5, -15], [-7, -15.6], [-14.8, -7], [-7.2, -6.5], [-14.6, -2], [-6.6, 2.6], [-9.5, -8.8], [-12.6, -13.2], [33, -10], [33.2, -3], [33.4, 6], [33.2, 16]].forEach(([x, y], i) => { const tr = tree(P, 0.85 + ((i * 37) % 10) / 22, i); tr.position.copy(W(x, y, 0.05)); tr.rotation.y = i; G.add(tr); });
+    [[-4, -14], [-3.6, -8], [3.8, -12.5], [4.2, -2.5], [2.8, -1.4], [8, -12.5], [11, -13.4], [15, -12.8], [18.5, -13.4], [9, 7.5], [12, 8.6], [16, 7.2], [18.6, 10.4], [24.6, -4.6], [-4.6, -3], [10.5, 12], [16.8, 20.5], [9, 21], [-14.5, -15], [-7, -15.6], [-14.8, -7], [-7.2, -6.5], [-14.6, -2], [-6.6, 2.6], [-9.5, -8.8], [-12.6, -13.2], [33, -10], [33.2, -3], [33.4, 6], [33.2, 16]].forEach(([x, y], i) => { const tr = tree(P, 0.85 + ((i * 37) % 10) / 22, i); tr.position.copy(W(x, y, 0.05 + (inG(x, y) ? GZ : 0))); tr.rotation.y = i; G.add(tr); });
     // postes de luz a lo largo de los caminos principales
     const bulbM = mat('#FFE9A8', { emissive: '#FFD66B', emissiveIntensity: isDark ? 4 : 0.4 });
     [[5.2, -9], [5.2, -2], [5.2, 3], [10, -4.9], [16, -4.9], [19.7, 0], [19.7, 6], [19.7, 12], [2.5, 5.7], [19.7, -9]].forEach(([lx, ly]) => {
@@ -567,8 +584,8 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     // arbustos junto a las plataformas
     [[7.4, -4.4], [8.4, -4.4], [9.4, -4.4], [17.6, -4.4], [18.6, -4.4], [-2.2, -6.2], [3.2, -6.2], [7.8, 3.9], [18.9, 3.9]].forEach(([bx, by], i) => { const b = mesh(memo('bush', () => new THREE.IcosahedronGeometry(0.26, 1)), mat(new THREE.Color(P.tree).offsetHSL(0, 0, -0.04).getStyle(), { flatShading: true, roughness: 0.9 })); b.position.copy(W(bx, by, 0.18)); b.scale.set(1.2, 0.8, 1); b.rotation.y = i; G.add(b); });
     { // estacionamiento con cajones y topes + autos con rines y luces
-      const parkPad = boxAt(9.4, 5.95, 0, 5.4, 1.65, 0.065, rMat, 0.04); parkPad.castShadow = false; G.add(parkPad);
-      for (let i = 0; i <= 4; i++) { const ln = boxAt(9.65 + i * 1.2, 6.1, 0.066, 0.04, 1.25, 0.005, mat(P.line), 0); ln.castShadow = false; G.add(ln); if (i < 4) G.add(boxAt(10.0 + i * 1.2, 7.25, 0.066, 0.5, 0.08, 0.04, mat('#F2B705'), 0.01)); }
+      const parkPad = boxAt(9.4, 5.95, GZ, 5.4, 1.65, 0.065, rMat, 0.04); parkPad.castShadow = false; G.add(parkPad);
+      for (let i = 0; i <= 4; i++) { const ln = boxAt(9.65 + i * 1.2, 6.1, GZ + 0.066, 0.04, 1.25, 0.005, mat(P.line), 0); ln.castShadow = false; G.add(ln); if (i < 4) G.add(boxAt(10.0 + i * 1.2, 7.25, GZ + 0.066, 0.5, 0.08, 0.04, mat('#F2B705'), 0.01)); }
       const trimM = mat('#14121A', { roughness: 0.7 }), glassM = mat('#0F172A', { roughness: 0.08, metalness: 0.8 }), rimM = mat('#CBD5E1', { metalness: 0.8, roughness: 0.2 });
       [[10.25, '#B91C1C', true], [11.45, '#F8FAFC', false], [12.65, '#1E293B', true], [13.85, '#6D4FD8', false]].forEach(([px, col, suv]) => {
         const car = new THREE.Group(), bodyM = mat(col, { roughness: 0.22, metalness: 0.45 });
@@ -579,7 +596,7 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
         [[-0.27, 0.22], [-0.27, -0.22], [0.27, 0.22], [0.27, -0.22]].forEach(([wx, wz]) => { const w = mesh(memo('carW', () => new THREE.CylinderGeometry(0.1, 0.1, 0.08, 12)), trimM); w.rotation.x = Math.PI / 2; w.position.set(wx, 0.1, wz); car.add(w); const r = mesh(memo('carR', () => new THREE.CylinderGeometry(0.055, 0.055, 0.085, 8)), rimM, false); r.rotation.x = Math.PI / 2; r.position.set(wx, 0.1, wz); car.add(r); });
         const hl = mesh(memo('cHL', () => new THREE.BoxGeometry(0.02, 0.05, 0.38)), mat('#FEF08A', { emissive: '#FEF08A', emissiveIntensity: isDark ? 1.5 : 0.1 }), false); hl.position.set(0.45, 0.25, 0); car.add(hl);
         const tl = mesh(memo('cTL', () => new THREE.BoxGeometry(0.02, 0.05, 0.38)), mat('#EF4444', { emissive: '#EF4444', emissiveIntensity: isDark ? 1.8 : 0.2 }), false); tl.position.set(-0.45, 0.26, 0); car.add(tl);
-        car.rotation.y = -Math.PI / 2; car.position.copy(W(px, 6.72, 0.065)); G.add(car);
+        car.rotation.y = -Math.PI / 2; car.position.copy(W(px, 6.72, GZ + 0.065)); G.add(car);
       });
     }
   }, [isDark, zonas.join('|'), ciudades.join('|')]);
@@ -710,7 +727,7 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
         const L = Ls[i], o = add(mk(it), it.key), d0 = (i * Lc) / n;
         o.rotation.order = 'YXZ'; // rumbo primero, luego balanceo sobre el propio eje
         anim((t) => {
-          const s = (d0 + t * v) % Lc; if (s > L) { o.position.set(0, -50, 0); return; }
+          const s = (d0 + t * v) % Lc; if (s > L) { o.visible = false; o.position.set(0, -50, 0); return; } o.visible = true;
           const r = s / L, u = r < 0.08 ? (r / 0.08) * (r / 0.08) * 0.08 : r > 0.92 ? 1 - ((1 - r) / 0.08) * ((1 - r) / 0.08) * 0.08 : r; // arranca y frena suave
           const p = pathAt(it.path, u), vibe = z < 0.1 ? Math.sin(t * 28 + i) * 0.006 : 0; // vibración de motor en camiones
           o.position.copy(W(p.x, p.y, z + vibe)); o.rotation.set(p.turn * 0.14, -p.ang, 0);
