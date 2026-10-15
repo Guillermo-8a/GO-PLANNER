@@ -160,6 +160,7 @@ function parseEventos(text) {
         oc, pos: '', sku: v(r, 'GOA'), modelo: '', prov: v(r, 'PROVEEDOR') || 'Sin proveedor', marca: v(r, 'MARCA') || '—', seccion: v(r, 'SECCION'), goa: v(r, 'GOA'), origen,
         pzsPed: asig || numv(v(r, 'PZS PEDIDAS')), pzsEv: 0, valor: numv(v(r, 'COSTO ASIG')) || numv(v(r, 'COSTO PEDIDO')), ubic: '', centro: ctr(tienda), zona: norm(v(r, 'ZONA')), cont: '', mon: origen === 'IMP' ? 'USD' : '', // el costo de importación viene en dólares
         fechaOc: toDate(v(r, 'FCH OC')), fechaComp: comp && !comp.startsWith('1900') ? toDate(comp) : null,
+        traslado: v(r, 'NUM TRASLADO'), fechaEntPlan: ((x) => (x && !x.startsWith('1900') ? toDate(x) : null))(v(r, 'DT ENTREGA PLAN')),
       };
       const add = (etapa, h, pzsEv, ubic) => { const f = toDate(v(r, h)); if (f) ev.push({ ...base, etapa, fecha: f, pzsEv, ubic }); };
       // Inventario en CEDIS / CR (sin traslado, asignado) y mercancía embarcada: una sola foto fechada en la última entrada
@@ -282,7 +283,9 @@ function buildUnits(ev, umbral, hoy) {
     const llegada = at.RECIBIDO || (fin ? at[fin] : null);
     units.push({
       key, oc: f.oc, sku: f.sku, modelo: f.modelo, prov: f.prov, marca: f.marca, seccion: f.seccion, goa: f.goa, centro: list.find((e) => e.centro)?.centro || '',
-      zona: list.find((e) => e.zona)?.zona || '', cont: list.find((e) => e.cont)?.cont || '', ciudad: norm(list.filter((e) => e.etapa === 'BODEGA_REG').pop()?.ubic || ''),
+      zona: list.find((e) => e.zona)?.zona || '', cont: list.find((e) => e.cont)?.cont || '', traslado: list.find((e) => e.traslado)?.traslado || '', fechaEntPlan: list.find((e) => e.fechaEntPlan)?.fechaEntPlan || null,
+      // traslado vencido: sigue en cross dock y ya pasó la fecha comprometida de entrega del traslado
+      trVencido: etapa === 'CROSSDOCK' && !has('TRANSITO_TDA') && !!list.find((e) => e.fechaEntPlan) && hoy > new Date(list.find((e) => e.fechaEntPlan).fechaEntPlan), ciudad: norm(list.filter((e) => e.etapa === 'BODEGA_REG').pop()?.ubic || ''),
       tipo, pzs, pzsRec, valor: Math.max(...list.map((e) => e.valor || 0)), etapa, desde: last.fecha, ubic: last.ubic, enEtapa, at, tramos, eventos: list, route,
       fechaComp, inicio, fin: llegada, lead: llegada ? dias(inicio, llegada) : null,
       // Con proveedor: atorado solo si ya pasó su compromiso + tolerancia (una OC para enero no está atorada hoy).
@@ -370,7 +373,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
     const qq = norm(q);
     return allUnits.filter((u) => (!fProv || u.prov === fProv) && (!fMarca || u.marca === fMarca) && (!fTipo || u.tipo === fTipo) && (!fZona || u.zona === fZona) && (!fSec || u.seccion === fSec) && (!fMes || mesDe(u) === fMes)
       && (!fSolo || (fSolo === 'atorado' ? u.atorado : fSolo === 'vencido' ? u.vencido : fSolo === 'activo' ? u.etapa !== 'RECIBIDO' : true))
-      && (!qq || norm(`${u.oc} ${u.sku} ${u.modelo} ${u.centro} ${u.cont}`).includes(qq)));
+      && (!qq || norm(`${u.oc} ${u.sku} ${u.modelo} ${u.centro} ${u.cont} ${u.traslado || ''}`).includes(qq)));
   }, [allUnits, fProv, fMarca, fTipo, fZona, fSec, fMes, fSolo, q]);
 
   const zonas = useMemo(() => [...new Set([...ZONAS_SBB, ...allUnits.map((u) => u.zona).filter(Boolean).sort()])].slice(0, 14), [allUnits]);
@@ -488,9 +491,9 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
   };
   const abrirUnidad = (u) => { abrir({ key: '', stages: [u.etapa], titulo: SL[u.etapa], zona: ['TRANSITO_TDA', 'TIENDA', 'RECIBIDO'].includes(u.etapa) ? zonaDe(u) : undefined, ciudad: u.etapa === 'BODEGA_REG' ? ciudadDe(u) : undefined }); setSelUnit(u.key); };
   const exportar = () => {
-    const H = ['OC', 'SKU', 'MODELO', 'PROVEEDOR', 'MARCA', 'TIPO', 'CENTRO', 'ZONA', 'PIEZAS', 'BUCKET', 'ETAPA_ACTUAL', 'ULTIMO_REGISTRO', 'UBICACION', 'DIAS_EN_ETAPA', 'ATORADO', 'FECHA_COMPROMISO', 'VENCIDO', ...STAGES.map((s) => `DIAS_${s.k}`)];
+    const H = ['OC', 'SKU', 'MODELO', 'PROVEEDOR', 'MARCA', 'TIPO', 'CENTRO', 'ZONA', 'PIEZAS', 'BUCKET', 'ETAPA_ACTUAL', 'ULTIMO_REGISTRO', 'UBICACION', 'DIAS_EN_ETAPA', 'ATORADO', 'FECHA_COMPROMISO', 'VENCIDO', 'TRASLADO', 'ENTREGA_PLAN', ...STAGES.map((s) => `DIAS_${s.k}`)];
     const L = [H.join(',')];
-    units.forEach((u) => L.push([u.oc, u.sku, u.modelo, u.prov, u.marca, TIPOS[u.tipo].l, u.centro, u.zona, u.pzs, BUCKETS.find((b) => b.k === bucketOf(u))?.l || 'Recibido', SL[u.etapa], u.desde.toISOString().slice(0, 10), u.ubic, (u.enEtapa || 0).toFixed(1), u.atorado ? 'SI' : '', u.fechaComp ? u.fechaComp.toISOString().slice(0, 10) : '', u.vencido ? 'SI' : '', ...STAGES.map((s) => (u.tramos[s.k] != null ? u.tramos[s.k].toFixed(1) : ''))].map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')));
+    units.forEach((u) => L.push([u.oc, u.sku, u.modelo, u.prov, u.marca, TIPOS[u.tipo].l, u.centro, u.zona, u.pzs, BUCKETS.find((b) => b.k === bucketOf(u))?.l || 'Recibido', SL[u.etapa], u.desde.toISOString().slice(0, 10), u.ubic, (u.enEtapa || 0).toFixed(1), u.atorado ? 'SI' : '', u.fechaComp ? u.fechaComp.toISOString().slice(0, 10) : '', u.vencido ? 'SI' : '', u.traslado || '', ((x) => (x ? new Date(x).toISOString().slice(0, 10) : ''))(u.fechaEntPlan), ...STAGES.map((s) => (u.tramos[s.k] != null ? u.tramos[s.k].toFixed(1) : ''))].map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(',')));
     const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['﻿' + L.join('\r\n')], { type: 'text/csv;charset=utf-8' })); a.download = 'Pedidos_rastreo.csv'; a.click();
   };
 
@@ -658,7 +661,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
                 const m = {};
                 nodeUnits.filter((u) => u.atorado || u.vencido).forEach((u) => { const o = (m[u.oc] = m[u.oc] || { oc: u.oc, prov: u.prov, goa: u.goa || u.modelo || u.sku, pzs: 0, comp: u.fechaComp, dias: 0, u }); o.pzs += u.pzs; const d = u.etapa === 'PROVEEDOR' && u.fechaComp ? dias(u.fechaComp, hoy) : u.enEtapa - (cfg.umbral[u.etapa] ?? 0); if (d > o.dias) { o.dias = d; o.u = u; } });
                 const top = Object.values(m).sort((a, b) => b.dias - a.dias).slice(0, 10);
-                const exp = () => { const H = ['OC', 'PROVEEDOR', 'SECCION', 'GOA', 'TIENDA', 'TIPO', 'ETAPA', 'PIEZAS', 'DIAS_EN_ETAPA', 'ATORADO', 'COMPROMISO']; const L = [H.join(',')]; nodeUnits.forEach((u) => L.push([u.oc, u.prov, u.seccion, u.goa, u.centro, TIPOS[u.tipo].l, SL[u.etapa], u.pzs, (u.enEtapa || 0).toFixed(1), u.atorado ? 'SI' : '', u.fechaComp ? u.fechaComp.toISOString().slice(0, 10) : ''].map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['\uFEFF' + L.join('\r\n')], { type: 'text/csv;charset=utf-8' })); a.download = `Pedidos_${(sel.titulo || 'nodo').replace(/[^\w]+/g, '_')}.csv`; a.click(); };
+                const exp = () => { const H = ['OC', 'PROVEEDOR', 'SECCION', 'GOA', 'TIENDA', 'TIPO', 'ETAPA', 'PIEZAS', 'DIAS_EN_ETAPA', 'ATORADO', 'COMPROMISO', 'TRASLADO', 'ENTREGA_PLAN', 'TRASLADO_VENCIDO']; const L = [H.join(',')]; nodeUnits.forEach((u) => L.push([u.oc, u.prov, u.seccion, u.goa, u.centro, TIPOS[u.tipo].l, SL[u.etapa], u.pzs, (u.enEtapa || 0).toFixed(1), u.atorado ? 'SI' : '', u.fechaComp ? u.fechaComp.toISOString().slice(0, 10) : '', u.traslado || '', ((x) => (x ? new Date(x).toISOString().slice(0, 10) : ''))(u.fechaEntPlan), u.trVencido ? 'SI' : ''].map((v) => `"${String(v ?? '').replace(/"/g, '""')}"`).join(','))); const a = document.createElement('a'); a.href = URL.createObjectURL(new Blob(['\uFEFF' + L.join('\r\n')], { type: 'text/csv;charset=utf-8' })); a.download = `Pedidos_${(sel.titulo || 'nodo').replace(/[^\w]+/g, '_')}.csv`; a.click(); };
                 return (
                   <div className="px-4 mb-2">
                     <div className={`text-[9px] font-black uppercase tracking-wider mb-1 flex justify-between items-center ${t.textMuted}`}><span title="Días de atraso contra la fecha esperada (compromiso); fuera de proveedor, días en el nodo por encima del SLA">Top 10 · atraso vs compromiso / umbral</span><button onClick={exp} className="flex items-center gap-1 normal-case font-bold hover:underline"><Download size={11} /> CSV del nodo</button></div>
@@ -693,13 +696,13 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
                           <span className={`text-xs font-black flex items-center gap-1.5 ${t.text}`}><span className="w-2 h-2 rounded-full" style={{ background: TIPOS[o.tipo].c }} />OC {o.oc}</span>
                           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${o.ator ? 'bg-rose-500/15 text-rose-500' : (isDark ? 'bg-white/10 text-gray-300' : 'bg-gray-100 text-gray-600')}`}>{o.max.toFixed(0)} d en nodo</span>
                         </div>
-                        <div className={`text-[10px] ${t.textMuted}`}>{o.prov} · {o.goa} · {o.us.length} {o.us.length === 1 ? 'tienda' : 'tiendas'} · {fmt(o.pzs)} pzs{o.us[0]?.etapa === 'FULFILLMENT' && o.us[0].ubic ? ` · ${o.us[0].ubic}` : ''}{o.ator ? ` · ${o.ator} atoradas` : ''}</div>
+                        <div className={`text-[10px] ${t.textMuted}`}>{o.prov} · {o.goa} · {o.us.length} {o.us.length === 1 ? 'tienda' : 'tiendas'} · {fmt(o.pzs)} pzs{o.us[0]?.etapa === 'FULFILLMENT' && o.us[0].ubic ? ` · ${o.us[0].ubic}` : ''}{o.ator ? ` · ${o.ator} atoradas` : ''}{o.us.length === 1 && o.us[0].traslado ? ` · Tr ${o.us[0].traslado}${o.us[0].fechaEntPlan ? ` · entrega ${fdate(new Date(o.us[0].fechaEntPlan))}` : ''}` : ''}{o.us.some((u) => u.trVencido) ? <b className="text-rose-500"> · {o.us.filter((u) => u.trVencido).length} traslado(s) vencido(s)</b> : ''}</div>
                       </button>
                       {expOC === o.oc && o.us.length > 1 && (
                         <div className={`ml-4 pl-2 border-l ${isDark ? 'border-white/10' : 'border-gray-200'}`}>
                           {o.us.sort((a, b) => b.enEtapa - a.enEtapa).map((u) => (
                             <button key={u.key} onClick={() => setSelUnit(u.key)} className={`w-full flex justify-between text-[10.5px] px-2 py-1 rounded ${selUnit === u.key ? (isDark ? 'bg-violet-500/15' : 'bg-blue-50') : (isDark ? 'hover:bg-white/5' : 'hover:bg-gray-50')}`}>
-                              <span className={t.text}>{u.centro ? `T${u.centro}` : '—'} · {fmt(u.pzs)} pzs</span>
+                              <span className={t.text}>{u.centro ? `T${u.centro}` : '—'} · {fmt(u.pzs)} pzs{u.traslado ? ` · Tr ${u.traslado}` : ''}{u.fechaEntPlan ? ` · entrega ${fdate(new Date(u.fechaEntPlan))}` : ''}{u.trVencido ? <b className="text-rose-500"> · vencido</b> : ''}</span>
                               <span className={u.atorado ? 'text-rose-500 font-bold' : t.textMuted}>{u.etapa === 'RECIBIDO' ? `recibido ${fdate(u.fin)}` : `${(u.enEtapa || 0).toFixed(0)} d`}</span>
                             </button>
                           ))}
