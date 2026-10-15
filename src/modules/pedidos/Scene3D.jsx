@@ -25,15 +25,27 @@ const PALETTE = {
 // ── Caché de geometrías / materiales / texturas ─────────────────────────────
 const cache = new Map();
 const memo = (k, f) => { if (!cache.has(k)) cache.set(k, f()); return cache.get(k); };
-const mat = (color, o = {}) => memo(`m:${color}:${JSON.stringify(o)}`, () => new THREE.MeshStandardMaterial({ color, roughness: 0.62, metalness: 0.04, ...o }));
-const rbox = (w, h, d, r = 0.05) => memo(`rb:${w}:${h}:${d}:${r}`, () => new RoundedBoxGeometry(w, h, d, 2, Math.min(r, w / 2.2, h / 2.2, d / 2.2)));
-const canvasTex = (k, w, h, draw) => memo(`t:${k}`, () => { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 4; return t; });
-const stripes = (base, line, n, vertical = true) => canvasTex(`st:${base}:${line}:${n}:${vertical}`, 128, 128, (g, w, h) => { g.fillStyle = base; g.fillRect(0, 0, w, h); g.fillStyle = line; for (let i = 0; i < n; i++) { if (vertical) g.fillRect((i * w) / n, 0, w / n / 3, h); else g.fillRect(0, (i * h) / n, w, h / n / 4); } });
-const cartonTex = (alert) => canvasTex(`carton:${alert}`, 64, 64, (g) => { g.fillStyle = alert ? '#F08A8A' : '#D9A86A'; g.fillRect(0, 0, 64, 64); g.fillStyle = alert ? '#C25E5E' : '#B9874A'; g.fillRect(27, 0, 10, 64); g.fillStyle = 'rgba(255,255,255,0.18)'; g.fillRect(0, 0, 64, 6); });
-const signTex = (text, bg, fg) => canvasTex(`sign:${text}:${bg}:${fg}`, 256, 64, (g, w, h) => { g.fillStyle = bg; g.beginPath(); g.roundRect(2, 2, w - 4, h - 4, 14); g.fill(); g.fillStyle = fg; g.font = '900 30px Inter, system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, w / 2, h / 2 + 2); });
+const mat = (color, o = {}) => memo(`m:${color}:${JSON.stringify(o)}`, () => new THREE.MeshStandardMaterial({ color, roughness: 0.62, metalness: 0.04, ...o })); // (bumpMap de grano descartado: genera NaN y cuadros negros con el bloom)
+const rbox = (w, h, d, r = 0.05) => memo(`rb:${w}:${h}:${d}:${r}`, () => new RoundedBoxGeometry(w, h, d, 3, Math.min(r, w / 2.2, h / 2.2, d / 2.2)));
+const canvasTex = (k, w, h, draw) => memo(`t:${k}`, () => { const c = document.createElement('canvas'); c.width = w; c.height = h; draw(c.getContext('2d'), w, h); const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 16; return t; });
+const stripes = (base, line, n, vertical = true) => canvasTex(`st:${base}:${line}:${n}:${vertical}`, 256, 256, (g, w, h) => { g.fillStyle = base; g.fillRect(0, 0, w, h); g.fillStyle = line; for (let i = 0; i < n; i++) { if (vertical) g.fillRect((i * w) / n, 0, w / n / 2.8, h); else g.fillRect(0, (i * h) / n, w, h / n / 3.5); } });
+const cartonTex = (alert) => canvasTex(`carton:${alert}`, 128, 128, (g) => { g.fillStyle = alert ? '#F08A8A' : '#D9A86A'; g.fillRect(0, 0, 128, 128); g.fillStyle = alert ? '#C25E5E' : '#B9874A'; g.fillRect(54, 0, 20, 128); g.strokeStyle = 'rgba(0,0,0,0.12)'; g.lineWidth = 3; g.strokeRect(2, 2, 124, 124); g.fillStyle = 'rgba(255,255,255,0.22)'; g.fillRect(0, 0, 128, 10); });
+const signTex = (text, bg, fg) => canvasTex(`sign:${text}:${bg}:${fg}`, 512, 128, (g, w, h) => {
+  g.fillStyle = bg; g.beginPath(); g.roundRect(4, 4, w - 8, h - 8, 24); g.fill(); g.strokeStyle = 'rgba(255,255,255,0.18)'; g.lineWidth = 4; g.stroke();
+  let fs = 58; g.font = `900 ${fs}px Inter, system-ui, sans-serif`; while (fs > 26 && g.measureText(text).width > w - 44) { fs -= 2; g.font = `900 ${fs}px Inter, system-ui, sans-serif`; } // textos largos se achican
+  g.fillStyle = fg; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(text, w / 2, h / 2 + 3);
+});
 const pinTex = (n) => canvasTex(`pin:${n}`, 96, 128, (g) => { g.shadowColor = 'rgba(0,0,0,0.35)'; g.shadowBlur = 8; g.fillStyle = '#E5484D'; g.beginPath(); g.moveTo(48, 122); g.bezierCurveTo(12, 78, 6, 58, 6, 44); g.arc(48, 44, 42, Math.PI, 0); g.bezierCurveTo(90, 58, 84, 78, 48, 122); g.fill(); g.shadowBlur = 0; g.strokeStyle = '#fff'; g.lineWidth = 5; g.stroke(); g.fillStyle = '#fff'; g.beginPath(); g.arc(48, 44, 25, 0, Math.PI * 2); g.fill(); g.fillStyle = '#E5484D'; g.font = '900 30px Inter, system-ui, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(String(n), 48, 46); });
 const flowTex = (color) => canvasTex(`flow:${color}`, 64, 8, (g) => { g.clearRect(0, 0, 64, 8); g.fillStyle = color; g.beginPath(); g.roundRect(4, 1, 24, 6, 3); g.fill(); });
 
+// Agua: manchas suaves de oleaje (se desplazan con el tiempo)
+const waterTex = (dark) => canvasTex(`wtex:${dark}`, 256, 256, (g, w, h) => {
+  g.fillStyle = dark ? '#2D6E9E' : '#68B0E8'; g.fillRect(0, 0, w, h);
+  for (let i = 0; i < 140; i++) { const x = (Math.sin(i * 73.1) * 0.5 + 0.5) * w, y = (Math.cos(i * 41.7) * 0.5 + 0.5) * h; g.fillStyle = dark ? 'rgba(56, 189, 248, 0.07)' : 'rgba(255, 255, 255, 0.16)'; g.beginPath(); g.ellipse(x, y, 14 + (i % 22), 3 + (i % 5), 0, 0, Math.PI * 2); g.fill(); }
+});
+// Baliza holográfica (gradiente vertical) y charco de luz cálida bajo los postes
+const beaconTex = (color) => canvasTex(`bcn:${color}`, 32, 128, (g) => { const grd = g.createLinearGradient(0, 128, 0, 0); grd.addColorStop(0, `${color}AA`); grd.addColorStop(0.35, `${color}44`); grd.addColorStop(1, `${color}00`); g.fillStyle = grd; g.fillRect(0, 0, 32, 128); });
+const glowPoolTex = () => canvasTex('gp', 64, 64, (g) => { const grd = g.createRadialGradient(32, 32, 2, 32, 32, 32); grd.addColorStop(0, 'rgba(255, 224, 138, 0.55)'); grd.addColorStop(0.5, 'rgba(255, 198, 92, 0.22)'); grd.addColorStop(1, 'rgba(255, 198, 92, 0)'); g.fillStyle = grd; g.fillRect(0, 0, 64, 64); });
 // Halo radial de semáforo (centro suave, borde marcado)
 const haloTex = (color) => canvasTex(`halo:${color}`, 128, 128, (g) => {
   const grd = g.createRadialGradient(64, 64, 10, 64, 64, 62);
@@ -78,6 +90,12 @@ function warehouse(P, { x, y, w, d, h, roof, doors = 3, logo, rh = 0.55, windows
   if (w >= 3.3) { // equipos de aire y tragaluces en el techo
     for (let i = 0; i < Math.floor(w / 1.6); i++) { const ux = x + 0.6 + i * 1.6; const ac = boxAt(ux, y + 0.25, h + 0.12, 0.42, 0.36, 0.26, mat('#C9CED8', { metalness: 0.5, roughness: 0.35 }), 0.04); g.add(ac); const fan = mesh(memo('fan', () => new THREE.CylinderGeometry(0.11, 0.11, 0.03, 14)), mat('#3A3A44'), false); fan.position.copy(W(ux + 0.21, y + 0.43, h + 0.4)); g.add(fan); }
     for (let i = 0; i < Math.floor(w / 1.2); i++) { const sk = mesh(memo('sky', () => new THREE.BoxGeometry(0.5, 0.04, 0.3)), mat('#BFE3FF', { roughness: 0.05, metalness: 0.3, emissive: '#BFE3FF', emissiveIntensity: P === PALETTE.dark ? 0.35 : 0.05 }), false); sk.position.copy(W(x + 0.5 + i * 1.2, y + d * 0.72, h + rh * 0.45 + 0.03)); sk.rotation.x = Math.atan2(rh, d / 2 + 0.14); g.add(sk); }
+  }
+  if (w >= 2.4) { // paneles solares en la vertiente frontal, entre el alero y los tragaluces
+    const panelTex = canvasTex('sol', 64, 64, (gg) => { gg.fillStyle = '#0F294A'; gg.fillRect(0, 0, 64, 64); gg.strokeStyle = '#38BDF8'; gg.lineWidth = 1.5; for (let k = 0; k <= 64; k += 16) { gg.beginPath(); gg.moveTo(k, 0); gg.lineTo(k, 64); gg.moveTo(0, k); gg.lineTo(64, k); gg.stroke(); } });
+    const solMat = memo('solMat', () => new THREE.MeshStandardMaterial({ map: panelTex, roughness: 0.15, metalness: 0.85 }));
+    const slope = Math.atan2(rh, d / 2 + 0.14), py = y + d * 0.9, hy = h + rh * ((y + d + 0.14 - py) / (d / 2 + 0.14)) + 0.03;
+    for (let i = 0; i < Math.floor((w - 0.6) / 0.9); i++) { const sp = mesh(memo('solG', () => new THREE.BoxGeometry(0.72, 0.03, 0.42)), solMat, false); sp.position.copy(W(x + 0.55 + i * 0.9, py, hy)); sp.rotation.x = slope; g.add(sp); }
   }
   // topes de andén
   for (let i = 0; i < doors; i++) { const dw = Math.min(0.85, (w - 0.6) / doors - 0.18), u = x + 0.35 + (i * (w - 0.5)) / doors; [u - 0.12, u + dw + 0.04].forEach((bx) => g.add(boxAt(bx, y + d, 0.15, 0.08, 0.1, 0.22, mat('#1F1D26', { roughness: 0.9 }), 0.02))); }
@@ -162,27 +180,37 @@ function tree(P, s = 1, variant = 1) {
   g.scale.setScalar(s); return g;
 }
 // Plaza de tiendas de una zona: local principal con letrero + dos locales chicos
-function plaza(P, x, y, name, seed) {
+// Plaza de una zona: tienda principal + dos boutiques (blanco, morado oscuro y negro mate)
+function plaza(P, x, y, name) {
   const g = new THREE.Group(); g.add(store(P, x, y, name));
-  const cols = ['#F59E0B', '#14B8A6', '#EC4899', '#3B82F6'];
-  [[x + 0.15, y - 1.15, 1.1, 0.85, 0.75], [x + 1.4, y - 1.05, 0.9, 0.75, 0.62]].forEach(([sx, sy, w, d, h], i) => {
-    const c = cols[(seed + i) % cols.length];
-    g.add(boxAt(sx, sy, 0, w, d, h, mat(P.wall), 0.04));
-    g.add(boxAt(sx - 0.03, sy - 0.03, h, w + 0.06, d + 0.06, 0.1, mat(c, { roughness: 0.4 }), 0.03));
-    g.add(boxAt(sx + 0.15, sy + d - 0.01, 0.05, w - 0.3, 0.03, h * 0.55, mat(P.glass, { roughness: 0.1, metalness: 0.5, emissive: P.glass, emissiveIntensity: P === PALETTE.dark ? 0.45 : 0 }), 0.01));
+  const dark = P === PALETTE.dark, wCol = dark ? '#EAE6F3' : '#FFFFFF', purp = '#3B1D6E', blk = '#14121A';
+  [[x + 0.12, y - 1.15, 1.15, 0.85, 0.78], [x + 1.42, y - 1.05, 0.92, 0.75, 0.66]].forEach(([sx, sy, w, d, h], i) => {
+    g.add(boxAt(sx, sy, 0, w, d, h, mat(wCol, { roughness: 0.45 }), 0.03));
+    g.add(boxAt(sx - 0.01, sy - 0.01, 0, w + 0.02, d + 0.02, 0.08, mat(blk, { roughness: 0.7 }), 0.01));
+    g.add(boxAt(sx - 0.03, sy - 0.03, h, w + 0.06, d + 0.06, 0.1, mat(i === 0 ? purp : blk, { roughness: 0.35, metalness: 0.15 }), 0.02));
+    g.add(boxAt(sx + 0.14, sy + d - 0.01, 0.08, w - 0.28, 0.04, h * 0.6, mat(blk, { roughness: 0.4 }), 0.01));
+    g.add(boxAt(sx + 0.18, sy + d + 0.01, 0.11, w - 0.36, 0.03, h * 0.52, mat(P.glass, { roughness: 0.08, metalness: 0.65, emissive: P.glass, emissiveIntensity: dark ? 0.38 : 0 }), 0.01));
   });
   return g;
 }
 function store(P, x, y, name) {
-  const g = new THREE.Group(), w = 2.4, d = 1.9, h = 1.05; g.add(aoPad(x, y, w, d));
-  g.add(boxAt(x, y, 0, w, d, h, mat(P.wall), 0.05));
-  g.add(boxAt(x - 0.05, y - 0.05, h, w + 0.1, d + 0.1, 0.2, mat('#E0BB3E', { roughness: 0.4 }), 0.04));
-  g.add(boxAt(x + 0.25, y + d - 0.01, 0.02, 0.75, 0.04, 0.6, mat(P.glass, { roughness: 0.1, metalness: 0.5, emissive: P.glass, emissiveIntensity: P === PALETTE.dark ? 0.4 : 0 }), 0.01));
-  g.add(boxAt(x + 1.2, y + d - 0.01, 0.15, 0.95, 0.04, 0.47, mat(P.glass, { roughness: 0.1, metalness: 0.5, emissive: P.glass, emissiveIntensity: P === PALETTE.dark ? 0.4 : 0 }), 0.01));
-  const aw = mesh(memo('awn', () => new THREE.BoxGeometry(w - 0.1, 0.03, 0.45)), new THREE.MeshStandardMaterial({ map: stripes('#7C5CF0', '#FFFFFF', 8), roughness: 0.6 }));
-  aw.position.copy(W(x + w / 2, y + d + 0.2, h * 0.68)); aw.rotation.x = 0.45; g.add(aw);
-  const s = new THREE.Mesh(memo('signS', () => new THREE.PlaneGeometry(1.6, 0.36)), new THREE.MeshBasicMaterial({ map: signTex(name, '#7C5CF0', '#FFFFFF'), transparent: true }));
-  s.position.copy(W(x + w / 2, y + d + 0.06, h + 0.08)); g.add(s);
+  const g = new THREE.Group(), w = 2.4, d = 1.9, h = 1.08; g.add(aoPad(x, y, w, d));
+  const dark = P === PALETTE.dark, wCol = dark ? '#F0EDF7' : '#FFFFFF', purp = '#3B1D6E', blk = '#14121A';
+  const glass = mat(P.glass, { roughness: 0.08, metalness: 0.7, emissive: P.glass, emissiveIntensity: dark ? 0.35 : 0 });
+  g.add(boxAt(x, y, 0, w, d, h, mat(wCol, { roughness: 0.42 }), 0.04));
+  g.add(boxAt(x - 0.015, y - 0.015, 0, w + 0.03, d + 0.03, 0.09, mat(blk, { roughness: 0.75 }), 0.01)); // zócalo
+  g.add(boxAt(x - 0.04, y - 0.04, h, w + 0.08, d + 0.08, 0.18, mat(purp, { roughness: 0.35, metalness: 0.12 }), 0.03)); // corona morada
+  g.add(boxAt(x - 0.05, y - 0.05, h + 0.18, w + 0.1, d + 0.1, 0.04, mat(blk, { roughness: 0.5, metalness: 0.2 }), 0.01)); g.add(boxAt(x + 0.06, y + 0.06, h + 0.2, w - 0.12, d - 0.12, 0.03, mat(dark ? '#4A4360' : '#E4E1EC', { roughness: 0.8 }), 0.01)); // azotea clara con filo negro
+  g.add(boxAt(x + 0.18, y + d - 0.03, 0, 0.85, 0.12, h * 0.82, mat(blk, { roughness: 0.5 }), 0.02)); // pórtico
+  g.add(boxAt(x + 0.25, y + d + 0.04, 0.02, 0.71, 0.04, 0.64, glass, 0.01));
+  g.add(boxAt(x + 1.16, y + d - 0.01, 0.14, 1.02, 0.05, 0.54, mat(blk, { roughness: 0.5 }), 0.01)); // escaparate
+  g.add(boxAt(x + 1.2, y + d + 0.01, 0.17, 0.94, 0.04, 0.48, glass, 0.01));
+  g.add(boxAt(x + 1.65, y + d + 0.02, 0.16, 0.04, 0.05, 0.5, mat(blk), 0.005));
+  g.add(boxAt(x + 0.12, y + d - 0.02, h * 0.68, w - 0.24, 0.38, 0.05, mat(blk, { roughness: 0.4, metalness: 0.25 }), 0.015)); // marquesina
+  g.add(boxAt(x + 0.12, y + d + 0.34, h * 0.69, w - 0.24, 0.03, 0.03, mat('#6D4FD8', { emissive: '#6D4FD8', emissiveIntensity: dark ? 1.2 : 0.1 }), 0.005));
+  g.add(boxAt(x + 0.3, y + 0.35, h + 0.18, 0.55, 0.45, 0.16, mat(blk, { roughness: 0.6, metalness: 0.3 }), 0.02)); // HVAC
+  const s = new THREE.Mesh(memo('signS', () => new THREE.PlaneGeometry(1.6, 0.36)), new THREE.MeshBasicMaterial({ map: signTex(name, '#241046', '#FFFFFF'), transparent: true }));
+  s.position.copy(W(x + w / 2, y + d + 0.06, h + 0.09)); g.add(s);
   return g;
 }
 function factory(P, n = N.PROV, roofC) {
@@ -264,8 +292,8 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     controls.touches = { ONE: THREE.TOUCH.PAN, TWO: THREE.TOUCH.DOLLY_ROTATE };
     const pmrem = new THREE.PMREMGenerator(renderer); scene.environment = pmrem.fromScene(new RoomEnvironment(), 0.04).texture; scene.environmentIntensity = 0.45; // luz ambiental suave
     const hemi = new THREE.HemisphereLight('#ffffff', '#5a5470', 1); scene.add(hemi);
-    const sun = new THREE.DirectionalLight('#fff6e8', 1.8); sun.castShadow = true; sun.shadow.mapSize.set(2048, 2048);
-    Object.assign(sun.shadow.camera, { left: -32, right: 32, top: 32, bottom: -32, near: 1, far: 140 }); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.02; sun.shadow.radius = 3;
+    const sun = new THREE.DirectionalLight('#fff6e8', 1.8); sun.castShadow = true; const shRes = window.innerWidth < 768 ? 2048 : 4096; sun.shadow.mapSize.set(shRes, shRes);
+    Object.assign(sun.shadow.camera, { left: -32, right: 32, top: 32, bottom: -32, near: 1, far: 140 }); sun.shadow.bias = -0.0004; sun.shadow.normalBias = 0.02; sun.shadow.radius = 2;
     scene.add(sun); scene.add(sun.target);
     const fill = new THREE.DirectionalLight('#b9a8ff', 0.35); fill.position.set(40, 20, -30); scene.add(fill);
     const staticG = new THREE.Group(), dynG = new THREE.Group(); scene.add(staticG, dynG);
@@ -371,16 +399,18 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     { const o = boxAt(8.4, 2.38, 0.07, 10.5, 0.05, 0.01, mat(P.padLine), 0); o.castShadow = false; G.add(o); }
     // agua con oleaje
     const wg = new THREE.PlaneGeometry(21.2, yBot - 4.4, 56, 42); wg.rotateX(-Math.PI / 2);
-    const water = new THREE.Mesh(wg, new THREE.MeshPhysicalMaterial({ color: P.water, roughness: isDark ? 0.22 : 0.16, metalness: 0.08, clearcoat: 0.85, clearcoatRoughness: 0.2, envMapIntensity: isDark ? 0.9 : 0.65, flatShading: true, transparent: true, opacity: 0.94 }));
-    water.position.copy(W(-16 + 10.6, 6.4 + (yBot - 4.4) / 2, 0.16)); water.receiveShadow = true; G.add(water);
+    const wMap = waterTex(isDark); wMap.wrapS = wMap.wrapT = THREE.RepeatWrapping; wMap.repeat.set(5, 7);
+    // sombreado suave (sin facetas) + textura de oleaje que se desplaza; un poco más alto para no chocar con el pasto
+    const water = new THREE.Mesh(wg, new THREE.MeshPhysicalMaterial({ map: wMap, color: isDark ? '#6FA6D2' : '#8FC3EC', roughness: 0.28, metalness: 0.05, clearcoat: 0.5, clearcoatRoughness: 0.35, envMapIntensity: isDark ? 0.7 : 0.5, transparent: true, opacity: 0.95 }));
+    water.position.copy(W(-16 + 10.6, 6.4 + (yBot - 4.4) / 2, 0.19)); water.receiveShadow = true; G.add(water);
     // espuma que va y viene en la playa y alrededor de la isla
-    const shoreFoam = boxAt(-16, 6.28, 0.175, 12.5, 0.26, 0.015, new THREE.MeshBasicMaterial({ color: '#FFFFFF', transparent: true, opacity: 0.65 }), 0.06); shoreFoam.castShadow = false; shoreFoam.receiveShadow = false;
+    const shoreFoam = boxAt(-16, 6.28, 0.205, 12.5, 0.26, 0.015, new THREE.MeshBasicMaterial({ color: '#FFFFFF', transparent: true, opacity: 0.65 }), 0.06); shoreFoam.castShadow = false; shoreFoam.receiveShadow = false;
     const islFoam = new THREE.Mesh(memo('islFoam', () => new THREE.RingGeometry(1.72, 2.05, 24)), new THREE.MeshBasicMaterial({ color: '#FFFFFF', transparent: true, opacity: 0.55, side: THREE.DoubleSide, depthWrite: false }));
-    islFoam.rotation.x = -Math.PI / 2; islFoam.position.copy(W(-9.5, 18, 0.175)); G.add(shoreFoam, islFoam);
+    islFoam.rotation.x = -Math.PI / 2; islFoam.position.copy(W(-9.5, 18, 0.205)); G.add(shoreFoam, islFoam);
     const base = wg.attributes.position.array.slice();
     addAnim((t) => {
-      const a = wg.attributes.position.array; for (let i = 0; i < a.length; i += 3) a[i + 1] = base[i + 1] + Math.sin(base[i] * 0.85 + t * 1.6) * 0.055 + Math.cos(base[i + 2] * 1.05 + t * 1.2) * 0.045;
-      wg.attributes.position.needsUpdate = true; wg.computeVertexNormals();
+      const a = wg.attributes.position.array; for (let i = 0; i < a.length; i += 3) a[i + 1] = base[i + 1] + Math.sin(base[i] * 0.65 + t * 1.3) * 0.038 + Math.cos(base[i + 2] * 0.75 + t * 1.0) * 0.032;
+      wg.attributes.position.needsUpdate = true; wg.computeVertexNormals(); wMap.offset.set(t * 0.018, t * 0.012);
       shoreFoam.position.z = 6.38 + Math.sin(t * 1.6) * 0.08; shoreFoam.material.opacity = 0.4 + (Math.sin(t * 1.6) + 1) * 0.22;
       const k = 1 + Math.sin(t * 1.8) * 0.04; islFoam.scale.set(k, k, 1); islFoam.material.opacity = 0.35 + (Math.cos(t * 1.8) + 1) * 0.2;
     });
@@ -434,6 +464,12 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     });
     const dm = new THREE.InstancedMesh(new THREE.BoxGeometry(0.42, 0.012, 0.07), mat(P.line, { roughness: 0.5 }), dashes.length); const m4 = new THREE.Matrix4(), q = new THREE.Quaternion(), sc = new THREE.Vector3(1, 1, 1);
     dashes.forEach(([x, y, v], i) => { q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), v ? Math.PI / 2 : 0); m4.compose(W(x, y, 0.066), q, sc); dm.setMatrixAt(i, m4); }); dm.receiveShadow = true; G.add(dm);
+    { // pasos de cebra en cruces clave (franjas a lo largo de la calle, repartidas a lo ancho)
+      const cw = [[6.0, 0.4, true], [15.6, 3.8, true], [20.5, -1.2, true], [20.5, 8.8, true], [1.8, 4.9, false]]; // true = calle vertical
+      const im = new THREE.InstancedMesh(memo('cwStripe', () => new THREE.BoxGeometry(0.45, 0.014, 0.1)), mat(P.line, { roughness: 0.6 }), cw.length * 5); let k = 0;
+      cw.forEach(([cx, cy, vert]) => { q.setFromAxisAngle(new THREE.Vector3(0, 1, 0), vert ? Math.PI / 2 : 0); for (let st = -2; st <= 2; st++) { m4.compose(W(vert ? cx + st * 0.2 : cx, vert ? cy : cy + st * 0.2, 0.068), q, sc); im.setMatrixAt(k++, m4); } });
+      im.receiveShadow = true; G.add(im);
+    }
     // edificios
     G.add(pick(factory(P), 'PROV'));
     G.add(pick(factory(P, N.PIMP, '#14B8A6'), 'PIMP'));
@@ -455,7 +491,7 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
       G.add(pick(g, 'FORO'));
     }
     cs.forEach(({ c, x, y }) => G.add(pick(warehouse(P, { x, y, w: 2.4, d: 1.8, h: 1.1, roof: '#0EA5E9', doors: 2, rh: 0.36, windows: false, logo: c === 'REGIONAL' ? 'REGIONAL' : c.slice(0, 11) }), `CIU|${c}`)));
-    zs.forEach(({ z, x, y }, i) => G.add(pick(plaza(P, x, y, z === 'TIENDAS' ? 'TIENDAS' : z, i), `Z|${z}`)));
+    zs.forEach(({ z, x, y }) => G.add(pick(plaza(P, x, y, z === 'TIENDAS' ? 'TIENDAS' : z), `Z|${z}`)));
     // patio de contenedores y grúa
     const cols = ['#2BB3A8', '#E5484D', '#3B6FE0', '#F2A900', '#7C5CF0', '#2BB3A8', '#3B6FE0', '#E5484D'];
     for (let i = 0; i < 8; i++) { const r = i % 2, l = Math.floor(i / 4); const c = container(cols[i]); c.position.copy(W(2.7 + 0.95, 1.4 + r * 0.76 + (i % 4 >= 2 ? 1.7 : 0) + 0.34, l * 0.64)); G.add(c); }
@@ -496,6 +532,10 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
       G.add(boxAt(lx, ly, 0, 0.07, 0.07, 1.5, mat('#4B5563', { metalness: 0.5 }), 0.01));
       G.add(boxAt(lx, ly, 1.45, 0.32, 0.07, 0.05, mat('#4B5563', { metalness: 0.5 }), 0.01));
       const b = mesh(memo('bulb', () => new THREE.SphereGeometry(0.07, 10, 8)), bulbM, false); b.position.copy(W(lx + 0.3, ly + 0.035, 1.4)); G.add(b);
+      if (isDark) { // charco de luz cálida en el asfalto (sin PointLight)
+        const pool = new THREE.Mesh(memo('poolG', () => { const p = new THREE.PlaneGeometry(2.6, 2.6); p.rotateX(-Math.PI / 2); return p; }), memo('poolM', () => new THREE.MeshBasicMaterial({ map: glowPoolTex(), transparent: true, depthWrite: false, blending: THREE.AdditiveBlending })));
+        pool.position.copy(W(lx + 0.35, ly, 0.075)); pool.renderOrder = 1; G.add(pool);
+      }
     });
     // arbustos junto a las plataformas
     [[7.4, -4.4], [8.4, -4.4], [9.4, -4.4], [17.6, -4.4], [18.6, -4.4], [-2.2, -6.2], [3.2, -6.2], [7.8, 3.9], [18.9, 3.9]].forEach(([bx, by], i) => { const b = mesh(memo('bush', () => new THREE.IcosahedronGeometry(0.26, 1)), mat(new THREE.Color(P.tree).offsetHSL(0, 0, -0.04).getStyle(), { flatShading: true, roughness: 0.9 })); b.position.copy(W(bx, by, 0.18)); b.scale.set(1.2, 0.8, 1); b.rotation.y = i; G.add(b); });
@@ -546,7 +586,14 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
         anim((t) => { const ph = (t * 0.85) % 1; pulse.scale.set(1 + ph * 0.35, 1, 1 + ph * 0.35); pulse.material.opacity = (1 - ph) * 0.65; });
       }
     };
-    const ring = (x, y, w, d) => { const g = new THREE.Group(); const m = new THREE.MeshBasicMaterial({ color: isDark ? '#A78BFA' : '#3B6FE0', transparent: true, opacity: 0.8 }); [[x - 0.25, y - 0.25, w + 0.5, 0.08], [x - 0.25, y + d + 0.17, w + 0.5, 0.08], [x - 0.25, y - 0.25, 0.08, d + 0.5], [x + w + 0.17, y - 0.25, 0.08, d + 0.5]].forEach(([a, b, c, e]) => { const s = new THREE.Mesh(new THREE.BoxGeometry(c, 0.02, e), m); s.position.copy(W(a + c / 2, b + e / 2, 0.1)); g.add(s); }); G.add(g); anim((t) => { m.opacity = 0.45 + Math.sin(t * 4) * 0.35; }); };
+    const ring = (x, y, w, d) => { // marco pulsante + pilar de luz holográfico sobre lo seleccionado
+      const g = new THREE.Group(), col = isDark ? '#A78BFA' : '#3B6FE0', m = new THREE.MeshBasicMaterial({ color: col, transparent: true, opacity: 0.85 });
+      [[x - 0.25, y - 0.25, w + 0.5, 0.08], [x - 0.25, y + d + 0.17, w + 0.5, 0.08], [x - 0.25, y - 0.25, 0.08, d + 0.5], [x + w + 0.17, y - 0.25, 0.08, d + 0.5]].forEach(([a, b, c, e]) => { const sg = new THREE.Mesh(new THREE.BoxGeometry(c, 0.02, e), m); sg.position.copy(W(a + c / 2, b + e / 2, 0.1)); g.add(sg); });
+      const rad = Math.max(w, d) * 0.48;
+      const bcn = new THREE.Mesh(memo(`bcnG:${rad}`, () => new THREE.CylinderGeometry(rad, rad, 3.8, 24, 1, true)), new THREE.MeshBasicMaterial({ map: beaconTex(col), transparent: true, opacity: 0.55, depthWrite: false, side: THREE.DoubleSide }));
+      bcn.position.copy(W(x + w / 2, y + d / 2, 1.95)); bcn.renderOrder = 3; g.add(bcn); G.add(g);
+      anim((t) => { m.opacity = 0.5 + Math.sin(t * 4) * 0.35; bcn.material.opacity = 0.35 + Math.sin(t * 3) * 0.18; });
+    };
 
     // nodos fijos
     const mg = (a, b) => ({ n: a.n + b.n, pzs: a.pzs + b.pzs, ator: a.ator + b.ator, pzsAtor: (a.pzsAtor || 0) + (b.pzsAtor || 0), ocs: (a.ocs || 0) + (b.ocs || 0) });
@@ -619,7 +666,13 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
       const Ls = items.map((it) => pathLen(it.path)), Lc = Math.max(...Ls) + gap, n = Math.min(items.length, Math.floor(Lc / gap));
       items.slice(0, n).forEach((it, i) => {
         const L = Ls[i], o = add(mk(it), it.key), d0 = (i * Lc) / n;
-        anim((t) => { const s = (d0 + t * v) % Lc; if (s > L) { o.position.set(0, -50, 0); return; } const p = pathAt(it.path, s / L); o.position.copy(W(p.x, p.y, z)); o.rotation.y = -p.ang; });
+        o.rotation.order = 'YXZ'; // rumbo primero, luego balanceo sobre el propio eje
+        anim((t) => {
+          const s = (d0 + t * v) % Lc; if (s > L) { o.position.set(0, -50, 0); return; }
+          const r = s / L, u = r < 0.08 ? (r / 0.08) * (r / 0.08) * 0.08 : r > 0.92 ? 1 - ((1 - r) / 0.08) * ((1 - r) / 0.08) * 0.08 : r; // arranca y frena suave
+          const p = pathAt(it.path, u), vibe = z < 0.1 ? Math.sin(t * 28 + i) * 0.006 : 0; // vibración de motor en camiones
+          o.position.copy(W(p.x, p.y, z + vibe)); o.rotation.set(p.turn * 0.14, -p.ang, 0);
+        });
       });
     };
     const mkT = (it) => tkOp(it.color, it.cont, it.op);
@@ -630,8 +683,18 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     fleet([...(cnt('FORO').n ? [{ path: paths.FORO, color: '#EC4899', op: 1, key: 'FORO' }] : []), ...(cnt('FULFILLMENT').n ? [{ path: paths.FUL, color: '#14B8A6', op: 1, key: 'FUL' }] : [])], 0.5, 2.4, mkT);
     fleet(rr([...zs.map((p) => many(Math.min(2, cnt(`TRANSITO_TDA|${p.z}|PLAN`).n), { path: paths.OUT(p), color: '#7C5CF0', op: fTipo === 'DIR' ? 0.15 : 1, key: `ZR|${p.z}` })), ...cs.map((p) => many(cnt(`BODEGA_REG|${p.c}`).n ? 1 : 0, { path: paths.BOD(p.y), color: '#0EA5E9', op: 1, key: `CIU|${p.c}` }))]), 0.8, 3.8, mkT);
     fleet(rr(zs.map((p) => many(Math.min(2, cnt(`TRANSITO_TDA|${p.z}|DIR`).n), { path: paths.DIR(p), color: TIPO_C.DIR, op: hl('DIR'), key: `ZR|${p.z}` }))), 0.9, 3.8, mkT);
-    // camiones en andén de PLAN
-    [[9.2, TIPO_C.NAC, cnt('ALMACEN').n > 0], [11.4, TIPO_C.IMP, cnt('ALMACEN').n > 1], [14.5, TIPO_C.NAC, cnt('CROSSDOCK').n > 0], [16.6, TIPO_C.IMP, cnt('CROSSDOCK').n > 1]].forEach(([px, col, on]) => { if (!on) return; const tk = truck(col, false, isDark); tk.position.copy(W(px, 3.05, 0.07)); tk.rotation.y = -Math.PI / 2; G.add(tk); });
+    // camiones en andén de PLAN con torreta ámbar y humo de escape
+    const puffMat = new THREE.MeshBasicMaterial({ color: isDark ? '#CBD5E1' : '#94A3B8', transparent: true, opacity: 0.45, depthWrite: false });
+    const beaconMat = mat('#F59E0B', { emissive: '#F59E0B', emissiveIntensity: isDark ? 4 : 1.2 });
+    [[9.2, TIPO_C.NAC, cnt('ALMACEN').n > 0], [11.4, TIPO_C.IMP, cnt('ALMACEN').n > 1], [14.5, TIPO_C.NAC, cnt('CROSSDOCK').n > 0], [16.6, TIPO_C.IMP, cnt('CROSSDOCK').n > 1]].forEach(([px, col, on], idx) => {
+      if (!on) return; const tk = truck(col, false, isDark); tk.position.copy(W(px, 3.05, 0.07)); tk.rotation.y = -Math.PI / 2; G.add(tk);
+      const lamp = mesh(memo('dockLamp', () => new THREE.SphereGeometry(0.06, 8, 8)), beaconMat.clone(), false); lamp.position.copy(W(px, 1.35, 1.45)); G.add(lamp);
+      const puff = new THREE.Mesh(memo('puffG', () => new THREE.SphereGeometry(0.11, 8, 6)), puffMat.clone()); G.add(puff);
+      anim((t) => {
+        lamp.material.emissiveIntensity = (Math.sin(t * 6 + idx * 1.5) > 0 ? 1 : 0.15) * (isDark ? 4.5 : 1.5);
+        const ph = (t * 0.7 + idx * 0.35) % 1; puff.position.copy(W(px + 0.25 + ph * 0.2, 3.45 + ph * 0.3, 0.75 + ph * 0.65)); puff.scale.setScalar(0.5 + ph * 1.4); puff.material.opacity = (1 - ph) * 0.4;
+      });
+    });
   }, [stats, fTipo, selKey, isDark, zonas.join('|'), ciudades.join('|')]);
 
   // ── Cámara a sitio ──

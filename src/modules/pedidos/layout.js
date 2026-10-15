@@ -46,13 +46,29 @@ export const roadsFor = (zs, cs, yBot) => [
   ...cs.map((p) => [[XV2, p.y + 0.9], [22.5, p.y + 0.9]]),
 ];
 export const pathLen = (path) => path.slice(1).reduce((a, b, i) => a + Math.hypot(b[0] - path[i][0], b[1] - path[i][1]), 0);
+// Punto sobre la ruta (f = 0..1). Cerca de cada esquina el rumbo gira gradualmente; `turn` sirve para inclinar en curvas
 export const pathAt = (path, f) => {
   const seg = []; let L = 0;
   for (let i = 0; i < path.length - 1; i++) { const l = Math.hypot(path[i + 1][0] - path[i][0], path[i + 1][1] - path[i][1]); seg.push(l); L += l; }
-  let d = f * L;
+  let d = Math.max(0, Math.min(1, f)) * L;
+  const wrap = (a) => { while (a > Math.PI) a -= Math.PI * 2; while (a < -Math.PI) a += Math.PI * 2; return a; };
   for (let i = 0; i < seg.length; i++) {
-    if (d <= seg[i]) { const r = seg[i] ? d / seg[i] : 0; const a = path[i], b = path[i + 1]; return { x: a[0] + (b[0] - a[0]) * r, y: a[1] + (b[1] - a[1]) * r, ang: Math.atan2(b[1] - a[1], b[0] - a[0]) }; }
+    if (d <= seg[i] || i === seg.length - 1) {
+      const r = seg[i] ? d / seg[i] : 0, a = path[i], b = path[i + 1];
+      const x = a[0] + (b[0] - a[0]) * r, y = a[1] + (b[1] - a[1]) * r;
+      let ang = Math.atan2(b[1] - a[1], b[0] - a[0]), turn = 0;
+      const blend = 0.65; // radio de giro en unidades de mundo
+      if (i < seg.length - 1 && seg[i] - d < blend && seg[i + 1] > blend) {
+        const c = path[i + 2], diff = wrap(Math.atan2(c[1] - b[1], c[0] - b[0]) - ang), k = 1 - (seg[i] - d) / blend;
+        ang += diff * k * 0.5; turn = diff * k * 0.5;
+      } else if (i > 0 && d < blend && seg[i - 1] > blend) {
+        const p0 = path[i - 1], diff = wrap(ang - Math.atan2(a[1] - p0[1], a[0] - p0[0])), k = 1 - d / blend;
+        ang -= diff * k * 0.5; turn = diff * k * 0.5;
+      }
+      return { x, y, ang, turn };
+    }
     d -= seg[i];
   }
-  const b = path[path.length - 1], a = path[path.length - 2] || b; return { x: b[0], y: b[1], ang: Math.atan2(b[1] - a[1], b[0] - a[0]) };
+  const b = path[path.length - 1], a = path[path.length - 2] || b;
+  return { x: b[0], y: b[1], ang: Math.atan2(b[1] - a[1], b[0] - a[0]), turn: 0 };
 };
