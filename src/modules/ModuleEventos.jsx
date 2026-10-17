@@ -1,8 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useAltTabs } from '../utils/excelNav';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ComposedChart, Line, PieChart, Pie, Legend, ReferenceLine } from 'recharts';
-import { jsPDF } from 'jspdf';
-import html2canvas from 'html2canvas';
 import * as XLSX from 'xlsx';
 import * as Icons from '../utils/icons';
 import FilterMenu, { FilterSection } from '../components/FilterMenu';
@@ -314,146 +312,7 @@ export default function ModuleEventos(){
   const nFiltrosActivos=FILTRO_DIMS.reduce((n,d)=>n+(filtros[d].length>0?1:0),0);
   const blankForm={nombre:'',tipo:TIPOS_EVENTO[0],tipoOtro:'',fechaInicio:'',fechaFin:'',objetivo:OBJETIVOS[0],lyVentaP:'',lyMargenPct:'',lyStPct:''};
   const [form,setForm]=useState(blankForm);
-  const [exporting,setExporting]=useState(false);
-
-  const handleDownloadPDF=async()=>{
-    const node=document.getElementById('eventos-print-area');
-    if(!node||exporting) return;
-    setExporting(true);
-    try{
-      // Se captura CADA gráfica/tabla en su propio canvas (en vez de una sola captura gigante que
-      // luego se corta a una altura de página fija) — así una tarjeta nunca queda partida a la mitad
-      // entre dos páginas, sin importar dónde caiga el borde de la página. El grid marcado
-      // .pdf-flatten se "aplana" para tratar cada una de sus tarjetas como su propia sección.
-      const collectSections=el=>{
-        let out=[];
-        Array.from(el.children).forEach(child=>{
-          if(child.classList?.contains('no-print')) return;
-          if(child.classList?.contains('pdf-flatten')) out=out.concat(collectSections(child));
-          else out.push(child);
-        });
-        return out;
-      };
-      const sections=collectSections(node);
-      if(sections.length===0) return;
-
-      const pdf=new jsPDF({orientation:'p',unit:'pt',format:'letter'});
-      const pageW=pdf.internal.pageSize.getWidth(), pageH=pdf.internal.pageSize.getHeight();
-      const bg=isDark?'#18181b':'#ffffff';
-      let y=0, pageHasContent=false;
-
-      for(const sec of sections){
-        const canvas=await html2canvas(sec,{scale:2, backgroundColor:bg, useCORS:true,
-          ignoreElements:el=>el.classList?.contains('no-print')});
-        const ptPerPx=pageW/canvas.width; // misma escala horizontal siempre (ancho completo de página)
-        const fullHpt=canvas.height*ptPerPx;
-
-        if(fullHpt<=pageH+0.5){
-          if(pageHasContent && y+fullHpt>pageH+0.5){ pdf.addPage(); y=0; pageHasContent=false; }
-          pdf.addImage(canvas.toDataURL('image/png'),'PNG',0,y,pageW,fullHpt);
-          y+=fullHpt; pageHasContent=true;
-        } else {
-          // Sección más alta que una página completa (p.ej. una tabla larga) — es la única situación
-          // donde se corta a fuerza, por altura de página, nunca a media gráfica de otra sección.
-          if(pageHasContent){ pdf.addPage(); y=0; pageHasContent=false; }
-          const pxPerPt=canvas.height/fullHpt;
-          const maxSlicePx=Math.floor(pageH*pxPerPt);
-          let cutPx=0, lastSliceHpt=0;
-          while(cutPx<canvas.height-0.5){
-            const sliceHpx=Math.min(canvas.height-cutPx, maxSlicePx);
-            const slice=document.createElement('canvas');
-            slice.width=canvas.width; slice.height=sliceHpx;
-            slice.getContext('2d').drawImage(canvas,0,cutPx,canvas.width,sliceHpx,0,0,canvas.width,sliceHpx);
-            lastSliceHpt=sliceHpx/pxPerPt;
-            pdf.addImage(slice.toDataURL('image/png'),'PNG',0,0,pageW,lastSliceHpt);
-            cutPx+=sliceHpx;
-            if(cutPx<canvas.height-0.5) pdf.addPage();
-          }
-          y=lastSliceHpt; pageHasContent=true;
-        }
-      }
-      const slug=(active?.nombre||'evento').trim().replace(/\s+/g,'_').replace(/[^\w\-]/g,'');
-      pdf.save(`resumen_${slug||'evento'}.pdf`);
-    }catch(err){ console.error(err); alert('No se pudo generar el PDF. Revisa la consola.'); }
-    finally{ setExporting(false); }
-  };
-
-  // Excel para compartir: mismas tablas que la vista (respeta filtros activos), una hoja por bloque.
-  // La librería instalada (xlsx community) no escribe gráficos nativos — son solo tablas, pero limpias y
-  // listas para que Excel les meta un gráfico en 2 clics si hace falta.
-  const handleDownloadExcel=()=>{
-    if(!calc||!active) return;
-    const wb=XLSX.utils.book_new();
-    const addSheet=(name,aoa,widths)=>{
-      const ws=XLSX.utils.aoa_to_sheet(aoa);
-      if(widths) ws['!cols']=widths.map(w=>({wch:w}));
-      XLSX.utils.book_append_sheet(wb,ws,name.slice(0,31));
-    };
-    const pct=v=>v==null?'':Math.round(v*10)/10;
-
-    // Resumen
-    const resumenAoa=[
-      [active.nombre||'Evento',active.tipo||''],
-      [`${active.fechaInicio||''} → ${active.fechaFin||''}`],
-      [],
-      ['KPI','Valor','vs AA (%)'],
-      ['Venta $',calc.total.ventaP,pct(calc.deltaVentaP)],
-      ['Venta U',calc.total.ventaU,''],
-      ['Margen %',pct(calc.total.margenPct),pct(calc.deltaMargen)],
-      ['Utilidad $',calc.total.utilidad,''],
-      ['Sell-through %',pct(calc.total.stPct),pct(calc.deltaST)],
-      ['Remanente U',calc.total.remanente,''],
-      [],
-      ['Breakdown por categoría (Sección)'],
-      ['Sección','Venta $','vs AA (%)','Venta U','Margen %','Sell-through %'],
-      ...calc.categorias.map(c=>[c.seccion,c.ventaP,pct(c.vsAA),c.ventaU,pct(c.margenPct),pct(c.stPct)]),
-    ];
-    addSheet('Resumen',resumenAoa,[28,16,12,12,12,14]);
-
-    // Regular / Descuento / Depreciado
-    if(calc.hasRealSnapshot){
-      const rows=[['Clasificación','Venta $','vs AA (%)','Venta U','Margen %','Sell-through %','Remanente U','Remanente $','Desplazado $','Desplazado %']];
-      [['Regular',calc.regular],['Descuento',calc.descuento],['Depreciado',calc.depreciado],['Total',calc.total]].forEach(([lbl,r])=>
-        rows.push([lbl,r.ventaP,pct(r.vsAA),r.ventaU,pct(r.margenPct),pct(r.stPct),r.remanente,r.montoRemanente,r.montoDesplazado,pct(r.pctDesplazado)]));
-      addSheet('Regular-Descuento-Deprec',rows,[16,14,12,12,12,14,14,14,14,14]);
-    }
-
-    // Por día
-    const diaRows=[calc.hasRealSnapshot
-      ?['Fecha','Regular $','Descuento $','Depreciado $','Venta $ Total','Margen %','Venta $ AA']
-      :['Fecha','Venta $ Total','Margen %','Venta $ AA']];
-    calc.porDia.forEach(d=>{ diaRows.push(calc.hasRealSnapshot
-      ?[d.label,d.regular,d.descuento,d.depreciado,d.ventaP,pct(d.margenPct),d.ventaPLY??'']
-      :[d.label,d.ventaP,pct(d.margenPct),d.ventaPLY??'']); });
-    addSheet('Por Día',diaRows,[10,14,14,14,14,12,14]);
-
-    // Por GOA / Marca (venta, con inv inicial si aplica)
-    const dimSheet=(name,rows)=>{
-      const head=calc.hasInvIniData?['Nombre','Venta $','vs AA (%)','Inv. Inicial $']:['Nombre','Venta $','vs AA (%)'];
-      const aoa=[head,...rows.map(r=>calc.hasInvIniData?[r.name,r.ventaP,pct(r.vsAA),r.invIni||0]:[r.name,r.ventaP,pct(r.vsAA)])];
-      addSheet(name,aoa,[22,14,12,16]);
-    };
-    dimSheet('Por GOA',calc.porGoa);
-    dimSheet('Por Marca',calc.porMarca);
-    addSheet('Por Subcanal',[['Subcanal','Venta $','vs AA (%)'],...calc.porSubcanal.map(r=>[r.name,r.ventaP,pct(r.vsAA)])],[22,14,12]);
-    addSheet('Por Estatus',[['Estatus','Venta $','vs AA (%)'],...calc.porEstatus.map(r=>[r.name,r.ventaP,pct(r.vsAA)])],[22,14,12]);
-
-    // Top 10 / Bottom 10 Modelo
-    const modeloHead=['Modelo','Marca','GOA','Venta $','vs AA (%)','Venta U','ST %','Remanente U','Remanente $'];
-    addSheet('Top 10 Modelo',[modeloHead,...calc.topModelo.map(r=>[r.modelo,r.marca,r.goa,r.ventaP,pct(r.vsAA),r.ventaU,pct(r.stPct),r.remanente,r.montoRemanente])],[16,16,16,12,12,10,10,12,12]);
-    addSheet('Bottom 10 Modelo',[modeloHead,...calc.bottom10.map(r=>[r.modelo,r.marca,r.goa,r.ventaP,pct(r.vsAA),r.ventaU,pct(r.stPct),r.remanente,r.montoRemanente])],[16,16,16,12,12,10,10,12,12]);
-
-    // Inventario Inicial (Sección+GOA+Marca, cuando el evento solo trae CSV de ventas)
-    if(calc.hasInvIniData){
-      const invHead=['Nombre','Inv. Inicial $','vs AA (%)','Inv. Inicial U','vs AA U (%)'];
-      const invRows=(list)=>list.map(r=>[r.name,r.invIni,pct(r.vsAA),r.oh,pct(r.vsAA_u)]);
-      addSheet('Inv. Inicial por GOA',[invHead,...invRows(calc.invIniPorGoa)],[22,16,12,14,12]);
-      addSheet('Inv. Inicial por Marca',[invHead,...invRows(calc.invIniPorMarca)],[22,16,12,14,12]);
-    }
-
-    const slug=(active?.nombre||'evento').trim().replace(/\s+/g,'_').replace(/[^\w\-]/g,'');
-    XLSX.writeFile(wb,`resumen_${slug||'evento'}.xlsx`);
-  };
+  const hbtn=`flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-lg border disabled:opacity-50 ${t.btnGhost}`;
 
   const createEvent=()=>{
     if(!form.nombre.trim()||!form.fechaInicio||!form.fechaFin){ alert('Nombre, fecha inicio y fecha fin son obligatorios.'); return; }
@@ -486,37 +345,28 @@ export default function ModuleEventos(){
     }).catch(()=>{});
   },[activeId]);
 
-  // Snapshot directo de BigQuery (/api/bq?source=eventos_oh): OH actual por SKU de las secciones indicadas
+  // BigQuery (/api/bq): ventas diarias TY + LY (ventanas de 3 días, 4 a la vez) y, si aún no hay snapshot y el evento
+  // no ha arrancado, el OH actual por SKU (eventos_oh es la foto de hoy: un snapshot existente nunca se reemplaza).
   const [bqBusy,setBqBusy]=useState(false);
-  const snapshotBQ=async()=>{
-    if(snapRows.length>0 && !window.confirm('Ya existe un snapshot de arranque para este evento. Traerlo de BigQuery lo REEMPLAZARÁ. ¿Continuar?')) return;
-    let tok=localStorage.getItem('gop_api_token')||''; if(!tok){ tok=window.prompt('Token de GO PLANNER (GOP_API_TOKEN):')||''; if(!tok) return; localStorage.setItem('gop_api_token',tok); }
-    const sec=window.prompt('Secciones (número o nombre, separadas por coma):',localStorage.getItem('gop_eventos_secs')||'870,872,873,892'); if(!sec) return;
-    localStorage.setItem('gop_eventos_secs',sec); setBqBusy(true);
-    try{ const r=await fetch(`/api/bq?source=eventos_oh&secciones=${encodeURIComponent(sec)}`,{headers:{'x-gop-token':tok}});
-      const txt=await r.text(); if(r.status===401) localStorage.removeItem('gop_api_token'); if(!r.ok) throw new Error(txt);
-      const {rows,error}=parseSnapshotCSV(txt); if(error) throw new Error(error); if(!rows.length) throw new Error('BigQuery no regresó SKUs con OH para esas secciones.');
-      setSnapRows(rows); idbSet(`snap_${activeId}`,rows).catch(()=>{});
-    }catch(err){ alert(String(err.message||err).slice(0,300)); } finally{ setBqBusy(false); }
-  };
-
-  // Ventas del evento directo de BigQuery (/api/bq?source=eventos_ventas): TY + LY por ventanas de 3 días, 4 a la vez
-  const ventasBQ=async()=>{
+  const traerBQ=async()=>{
     const ev=events.find(e=>e.id===activeId); if(!ev||!ev.fechaInicio||!ev.fechaFin) return;
     if(salesRows.length>0 && !window.confirm('Ya hay ventas cargadas para este evento. Traerlas de BigQuery las REEMPLAZARÁ. ¿Continuar?')) return;
     let tok=localStorage.getItem('gop_api_token')||''; if(!tok){ tok=window.prompt('Token de GO PLANNER (GOP_API_TOKEN):')||''; if(!tok) return; localStorage.setItem('gop_api_token',tok); }
     const sec=window.prompt('Secciones (número o nombre, separadas por coma):',localStorage.getItem('gop_eventos_secs')||'870,872,873,892'); if(!sec) return;
-    localStorage.setItem('gop_eventos_secs',sec); setBqBusy(true);
+    localStorage.setItem('gop_eventos_secs',sec);
+    const needSnap=snapRows.length===0 && new Date().toLocaleDateString('en-CA')<=ev.fechaInicio;
+    setBqBusy(true);
     try{
+      const get=async url=>{ const r=await fetch(url,{headers:{'x-gop-token':tok}}); const txt=await r.text(); if(r.status===401) localStorage.removeItem('gop_api_token'); if(!r.ok) throw new Error(txt); return txt; };
+      if(needSnap){
+        const {rows,error}=parseSnapshotCSV(await get(`/api/bq?source=eventos_oh&secciones=${encodeURIComponent(sec)}`));
+        if(error) throw new Error(error); if(!rows.length) throw new Error('BigQuery no regresó SKUs con OH para esas secciones.');
+        setSnapRows(rows); idbSet(`snap_${activeId}`,rows).catch(()=>{});
+      }
       const shift=(s,days,yrs=0)=>{ const d=new Date(s+'T00:00:00Z'); d.setUTCFullYear(d.getUTCFullYear()+yrs); d.setUTCDate(d.getUTCDate()+days); return d.toISOString().slice(0,10); };
       const wins=[]; for(const yrs of [0,-1]){ let a=shift(ev.fechaInicio,0,yrs); const z=shift(ev.fechaFin,0,yrs); while(a<=z){ const b=shift(a,2); wins.push([a,b<z?b:z]); a=shift(b,1); } }
       const parts=[];
-      for(let i=0;i<wins.length;i+=4){
-        const res=await Promise.all(wins.slice(i,i+4).map(async([a,b])=>{
-          const r=await fetch(`/api/bq?source=eventos_ventas&ini=${a}&fin=${b}&secciones=${encodeURIComponent(sec)}`,{headers:{'x-gop-token':tok}});
-          const txt=await r.text(); if(r.status===401) localStorage.removeItem('gop_api_token'); if(!r.ok) throw new Error(txt); return txt; }));
-        parts.push(...res);
-      }
+      for(let i=0;i<wins.length;i+=4) parts.push(...await Promise.all(wins.slice(i,i+4).map(([a,b])=>get(`/api/bq?source=eventos_ventas&ini=${a}&fin=${b}&secciones=${encodeURIComponent(sec)}`))));
       const ok=parts.filter(t=>t.trim()); if(!ok.length) throw new Error('BigQuery no regresó ventas para esas fechas/secciones.');
       const csv=[ok[0],...ok.slice(1).map(t=>t.slice(t.indexOf('\n')+1))].join('\n');
       const {rows,error}=parseSalesCSV(csv); if(error) throw new Error(error); if(!rows.length) throw new Error('No se encontraron filas válidas.');
@@ -1068,15 +918,23 @@ export default function ModuleEventos(){
         <button onClick={()=>setActiveId(null)} className={`flex items-center gap-1 text-xs font-bold ${t.textMuted} hover:${t.textMain}`}>
           <Icons.ChevronLeft size={14}/> Eventos
         </button>
-        <div className="flex gap-2">
-          <button onClick={handleDownloadExcel} disabled={!calc} className={`flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-lg border disabled:opacity-50 ${t.btnGhost}`}>
-            <Icons.Download size={13}/> Descargar Excel
+        <div className="flex flex-wrap justify-end gap-2">
+          <input ref={snapRef} type="file" accept=".xlsx,.xls,.csv,.txt" className="hidden" onChange={uploadSnapshot}/>
+          <input ref={salesRef} type="file" accept=".csv,.txt" className="hidden" onChange={uploadSales}/>
+          <button onClick={()=>snapRef.current?.click()} title='Snapshot de arranque (xlsx/csv): foto del inventario (OH) por SKU al iniciar el evento. Si trae la pestaña "Vtas_Evento", las ventas se cargan solas' className={hbtn}>
+            <Icons.Upload size={13}/> {snapRows.length>0 ? `Snapshot (${joined.nSkuSnap})` : 'Snapshot'}
           </button>
-          <button onClick={handleDownloadPDF} disabled={exporting} className={`flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-lg border disabled:opacity-50 ${t.btnGhost}`}>
-            <Icons.Download size={13}/> {exporting?'Generando PDF…':'Descargar PDF'}
+          <button onClick={()=>salesRef.current?.click()} title="CSV de ventas del evento: venta diaria por SKU (año actual y LY)" className={hbtn}>
+            <Icons.Upload size={13}/> {salesRows.length>0 ? `Ventas (${joined.nSkuVenta})` : 'Ventas'}
           </button>
+          <button onClick={traerBQ} disabled={bqBusy} title="Trae de BigQuery las ventas del evento (año actual y LY) y, si el evento aún no arranca y no hay snapshot, el OH actual. Un snapshot existente no se reemplaza" className={hbtn}>
+            {bqBusy?'Trayendo…':'⚡ BigQuery'}
+          </button>
+          {snapRows.length>0 && <button onClick={clearSnapshot} title="Eliminar snapshot" className={hbtn}><Icons.Trash2 size={13}/> Snapshot</button>}
+          {salesRows.length>0 && <button onClick={handleDownloadSalesCSV} title="Descargar el CSV de ventas cargado" className={hbtn}><Icons.Download size={13}/> Ventas</button>}
+          {salesRows.length>0 && <button onClick={clearSales} title="Eliminar ventas" className={hbtn}><Icons.Trash2 size={13}/> Ventas</button>}
           <button onClick={()=>{setEditingLY(true);setForm(f=>({...f,lyVentaP:active.lyVentaP||'',lyMargenPct:active.lyMargenPct||'',lyStPct:active.lyStPct||'',objetivo:active.objetivo}));}}
-            className={`text-xs font-bold px-3 py-1.5 rounded-lg border ${t.btnGhost}`}>Editar LY / objetivo</button>
+            className={hbtn}>Editar LY / objetivo</button>
         </div>
       </div>
 
@@ -1173,27 +1031,6 @@ export default function ModuleEventos(){
                   </FilterSection>
                 </FilterMenu>
               )}
-              <input ref={snapRef} type="file" accept=".xlsx,.xls,.csv,.txt" className="hidden" onChange={uploadSnapshot}/>
-              <button onClick={()=>snapRef.current?.click()} title='Snapshot arranque (xlsx/csv) — si trae la pestaña "Vtas_Evento", las ventas se cargan solas'
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold border ${t.btnGhost}`}>
-                <Icons.Upload size={12}/> {snapRows.length>0 ? `Snapshot (${joined.nSkuSnap})` : 'Snapshot'}
-              </button>
-              <button onClick={snapshotBQ} disabled={bqBusy||!activeId} title="Trae el OH actual por SKU desde BigQuery (córrelo el día que arranca el evento)"
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold border disabled:opacity-50 ${t.btnGhost}`}>
-                {bqBusy?'Trayendo…':'⚡ BigQuery'}
-              </button>
-              {snapRows.length>0 && <button onClick={clearSnapshot} title="Eliminar snapshot" className={`p-1.5 rounded-lg border ${t.btnGhost} opacity-60 hover:opacity-100`}><Icons.Trash2 size={12}/></button>}
-              <input ref={salesRef} type="file" accept=".csv,.txt" className="hidden" onChange={uploadSales}/>
-              <button onClick={()=>salesRef.current?.click()} title="CSV Ventas del evento (opcional)"
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold border ${t.btnGhost}`}>
-                <Icons.Upload size={12}/> {salesRows.length>0 ? `Ventas (${joined.nSkuVenta})` : 'Ventas'}
-              </button>
-              <button onClick={ventasBQ} disabled={bqBusy||!activeId} title="Trae las ventas diarias por SKU (año actual y LY) desde BigQuery con las fechas del evento"
-                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold border disabled:opacity-50 ${t.btnGhost}`}>
-                {bqBusy?'Trayendo…':'⚡ BigQuery'}
-              </button>
-              {salesRows.length>0 && <button onClick={handleDownloadSalesCSV} title="Descargar el CSV de ventas cargado (por si se perdió el archivo original)" className={`p-1.5 rounded-lg border ${t.btnGhost} opacity-60 hover:opacity-100`}><Icons.Download size={12}/></button>}
-              {salesRows.length>0 && <button onClick={clearSales} title="Eliminar ventas" className={`p-1.5 rounded-lg border ${t.btnGhost} opacity-60 hover:opacity-100`}><Icons.Trash2 size={12}/></button>}
             </div>
           </div>
           {(snapRows.length>0 || calc?.sinSnapshot>0) && (
