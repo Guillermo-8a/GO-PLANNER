@@ -52,6 +52,21 @@ export const QUERIES = {
       WHERE anio >= @anio`,
   },
 
+  // Eventos: OH al arranque por SKU × centro. Toma la última foto semanal <= @fecha (YYYY-MM-DD).
+  // @secciones = números de sección separados por coma (ej. "120,121") para no bajar toda la cadena.
+  // Encabezados = los que lee parseSnapshotCSV de Eventos (GOA, SKU, CENTRO, MARCA, SECCION, OH).
+  eventos_oh: {
+    params: ['fecha', 'secciones'],
+    sql: () => `
+      SELECT CAST(GRUPO_ARTICULO AS STRING) AS GOA, CAST(SKU AS STRING) AS SKU, LOCACION AS CENTRO,
+             MARCA, CAST(SECCION AS STRING) AS SECCION, ONHAND AS OH, FORMAT_DATE('%Y-%m-%d', FCH_INFO) AS FECHA_FOTO
+      FROM \`crp-pro-dwh-semanticagold.MUS_PRO_DWH_VIEWS_ODS.VFAC_INVENTARIO_ECC_OH_SEM\`
+      WHERE FCH_INFO = (SELECT MAX(FCH_INFO) FROM \`crp-pro-dwh-semanticagold.MUS_PRO_DWH_VIEWS_ODS.VFAC_INVENTARIO_ECC_OH_SEM\`
+                        WHERE FCH_INFO <= DATE(@fecha))
+        AND CAST(SECCION AS STRING) IN UNNEST(SPLIT(REPLACE(@secciones, ' ', ''), ','))
+        AND ONHAND > 0`,
+  },
+
   // Traslados: base de artículos GOA × SKU × Centro.
   traslados: {
     sql: (DS) => `
