@@ -52,20 +52,21 @@ export const QUERIES = {
       WHERE anio >= @anio`,
   },
 
-  // Eventos: snapshot de arranque (OH + precio + letra por SKU × centro) — foto ACTUAL de SAC.
+  // Eventos: snapshot de arranque (OH cadena + precio + letra por SKU) — foto ACTUAL de SAC.
+  // Sin centro: Eventos no lo usa y a nivel centro la respuesta rebasa el límite de Vercel.
   // Correr el día que arranca el evento. @secciones = número o nombre de sección, separados por coma.
   // Encabezados = los que lee parseSnapshotCSV de Eventos (SKU va antes de NSKU para que el alias no se cruce).
   eventos_oh: {
     params: ['secciones'],
     sql: () => `
       SELECT ARTICULO_KEY AS SKU, ARTICULO AS NSKU, MODELO_PROVEEDOR AS MODELO, MARCA, GRUPO_ARTICULOS AS GOA,
-             SECCION, CENTRO_KEY AS CENTRO, SUM(OH) AS OH,
+             SECCION, SUM(OH) AS OH,
              MAX(SAFE_CAST(PRECIO_VENTA_ACT AS NUMERIC)) AS PRECIO, MAX(LETRA_ACTUAL) AS LETRA_DESC
       FROM \`crp-pro-dwh-semanticagold.mus_pro_dwh_views_sap.VEIL_TAB_VENTAS_MENSUALES_U_S\`
-      WHERE (LTRIM(SECCION_KEY, '0') IN UNNEST(SPLIT(REPLACE(@secciones, ' ', ''), ','))
+      WHERE (LTRIM(SECCION_KEY, '0') IN UNNEST(ARRAY(SELECT LTRIM(x, '0') FROM UNNEST(SPLIT(REPLACE(@secciones, ' ', ''), ',')) x))
              OR UPPER(SECCION) IN UNNEST(SPLIT(UPPER(@secciones), ',')))
         AND OH > 0
-      GROUP BY 1, 2, 3, 4, 5, 6, 7`,
+      GROUP BY 1, 2, 3, 4, 5, 6`,
   },
 
   // Traslados: base de artículos GOA × SKU × Centro.
