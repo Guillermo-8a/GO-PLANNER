@@ -24,10 +24,11 @@ import ModuleSuplementarios from "./modules/ModuleSuplementarios" ;
 import ModuleAllocation from "./modules/ModuleAllocation" ;
 import ModulePedidos from "./modules/ModulePedidos";
 import ModuleNulo from "./modules/ModuleNulo";
+import ModuleDemanda from "./modules/ModuleDemanda";
 
 import {
   Layers, Bell, Sun, Moon, ShoppingCart, Map, LayoutDashboard,
-  HelpCircle, Wallet, Zap, Search, Mail, Circle, Tag, PieChart, ListChecks, Truck, Hourglass,} from 'lucide-react';
+  HelpCircle, Wallet, Zap, Search, Mail, Circle, Tag, PieChart, ListChecks, Truck, Hourglass, Stethoscope,} from 'lucide-react';
 
 // ─── Paletas de tema ──────────────────────────────────────────────────────────
 export const THEMES = {
@@ -110,6 +111,7 @@ const NAV_ITEMS = [
   { id: 'assortment',   label: 'Assortment', Icon: ShoppingCart,    desc: 'Compra y presupuesto',  dataKey: 'otbData' },
   { id: 'distribucion', label: 'Distribución',   Icon: Map,             desc: 'Surtido a tiendas',     dataKey: 'distributionData' },
   { id: 'resurtido',    label: 'Resurtido',       Icon: RefreshCw,       desc: 'Reposición continua',   dataKey: 'replenishmentData' },
+  { id: 'demanda', label: 'Diagnóstico de demanda', Icon: Stethoscope, desc: 'Tipo de demanda y accionables por modelo', dataKey: null },
   { id: 'planning',    label: 'Planning',       Icon: TrendingUp,       desc: 'Planeación compuesta',   dataKey: null },
   { id: 'suplementarios', label: 'Suplementarios', Icon: PieChart, desc: 'OTB por marca/proveedor', dataKey: null },
   { id: 'dayli',    label: 'Dayli',       Icon: Map,       desc: 'Ajustes diarios',   dataKey: null },
@@ -134,6 +136,7 @@ const LOCAL_DATA_KEYS = {
   allocation: ['gop_allocation_files'],
   pedidos: ['gop_pedidos_has'],
   nulo: ['gop_nulo_files'],
+  demanda: ['gop_demanda_files'],
 };
 function moduleHasData(m, global) {
   return m.dataKey ? !!global[m.dataKey] : hasLocalData(m.id);
@@ -160,7 +163,7 @@ const PIPELINE_STEPS = [
 // ─── Mundos (agrupación del sidebar y del dashboard) ──────────────────────────
 const NAV_GROUPS = [
   { id: 'financial',  label: 'Financial',        Icon: Calculator,   color: '#B39DDB', items: ['planning', 'suplementarios'] },
-  { id: 'demand',     label: 'Demand Planner',   Icon: TrendingUp,   color: '#E0BB3E', items: ['assortment', 'forecast', 'distribucion', 'resurtido'] },
+  { id: 'demand',     label: 'Demand Planner',   Icon: TrendingUp,   color: '#E0BB3E', items: ['assortment', 'forecast', 'distribucion', 'resurtido', 'demanda'] },
   { id: 'inventory',  label: 'Inventory Control',Icon: Boxes,        color: '#8A73AD', items: ['dispersion', 'traslados', 'chequera'] },
   { id: 'checkcoo',   label: 'Check Coo',        Icon: CircleCheck,  color: '#9A9CA3', items: ['dayli', 'eventos', 'allocation', 'pedidos', 'nulo'] },
 ];
@@ -492,6 +495,7 @@ function Shell() {
       case 'allocation': return <ModuleAllocation {...moduleProps} />;
       case 'pedidos': return <ModulePedidos {...moduleProps} />;
       case 'nulo': return <ModuleNulo {...moduleProps} />;
+      case 'demanda': return <ModuleDemanda {...moduleProps} />;
       default:             return <Dashboard {...moduleProps} />;
     }
   };

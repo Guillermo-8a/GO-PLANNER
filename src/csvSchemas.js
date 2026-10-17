@@ -58,6 +58,17 @@ export const CSV_SCHEMAS = [
     ],
   },
   {
+    module: 'Diagnóstico de demanda',
+    formats: [
+      {
+        title: 'Venta modelo × semana (CSV de BigQuery, vista VEIL_ANALISIS_VTAS_DIARIAS)',
+        desc: 'Una fila por MODELO × SEMANA (lunes, AAAA-MM-DD) a nivel cadena, idealmente 104 semanas. Clasifica la demanda (ADI / CV²) y propone accionable: Básico, Temporada, Falla de inventario, No sirve.',
+        columns: ['SEMANA*', 'SECCION', 'GOA', 'MARCA', 'MODELO*', 'TEMPORADA', 'LETRA_ACTUAL', 'VTA_U*', 'VTA_U_DESC', 'VTA_P', 'DESC_P', 'TIENDAS_CON_VTA', 'TIENDAS_ACTIVAS'],
+        template: [['SEMANA', 'SECCION', 'GOA', 'MARCA', 'MODELO', 'TEMPORADA', 'LETRA_ACTUAL', 'VTA_U', 'VTA_U_DESC', 'VTA_P', 'DESC_P', 'TIENDAS_CON_VTA', 'TIENDAS_ACTIVAS'], ['2026-09-28', 'ZAPATOS NIÑO', 'CHANCLA', 'MARCA X', 'E-8008-NINO', 'PRIMAVERA - VERANO', 'Sin Asignar', '120', '20', '14500.5', '310.2', '85', '192']],
+      },
+    ],
+  },
+  {
     module: 'Allocation',
     formats: [
       {

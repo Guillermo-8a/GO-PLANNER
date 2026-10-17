@@ -355,12 +355,13 @@ export default function ModuleNulo({ t, isDark, navIcon, navLabel, navDesc }) {
 
   const DET_COLS = [
     ['sec', 'Sección'], ['zona', 'Zona'], ['centro', 'Centro'], [null, 'Tienda / bodega'], [null, 'Tipo'], [null, 'Proveedor'], [null, 'GOA'], ['marca', 'Marca'],
-    ['sku', 'SKU'], [null, 'Artículo'], [null, 'Estatus'], [null, 'Norma'], [null, 'Letra'], [null, 'Últ. venta'], ['meses', 'Meses s/vta'], ['rec', 'Meses desde 1a rec.'], ['pzs', 'Pzs'], ['monto', 'Monto $'], [null, 'Estado'], [null, 'Acción'], [null, 'Destinos sugeridos'],
+    ['sku', 'SKU'], [null, 'Artículo'], [null, 'Estatus'], [null, 'Norma'], [null, 'Letra'], [null, 'Últ. venta'], ['meses', 'Meses s/vta'], ['rec', 'Meses desde 1a rec.'], ['pzs', 'Pzs'], ['monto', 'Monto $'], [null, 'Estado'], [null, 'Acción'], [null, 'Destinos sugeridos'], [null, 'Diag. demanda'],
   ];
+  const diag = useMemo(() => { try { return JSON.parse(localStorage.getItem('gop_demanda_diag') || '{}'); } catch { return {}; } }, [X]); // de Diagnóstico de demanda (por modelo)
   const detRow = (i) => {
     const { C, D, info, tipo } = X, sk = D.sku[C.sku[i]], ce = D.centro[C.centro[i]], u = E.mU[i];
     return [D.sec[C.sec[i]], D.zona[C.zona[i]], ce, info.centro[ce], tipo[C.centro[i]] ? 'Bodega' : 'Tienda', D.prov[C.prov[i]], D.goa[C.goa[i]], D.marca[C.marca[i]], sk, info.sku[sk]?.desc || '',
-      D.estatus[C.estatus[i]], D.norma[C.norma[i]], D.letra[C.letra[i]], u < 0 ? 'Sin venta en ventana' : miTxt(E.corte - u), u < 0 ? '>14' : u, E.mR[i] < 0 ? '' : E.mR[i], C.pzs[i], Math.round(C.monto[i] * 100) / 100, E.nulo[i] ? 'Nulo' : 'Con movimiento', ...(E.nulo[i] && info.sku[sk]?.acc?.[ce] ? info.sku[sk].acc[ce] : ['', ''])];
+      D.estatus[C.estatus[i]], D.norma[C.norma[i]], D.letra[C.letra[i]], u < 0 ? 'Sin venta en ventana' : miTxt(E.corte - u), u < 0 ? '>14' : u, E.mR[i] < 0 ? '' : E.mR[i], C.pzs[i], Math.round(C.monto[i] * 100) / 100, E.nulo[i] ? 'Nulo' : 'Con movimiento', ...(E.nulo[i] && info.sku[sk]?.acc?.[ce] ? info.sku[sk].acc[ce] : ['', '']), diag[(info.sku[sk]?.modelo || '').trim()] || ''];
   };
   const exportDetail = () => downloadCSV(`Nulo_Movimiento_detalle_${miTxt(E.corte).replace(' ', '')}.csv`, [DET_COLS.map((c) => c[1]).map(csvCell).join(','), ...detail.map((i) => detRow(i).map(csvCell).join(','))]);
   const exportSecs = () => downloadCSV('Nulo_Movimiento_secciones.csv', [['# Sección', 'Sección', 'No de tiendas con NM', 'No de GOAs con NM', 'SKU', 'Monto', 'Pzs', '% del inventario de la sección'].join(','), ...R.secs.map((s) => [s.num, s.name, s.c, s.g, s.k, Math.round(s.m), s.p, s.part != null ? (s.part * 100).toFixed(1) + '%' : ''].map(csvCell).join(','))]);
