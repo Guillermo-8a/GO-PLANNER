@@ -400,7 +400,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
   const units = useMemo(() => {
     const qq = norm(q);
     return allUnits.filter((u) => (!fProv || u.prov === fProv) && (!fMarca || u.marca === fMarca) && (!fTipo || u.tipo === fTipo) && (!fZona || u.zona === fZona) && (!fSec || u.seccion === fSec) && (!fMes || mesDe(u) === fMes)
-      && (!fSolo || (fSolo === 'atorado' ? u.atorado : fSolo === 'vencido' ? u.vencido : fSolo === 'activo' ? u.etapa !== 'RECIBIDO' : true))
+      && (!fSolo || (fSolo === 'atorado' ? u.atorado : fSolo === 'vencido' ? u.vencido : fSolo === 'trvenc' ? u.trVencido : fSolo === 'activo' ? u.etapa !== 'RECIBIDO' : true))
       && (!qq || norm(`${u.oc} ${u.sku} ${u.modelo} ${u.centro} ${u.cont} ${u.traslado || ''}`).includes(qq)));
   }, [allUnits, fProv, fMarca, fTipo, fZona, fSec, fMes, fSolo, q]);
 
@@ -467,6 +467,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
       ator: units.filter((u) => u.atorado).length, pzsAtor: units.filter((u) => u.atorado).reduce((a, u) => a + u.pzs, 0), valAtor: units.filter((u) => u.atorado).reduce((a, u) => a + (u.valor || 0), 0),
       lead: rec.length ? rec.reduce((a, u) => a + u.lead, 0) / rec.length : null,
       onTime: conComp.length ? conComp.filter((u) => u.aTiempo).length / conComp.length : null,
+      trv: units.filter((u) => u.trVencido).length, pzsTrv: units.filter((u) => u.trVencido).reduce((a, u) => a + u.pzs, 0),
       vencidos: units.filter((u) => u.vencido).length, ocs: new Set(units.filter((u) => u.etapa !== 'RECIBIDO').map((u) => u.oc)).size,
       // lead de lo recibido en los últimos 7 días vs los 7 anteriores
       lead7: (() => { const a = rec.filter((u) => dias(u.fin, hoy) <= 7); return a.length ? a.reduce((x, u) => x + u.lead, 0) / a.length : null; })(),
@@ -712,6 +713,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
               const ldC = ld == null ? '#7C5CF0' : ld <= SEMAFORO.leadObjetivo ? '#22C55E' : ld <= SEMAFORO.leadObjetivo * 1.25 ? '#F59E0B' : '#E5484D';
               return [
                 { l: 'Atorados', v: fmt(kpi.ator), s: `${fmt(kpi.pzsAtor)} pzs${kpi.valAtor ? ` · $${fk(kpi.valAtor)}` : ''} · clic para ver`, I: AlertTriangle, bad: kpi.ator > 0, f: 'atorado', c: '#E5484D' },
+                { l: 'Traslados vencidos', v: fk(kpi.pzsTrv), s: `pzs en cross dock · ${fmt(kpi.trv)} tienda-OC · clic para ver`, I: WhIcon, bad: kpi.trv > 0, f: 'trvenc', c: '#E5484D' },
                 { l: 'Vencen en 7 días', v: fmt(kpi.vencen7), s: kpi.compFuturo ? 'OCs aún sin llegar a CEDIS' : 'la base no trae compromisos futuros', I: Clock, c: '#F59E0B', f: 'activo' },
                 { l: 'En tránsito a tiendas', v: fk(itBI ? itBI.pzs : kpi.pzsTransito), s: itBI ? `pzs · $${fk(itBI.val)} precio s/IVA` : `pzs${kpi.valTransito ? ` · $${fk(kpi.valTransito)}` : ''}`, I: Truck, c: '#3B82F6', onClick: () => abrir(BUCKET_SEL.TRN) },
                 { l: 'Lead time', v: ld != null ? `${ld.toFixed(0)} d` : '—', s: <>obj. {SEMAFORO.leadObjetivo} d{dl != null && <> · <span style={{ color: dl > 0 ? '#E5484D' : '#22C55E', fontWeight: 700 }}>{dl > 0 ? '▲' : '▼'} {Math.abs(dl).toFixed(1)}</span> vs sem. ant.</>}</>, I: Clock, c: ldC },
