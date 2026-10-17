@@ -486,6 +486,20 @@ export default function ModuleEventos(){
     }).catch(()=>{});
   },[activeId]);
 
+  // Snapshot directo de BigQuery (/api/bq?source=eventos_oh): OH actual por SKU de las secciones indicadas
+  const [bqBusy,setBqBusy]=useState(false);
+  const snapshotBQ=async()=>{
+    if(snapRows.length>0 && !window.confirm('Ya existe un snapshot de arranque para este evento. Traerlo de BigQuery lo REEMPLAZARÁ. ¿Continuar?')) return;
+    let tok=localStorage.getItem('gop_api_token')||''; if(!tok){ tok=window.prompt('Token de GO PLANNER (GOP_API_TOKEN):')||''; if(!tok) return; localStorage.setItem('gop_api_token',tok); }
+    const sec=window.prompt('Secciones (número o nombre, separadas por coma):',localStorage.getItem('gop_eventos_secs')||'870,872,873,892'); if(!sec) return;
+    localStorage.setItem('gop_eventos_secs',sec); setBqBusy(true);
+    try{ const r=await fetch(`/api/bq?source=eventos_oh&secciones=${encodeURIComponent(sec)}`,{headers:{'x-gop-token':tok}});
+      const txt=await r.text(); if(r.status===401) localStorage.removeItem('gop_api_token'); if(!r.ok) throw new Error(txt);
+      const {rows,error}=parseSnapshotCSV(txt); if(error) throw new Error(error); if(!rows.length) throw new Error('BigQuery no regresó SKUs con OH para esas secciones.');
+      setSnapRows(rows); idbSet(`snap_${activeId}`,rows).catch(()=>{});
+    }catch(err){ alert(String(err.message||err).slice(0,300)); } finally{ setBqBusy(false); }
+  };
+
   const uploadSnapshot=e=>{
     const file=e.target.files[0]; if(!file) return;
     if(snapRows.length>0 && !window.confirm('Ya existe un snapshot de arranque para este evento (inmutable por diseño). Subir uno nuevo lo REEMPLAZARÁ. ¿Continuar?')){
@@ -1139,6 +1153,10 @@ export default function ModuleEventos(){
               <button onClick={()=>snapRef.current?.click()} title='Snapshot arranque (xlsx/csv) — si trae la pestaña "Vtas_Evento", las ventas se cargan solas'
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold border ${t.btnGhost}`}>
                 <Icons.Upload size={12}/> {snapRows.length>0 ? `Snapshot (${joined.nSkuSnap})` : 'Snapshot'}
+              </button>
+              <button onClick={snapshotBQ} disabled={bqBusy||!activeId} title="Trae el OH actual por SKU desde BigQuery (córrelo el día que arranca el evento)"
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold border disabled:opacity-50 ${t.btnGhost}`}>
+                {bqBusy?'Trayendo…':'⚡ BigQuery'}
               </button>
               {snapRows.length>0 && <button onClick={clearSnapshot} title="Eliminar snapshot" className={`p-1.5 rounded-lg border ${t.btnGhost} opacity-60 hover:opacity-100`}><Icons.Trash2 size={12}/></button>}
               <input ref={salesRef} type="file" accept=".csv,.txt" className="hidden" onChange={uploadSales}/>
