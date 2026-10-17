@@ -457,7 +457,7 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     });
     { const wall = boxAt(7.0, 5.68, 0, 12.74, yBot - 4.56, 0.17, mat(isDark ? '#4A3F5C' : '#94A3B8', { roughness: 0.9 }), 0.08), turf = boxAt(7.1, 5.8, 0.16, 12.5, yBot - 4.8, 0.08, gMat2, 0.06); wall.receiveShadow = true; turf.receiveShadow = true; turf.castShadow = false; G.add(wall, turf); }
     // lomas escalonadas y rocas low-poly para romper lo plano
-    [[-12.5, -13.5, 5.2, 4.2, 0.14], [-11.8, -12.8, 3.2, 2.4, 0.24], [-3.8, -14.8, 4.5, 3.2, 0.14], [11.5, 11.5, 5.5, 4.0, 0.14], [30.5, -13, 3.5, 6.0, 0.15], [30.8, 8, 3.2, 7.5, 0.15]].forEach(([hx, hy, hw, hd, hz]) => { const hill = boxAt(hx, hy, 0.05 + (inG(hx, hy) ? GZ : 0), hw, hd, hz, gMat1, Math.min(0.4, hz * 0.8)); hill.receiveShadow = true; G.add(hill); });
+    [[-12.5, -13.5, 5.2, 4.2, 0.14], [-11.8, -12.8, 3.2, 2.4, 0.24], [-3.8, -14.8, 4.5, 3.2, 0.14], [30.5, -13, 3.5, 6.0, 0.15], [30.8, 8, 3.2, 7.5, 0.15]].forEach(([hx, hy, hw, hd, hz]) => { const hill = boxAt(hx, hy, 0.05 + (inG(hx, hy) ? GZ : 0), hw, hd, hz, gMat1, Math.min(0.4, hz * 0.8)); hill.receiveShadow = true; G.add(hill); });
     [[-13.2, -11.5, 0.35], [-10.2, -14.2, 0.25], [-1.5, -13.8, 0.3], [14.2, 12.4, 0.32], [32.2, -6.5, 0.35], [32.5, 13.5, 0.28]].forEach(([rx, ry, rs], i) => { const rock = mesh(memo('rockG', () => new THREE.DodecahedronGeometry(1, 0)), mat(isDark ? '#4B5563' : '#94A3B8', { flatShading: true, roughness: 0.85 })); rock.scale.set(rs * 1.3, rs * 0.75, rs); rock.position.copy(W(rx, ry, 0.12 + (inG(rx, ry) ? GZ : 0))); rock.rotation.y = i * 1.1; G.add(rock); });
     // patios de concreto con losas y guarnición
     const pMat = memo(`pmat:${isDark}`, () => new THREE.MeshStandardMaterial({ map: padMap(P.pad, isDark), roughness: 0.85 }));
@@ -504,21 +504,23 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
         G.add(sb); addAnim((t) => { const a = t * 0.12 + ph; sb.position.copy(W(x + Math.cos(a) * 1.6, y + Math.sin(a) * 1.1, 0.16 + Math.sin(t * 1.4 + ph) * 0.04)); sb.rotation.y = -a - Math.PI / 2; });
       });
       [[-6, 8.6], [-4.6, 15.5], [-14, 10.5]].forEach(([x, y], i) => { const b = mesh(memo('buoy', () => new THREE.CylinderGeometry(0.1, 0.14, 0.3, 10)), mat(i % 2 ? '#F2B705' : '#E5484D', { emissive: i % 2 ? '#F2B705' : '#E5484D', emissiveIntensity: isDark ? 0.8 : 0 })); G.add(b); addAnim((t) => { b.position.copy(W(x, y, 0.25 + Math.sin(t * 2 + i) * 0.05)); }); });
-      // Tótem GO PLANNER compacto (antes 6×3 a escala 1.3; ahora 2.6×1.3 a escala 0.75)
+      // Tótem GO PLANNER: tamaño intermedio (logo 4.4×2.2, 26 capas) sobre base escalonada con columnas doradas
       const logo = memo('billLogo', () => new THREE.TextureLoader().load('/logov.png', (tx) => { tx.colorSpace = THREE.SRGBColorSpace; tx.anisotropy = 16; tx.minFilter = THREE.LinearMipmapLinearFilter; S.dirty = true; }));
       const sign = new THREE.Group();
-      const plinth = mesh(rbox(3.2, 0.22, 0.6, 0.05), mat('#14121A', { roughness: 0.5, metalness: 0.2 })); plinth.position.y = 0.11; sign.add(plinth);
-      const strip = mesh(memo('stripSm', () => new THREE.BoxGeometry(2.8, 0.03, 0.02)), mat('#E0BB3E', { emissive: '#E0BB3E', emissiveIntensity: isDark ? 1.5 : 0.2 }), false); strip.position.set(0, 0.23, 0.25); sign.add(strip);
-      const backGlass = mesh(rbox(2.8, 1.4, 0.04, 0.03), mat('#120E1A', { roughness: 0.2, metalness: 0.5, transparent: true, opacity: isDark ? 0.75 : 0.85 })); backGlass.position.set(0, 0.95, -0.08); sign.add(backGlass);
-      const lg = memo('logoGSm', () => new THREE.PlaneGeometry(2.6, 1.3)), NL = 16;
+      const plinth1 = mesh(rbox(5.4, 0.24, 1.1, 0.07), mat('#14121A', { roughness: 0.5, metalness: 0.2 })); plinth1.position.y = 0.12; sign.add(plinth1);
+      const plinth2 = mesh(rbox(4.9, 0.36, 0.85, 0.08), mat(isDark ? '#24153D' : '#2E1A47', { roughness: 0.4, metalness: 0.15 })); plinth2.position.y = 0.36; sign.add(plinth2);
+      const strip = mesh(memo('stripMed', () => new THREE.BoxGeometry(4.6, 0.045, 0.025)), mat('#E0BB3E', { emissive: '#E0BB3E', emissiveIntensity: isDark ? 1.8 : 0.25, roughness: 0.3 }), false); strip.position.set(0, 0.45, 0.43); sign.add(strip);
+      const backGlass = mesh(rbox(4.6, 2.45, 0.06, 0.04), mat('#120E1A', { roughness: 0.15, metalness: 0.6, transparent: true, opacity: isDark ? 0.76 : 0.86 })); backGlass.position.set(0, 1.72, -0.16); sign.add(backGlass);
+      [-2.36, 2.36].forEach((px) => { const pillar = mesh(rbox(0.12, 2.55, 0.16, 0.03), mat('#E0BB3E', { roughness: 0.25, metalness: 0.7 })); pillar.position.set(px, 1.72, -0.13); sign.add(pillar); });
+      const lg = memo('logoGMed', () => new THREE.PlaneGeometry(4.4, 2.2)), NL = 26;
       for (let i = 0; i < NL; i++) {
         const front = i === NL - 1;
-        const m = new THREE.MeshStandardMaterial({ map: logo, alphaTest: front ? 0.02 : 0.45, transparent: front, side: THREE.DoubleSide, color: front ? '#ffffff' : '#6D4FD8', roughness: front ? 0.2 : 0.4, metalness: front ? 0.15 : 0.4, ...(front && isDark ? { emissive: '#ffffff', emissiveMap: logo, emissiveIntensity: 0.5 } : {}) });
-        const p = new THREE.Mesh(lg, m); p.position.set(0, 0.95, -0.06 + i * 0.007); p.castShadow = i % 4 === 0 || front; p.receiveShadow = !front; sign.add(p);
+        const m = new THREE.MeshStandardMaterial({ map: logo, alphaTest: front ? 0.02 : 0.45, transparent: front, side: THREE.DoubleSide, color: front ? '#ffffff' : '#6D4FD8', roughness: front ? 0.2 : 0.4, metalness: front ? 0.15 : 0.45, ...(front && isDark ? { emissive: '#ffffff', emissiveMap: logo, emissiveIntensity: 0.65 } : {}) });
+        const p = new THREE.Mesh(lg, m); p.position.set(0, 1.72, -0.11 + i * 0.0085); p.castShadow = i % 4 === 0 || front; p.receiveShadow = !front; sign.add(p);
       }
-      [-0.85, 0.85].forEach((lx) => { const lamp = mesh(rbox(0.14, 0.08, 0.1, 0.02), mat('#14121A'), false); lamp.position.set(lx, 0.06, 0.5); lamp.rotation.x = -0.5; sign.add(lamp); const lens = mesh(memo('lensSm', () => new THREE.CircleGeometry(0.04, 10)), mat('#FFF3C4', { emissive: '#FFE08A', emissiveIntensity: isDark ? 2.5 : 0.3 }), false); lens.position.set(lx, 0.1, 0.45); lens.rotation.x = -1.07; sign.add(lens); });
-      if (isDark) { const sp = new THREE.SpotLight('#FFE6B0', 16, 6, 0.7, 0.7, 1.4); sp.position.set(0, 0.3, 0.9); sp.target.position.set(0, 0.95, 0); sign.add(sp, sp.target); }
-      sign.position.copy(W(12.5, 16, 0.05 + GZ)); sign.rotation.y = Math.PI / 4; sign.scale.setScalar(0.75); G.add(sign);
+      [-1.3, 1.3].forEach((lx) => { const lamp = mesh(rbox(0.24, 0.14, 0.18, 0.03), mat('#14121A'), false); lamp.position.set(lx, 0.1, 1.05); lamp.rotation.x = -0.5; sign.add(lamp); const lens = mesh(memo('lensMed', () => new THREE.CircleGeometry(0.065, 14)), mat('#FFF3C4', { emissive: '#FFE08A', emissiveIntensity: isDark ? 3.5 : 0.4 }), false); lens.position.set(lx, 0.15, 0.97); lens.rotation.x = -1.07; sign.add(lens); });
+      if (isDark) { const sp = new THREE.SpotLight('#FFE6B0', 28, 9, 0.8, 0.7, 1.4); sp.position.set(0, 0.35, 1.5); sp.target.position.set(0, 1.72, 0); sign.add(sp, sp.target); }
+      sign.position.copy(W(13.2, 14.8, 0.24)); sign.rotation.y = Math.PI / 4; sign.scale.setScalar(1); G.add(sign); // centrado sobre la terraza, a 45° como el resto de la escena
     }
     const quay = boxAt(-3.4, 6.2, -0.4, 8.6, 0.3, 0.47, mat(isDark ? '#3A3350' : '#B9C3D3'), 0.04); G.add(quay);
     // caminos + líneas
