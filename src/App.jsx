@@ -293,6 +293,10 @@ function Shell() {
 
   // false = colapsado (solo iconos) | true = expandido (labels visibles)
   const [sidebarExpanded, setSidebarExpanded] = useState(false);
+  // Hover tipo Gmail: abre flotando sobre el módulo (no lo empuja → sin re-layout ni lag)
+  const hoverTimer = useRef(null);
+  const sbEnter = () => { clearTimeout(hoverTimer.current); hoverTimer.current = setTimeout(() => setSidebarExpanded(true), 180); };
+  const sbLeave = () => { clearTimeout(hoverTimer.current); setSidebarExpanded(false); };
   const [openGroups,      setOpenGroups]      = useState({});
   const [showSupport,     setShowSupport]     = useState(false);
   const [showSettings,    setShowSettings]    = useState(false);
@@ -544,9 +548,11 @@ function Shell() {
 
       <div className="flex flex-1 min-h-0 overflow-hidden">
 
-        {/* ══════════ SIDEBAR ══════════ */}
+        {/* ══════════ SIDEBAR ══════════ (reserva fija de 58px; al expandir flota encima del contenido) */}
+        <div className="relative shrink-0 z-40" style={{ width: '58px' }}>
         <aside
-          className={`relative flex flex-col border-r shrink-0 transition-all duration-300 ease-in-out ${t.sidebar}`}
+          onMouseEnter={sbEnter} onMouseLeave={sbLeave}
+          className={`absolute inset-y-0 left-0 flex flex-col border-r transition-[width,box-shadow] duration-200 ease-out ${t.sidebar} ${sidebarExpanded ? (isDark ? '!bg-[#16121a]/95 shadow-2xl shadow-black/60' : 'shadow-2xl shadow-gray-400/40') : ''}`}
           style={{ width: sidebarExpanded ? '216px' : '58px' }}
         >
           {/* Botón toggle expansión */}
@@ -673,6 +679,7 @@ function Shell() {
             </div>
           )}
         </aside>
+        </div>
 
         {/* ══════════ CONTENIDO ══════════ */}
         <main className={`flex-1 overflow-y-auto min-w-0 ${isDark ? 'bg-transparent' : 'bg-gray-50'}`}>
