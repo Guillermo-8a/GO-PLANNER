@@ -500,6 +500,30 @@ export default function ModuleEventos(){
     }catch(err){ alert(String(err.message||err).slice(0,300)); } finally{ setBqBusy(false); }
   };
 
+  // Ventas del evento directo de BigQuery (/api/bq?source=eventos_ventas): TY + LY por ventanas de 3 días, 4 a la vez
+  const ventasBQ=async()=>{
+    const ev=events.find(e=>e.id===activeId); if(!ev||!ev.fechaInicio||!ev.fechaFin) return;
+    if(salesRows.length>0 && !window.confirm('Ya hay ventas cargadas para este evento. Traerlas de BigQuery las REEMPLAZARÁ. ¿Continuar?')) return;
+    let tok=localStorage.getItem('gop_api_token')||''; if(!tok){ tok=window.prompt('Token de GO PLANNER (GOP_API_TOKEN):')||''; if(!tok) return; localStorage.setItem('gop_api_token',tok); }
+    const sec=window.prompt('Secciones (número o nombre, separadas por coma):',localStorage.getItem('gop_eventos_secs')||'870,872,873,892'); if(!sec) return;
+    localStorage.setItem('gop_eventos_secs',sec); setBqBusy(true);
+    try{
+      const shift=(s,days,yrs=0)=>{ const d=new Date(s+'T00:00:00Z'); d.setUTCFullYear(d.getUTCFullYear()+yrs); d.setUTCDate(d.getUTCDate()+days); return d.toISOString().slice(0,10); };
+      const wins=[]; for(const yrs of [0,-1]){ let a=shift(ev.fechaInicio,0,yrs); const z=shift(ev.fechaFin,0,yrs); while(a<=z){ const b=shift(a,2); wins.push([a,b<z?b:z]); a=shift(b,1); } }
+      const parts=[];
+      for(let i=0;i<wins.length;i+=4){
+        const res=await Promise.all(wins.slice(i,i+4).map(async([a,b])=>{
+          const r=await fetch(`/api/bq?source=eventos_ventas&ini=${a}&fin=${b}&secciones=${encodeURIComponent(sec)}`,{headers:{'x-gop-token':tok}});
+          const txt=await r.text(); if(r.status===401) localStorage.removeItem('gop_api_token'); if(!r.ok) throw new Error(txt); return txt; }));
+        parts.push(...res);
+      }
+      const ok=parts.filter(t=>t.trim()); if(!ok.length) throw new Error('BigQuery no regresó ventas para esas fechas/secciones.');
+      const csv=[ok[0],...ok.slice(1).map(t=>t.slice(t.indexOf('\n')+1))].join('\n');
+      const {rows,error}=parseSalesCSV(csv); if(error) throw new Error(error); if(!rows.length) throw new Error('No se encontraron filas válidas.');
+      setSalesRows(rows); idbSet(`sales_${activeId}`,rows).catch(()=>{});
+    }catch(err){ alert(String(err.message||err).slice(0,300)); } finally{ setBqBusy(false); }
+  };
+
   const uploadSnapshot=e=>{
     const file=e.target.files[0]; if(!file) return;
     if(snapRows.length>0 && !window.confirm('Ya existe un snapshot de arranque para este evento (inmutable por diseño). Subir uno nuevo lo REEMPLAZARÁ. ¿Continuar?')){
@@ -1163,6 +1187,10 @@ export default function ModuleEventos(){
               <button onClick={()=>salesRef.current?.click()} title="CSV Ventas del evento (opcional)"
                 className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold border ${t.btnGhost}`}>
                 <Icons.Upload size={12}/> {salesRows.length>0 ? `Ventas (${joined.nSkuVenta})` : 'Ventas'}
+              </button>
+              <button onClick={ventasBQ} disabled={bqBusy||!activeId} title="Trae las ventas diarias por SKU (año actual y LY) desde BigQuery con las fechas del evento"
+                className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-[11px] font-bold border disabled:opacity-50 ${t.btnGhost}`}>
+                {bqBusy?'Trayendo…':'⚡ BigQuery'}
               </button>
               {salesRows.length>0 && <button onClick={handleDownloadSalesCSV} title="Descargar el CSV de ventas cargado (por si se perdió el archivo original)" className={`p-1.5 rounded-lg border ${t.btnGhost} opacity-60 hover:opacity-100`}><Icons.Download size={12}/></button>}
               {salesRows.length>0 && <button onClick={clearSales} title="Eliminar ventas" className={`p-1.5 rounded-lg border ${t.btnGhost} opacity-60 hover:opacity-100`}><Icons.Trash2 size={12}/></button>}

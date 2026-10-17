@@ -69,6 +69,22 @@ export const QUERIES = {
       GROUP BY 1, 2, 3, 4, 5, 6`,
   },
 
+  // Eventos: ventas diarias por SKU en [ini, fin] (YYYY-MM-DD) para las secciones indicadas.
+  // El front pide ventanas de pocos días (TY y LY) y las concatena: un rango largo rebasa el límite de respuesta de Vercel.
+  // VTAS y TOTAL_DESCUENTOS van en miles (parseSalesCSV de Eventos los multiplica ×1000); GM en pesos.
+  eventos_ventas: {
+    params: ['ini', 'fin', 'secciones'],
+    sql: () => `
+      SELECT DIA_PERIODO, LTRIM(ARTICULO_KEY, '0') AS ARTICULO, MODELO_PROVEEDOR, MARCA, GRUPO_ARTICULOS AS GOA,
+             SECCION, ESTATUS_ARTICULO AS N_ESTATUS, NORMA_APROVISIONAMIENTO AS NORMA_DE_APROVISIONAMIENTO,
+             SUM(VTAS_U) AS VTAS_U, SUM(Vtas_P) / 1000 AS VTAS, SUM(GM) AS GM, SUM(Total_Descuentos) / 1000 AS TOTAL_DESCUENTOS
+      FROM \`crp-pro-dwh-semanticagold.mus_pro_dwh_views_sap.VEIL_ANALISIS_VTAS_DIARIAS\`
+      WHERE DIA_PERIODO BETWEEN DATE(@ini) AND DATE(@fin)
+        AND (LTRIM(SECCION_KEY, '0') IN UNNEST(ARRAY(SELECT LTRIM(x, '0') FROM UNNEST(SPLIT(REPLACE(@secciones, ' ', ''), ',')) x))
+             OR UPPER(SECCION) IN UNNEST(SPLIT(UPPER(@secciones), ',')))
+      GROUP BY 1, 2, 3, 4, 5, 6, 7, 8`,
+  },
+
   // Traslados: base de artículos GOA × SKU × Centro.
   traslados: {
     sql: (DS) => `
