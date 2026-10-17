@@ -252,6 +252,8 @@ const downloadCSV = (name, lines) => { const blob = new Blob(['﻿' + lines.join
 
 const PAL = ['#7B1FA2', '#AB47BC', '#CE93D8', '#E040FB', '#D63F8C', '#F48FB1', '#9575CD', '#5E35B1'];
 const NULO_C = '#D63F8C';
+// RG = precio regular · PR/SR/TR = liquidación · cualquier otra letra = rebaja
+const grpLetra = (l) => { const s = String(l || '').trim().toUpperCase(); return s === 'RG' ? 'RG' : ['PR', 'SR', 'TR'].includes(s) ? 'LQ' : 'RB'; };
 
 // ─── Multiselect ──────────────────────────────────────────────────────────────
 function MultiSelect({ label, options, sel, onChange, t, isDark, inCls }) {
@@ -524,6 +526,14 @@ export default function ModuleNulo({ t, isDark, navIcon, navLabel, navDesc }) {
             <div className={card}>
               <p className={`text-xs font-bold text-center ${t.text}`}>Inventario por letra de rebaja · ¿regular o liquidado?</p>
               <p className={`text-[10px] text-center mb-2 ${t.textMuted}`}>Monto y piezas por letra actual · click en una barra para filtrar</p>
+              {(() => { const g = { RG: { l: 'Regular (RG)', c: '#22C55E', m: 0, p: 0 }, RB: { l: 'Rebaja', c: '#F59E0B', m: 0, p: 0 }, LQ: { l: 'Liquidación (PR/SR/TR)', c: NULO_C, m: 0, p: 0 } };
+                R.letra.forEach((d) => { const o = g[grpLetra(d.name)]; o.m += d.value; o.p += d.pzs; });
+                return <div className="grid grid-cols-3 gap-2 mb-3">{Object.values(g).map((o) => (
+                  <div key={o.l} className={`rounded-xl border p-3 text-center ${t.cardInner}`}>
+                    <div className={`text-[10px] font-black uppercase tracking-widest ${t.textMuted}`}>{o.l}</div>
+                    <div className="text-xl font-black" style={{ color: o.c }}>{R.m$ ? pct(o.m / R.m$) : '—'}</div>
+                    <div className={`text-[10px] ${t.textMuted}`}>{fmt$(o.m)} · {Math.round(o.p).toLocaleString('es-MX')} pzs</div>
+                  </div>))}</div>; })()}
               <div style={{ height: Math.max(160, R.letra.length * 30 + 30) }}>
                 <ResponsiveContainer>
                   <BarChart data={R.letra.map((d) => ({ ...d, pct: R.m$ ? d.value / R.m$ : 0 }))} layout="vertical" margin={{ left: 0, right: 90 }} barCategoryGap="20%">
@@ -532,7 +542,7 @@ export default function ModuleNulo({ t, isDark, navIcon, navLabel, navDesc }) {
                     <Tooltip {...ttStyle} cursor={{ fill: isDark ? 'rgba(255,255,255,0.04)' : '#f3f4f6' }} formatter={(v, k, p) => [`${fmt$(v)} · ${pct(p.payload.pct)} · ${Math.round(p.payload.pzs).toLocaleString('es-MX')} pzs`, 'Letra']} />
                     <Bar isAnimationActive={false} dataKey="value" radius={[0, 4, 4, 0]} cursor="pointer" onClick={(d) => setDim('letra', new Set([d.idx]))}
                       label={{ position: 'right', fontSize: 10, fill: isDark ? '#cbd5e1' : '#475569', formatter: (v) => (R.m$ ? pct(v / R.m$) : '') }}>
-                      {R.letra.map((d, i) => <Cell key={i} fill={PAL[i % PAL.length]} />)}
+                      {R.letra.map((d, i) => <Cell key={i} fill={{ RG: '#22C55E', RB: '#F59E0B', LQ: NULO_C }[grpLetra(d.name)]} />)}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>

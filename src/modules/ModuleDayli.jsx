@@ -259,6 +259,25 @@ const parseInvCSV = text => {
   }
   return out;
 };
+// Plan mensual: MES + DIVISION/SECCION/GOA/MARCA (opcionales) + VENTA (plan $) + UTILIDAD o MG% plan
+const mesOf = v => { const s=String(v||'').trim().toUpperCase(); let m=s.match(/^(\d{4})[-/.](\d{1,2})/); if(m) return `${m[1]}-${m[2].padStart(2,'0')}`;
+  m=s.match(/^(\d{1,2})[-/.](\d{4})$/); if(m) return `${m[2]}-${m[1].padStart(2,'0')}`;
+  const i=MES3.findIndex(x=>s.includes(x.toUpperCase())), y=(s.match(/\d{4}/)||s.match(/\d{2}$/)||[])[0];
+  if(i>=0&&y) return `${y.length===2?'20'+y:y}-${String(i+1).padStart(2,'0')}`;
+  const d=parseDate(s); return d?`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`:''; };
+const parsePlanCSV = text => {
+  const sep=text.includes('\t')?'\t':text.includes(';')?';':',';
+  const rows=text.split('\n').map(r=>parseCSVRow(r,sep)); if(rows.length<2) return [];
+  const H=rows[0].map(h=>h.toUpperCase().trim().replace(/\s+/g,'_').replace(/[ÁÉÍÓÚ]/g,c=>({Á:'A',É:'E',Í:'I',Ó:'O',Ú:'U'}[c])));
+  const idx=(...ns)=>ns.map(n=>H.findIndex(h=>h===n||h.includes(n))).find(i=>i>=0)??-1;
+  const I={mes:idx('MES','PERIODO','FECHA'),div:idx('DIVISION'),sec:idx('SECCION'),goa:idx('GOA','FAMILIA'),marca:idx('MARCA'),
+    v:idx('VENTA','PLAN'),util:idx('UTILIDAD','UTIL'),mg:idx('MG','MARGEN')};
+  const g=(r,i)=>i>=0?String(r[i]||'').trim().toUpperCase():'';
+  return rows.slice(1).map(r=>{ const v=num(I.v>=0?r[I.v]:0); const mgRaw=I.mg>=0?num(r[I.mg]):null;
+    const util=I.util>=0?num(r[I.util]):mgRaw!=null?v*(mgRaw>1?mgRaw/100:mgRaw):0;
+    return {mes:I.mes>=0?mesOf(r[I.mes]):'',division:g(r,I.div),seccion:g(r,I.sec),goa:g(r,I.goa),marca:g(r,I.marca),v,util}; })
+    .filter(x=>x.mes&&x.v); };
+
 const parsePromoCSV = text => {
   const sep=text.includes('\t')?'\t':text.includes(';')?';':',';
   const rows=text.split('\n').map(r=>parseCSVRow(r,sep)); if(rows.length<2) return [];
@@ -328,6 +347,7 @@ export default function ModuleDaily(){
   const [cmpDayMode,setCmpDayMode]=useState('detalle'); // 'detalle' (lun↔lun) | 'avg'
   const [scatterLevel,setScatterLevel]=useState(0);
   const [dTab,setDTab]=useState('dash'); // 'dash' | 'resumen'
+  const [planData,setPlanData]=useState([]); const planRef=useRef(null);
   const [pvOpen,setPvOpen]=useState(()=>new Set());
 
   // Persistencia — config chica en localStorage, dataset completo en IndexedDB (sin límite de tamaño)
@@ -349,6 +369,7 @@ export default function ModuleDaily(){
     (async()=>{ try{
       const a=await dbGet('allData'); if(Array.isArray(a)&&a.length) setAllData(a.map(r=>({...r,fecha:r.fecha?new Date(r.fecha):null})));
       const i=await dbGet('invData'); if(Array.isArray(i)&&i.length) setInvData(i);
+      const pl=await dbGet('planData'); if(Array.isArray(pl)&&pl.length) setPlanData(pl);
     }catch{} finally{ setHydrated(true); } })();
   },[]);
   useEffect(()=>{ if(!hydrated) return; try{
@@ -358,6 +379,7 @@ export default function ModuleDaily(){
     [hydrated,promoEntries,manualPromo,defaultUplift,moneyK,usarPromosFijas,bonifMes,bonifAcum,dateFrom,dateTo,fCanal,fDiv,fSec,fMarca,fNorma,fPago,fGoa]);
   useEffect(()=>{ if(!hydrated) return; dbSet('allData',allData).catch(()=>{}); },[hydrated,allData]);
   useEffect(()=>{ if(!hydrated) return; dbSet('invData',invData).catch(()=>{}); },[hydrated,invData]);
+  useEffect(()=>{ if(!hydrated) return; dbSet('planData',planData).catch(()=>{}); },[hydrated,planData]);
 
   const decodeBuf=buf=>{ let txt=new TextDecoder('utf-8',{fatal:false}).decode(buf);
     if(txt.includes('\uFFFD')) txt=new TextDecoder('windows-1252').decode(buf); return txt; };
@@ -550,17 +572,24 @@ export default function ModuleDaily(){
   const pivot=useMemo(()=>{
     const LV=['division','seccion','goa']; const root={kids:{}};
     const add=(r,f)=>{ let n=root; const path=[]; LV.forEach(k=>{ const v=r[k]||'N/D'; path.push(v);
-      if(!n.kids[v]) n.kids[v]={id:path.join('›'),key:v,v:0,u:0,util:0,lyV:0,lyUtil:0,oh:0,kids:{}}; n=n.kids[v]; f(n); }); };
+      if(!n.kids[v]) n.kids[v]={id:path.join('›'),key:v,v:0,u:0,util:0,lyV:0,lyUtil:0,oh:0,plV:0,plUtil:0,kids:{}}; n=n.kids[v]; f(n); }); };
     tyData.forEach(r=>add(r,n=>{ n.v+=r.ventaP; n.u+=r.ventaU; n.util+=r.utilidad; }));
     lyData.forEach(r=>add(r,n=>{ n.lyV+=r.ventaP; n.lyUtil+=r.utilidad; }));
     filtInv.forEach(r=>add(r,n=>{ n.oh+=r.oh; }));
+    // Plan mensual prorrateado a los días del periodo TY (primer día con venta → último día con data)
+    const fs=tyData.filter(r=>r.fecha).map(r=>r.fecha);
+    if(planData.length&&fs.length){ const a=new Date(minOf(fs)), b=new Date(maxOf(fs)); a.setHours(0,0,0,0); b.setHours(0,0,0,0);
+      const fac={}; for(let d=new Date(a); d<=b; d.setDate(d.getDate()+1)){ const k=`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`; fac[k]=(fac[k]||0)+1/new Date(d.getFullYear(),d.getMonth()+1,0).getDate(); }
+      const ok=(arr,v)=>!v||inF(arr,v);
+      planData.forEach(p=>{ const f=fac[p.mes]; if(!f||!ok(fDiv,p.division)||!ok(fSec,p.seccion)||!ok(fGoa,p.goa)||!ok(fMarca,p.marca)) return;
+        add(p,n=>{ n.plV+=p.v*f; n.plUtil+=p.util*f; }); }); }
     const pDays=new Set(tyData.filter(r=>r.fecha).map(r=>r.fecha.toDateString())).size||1;
-    const fin=n=>({...n, mg:n.v>0?n.util/n.v*100:null, mgLY:n.lyV>0?n.lyUtil/n.lyV*100:null, dV:delta(n.v,n.lyV),
+    const fin=n=>({...n, mg:n.v>0?n.util/n.v*100:null, mgLY:n.lyV>0?n.lyUtil/n.lyV*100:null, dV:delta(n.v,n.lyV), dPl:n.plV>0?delta(n.v,n.plV):null, mgPl:n.plV>0?n.plUtil/n.plV*100:null,
       rot:n.oh>0?(n.u/pDays*365)/n.oh:null, kids:Object.values(n.kids).map(fin).sort((a,b)=>b.v-a.v)});
     const top=Object.values(root.kids).map(fin).sort((a,b)=>b.v-a.v);
-    const tot=top.reduce((a,n)=>({v:a.v+n.v,u:a.u+n.u,util:a.util+n.util,lyV:a.lyV+n.lyV,lyUtil:a.lyUtil+n.lyUtil,oh:a.oh+n.oh}),{v:0,u:0,util:0,lyV:0,lyUtil:0,oh:0});
+    const tot=top.reduce((a,n)=>({v:a.v+n.v,u:a.u+n.u,util:a.util+n.util,lyV:a.lyV+n.lyV,lyUtil:a.lyUtil+n.lyUtil,oh:a.oh+n.oh,plV:a.plV+n.plV,plUtil:a.plUtil+n.plUtil}),{v:0,u:0,util:0,lyV:0,lyUtil:0,oh:0,plV:0,plUtil:0});
     return {rows:top, tot:fin({...tot,id:'TOTAL',key:'TOTAL',kids:{}}), pDays};
-  },[tyData,lyData,filtInv]);
+  },[tyData,lyData,filtInv,planData,fDiv,fSec,fGoa,fMarca]);
 
   const byCanal=useMemo(()=>byKeyFcst('canal'),[byKeyFcst]);
   const byDiv=useMemo(()=>byKeyFcst('division'),[byKeyFcst]);
@@ -794,10 +823,12 @@ export default function ModuleDaily(){
   const ResumenPivot=()=>{
     const tog=id=>setPvOpen(p=>{ const n=new Set(p); n.has(id)?n.delete(id):n.add(id); return n; });
     const all=[]; const walk=(ns,d)=>ns.forEach(n=>{ if(d<2){ all.push(n.id); walk(n.kids,d+1); } }); walk(pivot.rows,0);
-    const totV=pivot.tot.v||1;
+    const totV=pivot.tot.v||1; const hasPl=pivot.tot.plV>0; const T=pivot.tot;
     const mgC=v=>v==null?t.textMuted:v>=45?'text-violet-400':v>=35?'text-amber-400':'text-rose-400';
     const rotC=v=>v==null?t.textMuted:v>=4?'text-violet-400':v>=2.5?'text-amber-400':'text-rose-400';
-    const Row=({n,d})=>{ const open=pvOpen.has(n.id), hasK=d<2&&n.kids.length>0; const dpp=n.mg!=null&&n.mgLY!=null?n.mg-n.mgLY:null;
+    const ppC=v=>v==null?t.textMuted:v>=0?'text-violet-400':'text-rose-400';
+    const pp=v=>v!=null?`${v>=0?'+':''}${v.toFixed(1)}`:'—';
+    const Row=({n,d})=>{ const open=pvOpen.has(n.id), hasK=d<2&&n.kids.length>0; const dpp=n.mg!=null&&n.mgLY!=null?n.mg-n.mgLY:null, dppPl=n.mg!=null&&n.mgPl!=null?n.mg-n.mgPl:null;
       return <>
         <tr onClick={hasK?()=>tog(n.id):undefined} className={`${hasK?'cursor-pointer':''} ${d===0?(isDark?'bg-zinc-800/40 font-black':'bg-gray-50 font-black'):''} ${isDark?'hover:bg-violet-500/10':'hover:bg-violet-50'}`}>
           <td className={`p-2 whitespace-nowrap ${t.textMain}`} style={{paddingLeft:8+d*18}}>
@@ -806,8 +837,10 @@ export default function ModuleDaily(){
           <td className={`p-2 font-mono text-right ${t.textAccent1}`}>{fmtM(n.v)}</td>
           <td className={`p-2 font-mono text-right ${t.textMuted}`}>{fmtP(n.v/totV*100)}</td>
           <td className="p-2 text-right"><DeltaBadge value={n.dV}/></td>
+          {hasPl&&<td className="p-2 text-right">{n.dPl!=null?<DeltaBadge value={n.dPl}/>:<span className={t.textMuted}>—</span>}</td>}
           <td className={`p-2 font-bold text-right ${mgC(n.mg)}`}>{n.mg!=null?fmtP(n.mg):'—'}</td>
-          <td className={`p-2 font-mono text-right ${dpp==null?t.textMuted:dpp>=0?'text-violet-400':'text-rose-400'}`}>{dpp!=null?`${dpp>=0?'+':''}${dpp.toFixed(1)}`:'—'}</td>
+          <td className={`p-2 font-mono text-right ${ppC(dpp)}`}>{pp(dpp)}</td>
+          {hasPl&&<td className={`p-2 font-mono text-right ${ppC(dppPl)}`}>{pp(dppPl)}</td>}
           <td className={`p-2 font-bold text-right ${rotC(n.rot)}`}>{n.rot!=null?n.rot.toFixed(1)+'x':'—'}</td>
         </tr>
         {open&&n.kids.map(k=><Row key={k.id} n={k} d={d+1}/>)}
@@ -816,7 +849,10 @@ export default function ModuleDaily(){
       <div className={`p-4 rounded-2xl border ${t.card}`}>
         <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
           <h3 className={`text-sm font-black ${t.textMain}`}>Resumen ejecutivo · División › Sección › GOA</h3>
-          <div className="flex gap-2">
+          <div className="flex gap-2 flex-wrap">
+            <input ref={planRef} type="file" accept=".csv,.txt" className="hidden" onChange={upload(planRef,setPlanData,parsePlanCSV)}/>
+            <button onClick={()=>planRef.current?.click()} className={`text-[10px] px-2.5 py-1.5 rounded-lg border font-black ${t.btnGhost}`}>📋 CSV Plan{planData.length?` (${planData.length})`:''}</button>
+            {planData.length>0&&<button onClick={()=>setPlanData([])} className={`text-[10px] px-2.5 py-1.5 rounded-lg border font-black opacity-50 hover:opacity-100 ${t.btnGhost}`} title="Quitar plan">✕ Plan</button>}
             <button onClick={()=>setPvOpen(new Set(pivot.rows.map(n=>n.id)))} className={`text-[10px] px-2.5 py-1.5 rounded-lg border font-black ${t.btnGhost}`}>Nivel sección</button>
             <button onClick={()=>setPvOpen(new Set(all))} className={`text-[10px] px-2.5 py-1.5 rounded-lg border font-black ${t.btnGhost}`}>Expandir todo</button>
             <button onClick={()=>setPvOpen(new Set())} className={`text-[10px] px-2.5 py-1.5 rounded-lg border font-black ${t.btnGhost}`}>Colapsar</button>
@@ -825,21 +861,23 @@ export default function ModuleDaily(){
         <div className="overflow-auto custom-scrollbar max-h-[70vh]">
           <table className="w-full text-xs min-w-max">
             <thead><tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 z-10 ${isDark?'bg-[#1c1720] text-gray-400 border-b border-white/10':'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
-              {['Jerarquía','Venta','% Part','vs LY','MG %','Δ MG pp','Rot'].map((h,i)=><th key={h} className={`p-2 whitespace-nowrap ${i?'text-right':'text-left'}`}>{h}</th>)}
+              {['Jerarquía','Venta','% Part','vs AA',...(hasPl?['vs Plan']:[]),'MG %','Δ MG vs AA',...(hasPl?['Δ MG vs Plan']:[]),'Rot'].map((h,i)=><th key={h} className={`p-2 whitespace-nowrap ${i?'text-right':'text-left'}`}>{h}</th>)}
             </tr></thead>
             <tbody className={`divide-y ${isDark?'divide-zinc-800/50':'divide-gray-100'}`}>{pivot.rows.map(n=><Row key={n.id} n={n} d={0}/>)}</tbody>
             <tfoot><tr className={`font-black sticky bottom-0 ${isDark?'bg-[#1c1720] border-t-2 border-violet-500/50':'bg-violet-50 border-t-2 border-violet-300'}`}>
               <td className={`p-2 ${t.textMain}`}>TOTAL</td>
               <td className={`p-2 font-mono text-right ${t.textAccent1}`}>{fmtM(pivot.tot.v)}</td>
               <td className={`p-2 font-mono text-right ${t.textMuted}`}>100%</td>
-              <td className="p-2 text-right"><DeltaBadge value={pivot.tot.dV}/></td>
-              <td className={`p-2 text-right ${mgC(pivot.tot.mg)}`}>{pivot.tot.mg!=null?fmtP(pivot.tot.mg):'—'}</td>
-              <td className={`p-2 font-mono text-right ${t.textMuted}`}>{pivot.tot.mg!=null&&pivot.tot.mgLY!=null?(pivot.tot.mg-pivot.tot.mgLY).toFixed(1):'—'}</td>
+              <td className="p-2 text-right"><DeltaBadge value={T.dV}/></td>
+              {hasPl&&<td className="p-2 text-right"><DeltaBadge value={T.dPl}/></td>}
+              <td className={`p-2 text-right ${mgC(T.mg)}`}>{T.mg!=null?fmtP(T.mg):'—'}</td>
+              <td className={`p-2 font-mono text-right ${ppC(T.mg!=null&&T.mgLY!=null?T.mg-T.mgLY:null)}`}>{pp(T.mg!=null&&T.mgLY!=null?T.mg-T.mgLY:null)}</td>
+              {hasPl&&<td className={`p-2 font-mono text-right ${ppC(T.mg!=null&&T.mgPl!=null?T.mg-T.mgPl:null)}`}>{pp(T.mg!=null&&T.mgPl!=null?T.mg-T.mgPl:null)}</td>}
               <td className={`p-2 text-right ${rotC(pivot.tot.rot)}`}>{pivot.tot.rot!=null?pivot.tot.rot.toFixed(1)+'x':'—'}</td>
             </tr></tfoot>
           </table>
         </div>
-        <p className={`text-[10px] mt-2 ${t.textMuted}`}>Respeta filtros y rango. Rot = venta pzs anualizada ({pivot.pDays} días con venta × 365) ÷ OH pzs{filtInv.length?'':' · carga CSV de inventario para ver Rot'}. Click en una fila para abrir/cerrar.</p>
+        <p className={`text-[10px] mt-2 ${t.textMuted}`}>Respeta filtros y rango. Rot = venta pzs anualizada ({pivot.pDays} días con venta × 365) ÷ OH pzs{filtInv.length?'':' · carga CSV de inventario para ver Rot'}. Click en una fila para abrir/cerrar. vs AA = mismo periodo año anterior. vs Plan = plan mensual (CSV: MES, DIVISION, SECCION, GOA, VENTA, UTILIDAD o MG) prorrateado a los días del periodo{hasPl?'':' · carga el CSV Plan para verlo'}.</p>
       </div>);
   };
 
