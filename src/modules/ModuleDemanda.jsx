@@ -122,7 +122,7 @@ export default function ModuleDemanda({ t, isDark, navIcon, navLabel, navDesc })
       )}
       <button onClick={() => fileRef.current?.click()} disabled={!!busy} className={`flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg font-bold ${t.btn} disabled:opacity-50`}><Upload size={14} />Cargar CSV</button>
       <button onClick={clearAll} className={`p-2 rounded-lg border ${t.btnDanger}`} title="Borrar base"><Trash2 size={14} /></button>
-      <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden" onChange={onFile} />
+      <input ref={fileRef} type="file" accept=".csv,.txt,text/csv,text/comma-separated-values,text/plain,application/vnd.ms-excel" className="hidden" onChange={onFile} />
     </>
   );
 
