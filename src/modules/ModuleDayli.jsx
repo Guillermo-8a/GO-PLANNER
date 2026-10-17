@@ -327,6 +327,8 @@ export default function ModuleDaily(){
   const [tblBasis,setTblBasis]=useState('periodo'); // 'periodo' (vs LY mismo filtro) | 'cierre' (fcst vs LY mes completo)
   const [cmpDayMode,setCmpDayMode]=useState('detalle'); // 'detalle' (lun↔lun) | 'avg'
   const [scatterLevel,setScatterLevel]=useState(0);
+  const [dTab,setDTab]=useState('dash'); // 'dash' | 'resumen'
+  const [pvOpen,setPvOpen]=useState(()=>new Set());
 
   // Persistencia — config chica en localStorage, dataset completo en IndexedDB (sin límite de tamaño)
   // `hydrated` evita que los efectos de guardado (abajo) corran ANTES de que termine de cargar lo
@@ -544,6 +546,22 @@ export default function ModuleDaily(){
         lyP:lyP[g.key]||0, lyFull:lyFull[g.key]||0 }; }).sort((a,b)=>b.ventaP-a.ventaP);
   },[tyData,lyData,allData,dimsOk,lastDateTY,lyYear,scenarioSel,forecastMes]);
 
+  // ── Resumen ejecutivo: pivote División > Sección > GOA (Venta, MG, Rot) ──
+  const pivot=useMemo(()=>{
+    const LV=['division','seccion','goa']; const root={kids:{}};
+    const add=(r,f)=>{ let n=root; const path=[]; LV.forEach(k=>{ const v=r[k]||'N/D'; path.push(v);
+      if(!n.kids[v]) n.kids[v]={id:path.join('›'),key:v,v:0,u:0,util:0,lyV:0,lyUtil:0,oh:0,kids:{}}; n=n.kids[v]; f(n); }); };
+    tyData.forEach(r=>add(r,n=>{ n.v+=r.ventaP; n.u+=r.ventaU; n.util+=r.utilidad; }));
+    lyData.forEach(r=>add(r,n=>{ n.lyV+=r.ventaP; n.lyUtil+=r.utilidad; }));
+    filtInv.forEach(r=>add(r,n=>{ n.oh+=r.oh; }));
+    const pDays=new Set(tyData.filter(r=>r.fecha).map(r=>r.fecha.toDateString())).size||1;
+    const fin=n=>({...n, mg:n.v>0?n.util/n.v*100:null, mgLY:n.lyV>0?n.lyUtil/n.lyV*100:null, dV:delta(n.v,n.lyV),
+      rot:n.oh>0?(n.u/pDays*365)/n.oh:null, kids:Object.values(n.kids).map(fin).sort((a,b)=>b.v-a.v)});
+    const top=Object.values(root.kids).map(fin).sort((a,b)=>b.v-a.v);
+    const tot=top.reduce((a,n)=>({v:a.v+n.v,u:a.u+n.u,util:a.util+n.util,lyV:a.lyV+n.lyV,lyUtil:a.lyUtil+n.lyUtil,oh:a.oh+n.oh}),{v:0,u:0,util:0,lyV:0,lyUtil:0,oh:0});
+    return {rows:top, tot:fin({...tot,id:'TOTAL',key:'TOTAL',kids:{}}), pDays};
+  },[tyData,lyData,filtInv]);
+
   const byCanal=useMemo(()=>byKeyFcst('canal'),[byKeyFcst]);
   const byDiv=useMemo(()=>byKeyFcst('division'),[byKeyFcst]);
   const byMarca=useMemo(()=>byKeyDash('marca'),[byKeyDash]);
@@ -721,10 +739,10 @@ export default function ModuleDaily(){
         {label:'Utilidad',val:fmtM(kpiTY.utilidad),d:null,c:'text-purple-400'},
         {label:'Markdowns',val:fmtM(kpiTY.markdown),d:null,c:'text-amber-400'},
         {label:'PVP Prom',val:fmtMd(kpiTY.atv*(moneyK?1000:1)),d:null,c:t.textAccent1,sub:moneyK?'venta/pza (pesos)':'venta/pza'}].map(({label,val,d,c,sub})=>(
-        <div key={label} className={`p-3 rounded-xl border ${t.cardInner}`}>
-          <div className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} mb-0.5`}>{label}</div>
-          <div className={`text-base font-black ${c}`}>{val}</div>{sub&&<div className={`text-[9px] ${t.textMuted}`}>{sub}</div>}
-          {d!=null&&<DeltaBadge value={d}/>}
+        <div key={label} className={`p-3 rounded-xl border text-center flex flex-col items-center justify-center ${t.cardInner}`}>
+          <div className={`text-[11px] font-black uppercase tracking-widest ${t.textMuted} mb-1`}>{label}</div>
+          <div className={`text-xl md:text-2xl font-black ${c}`}>{val}</div>{sub&&<div className={`text-[10px] ${t.textMuted}`}>{sub}</div>}
+          {d!=null&&<div className="mt-1"><DeltaBadge value={d}/></div>}
         </div>))}
     </div>
   );
@@ -773,6 +791,58 @@ export default function ModuleDaily(){
     );
   };
 
+  const ResumenPivot=()=>{
+    const tog=id=>setPvOpen(p=>{ const n=new Set(p); n.has(id)?n.delete(id):n.add(id); return n; });
+    const all=[]; const walk=(ns,d)=>ns.forEach(n=>{ if(d<2){ all.push(n.id); walk(n.kids,d+1); } }); walk(pivot.rows,0);
+    const totV=pivot.tot.v||1;
+    const mgC=v=>v==null?t.textMuted:v>=45?'text-violet-400':v>=35?'text-amber-400':'text-rose-400';
+    const rotC=v=>v==null?t.textMuted:v>=4?'text-violet-400':v>=2.5?'text-amber-400':'text-rose-400';
+    const Row=({n,d})=>{ const open=pvOpen.has(n.id), hasK=d<2&&n.kids.length>0; const dpp=n.mg!=null&&n.mgLY!=null?n.mg-n.mgLY:null;
+      return <>
+        <tr onClick={hasK?()=>tog(n.id):undefined} className={`${hasK?'cursor-pointer':''} ${d===0?(isDark?'bg-zinc-800/40 font-black':'bg-gray-50 font-black'):''} ${isDark?'hover:bg-violet-500/10':'hover:bg-violet-50'}`}>
+          <td className={`p-2 whitespace-nowrap ${t.textMain}`} style={{paddingLeft:8+d*18}}>
+            <span className={`inline-block w-4 ${t.textMuted}`}>{hasK?(open?'▾':'▸'):''}</span>
+            <span className={d===2?'font-medium':'font-bold'}>{n.key}</span></td>
+          <td className={`p-2 font-mono text-right ${t.textAccent1}`}>{fmtM(n.v)}</td>
+          <td className={`p-2 font-mono text-right ${t.textMuted}`}>{fmtP(n.v/totV*100)}</td>
+          <td className="p-2 text-right"><DeltaBadge value={n.dV}/></td>
+          <td className={`p-2 font-bold text-right ${mgC(n.mg)}`}>{n.mg!=null?fmtP(n.mg):'—'}</td>
+          <td className={`p-2 font-mono text-right ${dpp==null?t.textMuted:dpp>=0?'text-violet-400':'text-rose-400'}`}>{dpp!=null?`${dpp>=0?'+':''}${dpp.toFixed(1)}`:'—'}</td>
+          <td className={`p-2 font-bold text-right ${rotC(n.rot)}`}>{n.rot!=null?n.rot.toFixed(1)+'x':'—'}</td>
+        </tr>
+        {open&&n.kids.map(k=><Row key={k.id} n={k} d={d+1}/>)}
+      </>; };
+    return (
+      <div className={`p-4 rounded-2xl border ${t.card}`}>
+        <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+          <h3 className={`text-sm font-black ${t.textMain}`}>Resumen ejecutivo · División › Sección › GOA</h3>
+          <div className="flex gap-2">
+            <button onClick={()=>setPvOpen(new Set(pivot.rows.map(n=>n.id)))} className={`text-[10px] px-2.5 py-1.5 rounded-lg border font-black ${t.btnGhost}`}>Nivel sección</button>
+            <button onClick={()=>setPvOpen(new Set(all))} className={`text-[10px] px-2.5 py-1.5 rounded-lg border font-black ${t.btnGhost}`}>Expandir todo</button>
+            <button onClick={()=>setPvOpen(new Set())} className={`text-[10px] px-2.5 py-1.5 rounded-lg border font-black ${t.btnGhost}`}>Colapsar</button>
+          </div>
+        </div>
+        <div className="overflow-auto custom-scrollbar max-h-[70vh]">
+          <table className="w-full text-xs min-w-max">
+            <thead><tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 z-10 ${isDark?'bg-[#1c1720] text-gray-400 border-b border-white/10':'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
+              {['Jerarquía','Venta','% Part','vs LY','MG %','Δ MG pp','Rot'].map((h,i)=><th key={h} className={`p-2 whitespace-nowrap ${i?'text-right':'text-left'}`}>{h}</th>)}
+            </tr></thead>
+            <tbody className={`divide-y ${isDark?'divide-zinc-800/50':'divide-gray-100'}`}>{pivot.rows.map(n=><Row key={n.id} n={n} d={0}/>)}</tbody>
+            <tfoot><tr className={`font-black sticky bottom-0 ${isDark?'bg-[#1c1720] border-t-2 border-violet-500/50':'bg-violet-50 border-t-2 border-violet-300'}`}>
+              <td className={`p-2 ${t.textMain}`}>TOTAL</td>
+              <td className={`p-2 font-mono text-right ${t.textAccent1}`}>{fmtM(pivot.tot.v)}</td>
+              <td className={`p-2 font-mono text-right ${t.textMuted}`}>100%</td>
+              <td className="p-2 text-right"><DeltaBadge value={pivot.tot.dV}/></td>
+              <td className={`p-2 text-right ${mgC(pivot.tot.mg)}`}>{pivot.tot.mg!=null?fmtP(pivot.tot.mg):'—'}</td>
+              <td className={`p-2 font-mono text-right ${t.textMuted}`}>{pivot.tot.mg!=null&&pivot.tot.mgLY!=null?(pivot.tot.mg-pivot.tot.mgLY).toFixed(1):'—'}</td>
+              <td className={`p-2 text-right ${rotC(pivot.tot.rot)}`}>{pivot.tot.rot!=null?pivot.tot.rot.toFixed(1)+'x':'—'}</td>
+            </tr></tfoot>
+          </table>
+        </div>
+        <p className={`text-[10px] mt-2 ${t.textMuted}`}>Respeta filtros y rango. Rot = venta pzs anualizada ({pivot.pDays} días con venta × 365) ÷ OH pzs{filtInv.length?'':' · carga CSV de inventario para ver Rot'}. Click en una fila para abrir/cerrar.</p>
+      </div>);
+  };
+
   const hasData=allData.length>0;
 
   // ═══════════════════════════════════════════════════════════════════
@@ -812,7 +882,12 @@ export default function ModuleDaily(){
         </div>
       ):(
         <div className="space-y-5">
+          <div className={`inline-flex p-1 rounded-xl border ${t.cardInner}`}>
+            {[['dash','Dashboard'],['resumen','Resumen ejecutivo']].map(([k,l])=>(
+              <button key={k} onClick={()=>setDTab(k)} className={`px-4 py-1.5 rounded-lg text-xs font-black transition-all ${dTab===k?t.btnPrimary:t.textMuted}`}>{l}</button>))}
+          </div>
           {KPIStrip()}
+          {dTab==='resumen'?ResumenPivot():<>
           <p className={`text-[10px] -mt-2 ${t.textMuted}`}>
             TY hasta <strong className={t.textAccent1}>{lastTYAll?fmtDate(lastTYAll):'—'}</strong> (último día con data) vs LY topado al mismo día. Así la desv% es justa (no compara año parcial contra año completo).
           </p>
@@ -1283,6 +1358,7 @@ export default function ModuleDaily(){
                 <div className={`p-4 rounded-2xl border ${t.card}`}><EmptyState icon={PkgIcon} t={t} title="Sin datos de inventario" sub="Carga el CSV de inventario o desmarca el check 'Inventario' en los filtros."/></div>
               )}
             </>)}
+          </>}
         </div>
       )}
 

@@ -211,6 +211,29 @@ function parseEventos(text) {
   return { ev, aviso: ev.length ? '' : 'No encontré eventos con etapa y fecha válidas.' };
 }
 
+// Plan de compra (resumen ejecutivo): MES, SECCION, MARCA, GOA + BUDGET/OTB (pensado comprar) y PLAN, en $ y/o pzs
+const MESES = ['ENE', 'FEB', 'MAR', 'ABR', 'MAY', 'JUN', 'JUL', 'AGO', 'SEP', 'OCT', 'NOV', 'DIC'];
+const mesKey = (v) => {
+  const s = norm(v); if (!s) return 'SIN';
+  let m = s.match(/^(\d{4}) (\d{1,2})$/); if (m) return `${m[1]}-${m[2].padStart(2, '0')}`;
+  m = s.match(/^(\d{1,2}) (\d{4})$/); if (m) return `${m[2]}-${m[1].padStart(2, '0')}`;
+  const i = MESES.findIndex((x) => s.startsWith(x) || s.includes(` ${x}`)); const y = (s.match(/\d{4}/) || s.match(/\d{2}$/) || [])[0];
+  if (i >= 0 && y) return `${y.length === 2 ? `20${y}` : y}-${String(i + 1).padStart(2, '0')}`;
+  const d = toDate(v); return d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}` : 'SIN';
+};
+function parsePlanCompra(text) {
+  const rows = parseCSV(text); if (rows.length < 2) return [];
+  const h = rows[0].map(norm); const fi = (re) => h.findIndex((x) => re.test(x));
+  const iMes = fi(/^(MES|PERIODO|FECHA)/), iSec = fi(/SECCION|DEPARTAMENTO/), iMar = fi(/MARCA|BRAND/), iGoa = fi(/GOA|FAMILIA/);
+  const isP = (x) => /PZS|PIEZAS|UNID|\bU$/.test(x);
+  const col = (re, pz) => h.findIndex((x) => re.test(x) && isP(x) === pz);
+  const B = /BUDGET|OTB|PENSADO|PRESUPUESTO/, P = /PLAN/;
+  const c = { b$: col(B, false), bp: col(B, true), p$: col(P, false), pp: col(P, true) };
+  return rows.slice(1).map((r) => ({ mes: iMes >= 0 ? mesKey(r[iMes]) : 'SIN', seccion: iSec >= 0 ? norm(r[iSec]) : '', marca: iMar >= 0 ? norm(r[iMar]) : '', goa: iGoa >= 0 ? norm(r[iGoa]) : '',
+    bud$: c.b$ >= 0 ? numv(r[c.b$]) : 0, budP: c.bp >= 0 ? numv(r[c.bp]) : 0, plan$: c.p$ >= 0 ? numv(r[c.p$]) : 0, planP: c.pp >= 0 ? numv(r[c.pp]) : 0 }))
+    .filter((x) => x.bud$ || x.budP || x.plan$ || x.planP);
+}
+
 // ─── Datos de prueba ──────────────────────────────────────────────────────────
 function demoEventos() {
   let seed = 11; const rnd = () => ((seed = (seed * 16807) % 2147483647) / 2147483647);
@@ -316,6 +339,11 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
   const [feedTab, setFeedTab] = useState('mov');
   const [feedOpen, setFeedOpen] = useState(false);
   const [site, setSite] = useState('RED');
+  const [pTab, setPTab] = useState('rastreo'); // 'rastreo' | 'resumen'
+  const [plan, setPlan] = useState(() => { try { return JSON.parse(localStorage.getItem('gop_pedidos_plan') || '[]'); } catch { return []; } });
+  const [rsMed, setRsMed] = useState('$'); const [rsPorMes, setRsPorMes] = useState(true); const [rsOpen, setRsOpen] = useState(() => new Set());
+  const planRef = useRef(null);
+  useEffect(() => { try { localStorage.setItem('gop_pedidos_plan', JSON.stringify(plan)); } catch { /* sin espacio */ } }, [plan]);
   const fileRef = useRef(null);
   const hoy = useMemo(() => new Date(), [ev]);
 
@@ -375,6 +403,23 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
       && (!fSolo || (fSolo === 'atorado' ? u.atorado : fSolo === 'vencido' ? u.vencido : fSolo === 'activo' ? u.etapa !== 'RECIBIDO' : true))
       && (!qq || norm(`${u.oc} ${u.sku} ${u.modelo} ${u.centro} ${u.cont} ${u.traslado || ''}`).includes(qq)));
   }, [allUnits, fProv, fMarca, fTipo, fZona, fSec, fMes, fSolo, q]);
+
+  // Resumen ejecutivo: Budget / Plan (CSV de plan) vs Pedido / Entregado (OCs) por Mes › Sección › Marca › GOA
+  const resumen = useMemo(() => {
+    const LV = [...(rsPorMes ? ['mes'] : []), 'seccion', 'marca', 'goa']; const root = { kids: {} };
+    const add = (r, f) => { let n = root; const path = []; LV.forEach((k) => { const v = r[k] || '—'; path.push(v);
+      if (!n.kids[v]) n.kids[v] = { id: path.join('›'), k, key: v, bud$: 0, budP: 0, plan$: 0, planP: 0, ped$: 0, pedP: 0, ent$: 0, entP: 0, kids: {} }; n = n.kids[v]; f(n); }); };
+    plan.filter((x) => (!fSec || x.seccion === norm(fSec)) && (!fMarca || x.marca === norm(fMarca)) && (!fMes || x.mes === fMes))
+      .forEach((x) => add(x, (n) => { n.bud$ += x.bud$; n.budP += x.budP; n.plan$ += x.plan$; n.planP += x.planP; }));
+    units.filter((u) => !u.inv).forEach((u) => {
+      const ent = !!(u.at.ALMACEN || u.at.CROSSDOCK || u.fin); const eP = ent ? (u.pzsRec || u.pzs) : 0; const e$ = u.pzs ? (u.valor || 0) * eP / u.pzs : 0;
+      add({ mes: mesDe(u), seccion: norm(u.seccion), marca: norm(u.marca), goa: norm(u.goa) }, (n) => { n.ped$ += u.valor || 0; n.pedP += u.pzs; n.ent$ += e$; n.entP += eP; });
+    });
+    const fin = (n) => ({ ...n, kids: Object.values(n.kids).map(fin).sort((a, b) => (a.k === 'mes' ? a.key.localeCompare(b.key) : (b.plan$ + b.ped$) - (a.plan$ + a.ped$))) });
+    const rows = Object.values(root.kids).map(fin).sort((a, b) => (a.k === 'mes' ? a.key.localeCompare(b.key) : (b.plan$ + b.ped$) - (a.plan$ + a.ped$)));
+    const tot = rows.reduce((a, n) => { ['bud$', 'budP', 'plan$', 'planP', 'ped$', 'pedP', 'ent$', 'entP'].forEach((k) => { a[k] += n[k]; }); return a; }, { bud$: 0, budP: 0, plan$: 0, planP: 0, ped$: 0, pedP: 0, ent$: 0, entP: 0 });
+    return { rows, tot, depth: LV.length };
+  }, [plan, units, rsPorMes, fSec, fMarca, fMes]);
 
   const zonas = useMemo(() => [...new Set([...ZONAS_SBB, ...allUnits.map((u) => u.zona).filter(Boolean).sort()])].slice(0, 14), [allUnits]);
   const zonaDe = (u) => (zonas.includes(u.zona) ? u.zona : zonas[zonas.length - 1]);
@@ -509,6 +554,67 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
   const baseAl = useMemo(() => ev.reduce((m, e) => (e.fecha && new Date(e.fecha) > m ? new Date(e.fecha) : m), null), [ev]);
   const baseDias = baseAl ? Math.round((new Date(hoy).setHours(0, 0, 0, 0) - new Date(baseAl).setHours(0, 0, 0, 0)) / DAY) : null;
   const nFil = [q, fSec, fProv, fMarca, fZona, fMes, fTipo, fSolo].filter(Boolean).length;
+  const mesLbl = (m) => (m === 'SIN' ? 'Sin compromiso' : m === '—' ? '—' : new Date(`${m}-15`).toLocaleDateString('es-MX', { month: 'long', year: 'numeric' }));
+  const ResumenCompra = () => {
+    const P = rsMed === '$'; const g = (n, k) => n[k + (P ? '$' : 'P')]; const fv = (v) => (P ? `$${fk(v)}` : fk(v));
+    const pct = (a, b) => (b > 0 ? a / b * 100 : null);
+    const pC = (v) => (v == null ? t.textMuted : v >= 95 ? 'text-emerald-500' : v >= 80 ? 'text-amber-500' : 'text-rose-500');
+    const tog = (id) => setRsOpen((p) => { const n = new Set(p); n.has(id) ? n.delete(id) : n.add(id); return n; });
+    const cells = (n) => { const bud = g(n, 'bud'), pl = g(n, 'plan'), pe = g(n, 'ped'), en = g(n, 'ent'); const a = pct(pe, pl), b = pct(en, pe);
+      return <>
+        <td className={`p-2 text-right font-mono ${t.textMuted}`}>{bud ? fv(bud) : '—'}</td>
+        <td className={`p-2 text-right font-mono ${t.text}`}>{pl ? fv(pl) : '—'}</td>
+        <td className="p-2 text-right font-mono text-violet-500 font-bold">{pe ? fv(pe) : '—'}</td>
+        <td className="p-2 text-right font-mono text-emerald-500">{en ? fv(en) : '—'}</td>
+        <td className={`p-2 text-right font-bold ${pC(a)}`}>{a != null ? `${a.toFixed(0)}%` : '—'}</td>
+        <td className={`p-2 text-right font-bold ${pC(b)}`}>{b != null ? `${b.toFixed(0)}%` : '—'}</td>
+        <td className={`p-2 text-right font-mono ${t.textMuted}`}>{pe - en > 0 ? fv(pe - en) : '—'}</td>
+        <td className={`p-2 text-right font-mono ${pl - pe > 0 ? 'text-amber-500' : t.textMuted}`}>{pl ? fv(pl - pe) : '—'}</td>
+      </>; };
+    const Row = ({ n, d }) => { const open = rsOpen.has(n.id), hasK = n.kids.length > 0;
+      return <>
+        <tr onClick={hasK ? () => tog(n.id) : undefined} className={`${hasK ? 'cursor-pointer' : ''} ${d === 0 ? (isDark ? 'bg-white/5 font-black' : 'bg-gray-50 font-black') : ''} ${isDark ? 'hover:bg-violet-500/10' : 'hover:bg-violet-50'}`}>
+          <td className={`p-2 whitespace-nowrap ${t.text}`} style={{ paddingLeft: 8 + d * 18 }}><span className={`inline-block w-4 ${t.textMuted}`}>{hasK ? (open ? '▾' : '▸') : ''}</span><span className={d === resumen.depth - 1 ? 'font-medium' : 'font-bold'}>{n.k === 'mes' ? mesLbl(n.key) : n.key}</span></td>
+          {cells(n)}
+        </tr>
+        {open && n.kids.map((k) => <Row key={k.id} n={k} d={d + 1} />)}
+      </>; };
+    const all = []; const walk = (ns) => ns.forEach((n) => { if (n.kids.length) { all.push(n.id); walk(n.kids); } }); walk(resumen.rows);
+    const btn = `text-[10px] px-2.5 py-1.5 rounded-lg border font-black ${t.cardInner}`;
+    const T = resumen.tot;
+    return (
+      <div className={`rounded-2xl border p-4 ${t.card}`}>
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-2 mb-4">
+          {[['Pensado comprar', g(T, 'bud'), t.textMuted], ['Planeado', g(T, 'plan'), t.text], ['Pedido', g(T, 'ped'), 'text-violet-500'], ['Entregado', g(T, 'ent'), 'text-emerald-500']].map(([l, v, c]) => (
+            <div key={l} className={`rounded-xl border p-3 text-center ${t.cardInner}`}><div className={`text-[11px] font-black uppercase tracking-widest ${t.textMuted}`}>{l}</div><div className={`text-2xl font-black ${c}`}>{v ? fv(v) : '—'}</div></div>))}
+        </div>
+        <div className="flex items-center justify-between flex-wrap gap-2 mb-3">
+          <div className="flex gap-2 flex-wrap items-center">
+            {['$', 'Pzs'].map((m) => <button key={m} onClick={() => setRsMed(m === '$' ? '$' : 'P')} className={`${btn} ${(m === '$') === P ? pill(true) : ''}`}>{m}</button>)}
+            <label className={`${btn} flex items-center gap-1.5 cursor-pointer`}><input type="checkbox" checked={rsPorMes} onChange={(e) => { setRsPorMes(e.target.checked); setRsOpen(new Set()); }} className="accent-violet-500" /> Abrir por mes</label>
+            <select value={fMes} onChange={(e) => setFMes(e.target.value)} className={inCls} style={selStyle}><option value="">Mes: todos</option>{[...new Set([...opts.mes, ...plan.map((x) => x.mes)])].sort().map((m) => <option key={m} value={m}>{mesLbl(m)}</option>)}</select>
+            <button onClick={() => setRsOpen(new Set(all))} className={btn}>Expandir todo</button>
+            <button onClick={() => setRsOpen(new Set())} className={btn}>Colapsar</button>
+          </div>
+          <div className="flex gap-2 items-center">
+            <input ref={planRef} type="file" accept=".csv,.txt" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (!f) return; const rd = new FileReader(); rd.onload = () => { const x = parsePlanCompra(decode(rd.result)); setPlan(x); setAviso(x.length ? '' : 'El CSV de plan no trae columnas BUDGET/OTB o PLAN con valores.'); }; rd.readAsArrayBuffer(f); e.target.value = ''; }} />
+            <button onClick={() => planRef.current?.click()} className={`${btn} flex items-center gap-1.5`}><Upload size={12} /> CSV Plan de compra</button>
+            {plan.length > 0 && <button onClick={() => setPlan([])} className={`${btn} opacity-60 hover:opacity-100`} title="Quitar plan"><Trash2 size={12} /></button>}
+          </div>
+        </div>
+        <div className="overflow-auto max-h-[70vh]">
+          <table className="w-full text-xs min-w-max">
+            <thead><tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 z-10 ${isDark ? 'bg-[#1a1520] text-gray-400' : 'bg-gray-50 text-gray-500'}`}>
+              {[`${rsPorMes ? 'Mes › ' : ''}Sección › Marca › GOA`, 'Pensado', 'Planeado', 'Pedido', 'Entregado', '% Ped/Plan', '% Ent/Ped', 'Por entregar', 'Por pedir'].map((h, i) => <th key={h} className={`p-2 whitespace-nowrap ${i ? 'text-right' : 'text-left'}`}>{h}</th>)}
+            </tr></thead>
+            <tbody className={`divide-y ${isDark ? 'divide-white/5' : 'divide-gray-100'}`}>{resumen.rows.map((n) => <Row key={n.id} n={n} d={0} />)}</tbody>
+            <tfoot><tr className={`font-black sticky bottom-0 border-t-2 ${isDark ? 'bg-[#1a1520] border-violet-500/50' : 'bg-violet-50 border-violet-300'}`}><td className={`p-2 ${t.text}`}>TOTAL</td>{cells(T)}</tr></tfoot>
+          </table>
+        </div>
+        <p className={`text-[10px] mt-2 ${t.textMuted}`}>Pedido y entregado salen de las OCs cargadas (mes = fecha compromiso; entregado = ya llegó a CEDIS/destino; $ importación convertido a MXN). Pensado y planeado salen del CSV de plan: MES, SECCION, MARCA, GOA, BUDGET (u OTB) y PLAN — en $ y/o con sufijo _PZS. Respeta filtros de sección, marca y mes.</p>
+      </div>);
+  };
+
   const headerRight = (
     <>
       {ev.length > 0 && (
@@ -567,7 +673,11 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
       </div>
       {aviso && <div className="mb-4 px-4 py-2 rounded-lg border border-amber-500/40 bg-amber-500/10 text-amber-500 text-xs">{aviso}</div>}
 
-      {!ev.length ? (
+      <div className={`inline-flex p-1 rounded-xl border mb-4 ${t.cardInner}`}>
+        {[['rastreo', 'Rastreo'], ['resumen', 'Resumen ejecutivo']].map(([k, l]) => (
+          <button key={k} onClick={() => setPTab(k)} className={`px-4 py-1.5 rounded-lg text-xs font-black transition-all ${pTab === k ? (isDark ? 'bg-violet-600 text-white' : 'bg-violet-600 text-white') : t.textMuted}`}>{l}</button>))}
+      </div>
+      {pTab === 'resumen' ? ResumenCompra() : !ev.length ? (
         <div className={`rounded-2xl border p-10 text-center ${t.card}`}>
           <Truck size={40} className={`mx-auto mb-3 ${t.textMuted}`} />
           <p className={`font-bold ${t.text}`}>Carga el CSV de eventos de tus pedidos o usa los datos de prueba</p>

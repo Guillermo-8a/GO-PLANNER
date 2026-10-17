@@ -185,7 +185,7 @@ const idbSet = async (k, v) => { const db = await idb(); return new Promise((res
 // ─── Cálculo ──────────────────────────────────────────────────────────────────
 const BUCKETS = ['0 – 3 meses', '4 – 6 meses', '7 – 9 meses', '10 – 12 meses', '13+ meses', 'Sin venta en la ventana'];
 const bucketOf = (m) => (m < 0 ? 5 : m <= 3 ? 0 : m <= 6 ? 1 : m <= 9 ? 2 : m <= 12 ? 3 : 4);
-const FILTERS = [['sec', 'Sección'], ['goa', 'GOA'], ['marca', 'Marca'], ['norma', 'Norma'], ['estatus', 'Estatus del artículo'], ['bucket', 'Meses desde últ. venta'], ['zona', 'Zona'], ['tipo', 'Tipo de centro']];
+const FILTERS = [['sec', 'Sección'], ['goa', 'GOA'], ['marca', 'Marca'], ['norma', 'Norma'], ['estatus', 'Estatus del artículo'], ['letra', 'Letra de rebaja'], ['bucket', 'Meses desde últ. venta'], ['zona', 'Zona'], ['tipo', 'Tipo de centro']];
 const FKEYS = FILTERS.map((f) => f[0]);
 const DEF_CFG = { umbral: 3, porSeccion: {}, corte: '' };
 
@@ -209,7 +209,7 @@ function compute(X, E, F, estado) {
   const active = FKEYS.filter((k) => F[k]?.size);
   const opt = Object.fromEntries(FKEYS.map((k) => [k, new Float64Array(size(k))]));
   const z = (k) => new Float64Array(D[k].length);
-  const byEst = z('estatus'), byMarca = z('marca'), byGoa = z('goa'), bySku = z('sku'), byProv = z('prov');
+  const byLetra = z('letra'), byLetraP = z('letra'), byEst = z('estatus'), byMarca = z('marca'), byGoa = z('goa'), bySku = z('sku'), byProv = z('prov');
   const zT = z('zona'), zN = z('zona'), cT = z('centro'), cN = z('centro'), secT = z('sec'), secN = z('sec');
   const sec = new Map(); const rows = [];
   let m$ = 0, mP = 0, all$ = 0, allN$ = 0, wM = 0, wD = 0;
@@ -224,7 +224,7 @@ function compute(X, E, F, estado) {
     if (nu) { allN$ += m; zN[C.zona[i]] += m; cN[C.centro[i]] += m; secN[C.sec[i]] += m; }
     if (!ok) continue;
     rows.push(i); m$ += m; mP += C.pzs[i];
-    byEst[C.estatus[i]] += m; byMarca[C.marca[i]] += m; byGoa[C.goa[i]] += m; bySku[C.sku[i]] += m; byProv[C.prov[i]] += m;
+    byLetra[C.letra[i]] += m; byLetraP[C.letra[i]] += C.pzs[i]; byEst[C.estatus[i]] += m; byMarca[C.marca[i]] += m; byGoa[C.goa[i]] += m; bySku[C.sku[i]] += m; byProv[C.prov[i]] += m;
     if (E.mU[i] >= 0) { wM += E.mU[i] * m; wD += m; }
     let s = sec.get(C.sec[i]); if (!s) sec.set(C.sec[i], (s = { m: 0, p: 0, c: new Set(), g: new Set(), k: new Set() }));
     s.m += m; s.p += C.pzs[i]; s.c.add(C.centro[i]); s.g.add(C.goa[i]); s.k.add(C.sku[i]);
@@ -239,6 +239,7 @@ function compute(X, E, F, estado) {
   const provTop = top(byProv, D.prov, 1, false)[0];
   return {
     opt, rows, m$, mP, all$, allN$, mesesProm: wD ? wM / wD : null, prov: provTop?.name || '—', combos: rows.length,
+    letra: [...byLetra].map((v, i) => ({ name: D.letra[i], idx: i, value: v, pzs: byLetraP[i] })).filter((x) => x.value > 0).sort((a, b) => b.value - a.value),
     est: top(byEst, D.estatus, 6), marca: top(byMarca, D.marca, 7), goa: top(byGoa, D.goa, 6), sku: top(bySku, D.sku.map((s) => `${s} · ${X.info.sku[s]?.desc || ''}`), 5, false),
     zona: share(zT, zN, D.zona, 14),
     tienda: share(cT, cN, D.centro.map((ce) => X.info.centro[ce] || ce), 12),
@@ -518,6 +519,26 @@ export default function ModuleNulo({ t, isDark, navIcon, navLabel, navDesc }) {
             </div>
             <ShareBars title="Monto por tienda / bodega (top 12)" data={R.tienda} />
           </div>
+
+          {R.letra.length > 0 && (
+            <div className={card}>
+              <p className={`text-xs font-bold text-center ${t.text}`}>Inventario por letra de rebaja · ¿regular o liquidado?</p>
+              <p className={`text-[10px] text-center mb-2 ${t.textMuted}`}>Monto y piezas por letra actual · click en una barra para filtrar</p>
+              <div style={{ height: Math.max(160, R.letra.length * 30 + 30) }}>
+                <ResponsiveContainer>
+                  <BarChart data={R.letra.map((d) => ({ ...d, pct: R.m$ ? d.value / R.m$ : 0 }))} layout="vertical" margin={{ left: 0, right: 90 }} barCategoryGap="20%">
+                    <XAxis type="number" tickFormatter={(v) => fmt$(v)} tick={axisTick} axisLine={false} tickLine={false} />
+                    <YAxis type="category" dataKey="name" width={90} tick={axisTick} axisLine={false} tickLine={false} interval={0} />
+                    <Tooltip {...ttStyle} cursor={{ fill: isDark ? 'rgba(255,255,255,0.04)' : '#f3f4f6' }} formatter={(v, k, p) => [`${fmt$(v)} · ${pct(p.payload.pct)} · ${Math.round(p.payload.pzs).toLocaleString('es-MX')} pzs`, 'Letra']} />
+                    <Bar isAnimationActive={false} dataKey="value" radius={[0, 4, 4, 0]} cursor="pointer" onClick={(d) => setDim('letra', new Set([d.idx]))}
+                      label={{ position: 'right', fontSize: 10, fill: isDark ? '#cbd5e1' : '#475569', formatter: (v) => (R.m$ ? pct(v / R.m$) : '') }}>
+                      {R.letra.map((d, i) => <Cell key={i} fill={PAL[i % PAL.length]} />)}
+                    </Bar>
+                  </BarChart>
+                </ResponsiveContainer>
+              </div>
+            </div>
+          )}
 
           <div className={card}>
             <div className="flex items-center mb-2">
