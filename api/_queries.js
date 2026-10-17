@@ -52,19 +52,20 @@ export const QUERIES = {
       WHERE anio >= @anio`,
   },
 
-  // Eventos: OH al arranque por SKU × centro. Toma la última foto semanal <= @fecha (YYYY-MM-DD).
-  // @secciones = números de sección separados por coma (ej. "120,121") para no bajar toda la cadena.
-  // Encabezados = los que lee parseSnapshotCSV de Eventos (GOA, SKU, CENTRO, MARCA, SECCION, OH).
+  // Eventos: snapshot de arranque (OH + precio + letra por SKU × centro) — foto ACTUAL de SAC.
+  // Correr el día que arranca el evento. @secciones = número o nombre de sección, separados por coma.
+  // Encabezados = los que lee parseSnapshotCSV de Eventos (SKU va antes de NSKU para que el alias no se cruce).
   eventos_oh: {
-    params: ['fecha', 'secciones'],
+    params: ['secciones'],
     sql: () => `
-      SELECT CAST(GRUPO_ARTICULO AS STRING) AS GOA, CAST(SKU AS STRING) AS SKU, LOCACION AS CENTRO,
-             MARCA, CAST(SECCION AS STRING) AS SECCION, ONHAND AS OH, FORMAT_DATE('%Y-%m-%d', FCH_INFO) AS FECHA_FOTO
-      FROM \`crp-pro-dwh-semanticagold.MUS_PRO_DWH_VIEWS_ODS.VFAC_INVENTARIO_ECC_OH_SEM\`
-      WHERE FCH_INFO = (SELECT MAX(FCH_INFO) FROM \`crp-pro-dwh-semanticagold.MUS_PRO_DWH_VIEWS_ODS.VFAC_INVENTARIO_ECC_OH_SEM\`
-                        WHERE FCH_INFO <= DATE(@fecha))
-        AND CAST(SECCION AS STRING) IN UNNEST(SPLIT(REPLACE(@secciones, ' ', ''), ','))
-        AND ONHAND > 0`,
+      SELECT ARTICULO_KEY AS SKU, ARTICULO AS NSKU, MODELO_PROVEEDOR AS MODELO, MARCA, GRUPO_ARTICULOS AS GOA,
+             SECCION, CENTRO_KEY AS CENTRO, SUM(OH) AS OH,
+             MAX(SAFE_CAST(PRECIO_VENTA_ACT AS NUMERIC)) AS PRECIO, MAX(LETRA_ACTUAL) AS LETRA_DESC
+      FROM \`crp-pro-dwh-semanticagold.mus_pro_dwh_views_sap.VEIL_TAB_VENTAS_MENSUALES_U_S\`
+      WHERE (LTRIM(SECCION_KEY, '0') IN UNNEST(SPLIT(REPLACE(@secciones, ' ', ''), ','))
+             OR UPPER(SECCION) IN UNNEST(SPLIT(UPPER(@secciones), ',')))
+        AND OH > 0
+      GROUP BY 1, 2, 3, 4, 5, 6, 7`,
   },
 
   // Traslados: base de artículos GOA × SKU × Centro.
