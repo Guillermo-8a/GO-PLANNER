@@ -29,6 +29,9 @@ const parseDate = s => {
 
 // ─── INDEXEDDB (snapshot/ventas por evento, sobrevive refresh) ───────────────
 const DB='gop_eventos_db', STORE='kv';
+// Eventos compartidos entre usuarios vía Apps Script (KV en Google Sheets)
+const KV_URL='https://script.google.com/macros/s/AKfycbyO2WhyRMxeMFO38SjerexylRPT5UHJaGpMLhc6c_zk4vEfey76SevEROqGfEsGHV8j/exec';
+const kvPost=v=>fetch(KV_URL,{method:'POST',headers:{'Content-Type':'text/plain'},body:JSON.stringify({key:'eventos-master',value:JSON.stringify(v)})}).catch(()=>{});
 const idbOpen=()=>new Promise((res,rej)=>{ const o=indexedDB.open(DB,1);
   o.onupgradeneeded=()=>o.result.createObjectStore(STORE); o.onsuccess=()=>res(o.result); o.onerror=()=>rej(o.error); });
 const idbSet=async(k,v)=>{ const db=await idbOpen(); return new Promise((res,rej)=>{ const tx=db.transaction(STORE,'readwrite'); tx.objectStore(STORE).put(v,k); tx.oncomplete=()=>{db.close();res();}; tx.onerror=()=>rej(tx.error); }); };
@@ -288,7 +291,11 @@ export default function ModuleEventos(){
 
   // ── Event master ──
   const [events,setEvents]=useState(()=>{ try{ return JSON.parse(localStorage.getItem('gop_eventos')||'[]'); }catch{ return []; } });
-  const saveEvents=next=>{ setEvents(next); try{ localStorage.setItem('gop_eventos',JSON.stringify(next)); }catch{} };
+  useEffect(()=>{ fetch(KV_URL).then(r=>r.json()).then(all=>{
+    if(all['eventos-master']){ const ev=JSON.parse(all['eventos-master']); setEvents(ev); try{ localStorage.setItem('gop_eventos',JSON.stringify(ev)); }catch{} }
+    else { try{ const loc=JSON.parse(localStorage.getItem('gop_eventos')||'[]'); if(loc.length) kvPost(loc); }catch{} }
+  }).catch(()=>{}); },[]);
+  const saveEvents=next=>{ setEvents(next); try{ localStorage.setItem('gop_eventos',JSON.stringify(next)); }catch{} kvPost(next); };
   const [activeId,setActiveId]=useState(null);
   const active=events.find(e=>e.id===activeId)||null;
   const [showForm,setShowForm]=useState(false);
