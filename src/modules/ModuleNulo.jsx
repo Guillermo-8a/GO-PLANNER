@@ -240,7 +240,11 @@ function compute(X, E, F, estado) {
   return {
     opt, rows, m$, mP, all$, allN$, mesesProm: wD ? wM / wD : null, prov: provTop?.name || '—', combos: rows.length,
     letra: [...byLetra].map((v, i) => ({ name: D.letra[i], idx: i, value: v, pzs: byLetraP[i] })).filter((x) => x.value > 0).sort((a, b) => b.value - a.value),
-    est: top(byEst, D.estatus, 6), marca: top(byMarca, D.marca, 7), goa: top(byGoa, D.goa, 6), sku: top(bySku, D.sku.map((s) => `${s} · ${X.info.sku[s]?.desc || ''}`), 5, false),
+    est: top(byEst, D.estatus, 6), marca: top(byMarca, D.marca, 7), goa: top(byGoa, D.goa, 6), sku: (() => { // por modelo (suma de sus SKUs en la selección); sin modelo → SKU
+      const g = new Map();
+      bySku.forEach((v, i) => { if (!v) return; const s = D.sku[i], k = X.info.sku[s] || {}, mo = k.modelo || s; const e = g.get(mo) || { value: 0, desc: (k.desc || '').split(',')[0] }; e.value += v; g.set(mo, e); });
+      return [...g].map(([mo, e]) => ({ name: `${mo} · ${e.desc}`, value: e.value })).sort((x, y) => y.value - x.value).slice(0, 5);
+    })(),
     zona: share(zT, zN, D.zona, 14),
     tienda: share(cT, cN, D.centro.map((ce) => X.info.centro[ce] || ce), 12),
     secs: [...sec].map(([si, s]) => ({ si, name: D.sec[si], num: X.info.secNum[D.sec[si]] || '', m: s.m, p: s.p, c: s.c.size, g: s.g.size, k: s.k.size, part: secT[si] ? secN[si] / secT[si] : null })).sort((a, b) => b.m - a.m),
@@ -517,7 +521,7 @@ export default function ModuleNulo({ t, isDark, navIcon, navLabel, navDesc }) {
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 items-start">
             <ShareBars title="Monto por zona de ventas" data={R.zona} onPick={(d) => { const v = X.D.zona.indexOf(d.name); if (v >= 0) setDim('zona', new Set([v])); }} />
             <div className="space-y-3">
-              <Donut title="Artículos con mayor monto" data={R.sku} />
+              <Donut title="Modelos con mayor monto" data={R.sku} />
               <Donut title="% por grupo de artículos" data={R.goa} />
             </div>
             <ShareBars title="Monto por tienda / bodega (top 12)" data={R.tienda} />
