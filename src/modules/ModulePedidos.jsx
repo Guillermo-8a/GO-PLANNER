@@ -164,7 +164,7 @@ function parseEventos(text) {
         fechaOc: toDate(v(r, 'FCH OC')), fechaComp: fv0 ? toDate(fv0) : comp && !comp.startsWith('1900') ? toDate(comp) : null,
         // Cierre de la OC (SAP): entrega a CEDIS, piezas y montos pedidos vs entregados. Entregada con faltante = pedido incompleto
         fEntCDI: fe0 ? toDate(fe0) : null, pedOC: numv(v(r, 'PZS PEDIDAS OC')), recOC: numv(v(r, 'PZS RECIBIDAS OC')), mPedOC: numv(v(r, 'MONTO PEDIDO PV')), mEntOC: numv(v(r, 'MONTO ENTREGADO')),
-        recAsig: n.includes('PZS REC ASIG') ? numv(v(r, 'PZS REC ASIG')) : null,
+        pedGoa: numv(v(r, 'PZS PEDIDAS')), recGoa: numv(v(r, 'PZS REC CEDIS')), // pedido y recibido en CEDIS de la OC × GOA
         traslado: v(r, 'NUM TRASLADO'), fechaEntPlan: fv0 ? toDate(fv0) : comp && !comp.startsWith('1900') ? toDate(comp) : null, // el traslado vence con la fecha fin de la OC (no la del traslado, que SAP pone a +1 día)
       };
       const add = (etapa, h, pzsEv, ubic) => { const f = toDate(v(r, h)); if (f) ev.push({ ...base, etapa, fecha: f, pzsEv, ubic }); };
@@ -425,14 +425,21 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
     const todos = Object.values(tr).flat();
     const tip = (z) => Math.max(1, Math.ceil(tr[z]?.length >= 5 ? p90(tr[z]) : todos.length ? p90(todos) : (cfg.umbral.TRANSITO_TDA ?? 4)));
     us.entrega = {}; Object.keys(tr).forEach((z) => { const t0 = tip(z); const x = [...tr[z]].sort((m, n) => m - n); us.entrega[z] = { tip: t0, med: x[Math.floor((x.length - 1) / 2)] }; });
-    // Pedido incompleto: la OC ya se entregó a CEDIS (FCH_ENTREGA_CDI) con menos piezas de las pedidas → se da por cerrada.
-    // Lo que no salió de CEDIS (o vino en 0 si hay PZS_REC_ASIG) es faltante del proveedor: no es atorado ni traslado vencido.
-    us.forEach((u) => {
-      const e0 = u.eventos[0]; if (u.inv || !e0?.fEntCDI || !(e0.pedOC > e0.recOC)) return;
-      u.ocInc = { fEnt: new Date(e0.fEntCDI), ped: e0.pedOC, rec: e0.recOC, mPed: e0.mPedOC, mEnt: e0.mEntOC };
-      const sinSalir = ['PROVEEDOR', 'ALMACEN', 'CROSSDOCK'].includes(u.etapa);
-      if (e0.recAsig != null ? e0.recAsig < u.pzs && sinSalir : sinSalir) Object.assign(u, { incompleto: true, atorado: false, trVencido: false, vencido: false });
+    // Pedido incompleto: la OC ya tiene entrega a CEDIS (FCH_ENTREGA_CDI) y en la GOA llegó menos de lo pedido (PZS_REC_CEDIS < PZS_PEDIDAS).
+    // Las tiendas de esa OC × GOA que no salieron de CEDIS, cuando sus hermanas ya salieron hace más del umbral de cross dock,
+    // son el faltante del proveedor: no son atorado ni traslado vencido. (PZS_RECIBIDAS_OC no se usa: a veces viene en 0 aunque sí se recibió.)
+    const porGoa = new Map(); us.forEach((u) => { if (u.inv || !u.eventos[0]?.fEntCDI) return; const k = `${u.oc}|${u.goa}`; if (!porGoa.has(k)) porGoa.set(k, []); porGoa.get(k).push(u); });
+    const sinSalir = (u) => ['PROVEEDOR', 'ALMACEN', 'CROSSDOCK'].includes(u.etapa);
+    const xdU = cfg.umbral.CROSSDOCK ?? 3, incOC = {};
+    porGoa.forEach((g) => {
+      const e0 = g[0].eventos[0]; if (!(e0.recGoa > 0 && e0.recGoa < e0.pedGoa)) return;
+      const ult = g.reduce((m, u) => (u.at.TRANSITO_TDA && (!m || u.at.TRANSITO_TDA > m) ? u.at.TRANSITO_TDA : m), null);
+      if (!ult || dias(ult, hoy) <= xdU) return; // aún se está surtiendo
+      const o = (incOC[g[0].oc] = incOC[g[0].oc] || { ped: 0, rec: 0 }); o.ped += e0.pedGoa; o.rec += e0.recGoa;
+      g.filter(sinSalir).forEach((u) => Object.assign(u, { incompleto: true, atorado: false, trVencido: false, vencido: false }));
     });
+    us.forEach((u) => { const o = incOC[u.oc]; if (!o) return; const e0 = u.eventos[0];
+      u.ocInc = { fEnt: new Date(e0.fEntCDI), ped: o.ped, rec: o.rec, mPed: e0.mEntOC > 0 ? e0.mPedOC : 0, mEnt: e0.mEntOC }; });
     us.forEach((u) => {
       if (u.etapa !== 'TRANSITO_TDA') return; const t0 = tip(u.zona); if (u.enEtapa <= t0) return;
       u.etapa = 'TIENDA'; u.estimado = true; u.enEtapa -= t0; u.desde = new Date(u.desde.getTime() + t0 * DAY); u.at = { ...u.at, TIENDA: u.desde }; u.atorado = u.enEtapa > (cfg.umbral.TIENDA ?? 2);
