@@ -522,7 +522,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
   // Agregados por llave de nodo
   const agg = useMemo(() => {
     const m = {};
-    const add = (k, u) => { const o = (m[k] = m[k] || { n: 0, pzs: 0, ator: 0, maxDias: 0, oc: new Set() }); o.n++; o.oc.add(u.oc); o.ocs = o.oc.size; o.pzs += Math.max(0, u.pzs - u.pzsRec); if (u.atorado) { o.ator++; o.pzsAtor = (o.pzsAtor || 0) + u.pzs; } o.maxDias = Math.max(o.maxDias, u.enEtapa || 0); o.sumDias = (o.sumDias || 0) + (u.enEtapa || 0); };
+    const add = (k, u) => { const o = (m[k] = m[k] || { n: 0, pzs: 0, ator: 0, maxDias: 0, oc: new Set() }); o.n++; if (u.inv) o.inv = (o.inv || 0) + u.pzs; else o.oc.add(u.oc); o.ocs = o.oc.size; o.pzs += Math.max(0, u.pzs - u.pzsRec); if (u.atorado) { o.ator++; o.pzsAtor = (o.pzsAtor || 0) + u.pzs; } o.maxDias = Math.max(o.maxDias, u.enEtapa || 0); o.sumDias = (o.sumDias || 0) + (u.enEtapa || 0); };
     units.forEach((u) => {
       add(u.etapa, u);
       if (u.etapa !== 'RECIBIDO') add(`B:${bucketOf(u)}`, u);
@@ -905,16 +905,29 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
                 </div>
               )}
               {(() => {
-                const ks = sel.stages; const us = units.filter((u) => ks.includes(u.etapa) && (!sel.zona || zonaDe(u) === sel.zona) && (!sel.ciudad || ciudadDe(u) === sel.ciudad) && (!sel.tipo || [].concat(sel.tipo).includes(u.tipo)));
+                const ks = sel.stages; const usT = units.filter((u) => ks.includes(u.etapa) && (!sel.zona || zonaDe(u) === sel.zona) && (!sel.ciudad || ciudadDe(u) === sel.ciudad) && (!sel.tipo || [].concat(sel.tipo).includes(u.tipo)));
+                const us = usT.filter((u) => !u.inv), inv = usT.filter((u) => u.inv && u.etapa !== 'TRANSITO_INT');
+                // Inventario almacenado en el nodo, por CEDIS: con traslado (ya asignado a tiendas) / sin traslado, y lo de 90+ días
+                const iv = {}; inv.forEach((u) => { const [pre, cen, b] = u.oc.split(' '); const o = (iv[cen] = iv[cen] || { cen, con: 0, sin: 0, v90: 0 }); if (pre === 'ASG') o.con += u.pzs; else o.sin += u.pzs; if (b === '90+') o.v90 += u.pzs; });
+                const ivR = Object.values(iv).sort((a, b) => b.con + b.sin - a.con - a.sin), ivT = ivR.reduce((a, o) => a + o.con + o.sin, 0);
                 const c = { n: us.length, pzs: us.reduce((a, u) => a + Math.max(0, u.pzs - u.pzsRec), 0), ator: us.filter((u) => u.atorado).length, maxDias: Math.max(0, ...us.map((u) => u.enEtapa || 0)) };
                 const tp = ks.length === 1 ? tramoProm[ks[0]] : null;
-                return (
+                return (<>
+                  {ivT > 0 && (
+                    <div className={`mx-4 mb-2 rounded-lg border p-2 ${t.cardInner}`}>
+                      <div className="flex items-baseline justify-between mb-1"><span className={`text-[9px] font-black uppercase tracking-wider ${t.textMuted}`}>Inventario almacenado</span><span className={`text-base font-black ${t.text}`}>{fmt(ivT)} <span className={`text-[10px] font-bold ${t.textMuted}`}>pzs</span></span></div>
+                      {ivR.map((o) => (
+                        <div key={o.cen} className="text-[10.5px] flex justify-between gap-2 py-0.5">
+                          <span className={`font-bold truncate ${t.text}`}>{CENTROS[o.cen] || o.cen}</span>
+                          <span className={`shrink-0 ${t.textMuted}`}><b className="text-violet-500">{fmt(o.con)}</b> con traslado · <b className="text-amber-500">{fmt(o.sin)}</b> sin traslado{o.v90 ? <> · <b className="text-rose-500">{fmt(o.v90)}</b> de 90+ d</> : ''}</span>
+                        </div>))}
+                    </div>)}
                   <div className="px-4 grid grid-cols-4 gap-1.5 mb-2">
                     {[['OCs', fmt(new Set(us.map((u) => u.oc)).size)], ['Piezas', fk(c.pzs)], ['Pzs atoradas', fk(us.filter((u) => u.atorado).reduce((a, u) => a + u.pzs, 0))], ['Costo', `$${fk(us.reduce((a, u) => a + (u.valor || 0), 0))}`], ['Costo atorado', `$${fk(us.filter((u) => u.atorado).reduce((a, u) => a + (u.valor || 0), 0))}`], ['Días prom. aquí', us.length ? (us.reduce((a, u) => a + (u.enEtapa || 0), 0) / us.length).toFixed(1) : '—'], ['SLA (umbral)', ks.length === 1 && cfg.umbral[ks[0]] != null ? `${cfg.umbral[ks[0]]} d` : '—'], ['Máx. días', c.maxDias ? c.maxDias.toFixed(0) : '—']].map(([l, v]) => (
                       <div key={l} className={`rounded-lg border px-2 py-1.5 ${t.cardInner}`}><div className={`text-[8.5px] uppercase font-bold ${t.textMuted}`}>{l}</div><div className={`text-sm font-black ${(l === 'Pzs atoradas' || l === 'Costo atorado') && c.ator ? 'text-rose-500' : t.text}`}>{v}</div></div>
                     ))}
                   </div>
-                );
+                </>);
               })()}
               {(() => {
                 // Top 10 OCs más atrasadas del nodo (agrupadas por OC)
@@ -953,10 +966,10 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
                     <div key={o.oc} className="mb-1">
                       <button onClick={() => { setExpOC(expOC === o.oc ? '' : o.oc); setSelUnit(null); setSelOC(o.oc); }} className={`w-full text-left px-2.5 py-2 rounded-lg border ${expOC === o.oc ? (isDark ? 'border-violet-500 bg-violet-500/10' : 'border-blue-400 bg-blue-50') : `border-transparent ${isDark ? 'hover:bg-white/5' : 'hover:bg-gray-50'}`}`}>
                         <div className="flex justify-between items-center">
-                          <span className={`text-xs font-black flex items-center gap-1.5 ${t.text}`}><span className="w-2 h-2 rounded-full" style={{ background: TIPOS[o.tipo].c }} />OC {o.oc}</span>
+                          <span className={`text-xs font-black flex items-center gap-1.5 ${t.text}`}><span className="w-2 h-2 rounded-full" style={{ background: TIPOS[o.tipo].c }} />{o.us[0]?.inv ? (() => { const [pre, cen, b] = o.oc.split(' '); return `Inventario ${pre === 'ASG' ? 'con traslado' : 'sin traslado'} · ${CENTROS[cen] || cen} · ${b === 'SIN' ? 'sin fecha' : `${b} d`}`; })() : `OC ${o.oc}`}</span>
                           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${o.ator ? 'bg-rose-500/15 text-rose-500' : (isDark ? 'bg-white/10 text-gray-300' : 'bg-gray-100 text-gray-600')}`}>{o.max.toFixed(0)} d en nodo</span>
                         </div>
-                        <div className={`text-[10px] ${t.textMuted}`}>{o.prov} · {o.goa} · {o.us.length} {o.us.length === 1 ? 'tienda' : 'tiendas'} · {fmt(o.pzs)} pzs{o.us[0]?.etapa === 'FULFILLMENT' && o.us[0].ubic ? ` · ${o.us[0].ubic}` : ''}{o.ator ? ` · ${o.ator} atoradas` : ''}{o.us.length === 1 && o.us[0].traslado ? ` · Tr ${o.us[0].traslado}${o.us[0].fechaEntPlan ? ` · entrega ${fdate(new Date(o.us[0].fechaEntPlan))}` : ''}` : ''}{o.us.some((u) => u.trVencido) ? <b className="text-rose-500"> · {o.us.filter((u) => u.trVencido).length} traslado(s) vencido(s)</b> : ''}{o.us.some((u) => u.incompleto) ? <b className="text-amber-500"> · OC incompleta: no entregado por el proveedor</b> : ''}</div>
+                        <div className={`text-[10px] ${t.textMuted}`}>{o.prov} · {o.goa} · {o.us.length} {o.us[0]?.inv ? (o.us.length === 1 ? 'línea' : 'líneas') : o.us.length === 1 ? 'tienda' : 'tiendas'} · {fmt(o.pzs)} pzs{o.us[0]?.etapa === 'FULFILLMENT' && o.us[0].ubic ? ` · ${o.us[0].ubic}` : ''}{o.ator ? ` · ${o.ator} atoradas` : ''}{o.us.length === 1 && o.us[0].traslado ? ` · Tr ${o.us[0].traslado}${o.us[0].fechaEntPlan ? ` · entrega ${fdate(new Date(o.us[0].fechaEntPlan))}` : ''}` : ''}{o.us.some((u) => u.trVencido) ? <b className="text-rose-500"> · {o.us.filter((u) => u.trVencido).length} traslado(s) vencido(s)</b> : ''}{o.us.some((u) => u.incompleto) ? <b className="text-amber-500"> · OC incompleta: no entregado por el proveedor</b> : ''}</div>
                       </button>
                       {expOC === o.oc && o.us.length > 1 && (
                         <div className={`ml-4 pl-2 border-l ${isDark ? 'border-white/10' : 'border-gray-200'}`}>
