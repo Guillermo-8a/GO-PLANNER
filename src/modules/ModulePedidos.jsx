@@ -164,7 +164,7 @@ function parseEventos(text) {
         fechaOc: toDate(v(r, 'FCH OC')), fechaComp: fv0 ? toDate(fv0) : comp && !comp.startsWith('1900') ? toDate(comp) : null,
         // Cierre de la OC (SAP): entrega a CEDIS, piezas y montos pedidos vs entregados. Entregada con faltante = pedido incompleto
         fEntCDI: fe0 ? toDate(fe0) : null, pedOC: numv(v(r, 'PZS PEDIDAS OC')), recOC: numv(v(r, 'PZS RECIBIDAS OC')), mPedOC: numv(v(r, 'MONTO PEDIDO PV')), mEntOC: numv(v(r, 'MONTO ENTREGADO')),
-        pedGoa: numv(v(r, 'PZS PEDIDAS')), recGoa: numv(v(r, 'PZS REC CEDIS')), pvGoa: numv(v(r, 'PV PEDIDO')), pvRecGoa: numv(v(r, 'PV REC CEDIS')), // pedido y recibido en CEDIS de la OC × GOA
+        pedGoa: numv(v(r, 'PZS PEDIDAS')), recGoa: numv(v(r, 'PZS REC CEDIS')), pvGoa: numv(v(r, 'PV PEDIDO')), pvRecGoa: numv(v(r, 'PV REC CEDIS')), trCerrado: /^(TRUE|1|SI|X)$/i.test(v(r, 'TR CERRADO')), // pedido y recibido en CEDIS de la OC × GOA
         traslado: v(r, 'NUM TRASLADO'), fechaEntPlan: fv0 ? toDate(fv0) : comp && !comp.startsWith('1900') ? toDate(comp) : null, // el traslado vence con la fecha fin de la OC (no la del traslado, que SAP pone a +1 día)
       };
       const add = (etapa, h, pzsEv, ubic) => { const f = toDate(v(r, h)); if (f) ev.push({ ...base, etapa, fecha: f, pzsEv, ubic }); };
@@ -313,7 +313,7 @@ function buildUnits(ev, umbral, hoy) {
       key, oc: f.oc, sku: f.sku, modelo: f.modelo, prov: f.prov, marca: f.marca, seccion: f.seccion, division: f.division || '', goa: f.goa, centro: list.find((e) => e.centro)?.centro || '',
       zona: list.find((e) => e.zona)?.zona || '', cont: list.find((e) => e.cont)?.cont || '', traslado: list.find((e) => e.traslado)?.traslado || '', fechaEntPlan: list.find((e) => e.fechaEntPlan)?.fechaEntPlan || null,
       // traslado vencido: sigue en cross dock y ya pasó la fecha comprometida de entrega del traslado
-      trVencido: etapa === 'CROSSDOCK' && !has('TRANSITO_TDA') && !!list.find((e) => e.fechaEntPlan) && hoy > new Date(list.find((e) => e.fechaEntPlan).fechaEntPlan) && enEtapa > (umbral.CROSSDOCK ?? 3), ciudad: norm(list.filter((e) => e.etapa === 'BODEGA_REG').pop()?.ubic || ''),
+      trCerrado: list.some((e) => e.trCerrado), trVencido: etapa === 'CROSSDOCK' && !has('TRANSITO_TDA') && !list.some((e) => e.trCerrado) && !!list.find((e) => e.fechaEntPlan) && hoy > new Date(list.find((e) => e.fechaEntPlan).fechaEntPlan) && enEtapa > (umbral.CROSSDOCK ?? 3), ciudad: norm(list.filter((e) => e.etapa === 'BODEGA_REG').pop()?.ubic || ''),
       tipo, pzs, pzsRec, valor: Math.max(...list.map((e) => e.valor || 0)), etapa, desde: last.fecha, ubic: last.ubic, enEtapa, at, tramos, eventos: list, route,
       fechaComp, inicio, fin: llegada, lead: llegada ? dias(inicio, llegada) : null,
       // Con proveedor: atorado solo si ya pasó su compromiso + tolerancia (una OC para enero no está atorada hoy).
@@ -434,9 +434,10 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
     porGoa.forEach((g) => {
       const e0 = g[0].eventos[0]; if (!(e0.recGoa > 0 && e0.recGoa < e0.pedGoa)) return;
       const ult = g.reduce((m, u) => (u.at.TRANSITO_TDA && (!m || u.at.TRANSITO_TDA > m) ? u.at.TRANSITO_TDA : m), null);
-      if (!ult || dias(ult, hoy) <= xdU) return; // aún se está surtiendo
+      const surtida = ult && dias(ult, hoy) > xdU; // las demás tiendas ya salieron
+      const falt = g.filter((u) => sinSalir(u) && (surtida || u.trVencido)); if (!falt.length) return;
       const o = (incOC[g[0].oc] = incOC[g[0].oc] || { ped: 0, rec: 0, pv: 0, pvRec: 0 }); o.ped += e0.pedGoa; o.rec += e0.recGoa; o.pv += e0.pvGoa || 0; o.pvRec += e0.pvRecGoa || 0;
-      g.filter(sinSalir).forEach((u) => Object.assign(u, { incompleto: true, atorado: false, trVencido: false, vencido: false }));
+      falt.forEach((u) => Object.assign(u, { incompleto: true, atorado: false, trVencido: false, vencido: false }));
     });
     us.forEach((u) => { const o = incOC[u.oc]; if (!o) return; const e0 = u.eventos[0];
       u.ocInc = o.pv > 0 ? { fEnt: new Date(e0.fEntCDI), ped: o.ped, rec: o.rec, mPed: o.pv, mEnt: o.pvRec } : { fEnt: new Date(e0.fEntCDI), ped: o.ped, rec: o.rec, mPed: e0.mEntOC > 0 ? e0.mPedOC : 0, mEnt: e0.mEntOC }; }); // PV por OC × GOA (exacto); si no viene, montos de la OC
