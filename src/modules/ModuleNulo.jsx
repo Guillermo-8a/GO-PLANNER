@@ -99,7 +99,7 @@ function makeBuilder() {
     if (c.accion != null && str(r[c.accion])) info.sku[sku].acc[centro] = [str(r[c.accion]), c.destinos != null ? str(r[c.destinos]) : ''];
     A.sec.push(enc('sec', sec)); A.zona.push(enc('zona', str(r[c.zona]) || (isBodega(centro, info.centro[centro]) ? 'BODEGAS' : '—'))); A.centro.push(enc('centro', centro));
     A.prov.push(enc('prov', str(r[c.prov]) || '—')); A.goa.push(enc('goa', str(r[c.goa]) || '—')); A.marca.push(enc('marca', str(r[c.marca]) || '—'));
-    A.estatus.push(enc('estatus', str(r[c.estatus]) || 'Sin asignar')); A.norma.push(enc('norma', str(r[c.norma]) || 'Sin asignar')); A.letra.push(enc('letra', str(r[c.letra]) || '—'));
+    A.estatus.push(enc('estatus', str(r[c.estatus]) || 'Sin asignar')); A.norma.push(enc('norma', str(r[c.norma]) || 'Sin asignar')); A.letra.push(enc('letra', str(r[c.letra]) || (c.letra != null ? 'RG' : '—')));
     A.sku.push(enc('sku', sku)); A.pzs.push(pz); A.monto.push(mt);
     // meses: número, o texto ">14 meses"/"sin venta" → null
     const mv = c.meses != null ? num(r[c.meses]) : NaN; A.meses.push(isFinite(mv) ? mv : null);
@@ -186,7 +186,7 @@ const idbSet = async (k, v) => { const db = await idb(); return new Promise((res
 // ─── Cálculo ──────────────────────────────────────────────────────────────────
 const BUCKETS = ['0 – 3 meses', '4 – 6 meses', '7 – 9 meses', '10 – 12 meses', '13+ meses', 'Sin venta en la ventana'];
 const bucketOf = (m) => (m < 0 ? 5 : m <= 3 ? 0 : m <= 6 ? 1 : m <= 9 ? 2 : m <= 12 ? 3 : 4);
-const FILTERS = [['sec', 'Sección'], ['goa', 'GOA'], ['marca', 'Marca'], ['norma', 'Norma'], ['estatus', 'Estatus del artículo'], ['letra', 'Letra de rebaja'], ['bucket', 'Meses desde últ. venta'], ['zona', 'Zona'], ['tipo', 'Tipo de centro'], ['modelo', 'Modelo'], ['centro', 'Tienda / bodega']];
+const FILTERS = [['sec', 'Sección'], ['goa', 'GOA'], ['marca', 'Marca'], ['norma', 'Norma'], ['estatus', 'Estatus del artículo'], ['letra', 'Letra de rebaja'], ['bucket', 'Meses desde últ. venta'], ['zona', 'Zona'], ['tipo', 'Tipo de centro'], ['modelo', 'Modelo'], ['talla', 'Talla'], ['centro', 'Tienda / bodega']];
 const FKEYS = FILTERS.map((f) => f[0]);
 const DEF_CFG = { umbral: 3, porSeccion: {}, corte: '' };
 
@@ -207,18 +207,20 @@ function effective(X, cfg) {
 function modelIndex(X) {
   const idx = new Map(), list = [], desc = [];
   const skuMod = Uint32Array.from(X.D.sku.map((s) => { const k = X.info.sku[s] || {}, mo = k.modelo || s; let i = idx.get(mo); if (i === undefined) { i = list.length; idx.set(mo, i); list.push(mo); desc.push((k.desc || '').split(',')[0]); } return i; }));
-  return { skuMod, list, labels: list.map((m, i) => `${m} · ${desc[i]}`) };
+  const tIdx = new Map(), tallas = [];
+  const skuTal = Uint32Array.from(X.D.sku.map((s) => { const t = X.info.sku[s]?.talla || '—'; let i = tIdx.get(t); if (i === undefined) { i = tallas.length; tIdx.set(t, i); tallas.push(t); } return i; }));
+  return { skuMod, list, labels: list.map((m, i) => `${m} · ${desc[i]}`), skuTal, tallas };
 }
 
 function compute(X, E, F, estado, M) {
   const { n, C, D, tipo } = X, { nulo, bucket } = E;
-  const val = (k, i) => (k === 'bucket' ? bucket[i] : k === 'tipo' ? tipo[C.centro[i]] : k === 'modelo' ? M.skuMod[C.sku[i]] : C[k][i]);
-  const size = (k) => (k === 'bucket' ? BUCKETS.length : k === 'tipo' ? 2 : k === 'modelo' ? M.list.length : D[k].length);
+  const val = (k, i) => (k === 'bucket' ? bucket[i] : k === 'tipo' ? tipo[C.centro[i]] : k === 'modelo' ? M.skuMod[C.sku[i]] : k === 'talla' ? M.skuTal[C.sku[i]] : C[k][i]);
+  const size = (k) => (k === 'bucket' ? BUCKETS.length : k === 'tipo' ? 2 : k === 'modelo' ? M.list.length : k === 'talla' ? M.tallas.length : D[k].length);
   const active = FKEYS.filter((k) => F[k]?.size);
   const opt = Object.fromEntries(FKEYS.map((k) => [k, new Float64Array(size(k))]));
   const z = (k) => new Float64Array(D[k].length);
   const byLetra = z('letra'), byLetraP = z('letra'), byEst = z('estatus'), byMarca = z('marca'), byGoa = z('goa'), bySku = z('sku'), byProv = z('prov');
-  const zT = z('zona'), zN = z('zona'), cT = z('centro'), cN = z('centro'), secT = z('sec'), secN = z('sec');
+  const zT = z('zona'), zN = z('zona'), cT = z('centro'), cN = z('centro'), tT = new Float64Array(M.tallas.length), tN = new Float64Array(M.tallas.length), secT = z('sec'), secN = z('sec');
   const sec = new Map(); const rows = [];
   let m$ = 0, mP = 0, all$ = 0, allN$ = 0, wM = 0, wD = 0;
   for (let i = 0; i < n; i++) {
@@ -228,8 +230,9 @@ function compute(X, E, F, estado, M) {
     const m = C.monto[i], nu = nulo[i] === 1, ok = estado === 'all' || (estado === 'nulo' ? nu : !nu);
     if (fails === 1) { if (ok) opt[fk][val(fk, i)] += m; continue; }
     if (ok) for (const k of FKEYS) opt[k][val(k, i)] += m;
-    all$ += m; zT[C.zona[i]] += m; cT[C.centro[i]] += m; secT[C.sec[i]] += m;
-    if (nu) { allN$ += m; zN[C.zona[i]] += m; cN[C.centro[i]] += m; secN[C.sec[i]] += m; }
+    const ti = M.skuTal[C.sku[i]];
+    all$ += m; zT[C.zona[i]] += m; cT[C.centro[i]] += m; secT[C.sec[i]] += m; tT[ti] += m;
+    if (nu) { allN$ += m; zN[C.zona[i]] += m; cN[C.centro[i]] += m; secN[C.sec[i]] += m; tN[ti] += m; }
     if (!ok) continue;
     rows.push(i); m$ += m; mP += C.pzs[i];
     byLetra[C.letra[i]] += m; byLetraP[C.letra[i]] += C.pzs[i]; byEst[C.estatus[i]] += m; byMarca[C.marca[i]] += m; byGoa[C.goa[i]] += m; bySku[C.sku[i]] += m; byProv[C.prov[i]] += m;
@@ -253,6 +256,10 @@ function compute(X, E, F, estado, M) {
       return top(g, M.labels, 5, false);
     })(),
     zona: share(zT, zN, D.zona, 14),
+    // % nulo por talla, en orden de talla (numéricas primero); top 30 por inventario
+    talla: [...tT].map((t, i) => ({ name: M.tallas[i], t, nu: tN[i], idx: i })).filter((x) => x.t > 0 && x.name !== '—').sort((a, b) => b.t - a.t).slice(0, 30)
+      .sort((a, b) => { const x = parseFloat(a.name), y = parseFloat(b.name); return isFinite(x) && isFinite(y) ? x - y : isFinite(x) ? -1 : isFinite(y) ? 1 : a.name.localeCompare(b.name); })
+      .map((x) => ({ ...x, nulo: x.nu / x.t, mov: 1 - x.nu / x.t })),
     tienda: share(cT, cN, D.centro.map((ce) => X.info.centro[ce] || ce), 12),
     secs: [...sec].map(([si, s]) => ({ si, name: D.sec[si], num: X.info.secNum[D.sec[si]] || '', m: s.m, p: s.p, c: s.c.size, g: s.g.size, k: s.k.size, part: secT[si] ? secN[si] / secT[si] : null })).sort((a, b) => b.m - a.m),
   };
@@ -264,7 +271,8 @@ const downloadCSV = (name, lines) => { const blob = new Blob(['﻿' + lines.join
 const PAL = ['#7B1FA2', '#AB47BC', '#CE93D8', '#E040FB', '#D63F8C', '#F48FB1', '#9575CD', '#5E35B1'];
 const NULO_C = '#D63F8C';
 // RG = precio regular · PR/SR/TR = liquidación · cualquier otra letra = rebaja
-const grpLetra = (l) => { const s = String(l || '').trim().toUpperCase(); return s === 'RG' ? 'RG' : ['PR', 'SR', 'TR'].includes(s) ? 'LQ' : 'RB'; };
+// Letra vacía o REGULAR = RG · PR/SR/TR o 'Primera/Segunda/Tercera Rebaja' (BigQuery) = liquidación
+const grpLetra = (l) => { const s = norm(l); return !s || s === '—' || s === 'RG' || s === 'REGULAR' ? 'RG' : ['PR', 'SR', 'TR'].includes(s) || /^(PRIMERA|SEGUNDA|TERCERA) REBAJA$/.test(s) ? 'LQ' : 'RB'; };
 
 // ─── Multiselect ──────────────────────────────────────────────────────────────
 function MultiSelect({ label, options, sel, onChange, t, isDark, inCls }) {
@@ -351,7 +359,7 @@ export default function ModuleNulo({ t, isDark, navIcon, navLabel, navDesc }) {
   const ttStyle = { contentStyle: { background: isDark ? '#1c1720' : '#fff', border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : '#e5e7eb'}`, borderRadius: 10, fontSize: 11 }, itemStyle: { color: isDark ? '#EDEBF2' : '#111' } };
   const axisTick = { fontSize: 10, fill: isDark ? '#948FA0' : '#6b7280' };
 
-  const optLabels = (k) => (k === 'bucket' ? BUCKETS : k === 'tipo' ? ['Tienda', 'Bodega'] : k === 'modelo' ? M.labels : k === 'centro' ? X.D.centro.map((ce) => `${ce} · ${X.info.centro[ce] || ''}`) : k === 'sec' ? X.D.sec.map((s) => `${X.info.secNum[s] ? X.info.secNum[s] + ' · ' : ''}${s}`) : X.D[k]);
+  const optLabels = (k) => (k === 'bucket' ? BUCKETS : k === 'tipo' ? ['Tienda', 'Bodega'] : k === 'modelo' ? M.labels : k === 'talla' ? M.tallas : k === 'centro' ? X.D.centro.map((ce) => `${ce} · ${X.info.centro[ce] || ''}`) : k === 'sec' ? X.D.sec.map((s) => `${X.info.secNum[s] ? X.info.secNum[s] + ' · ' : ''}${s}`) : X.D[k]);
   const nF = FKEYS.filter((k) => F[k]?.size).length;
   const setDim = (k, s) => setF((p) => ({ ...p, [k]: s }));
   // Clic en gráfica: filtra ese valor; otro clic en el mismo lo quita
@@ -537,6 +545,7 @@ export default function ModuleNulo({ t, isDark, navIcon, navLabel, navDesc }) {
             </div>
             <ShareBars title="Monto por tienda / bodega (top 12)" data={R.tienda} k="centro" />
           </div>
+          {R.talla.length > 1 && <ShareBars title="% nulo por talla · ¿qué talla se queda?" data={R.talla} k="talla" />}
 
           {R.letra.length > 0 && (
             <div className={card}>
