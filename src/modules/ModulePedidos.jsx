@@ -764,8 +764,23 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
       </div>);
   };
 
+  // Buscar una OC o un traslado y abrir su tracking (sin importar filtros)
+  const [busca, setBusca] = useState('');
+  const buscar = () => {
+    const x = busca.trim(); if (!x) return;
+    const tr = allUnits.find((u) => u.traslado === x), oc = tr ? null : allUnits.find((u) => u.oc === x && !u.inv);
+    if (!tr && !oc) { setAviso(`No encontré la OC o traslado ${x} en la base cargada.`); return; }
+    setAviso(''); setPTab('rastreo');
+    if (tr) { setSelOC(''); setSelUnit(tr.key); } else { setSelUnit(null); setSelOC(oc.oc); }
+  };
   const headerRight = (
     <>
+      {ev.length > 0 && (
+        <form onSubmit={(e) => { e.preventDefault(); buscar(); }} className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg border ${t.cardInner}`} title="Busca una OC o un número de traslado y abre su tracking">
+          <Search size={14} className={t.textMuted} />
+          <input value={busca} onChange={(e) => setBusca(e.target.value)} placeholder="Buscar OC o traslado" className={`w-40 bg-transparent outline-none text-xs ${t.text}`} />
+        </form>
+      )}
       {ev.length > 0 && (
         <FilterMenu isDark={isDark} count={nFil} width={860}>
           <FilterSection label="Buscar y filtrar" isDark={isDark}>
