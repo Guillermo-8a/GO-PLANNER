@@ -313,7 +313,7 @@ function buildUnits(ev, umbral, hoy) {
       key, oc: f.oc, sku: f.sku, modelo: f.modelo, prov: f.prov, marca: f.marca, seccion: f.seccion, division: f.division || '', goa: f.goa, centro: list.find((e) => e.centro)?.centro || '',
       zona: list.find((e) => e.zona)?.zona || '', cont: list.find((e) => e.cont)?.cont || '', traslado: list.find((e) => e.traslado)?.traslado || '', fechaEntPlan: list.find((e) => e.fechaEntPlan)?.fechaEntPlan || null,
       // traslado vencido: sigue en cross dock y ya pasó la fecha comprometida de entrega del traslado
-      trVencido: etapa === 'CROSSDOCK' && !has('TRANSITO_TDA') && !!list.find((e) => e.fechaEntPlan) && hoy > new Date(list.find((e) => e.fechaEntPlan).fechaEntPlan), ciudad: norm(list.filter((e) => e.etapa === 'BODEGA_REG').pop()?.ubic || ''),
+      trVencido: etapa === 'CROSSDOCK' && !has('TRANSITO_TDA') && !!list.find((e) => e.fechaEntPlan) && hoy > new Date(list.find((e) => e.fechaEntPlan).fechaEntPlan) && enEtapa > (umbral.CROSSDOCK ?? 3), ciudad: norm(list.filter((e) => e.etapa === 'BODEGA_REG').pop()?.ubic || ''),
       tipo, pzs, pzsRec, valor: Math.max(...list.map((e) => e.valor || 0)), etapa, desde: last.fecha, ubic: last.ubic, enEtapa, at, tramos, eventos: list, route,
       fechaComp, inicio, fin: llegada, lead: llegada ? dias(inicio, llegada) : null,
       // Con proveedor: atorado solo si ya pasó su compromiso + tolerancia (una OC para enero no está atorada hoy).
