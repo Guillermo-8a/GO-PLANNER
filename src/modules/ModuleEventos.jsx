@@ -10,6 +10,13 @@ import { useGlobal } from '../context/GlobalContext';
 const parseCSVRow = (row, sep) =>
   row.split(new RegExp(`\\${sep}(?=(?:(?:[^"]*"){2})*[^"]*$)`)).map(c => c.replace(/^"|"$/g, '').trim());
 const num  = v => parseFloat(String(v||'0').replace(/[^0-9.-]+/g,''))||0;
+// Lee CSV como UTF-8 (BigQuery/Sheets) y si no es UTF-8 válido cae a Windows-1252 (export SAP / Excel)
+const readTextAuto = (file, cb) => { const rd=new FileReader(); rd.onload=ev=>{ const b=ev.target.result;
+  let txt; try{ txt=new TextDecoder('utf-8',{fatal:true}).decode(b); }catch{ txt=new TextDecoder('windows-1252').decode(b); } cb(txt.replace(/^\uFEFF/,'')); };
+  rd.readAsArrayBuffer(file); };
+// Repara UTF-8 que se leyó como Latin-1 ("TELEFONÃ\u00ADA" → "TELEFONÍA") en data ya guardada
+const fixMoji = v => { if(typeof v!=='string'||!/[ÃÂ]/.test(v)) return v; try{ return decodeURIComponent(escape(v)); }catch{ return v; } };
+const fixRows = rows => Array.isArray(rows)?rows.map(r=>{ const o={...r}; for(const k in o) if(typeof o[k]==='string') o[k]=fixMoji(o[k]); return o; }):[];
 const fmt  = (n,d=0) => n==null?'-':n.toLocaleString('es-MX',{minimumFractionDigits:d,maximumFractionDigits:d});
 const fmtP = (n,d=1) => n==null?'-':n.toFixed(d)+'%';
 const fmtM = n => n==null?'-':'$'+n.toLocaleString('es-MX',{minimumFractionDigits:0,maximumFractionDigits:0});
@@ -44,6 +51,7 @@ const CLASIF_COLOR={ regular:'#8b5cf6', descuento:'#f59e0b', depreciado:'#00bcd4
 // Verde esmeralda para "Venta $" en las gráficas GOA/Marca — ahí conviven con la barra "Inv. Regular"
 // (violeta, de CLASIF_COLOR), que si no se distinguen fácil a simple vista.
 const VENTA_COLOR='#10b981';
+const AA_COLOR='#94a3b8'; // venta año anterior en gráficas
 const VIOLET_SHADES=['#8b5cf6','#a78bfa','#c4b5fd','#7c3aed','#ddd6fe','#6d28d9','#e9d5ff','#5b21b6'];
 const CLASIF_LABEL={ regular:'Regular', descuento:'Descuento', depreciado:'Depreciado', sin_snapshot:'Sin snapshot' };
 
@@ -312,6 +320,8 @@ export default function ModuleEventos(){
   const nFiltrosActivos=FILTRO_DIMS.reduce((n,d)=>n+(filtros[d].length>0?1:0),0);
   const blankForm={nombre:'',tipo:TIPOS_EVENTO[0],tipoOtro:'',fechaInicio:'',fechaFin:'',objetivo:OBJETIVOS[0],lyVentaP:'',lyMargenPct:'',lyStPct:''};
   const [form,setForm]=useState(blankForm);
+  const [moreOpen,setMoreOpen]=useState(false);
+  const mItem=`w-full justify-start flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-lg border ${t.btnGhost}`;
   const hbtn=`flex items-center gap-2 text-xs font-bold px-3 py-1.5 rounded-lg border disabled:opacity-50 ${t.btnGhost}`;
 
   const createEvent=()=>{
@@ -341,7 +351,7 @@ export default function ModuleEventos(){
     if(!activeId){ setSnapRows([]); setSalesRows([]); return; }
     setExpanded(new Set());
     Promise.all([idbGet(`snap_${activeId}`),idbGet(`sales_${activeId}`)]).then(([s,v])=>{
-      setSnapRows(Array.isArray(s)?s:[]); setSalesRows(Array.isArray(v)?v:[]);
+      setSnapRows(fixRows(s)); setSalesRows(fixRows(v));
     }).catch(()=>{});
   },[activeId]);
 
@@ -390,27 +400,22 @@ export default function ModuleEventos(){
       parseSnapshotXLSX(file).then(finish).catch(()=>{ alert('No se pudo leer el archivo .xlsx.'); if(snapRef.current) snapRef.current.value=''; });
       return;
     }
-    const reader=new FileReader();
-    reader.onload=ev=>finish(parseSnapshotCSV(ev.target.result));
-    reader.readAsText(file,'ISO-8859-1');
+    readTextAuto(file,txt=>finish(parseSnapshotCSV(txt)));
   };
   const uploadSales=e=>{
     const file=e.target.files[0]; if(!file) return;
-    const reader=new FileReader();
-    reader.onload=ev=>{ const {rows,error}=parseSalesCSV(ev.target.result);
+    readTextAuto(file,txt=>{ const {rows,error}=parseSalesCSV(txt);
       if(error){ alert(error); return; }
       if(rows.length===0){ alert('No se encontraron filas válidas en el CSV.'); return; }
       setSalesRows(rows); idbSet(`sales_${activeId}`,rows).catch(()=>{});
       if(salesRef.current) salesRef.current.value='';
-    };
-    reader.readAsText(file,'ISO-8859-1');
+    });
   };
   // Un solo CSV con la venta de todos los eventos: cada fila se reparte al evento cuyas fechas (TY o mismas fechas LY) la contienen
   const allSalesRef=useRef(null);
   const uploadSalesAll=e=>{
     const file=e.target.files[0]; if(!file) return;
-    const reader=new FileReader();
-    reader.onload=ev=>{ const {rows,error}=parseSalesCSV(ev.target.result); if(allSalesRef.current) allSalesRef.current.value='';
+    readTextAuto(file,txt=>{ const {rows,error}=parseSalesCSV(txt); if(allSalesRef.current) allSalesRef.current.value='';
       if(error){ alert(error); return; }
       const iso=d=>d?`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`:'';
       const ly=s=>`${+s.slice(0,4)-1}${s.slice(4)}`;
@@ -424,8 +429,7 @@ export default function ModuleEventos(){
       ids.forEach(id=>idbSet(`sales_${id}`,by[id]).catch(()=>{}));
       if(by[activeId]) setSalesRows(by[activeId]);
       if(fuera||sinFecha) alert(`${fuera} filas fuera de las fechas de cualquier evento${sinFecha?` y ${sinFecha} sin fecha`:''} no se cargaron.`);
-    };
-    reader.readAsText(file,'ISO-8859-1');
+    });
   };
   const clearSnapshot=()=>{
     if(!window.confirm('¿Eliminar el snapshot cargado de este evento?')) return;
@@ -683,9 +687,13 @@ export default function ModuleEventos(){
     // Breakdown por categoría (sección) — venta/margen/ST, solo secciones con venta
     const catMap={};
     detail.forEach(r=>{ const k=r.seccion||'GENERAL'; if(!catMap[k]) catMap[k]=[]; catMap[k].push(r); });
-    const catMapLY={}; detailLY.forEach(r=>{ const k=r.seccion||'GENERAL'; catMapLY[k]=(catMapLY[k]||0)+r.ventaP; });
-    const categorias=Object.entries(catMap).map(([seccion,rows])=>{ const rl=rollup(rows);
-        return {seccion,...rl, vsAA:hasLY?pctVs(rl.ventaP,catMapLY[seccion]||0):null}; })
+    const catMapLY={}; detailLY.forEach(r=>{ const k=r.seccion||'GENERAL'; const c=catMapLY[k]=catMapLY[k]||{ventaP:0,ventaU:0,utilidad:0};
+      c.ventaP+=r.ventaP; c.ventaU+=r.ventaU; c.utilidad+=r.utilidad; });
+    const categorias=Object.entries(catMap).map(([seccion,rows])=>{ const rl=rollup(rows), ly=catMapLY[seccion]||{ventaP:0,ventaU:0,utilidad:0};
+        const mgLY=ly.ventaP>0?ly.utilidad/ly.ventaP*100:null;
+        return {seccion,...rl, ventaPLY:ly.ventaP, ventaULY:ly.ventaU, utilidadLY:ly.utilidad, margenPctLY:mgLY,
+          vsAA:hasLY?pctVs(rl.ventaP,ly.ventaP):null, vsAA_u:hasLY?pctVs(rl.ventaU,ly.ventaU):null, vsAA_ut:hasLY?pctVs(rl.utilidad,ly.utilidad):null,
+          dMg:hasLY&&rl.margenPct!=null&&mgLY!=null?rl.margenPct-mgLY:null}; })
       .filter(c=>c.ventaP>0).sort((a,b)=>b.ventaP-a.ventaP);
     // Top 10 / Bottom 10 por modelo (agrega SKU → modelo)
     const modMap={};
@@ -695,7 +703,7 @@ export default function ModuleEventos(){
       modMap[k].remanente+=r.remanente||0; modMap[k].montoRemanente+=r.montoRemanente||0; });
     const modMapLY={}; detailLY.forEach(r=>{ const k=r.modelo||r.sku; modMapLY[k]=(modMapLY[k]||0)+r.ventaP; });
     const modArr=Object.values(modMap).map(m=>({...m, stPct: m.ohInicio>0?Math.min(100,m.ventaU/m.ohInicio*100):null,
-      vsAA: hasLY?pctVs(m.ventaP,modMapLY[m.modelo]||0):null}));
+      ventaPLY: hasLY?(modMapLY[m.modelo]||0):null, vsAA: hasLY?pctVs(m.ventaP,modMapLY[m.modelo]||0):null}));
     const topModelo=modArr.filter(m=>m.ventaP>0).sort((a,b)=>b.ventaP-a.ventaP).slice(0,10);
     // Sin snapshot real no hay OH por modelo (ohInicio siempre 0), así que ahí se ordena solo por venta.
     const bottom10=modArr.filter(m=>hasRealSnapshot?m.ohInicio>0:m.ventaP>0).sort((a,b)=>a.ventaP-b.ventaP).slice(0,10);
@@ -726,7 +734,7 @@ export default function ModuleEventos(){
     const groupSum=(key,rows)=>{ const m={}; rows.forEach(r=>{ const k=r[key]||'SIN DATO'; m[k]=(m[k]||0)+r.ventaP; }); return m; };
     const groupCombined=key=>{ const mAct=groupSum(key,salesFActual), mLY=groupSum(key,salesFLY);
       return Object.entries(mAct).filter(([,ventaP])=>ventaP!==0)
-        .map(([name,ventaP])=>({name,ventaP,vsAA:hasLY?pctVs(ventaP,mLY[name]||0):null}))
+        .map(([name,ventaP])=>({name,ventaP,ventaPLY:hasLY?(mLY[name]||0):null,vsAA:hasLY?pctVs(ventaP,mLY[name]||0):null}))
         .sort((a,b)=>b.ventaP-a.ventaP); };
     const porSubcanal=groupCombined('subcanal');
     const porEstatus=groupCombined('estatus');
@@ -798,6 +806,14 @@ export default function ModuleEventos(){
     const invIniPorGoa=invIniGroup('goa'), invIniPorMarca=invIniGroup('marca');
     const invIniTotal=invIniRows.reduce((acc,r)=>{ acc.oh+=r.oh; acc.invIni+=r.invIni; acc.ohAA+=r.ohAA; acc.invIniAA+=r.invIniAA; return acc; },{oh:0,invIni:0,ohAA:0,invIniAA:0});
     invIniTotal.vsAA=pctVs(invIniTotal.invIni,invIniTotal.invIniAA); invIniTotal.vsAA_u=pctVs(invIniTotal.oh,invIniTotal.ohAA);
+    // Rot por sección = venta U anualizada (por días con venta) ÷ OH inicial. OH: snapshot por SKU; si no, inv. inicial del archivo.
+    { const dTY=new Set(salesFActual.filter(r=>r.fecha).map(r=>r.fecha.toISOString().slice(0,10))).size||1,
+        dLY=new Set(salesFLY.filter(r=>r.fecha).map(r=>r.fecha.toISOString().slice(0,10))).size||1;
+      const ohSec={}, ohSecLY={}; detail.forEach(r=>{ const k=r.seccion||'GENERAL'; ohSec[k]=(ohSec[k]||0)+r.ohInicio; });
+      Object.values(snapBySkuLY).forEach(r=>{ const k=r.seccion||'GENERAL'; ohSecLY[k]=(ohSecLY[k]||0)+(r.oh||0); });
+      invIniRows.forEach(r=>{ const k=r.seccion||'GENERAL'; if(!hasRealSnapshot) ohSec[k]=(ohSec[k]||0)+r.oh; if(!Object.keys(snapBySkuLY).length) ohSecLY[k]=(ohSecLY[k]||0)+r.ohAA; });
+      const rot=(u,d,oh)=>oh>0?u/d*365/oh:null;
+      categorias.forEach(c=>{ c.rot=rot(c.ventaU,dTY,ohSec[c.seccion]); c.rotLY=hasLY?rot(c.ventaULY,dLY,ohSecLY[c.seccion]):null; }); }
     // ST% con inv. inicial cuando no hay snapshot real (a nivel Sección/GOA/Marca, lo que alcancen los filtros)
     if(!hasRealSnapshot && hasInvIniData && invIniTotal.oh>0){
       total.stPct=Math.min(100,total.ventaU/invIniTotal.oh*100);
@@ -947,23 +963,30 @@ export default function ModuleEventos(){
         <button onClick={()=>setActiveId(null)} className={`flex items-center gap-1 text-xs font-bold ${t.textMuted} hover:${t.textMain}`}>
           <Icons.ChevronLeft size={14}/> Eventos
         </button>
-        <div className="flex flex-wrap justify-end gap-2">
-          <input ref={snapRef} type="file" accept=".xlsx,.xls,.csv,.txt" className="hidden" onChange={uploadSnapshot}/>
-          <input ref={salesRef} type="file" accept=".csv,.txt" className="hidden" onChange={uploadSales}/>
-          <button onClick={()=>snapRef.current?.click()} title='Snapshot de arranque (xlsx/csv): foto del inventario (OH) por SKU al iniciar el evento. Si trae la pestaña "Vtas_Evento", las ventas se cargan solas' className={hbtn}>
-            <Icons.Upload size={13}/> {snapRows.length>0 ? `Snapshot (${joined.nSkuSnap})` : 'Snapshot'}
-          </button>
-          <button onClick={()=>salesRef.current?.click()} title="CSV de ventas del evento: venta diaria por SKU (año actual y LY)" className={hbtn}>
-            <Icons.Upload size={13}/> {salesRows.length>0 ? `Ventas (${joined.nSkuVenta})` : 'Ventas'}
-          </button>
+        <div className="flex flex-wrap justify-end gap-2 items-center">
           <button onClick={traerBQ} disabled={bqBusy} title="Trae de BigQuery las ventas del evento (año actual y LY) y, si el evento aún no arranca y no hay snapshot, el OH actual. Un snapshot existente no se reemplaza" className={hbtn}>
             {bqBusy?'Trayendo…':'⚡ BigQuery'}
           </button>
-          {snapRows.length>0 && <button onClick={clearSnapshot} title="Eliminar snapshot" className={hbtn}><Icons.Trash2 size={13}/> Snapshot</button>}
-          {salesRows.length>0 && <button onClick={handleDownloadSalesCSV} title="Descargar el CSV de ventas cargado" className={hbtn}><Icons.Download size={13}/> Ventas</button>}
-          {salesRows.length>0 && <button onClick={clearSales} title="Eliminar ventas" className={hbtn}><Icons.Trash2 size={13}/> Ventas</button>}
-          <button onClick={()=>{setEditingLY(true);setForm(f=>({...f,lyVentaP:active.lyVentaP||'',lyMargenPct:active.lyMargenPct||'',lyStPct:active.lyStPct||'',objetivo:active.objetivo}));}}
-            className={hbtn}>Editar LY / objetivo</button>
+          <input ref={snapRef} type="file" accept=".xlsx,.xls,.csv,.txt" className="hidden" onChange={uploadSnapshot}/>
+          <input ref={salesRef} type="file" accept=".csv,.txt" className="hidden" onChange={uploadSales}/>
+          <div className="relative" onMouseLeave={()=>setMoreOpen(false)}>
+            <button onClick={()=>setMoreOpen(v=>!v)} className={hbtn} title="Cargar / borrar archivos y editar LY">⋯ Más</button>
+            {moreOpen && (
+              <div onClick={()=>setMoreOpen(false)} className={`absolute right-0 top-full pt-1 z-50`}>
+              <div className={`flex flex-col gap-1 p-2 min-w-[200px] rounded-xl border shadow-2xl ${t.card}`}>
+            <button onClick={()=>snapRef.current?.click()} title='Snapshot de arranque (xlsx/csv): foto del inventario (OH) por SKU al iniciar el evento. Si trae la pestaña "Vtas_Evento", las ventas se cargan solas' className={mItem}>
+              <Icons.Upload size={13}/> {snapRows.length>0 ? `Snapshot (${joined.nSkuSnap})` : 'Snapshot'}
+            </button>
+            <button onClick={()=>salesRef.current?.click()} title="CSV de ventas del evento: venta diaria por SKU (año actual y LY)" className={mItem}>
+              <Icons.Upload size={13}/> {salesRows.length>0 ? `Ventas (${joined.nSkuVenta})` : 'Ventas'}
+            </button>
+            {snapRows.length>0 && <button onClick={clearSnapshot} title="Eliminar snapshot" className={mItem}><Icons.Trash2 size={13}/> Snapshot</button>}
+            {salesRows.length>0 && <button onClick={handleDownloadSalesCSV} title="Descargar el CSV de ventas cargado" className={mItem}><Icons.Download size={13}/> Ventas</button>}
+            {salesRows.length>0 && <button onClick={clearSales} title="Eliminar ventas" className={mItem}><Icons.Trash2 size={13}/> Ventas</button>}
+            <button onClick={()=>{setEditingLY(true);setForm(f=>({...f,lyVentaP:active.lyVentaP||'',lyMargenPct:active.lyMargenPct||'',lyStPct:active.lyStPct||'',objetivo:active.objetivo}));}}
+              className={mItem}>Editar LY / objetivo</button>
+              </div></div>)}
+          </div>
         </div>
       </div>
 
@@ -1148,20 +1171,21 @@ export default function ModuleEventos(){
                     <p className={`text-xs font-black mb-3 ${t.textMain}`}>Breakdown por categoría</p>
                     <table className="w-full text-xs">
                       <thead><tr className={t.textMuted}>
-                        <th className="text-left pb-2">Sección</th><th className="text-right pb-2">Venta $</th>
-                        {calc.hasLY && <th className="text-right pb-2">vs AA</th>}
-                        <th className="text-right pb-2">Venta U</th><th className="text-right pb-2">Margen %</th><th className="text-right pb-2">Sell-through</th>
+                        {['Sección','Venta $','Venta U','Margen %','Utilidad $','Rot'].map((h,i)=><th key={h} className={`pb-2 ${i?'text-right':'text-left'}`} title={h==='Rot'?'Venta U anualizada ÷ OH inicial (veces al año)':undefined}>{h}</th>)}
                       </tr></thead>
                       <tbody>
-                        {calc.categorias.map(c=>(
+                        {calc.categorias.map(c=>{ return (
                           <tr key={c.seccion} className={`border-t ${t.border} ${t.textMain}`}>
-                            <td className="py-2">{c.seccion}</td><td className="text-right">{fmtM(c.ventaP)}</td>
-                            {calc.hasLY && <td className="text-right"><DeltaBadge value={c.vsAA}/></td>}
-                            <td className="text-right">{fmt(c.ventaU)}</td><td className="text-right">{fmtP(c.margenPct)}</td><td className="text-right">{fmtP(c.stPct)}</td>
-                          </tr>
-                        ))}
+                            <td className="py-2 font-bold">{c.seccion}</td>
+                            <td className="text-right">{fmtM(c.ventaP)}{calc.hasLY&&<div className="flex justify-end items-center gap-1"><span className={`text-[10px] ${t.textMuted}`}>{fmtM(c.ventaPLY)}</span><DeltaBadge value={c.vsAA}/></div>}</td>
+                            <td className="text-right">{fmt(c.ventaU)}{calc.hasLY&&<div className="flex justify-end items-center gap-1"><span className={`text-[10px] ${t.textMuted}`}>{fmt(c.ventaULY)}</span><DeltaBadge value={c.vsAA_u}/></div>}</td>
+                            <td className="text-right">{fmtP(c.margenPct)}{calc.hasLY&&<div className="flex justify-end items-center gap-1"><span className={`text-[10px] ${t.textMuted}`}>{fmtP(c.margenPctLY)}</span><DeltaBadge value={c.dMg} pts/></div>}</td>
+                            <td className="text-right">{fmtM(c.utilidad)}{calc.hasLY&&<div className="flex justify-end items-center gap-1"><span className={`text-[10px] ${t.textMuted}`}>{fmtM(c.utilidadLY)}</span><DeltaBadge value={c.vsAA_ut}/></div>}</td>
+                            <td className="text-right">{c.rot!=null?c.rot.toFixed(1)+'x':'-'}{calc.hasLY&&<div className="flex justify-end items-center gap-1"><span className={`text-[10px] ${t.textMuted}`}>{c.rotLY!=null?c.rotLY.toFixed(1)+'x':'-'}</span><DeltaBadge value={c.rot!=null&&c.rotLY>0?(c.rot/c.rotLY-1)*100:null}/></div>}</td>
+                          </tr>); })}
                       </tbody>
                     </table>
+                    {calc.hasLY&&<p className={`text-[10px] mt-2 ${t.textMuted}`}>Debajo de cada valor: dato AA y variación (Margen en puntos). Rot = venta U anualizada ÷ OH inicial.</p>}
                   </div>
                 )}
 
@@ -1177,8 +1201,9 @@ export default function ModuleEventos(){
                           <XAxis type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
                           <YAxis type="category" dataKey="name" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={120}/>
                           <Tooltip content={<TTip/>} cursor={{fill:cursorFill}}/>
-                          {(calc.hasRealSnapshot||calc.hasInvIniData) && <Legend wrapperStyle={{fontSize:10,color:txtC}}/>}
+                          {(calc.hasRealSnapshot||calc.hasInvIniData||calc.hasLY) && <Legend wrapperStyle={{fontSize:10,color:txtC}}/>}
                           <Bar dataKey="ventaP" name="Venta $" fill={VENTA_COLOR} radius={[0,6,6,0]} maxBarSize={20}/>
+                          {calc.hasLY && <Bar dataKey="ventaPLY" name="Venta $ AA" fill={AA_COLOR} radius={[0,6,6,0]} maxBarSize={20}/>}
                           {calc.hasRealSnapshot ? (<>
                             <Bar dataKey="regular" stackId="inv" name="Inv. Regular" fill={CLASIF_COLOR.regular} maxBarSize={20}/>
                             <Bar dataKey="descuento" stackId="inv" name="Inv. Descuento" fill={CLASIF_COLOR.descuento} maxBarSize={20}/>
@@ -1198,8 +1223,9 @@ export default function ModuleEventos(){
                           <XAxis type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
                           <YAxis type="category" dataKey="name" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={120}/>
                           <Tooltip content={<TTip/>} cursor={{fill:cursorFill}}/>
-                          {(calc.hasRealSnapshot||calc.hasInvIniData) && <Legend wrapperStyle={{fontSize:10,color:txtC}}/>}
+                          {(calc.hasRealSnapshot||calc.hasInvIniData||calc.hasLY) && <Legend wrapperStyle={{fontSize:10,color:txtC}}/>}
                           <Bar dataKey="ventaP" name="Venta $" fill={VENTA_COLOR} radius={[0,6,6,0]} maxBarSize={22}/>
+                          {calc.hasLY && <Bar dataKey="ventaPLY" name="Venta $ AA" fill={AA_COLOR} radius={[0,6,6,0]} maxBarSize={22}/>}
                           {calc.hasRealSnapshot ? (<>
                             <Bar dataKey="regular" stackId="inv" name="Inv. Regular" fill={CLASIF_COLOR.regular} maxBarSize={22}/>
                             <Bar dataKey="descuento" stackId="inv" name="Inv. Descuento" fill={CLASIF_COLOR.descuento} maxBarSize={22}/>
@@ -1255,14 +1281,16 @@ export default function ModuleEventos(){
                   {calc.porSubcanal.length>0 && (
                     <div className={`p-4 rounded-xl border ${t.card}`}>
                       <p className={`text-xs font-black mb-3 ${t.textMain}`}>Venta por Subcanal</p>
-                      <ResponsiveContainer width="100%" height={320}>
-                        <PieChart>
-                          <Pie data={calc.porSubcanal} dataKey="ventaP" nameKey="name" cx="50%" cy="50%" innerRadius={55} outerRadius={100} paddingAngle={2}>
-                            {calc.porSubcanal.map((r,i)=><Cell key={i} fill={VIOLET_SHADES[i%VIOLET_SHADES.length]}/>)}
-                          </Pie>
-                          <Tooltip content={<TTip/>}/>
-                          <Legend wrapperStyle={{fontSize:10,color:txtC}}/>
-                        </PieChart>
+                      <ResponsiveContainer width="100%" height={Math.max(160,calc.porSubcanal.length*36)}>
+                        <BarChart data={calc.porSubcanal} layout="vertical" margin={{left:10}} barCategoryGap="30%">
+                          <CartesianGrid strokeDasharray="3 3" stroke={gridC} horizontal={false}/>
+                          <XAxis type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
+                          <YAxis type="category" dataKey="name" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={120}/>
+                          <Tooltip content={<TTip/>} cursor={{fill:cursorFill}}/>
+                          {calc.hasLY && <Legend wrapperStyle={{fontSize:10,color:txtC}}/>}
+                          <Bar dataKey="ventaP" name="Venta $" fill={VENTA_COLOR} radius={[0,6,6,0]} maxBarSize={22}/>
+                          {calc.hasLY && <Bar dataKey="ventaPLY" name="Venta $ AA" fill={AA_COLOR} radius={[0,6,6,0]} maxBarSize={22}/>}
+                        </BarChart>
                       </ResponsiveContainer>
                     </div>
                   )}
@@ -1276,7 +1304,9 @@ export default function ModuleEventos(){
                           <XAxis type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
                           <YAxis type="category" dataKey="name" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={120}/>
                           <Tooltip content={<TTip/>} cursor={{fill:cursorFill}}/>
+                          {calc.hasLY && <Legend wrapperStyle={{fontSize:10,color:txtC}}/>}
                           <Bar dataKey="ventaP" name="Venta $" fill={CLASIF_COLOR.regular} radius={[0,6,6,0]} maxBarSize={22}/>
+                          {calc.hasLY && <Bar dataKey="ventaPLY" name="Venta $ AA" fill={AA_COLOR} radius={[0,6,6,0]} maxBarSize={22}/>}
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
@@ -1291,7 +1321,9 @@ export default function ModuleEventos(){
                           <XAxis type="number" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
                           <YAxis type="category" dataKey="modelo" tick={{fontSize:10,fill:txtC}} stroke={axisC} width={80}/>
                           <Tooltip content={<ModeloTTip/>} cursor={{fill:cursorFill}}/>
+                          {calc.hasLY && <Legend wrapperStyle={{fontSize:10,color:txtC}}/>}
                           <Bar dataKey="ventaP" name="Venta $" fill={CLASIF_COLOR.regular} radius={[0,6,6,0]} maxBarSize={22}/>
+                          {calc.hasLY && <Bar dataKey="ventaPLY" name="Venta $ AA" fill={AA_COLOR} radius={[0,6,6,0]} maxBarSize={22}/>}
                         </BarChart>
                       </ResponsiveContainer>
                     </div>
