@@ -405,6 +405,28 @@ export default function ModuleEventos(){
     };
     reader.readAsText(file,'ISO-8859-1');
   };
+  // Un solo CSV con la venta de todos los eventos: cada fila se reparte al evento cuyas fechas (TY o mismas fechas LY) la contienen
+  const allSalesRef=useRef(null);
+  const uploadSalesAll=e=>{
+    const file=e.target.files[0]; if(!file) return;
+    const reader=new FileReader();
+    reader.onload=ev=>{ const {rows,error}=parseSalesCSV(ev.target.result); if(allSalesRef.current) allSalesRef.current.value='';
+      if(error){ alert(error); return; }
+      const iso=d=>d?`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`:'';
+      const ly=s=>`${+s.slice(0,4)-1}${s.slice(4)}`;
+      const evs=events.filter(x=>x.fechaInicio&&x.fechaFin), by={}; let sinFecha=0, fuera=0;
+      rows.forEach(r=>{ const f=iso(r.fecha); if(!f){ sinFecha++; return; } let hit=false;
+        evs.forEach(x=>{ if((f>=x.fechaInicio&&f<=x.fechaFin)||(f>=ly(x.fechaInicio)&&f<=ly(x.fechaFin))){ (by[x.id]=by[x.id]||[]).push(r); hit=true; } });
+        if(!hit) fuera++; });
+      const ids=Object.keys(by); if(!ids.length){ alert(`Ninguna fila cae en las fechas de algún evento${sinFecha?` (${sinFecha} filas sin fecha)`:''}.`); return; }
+      const pisa=evs.filter(x=>by[x.id]).map(x=>x.nombre);
+      if(!window.confirm(`Se cargará venta a ${ids.length} evento(s):\n• ${pisa.join('\n• ')}\n\nReemplaza la venta que ya tuvieran. ¿Continuar?`)) return;
+      ids.forEach(id=>idbSet(`sales_${id}`,by[id]).catch(()=>{}));
+      if(by[activeId]) setSalesRows(by[activeId]);
+      if(fuera||sinFecha) alert(`${fuera} filas fuera de las fechas de cualquier evento${sinFecha?` y ${sinFecha} sin fecha`:''} no se cargaron.`);
+    };
+    reader.readAsText(file,'ISO-8859-1');
+  };
   const clearSnapshot=()=>{
     if(!window.confirm('¿Eliminar el snapshot cargado de este evento?')) return;
     setSnapRows([]); idbDel(`snap_${activeId}`).catch(()=>{});
@@ -825,9 +847,16 @@ export default function ModuleEventos(){
               <p className={`text-xs mt-1 ${t.textMuted}`}>Eventos promocionales · Detalle por SKU, venta, margen, sell-through y remanente</p>
             </div>
           </div>
-          <button onClick={()=>setShowForm(true)} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold ${t.btnPrimary}`}>
-            <Icons.Plus size={14}/> Nuevo evento
-          </button>
+          <div className="flex items-center gap-2">
+            <input ref={allSalesRef} type="file" accept=".csv,.txt" className="hidden" onChange={uploadSalesAll}/>
+            <button onClick={()=>allSalesRef.current?.click()} title="Un CSV con la venta diaria de todos los eventos (TY y LY): cada fila se asigna al evento según su fecha"
+              className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold border ${t.btnGhost}`}>
+              <Icons.Upload size={14}/> Venta de todos
+            </button>
+            <button onClick={()=>setShowForm(true)} className={`flex items-center gap-2 px-4 py-2 rounded-lg text-xs font-bold ${t.btnPrimary}`}>
+              <Icons.Plus size={14}/> Nuevo evento
+            </button>
+          </div>
         </div>
 
         {showForm && (
