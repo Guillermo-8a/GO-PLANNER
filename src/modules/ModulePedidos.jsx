@@ -321,7 +321,7 @@ function buildUnits(ev, umbral, hoy) {
       key, oc: f.oc, sku: f.sku, modelo: f.modelo, prov: f.prov, marca: f.marca, seccion: f.seccion, division: f.division || '', goa: f.goa, centro: list.find((e) => e.centro)?.centro || '',
       zona: list.find((e) => e.zona)?.zona || '', cont: list.find((e) => e.cont)?.cont || '', traslado: list.find((e) => e.traslado)?.traslado || '', fechaEntPlan: list.find((e) => e.fechaEntPlan)?.fechaEntPlan || null,
       // traslado vencido: sigue en cross dock y ya pasó la fecha comprometida de entrega del traslado
-      trCerrado: list.some((e) => e.trCerrado), trVencido: etapa === 'CROSSDOCK' && !has('TRANSITO_TDA') && !list.some((e) => e.trCerrado) && !!list.find((e) => e.fechaEntPlan) && hoy > new Date(list.find((e) => e.fechaEntPlan).fechaEntPlan) && enEtapa > (umbral.CROSSDOCK ?? 3), ciudad: norm(list.filter((e) => e.etapa === 'BODEGA_REG').pop()?.ubic || ''),
+      trCerrado: list.some((e) => e.trCerrado), trVencido: etapa === 'CROSSDOCK' && !has('TRANSITO_TDA') && !list.some((e) => e.trCerrado) && list.some((e) => e.traslado) && enEtapa > (umbral.CROSSDOCK ?? 3), ciudad: norm(list.filter((e) => e.etapa === 'BODEGA_REG').pop()?.ubic || ''),
       tipo, pzs, pzsRec, valor: Math.max(...list.map((e) => e.valor || 0)), etapa, desde: last.fecha, ubic: last.ubic, enEtapa, at, tramos, eventos: list, route,
       fechaComp, inicio, fin: llegada, lead: llegada ? dias(inicio, llegada) : null,
       // Con proveedor: atorado solo si ya pasó su compromiso + tolerancia (una OC para enero no está atorada hoy).
@@ -443,7 +443,9 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
       const e0 = g[0].eventos[0]; if (!(e0.recGoa > 0 && e0.recGoa < e0.pedGoa)) return;
       const ult = g.reduce((m, u) => (u.at.TRANSITO_TDA && (!m || u.at.TRANSITO_TDA > m) ? u.at.TRANSITO_TDA : m), null);
       const surtida = ult && dias(ult, hoy) > xdU; // las demás tiendas ya salieron
-      const falt = g.filter((u) => sinSalir(u) && (surtida || u.trVencido)); if (!falt.length) return;
+      // Primero las tiendas que no recibieron nada (no los saldos de salidas parciales), hasta cubrir lo que el proveedor no entregó
+      const cand = g.filter((u) => sinSalir(u) && (surtida || u.trVencido)).sort((a, b) => !!a.eventos[0].saldo - !!b.eventos[0].saldo || b.enEtapa - a.enEtapa);
+      let resto = e0.pedGoa - e0.recGoa; const falt = cand.filter((u) => { if (resto <= 0) return false; resto -= u.pzs; return true; }); if (!falt.length) return;
       const o = (incOC[g[0].oc] = incOC[g[0].oc] || { ped: 0, rec: 0, pv: 0, pvRec: 0 }); o.ped += e0.pedGoa; o.rec += e0.recGoa; o.pv += e0.pvGoa || 0; o.pvRec += e0.pvRecGoa || 0;
       falt.forEach((u) => Object.assign(u, { incompleto: true, atorado: false, trVencido: false, vencido: false }));
     });
@@ -1115,6 +1117,8 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: `${TIPOS[unit.tipo].c}22`, color: TIPOS[unit.tipo].c }}>{TIPOS[unit.tipo].l}</span>
                     <span className={`text-[10px] font-bold ${t.textMuted}`}>{unit.prov} · {unit.modelo || unit.sku} · {fmt(unit.pzs)} pzs{unit.cont ? ` · ${unit.cont}` : ''}{unit.centro ? ` · T${unit.centro}` : ''}</span></div>
                   <div className={`text-[11px] ${t.textMuted}`}>Último registro: <b className={unit.atorado ? 'text-rose-500' : ''}>{SL[unit.etapa]}</b> · {fdate(unit.desde)}{unit.ubic ? ` · ${unit.ubic}` : ''}{unit.etapa !== 'RECIBIDO' ? ` · lleva ${(unit.enEtapa || 0).toFixed(1)} días` : ''}{unit.fechaComp ? ` · compromiso ${fdate(unit.fechaComp)}` : ''}{unit.vencido ? ' · vencido' : ''}{unit.estimado ? ' · llegó a tienda sin entrada (estimado por entrega típica de la zona)' : ''}</div>
+                  {unit.traslado && (() => { const h = allUnits.filter((u) => u.traslado === unit.traslado && u.key !== unit.key); if (!h.length) return null; const sl = unit.eventos[0]?.saldo ? unit : h.find((u) => u.eventos[0]?.saldo), en = unit.eventos[0]?.saldo ? h[0] : unit; if (!sl || !en) return null;
+                    return <div className="text-[11px] mt-0.5"><b className="text-amber-500">Salida parcial del traslado {unit.traslado}:</b> <span className={t.textMuted}>salieron {fmt(en.pzs)} de {fmt(en.pzs + sl.pzs)} pzs · {fmt(sl.pzs)} siguen en cross dock {sl.incompleto ? '(faltante del proveedor)' : sl.trVencido ? <b className="text-rose-500">(traslado vencido · {sl.enEtapa.toFixed(0)} d en CEDIS)</b> : `(${sl.enEtapa.toFixed(0)} d en CEDIS)`}</span> <button onClick={() => setSelUnit(unit === sl ? en.key : sl.key)} className="text-violet-500 font-bold hover:underline">ver {unit === sl ? 'lo que salió' : 'saldo'}</button></div>; })()}
                 </div>
                 <button onClick={() => setSelUnit(null)} className={t.textMuted}><X size={15} /></button>
               </div>
