@@ -61,6 +61,7 @@ const ALIAS = {
   sku: ['SKU', 'MATERIAL', 'VAR / IND', 'VAR/IND'],
   desc: ['ARTICULO', 'DESCRIPCION', 'DESCRIPCION ARTICULO', 'DESC ARTICULO'],
   modelo: ['MODELO', 'MODELO PROVEEDOR'],
+  talla: ['TALLA', 'TALLA ARTICULO'],
   precio: ['PRECIO DE VENTA ACT', 'PRECIO VENTA ACT', 'PRECIO'],
   pzs: ['PZS', 'PIEZAS', 'OH', 'OH PZS', 'INV PZS'],
   monto: ['MONTO', 'MONTO $', 'OH $', 'INV $', 'VALOR'],
@@ -93,7 +94,7 @@ function makeBuilder() {
     const sec = str(r[c.seccion]) || '—';
     if (c.secNum != null && !info.secNum[sec]) info.secNum[sec] = str(r[c.secNum]);
     if (!info.centro[centro]) info.centro[centro] = str(r[c.tienda]) || centro;
-    if (!info.sku[sku]) info.sku[sku] = { desc: str(r[c.desc]), modelo: c.modelo != null ? str(r[c.modelo]) : '', precio: c.precio != null ? num(r[c.precio]) : null, acc: {} };
+    if (!info.sku[sku]) info.sku[sku] = { desc: str(r[c.desc]), modelo: c.modelo != null ? str(r[c.modelo]) : '', talla: c.talla != null ? str(r[c.talla]) : '', precio: c.precio != null ? num(r[c.precio]) : null, acc: {} };
     // Acción sugerida (por modelo) y destinos de traslado: vienen del extracto BigQuery, solo en filas en nulo
     if (c.accion != null && str(r[c.accion])) info.sku[sku].acc[centro] = [str(r[c.accion]), c.destinos != null ? str(r[c.destinos]) : ''];
     A.sec.push(enc('sec', sec)); A.zona.push(enc('zona', str(r[c.zona]) || (isBodega(centro, info.centro[centro]) ? 'BODEGAS' : '—'))); A.centro.push(enc('centro', centro));
@@ -359,12 +360,12 @@ export default function ModuleNulo({ t, isDark, navIcon, navLabel, navDesc }) {
 
   const DET_COLS = [
     ['sec', 'Sección'], ['zona', 'Zona'], ['centro', 'Centro'], [null, 'Tienda / bodega'], [null, 'Tipo'], [null, 'Proveedor'], [null, 'GOA'], ['marca', 'Marca'],
-    ['sku', 'SKU'], [null, 'Artículo'], [null, 'Estatus'], [null, 'Norma'], [null, 'Letra'], [null, 'Últ. venta'], ['meses', 'Meses s/vta'], ['rec', 'Meses desde 1a rec.'], ['pzs', 'Pzs'], ['monto', 'Monto $'], [null, 'Estado'], [null, 'Acción'], [null, 'Destinos sugeridos'], [null, 'Diag. demanda'],
+    ['sku', 'SKU'], [null, 'Artículo'], [null, 'Talla'], [null, 'Estatus'], [null, 'Norma'], [null, 'Letra'], [null, 'Últ. venta'], ['meses', 'Meses s/vta'], ['rec', 'Meses desde 1a rec.'], ['pzs', 'Pzs'], ['monto', 'Monto $'], [null, 'Estado'], [null, 'Acción'], [null, 'Destinos sugeridos'], [null, 'Diag. demanda'],
   ];
   const diag = useMemo(() => { try { return JSON.parse(localStorage.getItem('gop_demanda_diag') || '{}'); } catch { return {}; } }, [X]); // de Diagnóstico de demanda (por modelo)
   const detRow = (i) => {
     const { C, D, info, tipo } = X, sk = D.sku[C.sku[i]], ce = D.centro[C.centro[i]], u = E.mU[i];
-    return [D.sec[C.sec[i]], D.zona[C.zona[i]], ce, info.centro[ce], tipo[C.centro[i]] ? 'Bodega' : 'Tienda', D.prov[C.prov[i]], D.goa[C.goa[i]], D.marca[C.marca[i]], sk, info.sku[sk]?.desc || '',
+    return [D.sec[C.sec[i]], D.zona[C.zona[i]], ce, info.centro[ce], tipo[C.centro[i]] ? 'Bodega' : 'Tienda', D.prov[C.prov[i]], D.goa[C.goa[i]], D.marca[C.marca[i]], sk, info.sku[sk]?.desc || '', info.sku[sk]?.talla || '',
       D.estatus[C.estatus[i]], D.norma[C.norma[i]], D.letra[C.letra[i]], u < 0 ? 'Sin venta en ventana' : miTxt(E.corte - u), u < 0 ? '>14' : u, E.mR[i] < 0 ? '' : E.mR[i], C.pzs[i], Math.round(C.monto[i] * 100) / 100, E.nulo[i] ? 'Nulo' : 'Con movimiento', ...(E.nulo[i] && info.sku[sk]?.acc?.[ce] ? info.sku[sk].acc[ce] : ['', '']), diag[(info.sku[sk]?.modelo || '').trim()] || ''];
   };
   const exportDetail = () => downloadCSV(`Nulo_Movimiento_detalle_${miTxt(E.corte).replace(' ', '')}.csv`, [DET_COLS.map((c) => c[1]).map(csvCell).join(','), ...detail.map((i) => detRow(i).map(csvCell).join(','))]);
@@ -604,7 +605,7 @@ export default function ModuleNulo({ t, isDark, navIcon, navLabel, navDesc }) {
                   const r = detRow(i);
                   return (
                     <tr key={i} className={`border-t ${t.border} ${t.tableRow}`}>
-                      {r.map((v, j) => <td key={j} className={`${td} ${j >= 14 && j <= 17 ? 'text-right tabular-nums' : ''} ${j === 17 ? `font-bold ${t.accent2}` : j === 18 ? (v === 'Nulo' ? 'font-bold text-pink-500' : t.success) : j === 8 ? t.accent1 : t.text} ${j === 9 ? 'max-w-[220px] truncate' : ''}`} title={j === 9 ? v : undefined}>{j === 17 ? fmt$(v) : j === 16 ? fmt(v) : v}</td>)}
+                      {r.map((v, j) => <td key={j} className={`${td} ${j >= 15 && j <= 18 ? 'text-right tabular-nums' : ''} ${j === 18 ? `font-bold ${t.accent2}` : j === 19 ? (v === 'Nulo' ? 'font-bold text-pink-500' : t.success) : j === 8 ? t.accent1 : t.text} ${j === 9 ? 'max-w-[220px] truncate' : ''}`} title={j === 9 ? v : undefined}>{j === 18 ? fmt$(v) : j === 17 ? fmt(v) : v}</td>)}
                     </tr>
                   );
                 })}
