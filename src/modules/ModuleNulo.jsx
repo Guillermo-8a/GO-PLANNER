@@ -186,7 +186,7 @@ const idbSet = async (k, v) => { const db = await idb(); return new Promise((res
 // ─── Cálculo ──────────────────────────────────────────────────────────────────
 const BUCKETS = ['0 – 3 meses', '4 – 6 meses', '7 – 9 meses', '10 – 12 meses', '13+ meses', 'Sin venta en la ventana'];
 const bucketOf = (m) => (m < 0 ? 5 : m <= 3 ? 0 : m <= 6 ? 1 : m <= 9 ? 2 : m <= 12 ? 3 : 4);
-const FILTERS = [['sec', 'Sección'], ['goa', 'GOA'], ['marca', 'Marca'], ['norma', 'Norma'], ['estatus', 'Estatus del artículo'], ['letra', 'Letra de rebaja'], ['bucket', 'Meses desde últ. venta'], ['zona', 'Zona'], ['tipo', 'Tipo de centro']];
+const FILTERS = [['sec', 'Sección'], ['goa', 'GOA'], ['marca', 'Marca'], ['norma', 'Norma'], ['estatus', 'Estatus del artículo'], ['letra', 'Letra de rebaja'], ['bucket', 'Meses desde últ. venta'], ['zona', 'Zona'], ['tipo', 'Tipo de centro'], ['modelo', 'Modelo'], ['centro', 'Tienda / bodega']];
 const FKEYS = FILTERS.map((f) => f[0]);
 const DEF_CFG = { umbral: 3, porSeccion: {}, corte: '' };
 
@@ -203,10 +203,17 @@ function effective(X, cfg) {
   return { nulo, bucket, mU, mR, corte: X.corte + off };
 }
 
-function compute(X, E, F, estado) {
+// Modelo por SKU (sin modelo → el SKU)
+function modelIndex(X) {
+  const idx = new Map(), list = [], desc = [];
+  const skuMod = Uint32Array.from(X.D.sku.map((s) => { const k = X.info.sku[s] || {}, mo = k.modelo || s; let i = idx.get(mo); if (i === undefined) { i = list.length; idx.set(mo, i); list.push(mo); desc.push((k.desc || '').split(',')[0]); } return i; }));
+  return { skuMod, list, labels: list.map((m, i) => `${m} · ${desc[i]}`) };
+}
+
+function compute(X, E, F, estado, M) {
   const { n, C, D, tipo } = X, { nulo, bucket } = E;
-  const val = (k, i) => (k === 'bucket' ? bucket[i] : k === 'tipo' ? tipo[C.centro[i]] : C[k][i]);
-  const size = (k) => (k === 'bucket' ? BUCKETS.length : k === 'tipo' ? 2 : D[k].length);
+  const val = (k, i) => (k === 'bucket' ? bucket[i] : k === 'tipo' ? tipo[C.centro[i]] : k === 'modelo' ? M.skuMod[C.sku[i]] : C[k][i]);
+  const size = (k) => (k === 'bucket' ? BUCKETS.length : k === 'tipo' ? 2 : k === 'modelo' ? M.list.length : D[k].length);
   const active = FKEYS.filter((k) => F[k]?.size);
   const opt = Object.fromEntries(FKEYS.map((k) => [k, new Float64Array(size(k))]));
   const z = (k) => new Float64Array(D[k].length);
@@ -231,20 +238,19 @@ function compute(X, E, F, estado) {
     s.m += m; s.p += C.pzs[i]; s.c.add(C.centro[i]); s.g.add(C.goa[i]); s.k.add(C.sku[i]);
   }
   const top = (arr, names, k, otras = true) => {
-    const a = [...arr].map((v, i) => ({ name: names[i], value: v })).filter((x) => x.value > 0).sort((x, y) => y.value - x.value);
+    const a = [...arr].map((v, i) => ({ name: names[i], value: v, idx: i })).filter((x) => x.value > 0).sort((x, y) => y.value - x.value);
     if (!otras || a.length <= k) return a.slice(0, k);
     return [...a.slice(0, k), { name: 'Otras', value: a.slice(k).reduce((s, x) => s + x.value, 0) }];
   };
-  const share = (T, N, names, k) => [...T].map((t, i) => ({ name: names[i], t, nu: N[i] })).filter((x) => x.nu > 0)
-    .sort((a, b) => b.nu - a.nu).slice(0, k).map((x) => ({ name: x.name, nulo: x.nu / x.t, mov: 1 - x.nu / x.t, nu: x.nu, t: x.t }));
+  const share = (T, N, names, k) => [...T].map((t, i) => ({ name: names[i], t, nu: N[i], idx: i })).filter((x) => x.nu > 0)
+    .sort((a, b) => b.nu - a.nu).slice(0, k).map((x) => ({ idx: x.idx, name: x.name, nulo: x.nu / x.t, mov: 1 - x.nu / x.t, nu: x.nu, t: x.t }));
   const provTop = top(byProv, D.prov, 1, false)[0];
   return {
     opt, rows, m$, mP, all$, allN$, mesesProm: wD ? wM / wD : null, prov: provTop?.name || '—', combos: rows.length,
     letra: [...byLetra].map((v, i) => ({ name: D.letra[i], idx: i, value: v, pzs: byLetraP[i] })).filter((x) => x.value > 0).sort((a, b) => b.value - a.value),
-    est: top(byEst, D.estatus, 6), marca: top(byMarca, D.marca, 7), goa: top(byGoa, D.goa, 6), sku: (() => { // por modelo (suma de sus SKUs en la selección); sin modelo → SKU
-      const g = new Map();
-      bySku.forEach((v, i) => { if (!v) return; const s = D.sku[i], k = X.info.sku[s] || {}, mo = k.modelo || s; const e = g.get(mo) || { value: 0, desc: (k.desc || '').split(',')[0] }; e.value += v; g.set(mo, e); });
-      return [...g].map(([mo, e]) => ({ name: `${mo} · ${e.desc}`, value: e.value })).sort((x, y) => y.value - x.value).slice(0, 5);
+    est: top(byEst, D.estatus, 6), marca: top(byMarca, D.marca, 7), goa: top(byGoa, D.goa, 6), sku: (() => { // por modelo (suma de sus SKUs en la selección)
+      const g = new Float64Array(M.list.length); bySku.forEach((v, i) => { if (v) g[M.skuMod[i]] += v; });
+      return top(g, M.labels, 5, false);
     })(),
     zona: share(zT, zN, D.zona, 14),
     tienda: share(cT, cN, D.centro.map((ce) => X.info.centro[ce] || ce), 12),
@@ -316,7 +322,8 @@ export default function ModuleNulo({ t, isDark, navIcon, navLabel, navDesc }) {
   }, []);
 
   const E = useMemo(() => (X ? effective(X, cfg) : null), [X, cfg]);
-  const R = useMemo(() => (X && E ? compute(X, E, F, estado) : null), [X, E, F, estado]);
+  const M = useMemo(() => (X ? modelIndex(X) : null), [X]);
+  const R = useMemo(() => (X && E ? compute(X, E, F, estado, M) : null), [X, E, F, estado, M]);
 
   const onFile = async (e) => {
     const f = e.target.files?.[0]; e.target.value = '';
@@ -344,9 +351,12 @@ export default function ModuleNulo({ t, isDark, navIcon, navLabel, navDesc }) {
   const ttStyle = { contentStyle: { background: isDark ? '#1c1720' : '#fff', border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : '#e5e7eb'}`, borderRadius: 10, fontSize: 11 }, itemStyle: { color: isDark ? '#EDEBF2' : '#111' } };
   const axisTick = { fontSize: 10, fill: isDark ? '#948FA0' : '#6b7280' };
 
-  const optLabels = (k) => (k === 'bucket' ? BUCKETS : k === 'tipo' ? ['Tienda', 'Bodega'] : k === 'sec' ? X.D.sec.map((s) => `${X.info.secNum[s] ? X.info.secNum[s] + ' · ' : ''}${s}`) : X.D[k]);
+  const optLabels = (k) => (k === 'bucket' ? BUCKETS : k === 'tipo' ? ['Tienda', 'Bodega'] : k === 'modelo' ? M.labels : k === 'centro' ? X.D.centro.map((ce) => `${ce} · ${X.info.centro[ce] || ''}`) : k === 'sec' ? X.D.sec.map((s) => `${X.info.secNum[s] ? X.info.secNum[s] + ' · ' : ''}${s}`) : X.D[k]);
   const nF = FKEYS.filter((k) => F[k]?.size).length;
   const setDim = (k, s) => setF((p) => ({ ...p, [k]: s }));
+  // Clic en gráfica: filtra ese valor; otro clic en el mismo lo quita
+  const pick = (k, v) => { if (v == null || v < 0) return; setF((p) => ({ ...p, [k]: p[k]?.size === 1 && p[k].has(v) ? new Set() : new Set([v]) })); };
+  const dim = (k, v) => (F[k]?.size && !F[k].has(v) ? 0.3 : 1);
 
   // ── Detalle ──
   const detail = useMemo(() => {
@@ -400,7 +410,7 @@ export default function ModuleNulo({ t, isDark, navIcon, navLabel, navDesc }) {
 
   const chips = X ? FKEYS.filter((k) => F[k]?.size).map((k) => { const lb = optLabels(k); return { k, txt: `${FILTERS.find((f) => f[0] === k)[1]}: ${[...F[k]].slice(0, 3).map((v) => lb[v]).join(', ')}${F[k].size > 3 ? ` +${F[k].size - 3}` : ''}` }; }) : [];
 
-  const Donut = ({ title, data, legend }) => (
+  const Donut = ({ title, data, legend, k }) => (
     <div className={`${card} flex flex-col`}>
       <p className={`text-xs font-bold text-center ${t.text}`}>{title}</p>
       <div className="flex-1 flex items-center gap-2 min-h-[170px]">
@@ -409,7 +419,7 @@ export default function ModuleNulo({ t, isDark, navIcon, navLabel, navDesc }) {
             <PieChart>
               <Pie isAnimationActive={false} data={data} dataKey="value" nameKey="name" innerRadius={legend === 'pie' ? 0 : 38} outerRadius={70} paddingAngle={legend === 'pie' ? 0 : 2} stroke="none"
                 label={({ percent, cx, cy, midAngle, innerRadius, outerRadius }) => { if (percent < 0.08) return null; const r = (innerRadius + outerRadius) / 2, a = (-midAngle * Math.PI) / 180; return <text x={cx + r * Math.cos(a)} y={cy + r * Math.sin(a)} fill="#fff" fontSize={10} fontWeight={700} textAnchor="middle" dominantBaseline="central">{(percent * 100).toFixed(1)}%</text>; }} labelLine={false}>
-                {data.map((d, i) => <Cell key={i} fill={d.name === 'Otras' ? (isDark ? '#4b4458' : '#d1d5db') : PAL[i % PAL.length]} />)}
+                {data.map((d, i) => <Cell key={i} fill={d.name === 'Otras' ? (isDark ? '#4b4458' : '#d1d5db') : PAL[i % PAL.length]} fillOpacity={dim(k, d.idx)} cursor={d.idx != null ? 'pointer' : undefined} onClick={() => pick(k, d.idx)} />)}
               </Pie>
               <Tooltip {...ttStyle} formatter={(v) => fmt$(v)} />
             </PieChart>
@@ -417,7 +427,7 @@ export default function ModuleNulo({ t, isDark, navIcon, navLabel, navDesc }) {
         </div>
         <div className="w-1/2 space-y-1 overflow-hidden">
           {data.map((d, i) => (
-            <div key={i} className="flex items-center gap-1.5 text-[10px]" title={d.name}>
+            <div key={i} onClick={() => pick(k, d.idx)} style={{ opacity: dim(k, d.idx) }} className={`flex items-center gap-1.5 text-[10px] ${d.idx != null ? 'cursor-pointer hover:underline' : ''}`} title={d.name}>
               <span className="w-2 h-2 rounded-full shrink-0" style={{ background: d.name === 'Otras' ? (isDark ? '#4b4458' : '#d1d5db') : PAL[i % PAL.length] }} />
               <span className={`truncate ${t.textMuted}`}>{d.name}</span>
             </div>
@@ -426,7 +436,7 @@ export default function ModuleNulo({ t, isDark, navIcon, navLabel, navDesc }) {
       </div>
     </div>
   );
-  const ShareBars = ({ title, data, onPick }) => (
+  const ShareBars = ({ title, data, k }) => (
     <div className={card}>
       <p className={`text-xs font-bold text-center ${t.text}`}>{title}</p>
       <div className="flex justify-center gap-3 text-[10px] my-1">
@@ -439,8 +449,8 @@ export default function ModuleNulo({ t, isDark, navIcon, navLabel, navDesc }) {
             <XAxis type="number" domain={[0, 1]} tickFormatter={(v) => `${Math.round(v * 100)}%`} tick={axisTick} axisLine={false} tickLine={false} />
             <YAxis type="category" dataKey="name" width={118} tick={axisTick} axisLine={false} tickLine={false} interval={0} />
             <Tooltip {...ttStyle} cursor={{ fill: isDark ? 'rgba(255,255,255,0.04)' : '#f3f4f6' }} formatter={(v, k, p) => (k === 'nulo' ? [`${pct(v)} · ${fmt$(p.payload.nu)}`, 'Nulo'] : [`${pct(v)} · ${fmt$(p.payload.t - p.payload.nu)}`, 'Con movimiento'])} />
-            <Bar isAnimationActive={false} dataKey="nulo" stackId="a" fill={NULO_C} onClick={onPick} cursor={onPick ? 'pointer' : undefined} />
-            <Bar isAnimationActive={false} dataKey="mov" stackId="a" fill={isDark ? 'rgba(255,255,255,0.12)' : '#e5e7eb'} radius={[0, 4, 4, 0]} />
+            <Bar isAnimationActive={false} dataKey="nulo" stackId="a" fill={NULO_C} onClick={(d) => pick(k, d.idx)} cursor="pointer">{data.map((d, i) => <Cell key={i} fillOpacity={dim(k, d.idx)} />)}</Bar>
+            <Bar isAnimationActive={false} dataKey="mov" stackId="a" fill={isDark ? 'rgba(255,255,255,0.12)' : '#e5e7eb'} radius={[0, 4, 4, 0]} onClick={(d) => pick(k, d.idx)} cursor="pointer" />
           </BarChart>
         </ResponsiveContainer>
       </div>
@@ -515,17 +525,17 @@ export default function ModuleNulo({ t, isDark, navIcon, navLabel, navDesc }) {
                 </div>
               ))}
             </div>
-            <div className="lg:col-span-3"><Donut title="% Estatus (pesos)" data={R.est} legend="pie" /></div>
-            <div className="lg:col-span-3"><Donut title="% Marca (pesos)" data={R.marca} legend="pie" /></div>
+            <div className="lg:col-span-3"><Donut title="% Estatus (pesos)" data={R.est} legend="pie" k="estatus" /></div>
+            <div className="lg:col-span-3"><Donut title="% Marca (pesos)" data={R.marca} legend="pie" k="marca" /></div>
           </div>
 
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-3 items-start">
-            <ShareBars title="Monto por zona de ventas" data={R.zona} onPick={(d) => { const v = X.D.zona.indexOf(d.name); if (v >= 0) setDim('zona', new Set([v])); }} />
+            <ShareBars title="Monto por zona de ventas" data={R.zona} k="zona" />
             <div className="space-y-3">
-              <Donut title="Modelos con mayor monto" data={R.sku} />
-              <Donut title="% por grupo de artículos" data={R.goa} />
+              <Donut title="Modelos con mayor monto" data={R.sku} k="modelo" />
+              <Donut title="% por grupo de artículos" data={R.goa} k="goa" />
             </div>
-            <ShareBars title="Monto por tienda / bodega (top 12)" data={R.tienda} />
+            <ShareBars title="Monto por tienda / bodega (top 12)" data={R.tienda} k="centro" />
           </div>
 
           {R.letra.length > 0 && (
@@ -546,9 +556,9 @@ export default function ModuleNulo({ t, isDark, navIcon, navLabel, navDesc }) {
                     <XAxis type="number" tickFormatter={(v) => fmt$(v)} tick={axisTick} axisLine={false} tickLine={false} />
                     <YAxis type="category" dataKey="name" width={90} tick={axisTick} axisLine={false} tickLine={false} interval={0} />
                     <Tooltip {...ttStyle} cursor={{ fill: isDark ? 'rgba(255,255,255,0.04)' : '#f3f4f6' }} formatter={(v, k, p) => [`${fmt$(v)} · ${pct(p.payload.pct)} · ${Math.round(p.payload.pzs).toLocaleString('es-MX')} pzs`, 'Letra']} />
-                    <Bar isAnimationActive={false} dataKey="value" radius={[0, 4, 4, 0]} cursor="pointer" onClick={(d) => setDim('letra', new Set([d.idx]))}
+                    <Bar isAnimationActive={false} dataKey="value" radius={[0, 4, 4, 0]} cursor="pointer" onClick={(d) => pick('letra', d.idx)}
                       label={{ position: 'right', fontSize: 10, fill: isDark ? '#cbd5e1' : '#475569', formatter: (v) => (R.m$ ? pct(v / R.m$) : '') }}>
-                      {R.letra.map((d, i) => <Cell key={i} fill={{ RG: '#22C55E', RB: '#F59E0B', LQ: NULO_C }[grpLetra(d.name)]} />)}
+                      {R.letra.map((d, i) => <Cell key={i} fill={{ RG: '#22C55E', RB: '#F59E0B', LQ: NULO_C }[grpLetra(d.name)]} fillOpacity={dim('letra', d.idx)} />)}
                     </Bar>
                   </BarChart>
                 </ResponsiveContainer>
@@ -566,7 +576,7 @@ export default function ModuleNulo({ t, isDark, navIcon, navLabel, navDesc }) {
                 <thead className="sticky top-0"><tr>{['# Sección', 'Sección', 'No de tiendas con NM', 'No de GOAs con NM', 'SKU', 'Monto', 'Pzs', '% inv. sección'].map((h, i) => <th key={h} className={`${th} ${i > 1 ? '!text-right' : ''}`}>{h}</th>)}</tr></thead>
                 <tbody>
                   {R.secs.map((s) => (
-                    <tr key={s.si} onClick={() => setDim('sec', new Set([s.si]))} className={`border-t cursor-pointer ${t.border} ${t.tableRow}`}>
+                    <tr key={s.si} onClick={() => pick('sec', s.si)} className={`border-t cursor-pointer ${t.border} ${t.tableRow}`}>
                       <td className={`${td} ${t.textMuted}`}>{s.num}</td>
                       <td className={`${td} font-bold ${t.text}`}>{s.name}</td>
                       {[fmt(s.c), fmt(s.g), fmt(s.k), fmt$(s.m), fmt(s.p), pct(s.part)].map((v, i) => <td key={i} className={`${td} text-right tabular-nums ${i === 3 ? `font-bold ${t.accent2}` : t.text}`}>{v}</td>)}
