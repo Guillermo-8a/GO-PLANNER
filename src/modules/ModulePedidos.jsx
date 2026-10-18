@@ -179,6 +179,8 @@ function parseEventos(text) {
         add(etapa, 'DT CEDIS', 0, es === 'EMBARCADA' ? cOc : `${CENTROS[cOc] || cOc} · ${es === 'INV ASIGNADO' ? 'con traslado' : 'sin traslado'}`);
         return;
       }
+      // Salida parcial (PZS_SALIDA < PZS_ASIG): lo surtido sigue su ruta y el saldo se queda en cross dock como línea aparte
+      const sal = numv(v(r, 'PZS SALIDA')), asg = numv(v(r, 'PZS ASIG')), parcial = origen !== 'DIR' && !!v(r, 'DT SALIDA') && sal > 0 && asg > sal, i0 = ev.length;
       add('PROVEEDOR', 'FCH OC', 0, base.prov);
       if (origen === 'DIR') add('RECIBIDO', 'DT CEDIS', numv(v(r, 'PZS REC CEDIS')), `T${tienda}`);
       else {
@@ -186,6 +188,12 @@ function parseEventos(text) {
         // Asignado en PLAN después (o antes) de recibir → se trabaja en cross dock desde la fecha más tardía
         const fC = toDate(v(r, 'DT CEDIS')), fP = toDate(v(r, 'DT PLAN'));
         if (fC && fP) ev.push({ ...base, etapa: 'CROSSDOCK', fecha: new Date(Math.max(fC, fP) + 1000), pzsEv: 0, ubic: `${cOc} · asignado` });
+      }
+      if (parcial) {
+        const i1 = ev.length, k = sal / asg;
+        for (let i = i0; i < i1; i++) ev.push({ ...ev[i], sku: `${ev[i].sku} · saldo`, pzsPed: asg - sal, valor: ev[i].valor * (1 - k), saldo: true });
+        for (let i = i0; i < i1; i++) Object.assign(ev[i], { pzsPed: sal, valor: ev[i].valor * k });
+        Object.assign(base, { pzsPed: sal, valor: base.valor * k });
       }
       add('TRANSITO_TDA', 'DT SALIDA', numv(v(r, 'PZS SALIDA')), `${cOc} → T${tienda}`);
       // Destino: CR (fulfillment) → Fulfillment; CEDIS o TIPO_DESTINO BODEGA → bodega; lo demás es tienda
@@ -991,7 +999,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
                         <div className={`ml-4 pl-2 border-l ${isDark ? 'border-white/10' : 'border-gray-200'}`}>
                           {o.us.sort((a, b) => b.enEtapa - a.enEtapa).map((u) => (
                             <button key={u.key} onClick={() => { setSelOC(''); setSelUnit(u.key); }} className={`w-full flex justify-between text-[10.5px] px-2 py-1 rounded ${selUnit === u.key ? (isDark ? 'bg-violet-500/15' : 'bg-blue-50') : (isDark ? 'hover:bg-white/5' : 'hover:bg-gray-50')}`}>
-                              <span className={t.text}>{u.centro ? `T${u.centro}` : '—'} · {fmt(u.pzs)} pzs{u.traslado ? ` · Tr ${u.traslado}` : ''}{u.fechaEntPlan ? ` · entrega ${fdate(new Date(u.fechaEntPlan))}` : ''}{u.trVencido ? <b className="text-rose-500"> · vencido</b> : ''}</span>
+                              <span className={t.text}>{u.centro ? `T${u.centro}` : '—'} · {fmt(u.pzs)} pzs{u.traslado ? ` · Tr ${u.traslado}` : ''}{u.fechaEntPlan ? ` · entrega ${fdate(new Date(u.fechaEntPlan))}` : ''}{u.eventos[0]?.saldo ? <b className="text-amber-500"> · saldo sin surtir</b> : ''}{u.trVencido ? <b className="text-rose-500"> · vencido</b> : ''}</span>
                               <span className={u.atorado ? 'text-rose-500 font-bold' : t.textMuted}>{u.etapa === 'RECIBIDO' ? `recibido ${fdate(u.fin)}` : `${(u.enEtapa || 0).toFixed(0)} d`}</span>
                             </button>
                           ))}
