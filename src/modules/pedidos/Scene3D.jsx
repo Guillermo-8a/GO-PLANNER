@@ -696,7 +696,8 @@ export default function Scene3D({ isDark, zonas, ciudades, stats, fTipo, selKey,
     ];
     nodes.forEach(([key, sk, n, title, unit, color, lz]) => {
       const c = typeof sk === 'string' ? cnt(sk) : sk;
-      label(key, n.x + n.w / 2, n.y + n.d / 2, n.h + lz, title, c.n ? `${c.ocs} OCs · ${fk(c.pzs)} ${unit}${c.ator ? ` · ${fk(c.pzsAtor || 0)} pzs atoradas` : ''}` : 'Sin pedidos', color, c.n, c.ator, c.pzs);
+      const inc = key === 'XD' ? cnt('INC') : null; // faltante de OCs incompletas: tienen traslado pero el proveedor nunca entregó
+      label(key, n.x + n.w / 2, n.y + n.d / 2, n.h + lz, title, c.n || inc?.n ? `${c.n ? `${c.ocs} OCs · ${fk(c.pzs)} ${unit}${c.ator ? ` · ${fk(c.pzsAtor || 0)} pzs atoradas` : ''}` : 'Sin pedidos'}${inc?.n ? ` · ${fk(inc.pzs)} pzs no entregadas (OCs incompletas, no atoradas)` : ''}` : 'Sin pedidos', color, c.n, c.ator, c.pzs);
       pin(c.ator ? fk(c.pzsAtor || 0) : 0, n.x + n.w, n.y + n.d / 2, n.h + 0.6, key);
       halo(n.x, n.y, n.w, n.d, c);
       if (selKey === key) ring(n.x, n.y, n.w, n.d);

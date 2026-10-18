@@ -157,11 +157,15 @@ function parseEventos(text) {
       const origen = /IMP/.test(v(r, 'TIPO')) ? 'IMP' : /^\d{4}$/.test(cOc) && !CENTROS[cOc] ? 'DIR' : 'NAC'; // un CEDIS (0670, 0681) no es tienda
       const asig = numv(v(r, 'PZS ASIG'));
       const comp = v(r, 'COMPROMISO');
+      const okF = (x) => (x && !x.startsWith('1900') ? x : ''), fv0 = okF(v(r, 'FIN VIGENCIA')), fe0 = okF(v(r, 'FCH ENTREGA CDI'));
       const base = {
         oc, pos: '', sku: v(r, 'GOA'), modelo: '', prov: v(r, 'PROVEEDOR') || 'Sin proveedor', marca: v(r, 'MARCA') || '—', seccion: v(r, 'SECCION'), division: v(r, 'DIV') || v(r, 'DIVISION'), goa: v(r, 'GOA'), origen,
         pzsPed: asig || numv(v(r, 'PZS PEDIDAS')), pzsEv: 0, valor: numv(v(r, 'COSTO ASIG')) || numv(v(r, 'COSTO PEDIDO')), ubic: '', centro: ctr(tienda), zona: norm(v(r, 'ZONA')), cont: '', mon: origen === 'IMP' ? 'USD' : '', // el costo de importación viene en dólares
-        fechaOc: toDate(v(r, 'FCH OC')), fechaComp: comp && !comp.startsWith('1900') ? toDate(comp) : null,
-        traslado: v(r, 'NUM TRASLADO'), fechaEntPlan: comp && !comp.startsWith('1900') ? toDate(comp) : null, // el traslado vence con la fecha fin de la OC (no la del traslado, que SAP pone a +1 día)
+        fechaOc: toDate(v(r, 'FCH OC')), fechaComp: fv0 ? toDate(fv0) : comp && !comp.startsWith('1900') ? toDate(comp) : null,
+        // Cierre de la OC (SAP): entrega a CEDIS, piezas y montos pedidos vs entregados. Entregada con faltante = pedido incompleto
+        fEntCDI: fe0 ? toDate(fe0) : null, pedOC: numv(v(r, 'PZS PEDIDAS OC')), recOC: numv(v(r, 'PZS RECIBIDAS OC')), mPedOC: numv(v(r, 'MONTO PEDIDO PV')), mEntOC: numv(v(r, 'MONTO ENTREGADO')),
+        recAsig: n.includes('PZS REC ASIG') ? numv(v(r, 'PZS REC ASIG')) : null,
+        traslado: v(r, 'NUM TRASLADO'), fechaEntPlan: fv0 ? toDate(fv0) : comp && !comp.startsWith('1900') ? toDate(comp) : null, // el traslado vence con la fecha fin de la OC (no la del traslado, que SAP pone a +1 día)
       };
       const add = (etapa, h, pzsEv, ubic) => { const f = toDate(v(r, h)); if (f) ev.push({ ...base, etapa, fecha: f, pzsEv, ubic }); };
       // Inventario en CEDIS / CR (sin traslado, asignado) y mercancía embarcada: una sola foto fechada en la última entrada
@@ -421,6 +425,14 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
     const todos = Object.values(tr).flat();
     const tip = (z) => Math.max(1, Math.ceil(tr[z]?.length >= 5 ? p90(tr[z]) : todos.length ? p90(todos) : (cfg.umbral.TRANSITO_TDA ?? 4)));
     us.entrega = {}; Object.keys(tr).forEach((z) => { const t0 = tip(z); const x = [...tr[z]].sort((m, n) => m - n); us.entrega[z] = { tip: t0, med: x[Math.floor((x.length - 1) / 2)] }; });
+    // Pedido incompleto: la OC ya se entregó a CEDIS (FCH_ENTREGA_CDI) con menos piezas de las pedidas → se da por cerrada.
+    // Lo que no salió de CEDIS (o vino en 0 si hay PZS_REC_ASIG) es faltante del proveedor: no es atorado ni traslado vencido.
+    us.forEach((u) => {
+      const e0 = u.eventos[0]; if (u.inv || !e0?.fEntCDI || !(e0.pedOC > e0.recOC)) return;
+      u.ocInc = { fEnt: new Date(e0.fEntCDI), ped: e0.pedOC, rec: e0.recOC, mPed: e0.mPedOC, mEnt: e0.mEntOC };
+      const sinSalir = ['PROVEEDOR', 'ALMACEN', 'CROSSDOCK'].includes(u.etapa);
+      if (e0.recAsig != null ? e0.recAsig < u.pzs && sinSalir : sinSalir) Object.assign(u, { incompleto: true, atorado: false, trVencido: false, vencido: false });
+    });
     us.forEach((u) => {
       if (u.etapa !== 'TRANSITO_TDA') return; const t0 = tip(u.zona); if (u.enEtapa <= t0) return;
       u.etapa = 'TIENDA'; u.estimado = true; u.enEtapa -= t0; u.desde = new Date(u.desde.getTime() + t0 * DAY); u.at = { ...u.at, TIENDA: u.desde }; u.atorado = u.enEtapa > (cfg.umbral.TIENDA ?? 2);
@@ -433,7 +445,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
   const units = useMemo(() => {
     const qq = norm(q);
     return allUnits.filter((u) => inS(fProv, u.prov) && inS(fMarca, u.marca) && inS(fTipo, u.tipo) && inS(fZona, u.zona) && inS(fSec, u.seccion) && inS(fDiv, u.division) && inS(fMes, mesDe(u))
-      && (!fSolo || (fSolo === 'atorado' ? u.atorado : fSolo === 'vencido' ? u.vencido : fSolo === 'trvenc' ? u.trVencido : fSolo === 'activo' ? u.etapa !== 'RECIBIDO' : true))
+      && (fSolo === 'incompleto' ? u.incompleto : !u.incompleto) && (!fSolo || (fSolo === 'incompleto' ? true : fSolo === 'atorado' ? u.atorado : fSolo === 'vencido' ? u.vencido : fSolo === 'trvenc' ? u.trVencido : fSolo === 'activo' ? u.etapa !== 'RECIBIDO' : true))
       && (!qq || norm(`${u.oc} ${u.sku} ${u.modelo} ${u.centro} ${u.cont} ${u.traslado || ''}`).includes(qq)));
   }, [allUnits, fProv, fMarca, fTipo, fZona, fSec, fDiv, fMes, fSolo, q]);
 
@@ -511,8 +523,10 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
       if (u.etapa === 'BODEGA_REG') add(`BODEGA_REG|${ciudadDe(u)}`, u);
       if (u.etapa === 'PROVEEDOR') add(`PROVEEDOR|${u.tipo}`, u);
     });
+    // faltante de OCs incompletas (para el letrero del cross dock en 3D)
+    if (fSolo !== 'incompleto') allUnits.filter((u) => u.incompleto && inS(fProv, u.prov) && inS(fMarca, u.marca) && inS(fTipo, u.tipo) && inS(fSec, u.seccion) && inS(fDiv, u.division)).forEach((u) => add('INC', u));
     return m;
-  }, [units, zonas, ciudades]);
+  }, [units, zonas, ciudades, allUnits, fSolo, fProv, fMarca, fTipo, fSec, fDiv]);
   const cnt = (k) => agg[k] || { n: 0, pzs: 0, ator: 0, maxDias: 0, ocs: 0 };
 
   const tramoProm = useMemo(() => {
@@ -549,9 +563,10 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
       pzsTransito: units.filter((u) => u.etapa === 'TRANSITO_TDA').reduce((a, u) => a + u.pzs, 0), valTransito: units.filter((u) => u.etapa === 'TRANSITO_TDA').reduce((a, u) => a + (u.valor || 0), 0),
       // fecha esperada entre hoy y hoy+7 (por día calendario) y aún sin llegar a CEDIS / destino
       vencen7: (() => { const h0 = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()), h7 = new Date(h0.getTime() + 8 * DAY); return new Set(units.filter((u) => u.fechaComp && u.fechaComp >= h0 && u.fechaComp < h7 && !(u.at.ALMACEN || u.at.CROSSDOCK || u.fin)).map((u) => u.oc)).size; })(),
+      inc: (() => { const xs = allUnits.filter((u) => u.incompleto && inS(fProv, u.prov) && inS(fMarca, u.marca) && inS(fTipo, u.tipo) && inS(fSec, u.seccion) && inS(fDiv, u.division)); const ocs = new Map(); xs.forEach((u) => ocs.set(u.oc, u.ocInc)); return { n: xs.length, pzs: xs.reduce((a, u) => a + u.pzs, 0), ocs: ocs.size, falt$: [...ocs.values()].reduce((a, o) => a + Math.max(0, (o.mPed || 0) - (o.mEnt || 0)), 0) }; })(),
       compFuturo: units.some((u) => u.fechaComp && u.fechaComp >= new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate())),
     };
-  }, [units]);
+  }, [units, allUnits, fProv, fMarca, fTipo, fSec, fDiv]);
   const leadTipo = useMemo(() => Object.keys(TIPOS).map((tp) => {
     const us = allUnits.filter((u) => u.tipo === tp);
     const tr = {}; us.forEach((u) => Object.entries(u.tramos).forEach(([k, v]) => { (tr[k] = tr[k] || []).push(v); }));
@@ -757,7 +772,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
             {Object.entries(TIPOS).map(([k, v]) => <button key={k} onClick={() => setFTipo((p) => { const n = new Set(p); n.has(k) ? n.delete(k) : n.add(k); return n; })} className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border flex items-center gap-1.5 ${pill(fTipo.has(k))}`}><span className="w-2 h-2 rounded-full" style={{ background: v.c }} />{v.l}</button>)}
           </FilterSection>
           <FilterSection label="Estado" isDark={isDark}>
-            {[['', 'Todos'], ['activo', 'En camino'], ['atorado', 'Atorados'], ['vencido', 'Vencidos']].map(([k, l]) => <button key={k} onClick={() => setFSolo(k)} className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border ${pill(fSolo === k)}`}>{l}</button>)}
+            {[['', 'Todos'], ['activo', 'En camino'], ['atorado', 'Atorados'], ['vencido', 'Vencidos'], ['incompleto', 'Incompletos']].map(([k, l]) => <button key={k} onClick={() => setFSolo(k)} className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border ${pill(fSolo === k)}`}>{l}</button>)}
             {nFil > 0 && <button onClick={() => { setQ(''); setFSec(new Set()); setFDiv(new Set()); setFProv(new Set()); setFMarca(new Set()); setFZona(new Set()); setFMes(new Set()); setFTipo(new Set()); setFSolo(''); }} className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border ${t.cardInner}`}>✕ Limpiar</button>}
             <button onClick={() => setShowCfg((v) => !v)} className={`ml-auto px-2.5 py-1.5 rounded-lg text-[11px] font-bold border flex items-center gap-1 ${showCfg ? pill(true) : t.cardInner}`}><Settings size={12} /> Días para atorado</button>
           </FilterSection>
@@ -839,6 +854,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
               return [
                 { l: 'Atorados', v: fmt(kpi.ator), s: `${fmt(kpi.pzsAtor)} pzs${kpi.valAtor ? ` · $${fk(kpi.valAtor)}` : ''} · clic para ver`, I: AlertTriangle, bad: kpi.ator > 0, f: 'atorado', c: '#E5484D' },
                 { l: 'Traslados vencidos', v: fk(kpi.pzsTrv), s: `pzs en cross dock · ${fmt(kpi.trv)} tienda-OC · clic para ver`, I: WhIcon, bad: kpi.trv > 0, f: 'trvenc', c: '#E5484D' },
+                ...(kpi.inc.n ? [{ l: 'Incompletos', v: fk(kpi.inc.pzs), s: `pzs no entregadas · ${fmt(kpi.inc.ocs)} OCs${kpi.inc.falt$ ? ` · $${fk(kpi.inc.falt$)} PV` : ''} · clic para ver`, I: Package, f: 'incompleto', c: '#F59E0B' }] : []),
                 { l: 'Vencen en 7 días', v: fmt(kpi.vencen7), s: kpi.compFuturo ? 'OCs aún sin llegar a CEDIS' : 'la base no trae compromisos futuros', I: Clock, c: '#F59E0B', f: 'activo' },
                 { l: 'En tránsito a tiendas', v: fk(itBI ? itBI.pzs : kpi.pzsTransito), s: itBI ? `pzs · $${fk(itBI.val)} precio s/IVA` : `pzs${kpi.valTransito ? ` · $${fk(kpi.valTransito)}` : ''}`, I: Truck, c: '#3B82F6', onClick: () => abrir(BUCKET_SEL.TRN) },
                 { l: 'Lead time', v: ld != null ? `${ld.toFixed(0)} d` : '—', s: <>obj. {SEMAFORO.leadObjetivo} d{dl != null && <> · <span style={{ color: dl > 0 ? '#E5484D' : '#22C55E', fontWeight: 700 }}>{dl > 0 ? '▲' : '▼'} {Math.abs(dl).toFixed(1)}</span> vs sem. ant.</>}</>, I: Clock, c: ldC },
@@ -933,7 +949,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
                           <span className={`text-xs font-black flex items-center gap-1.5 ${t.text}`}><span className="w-2 h-2 rounded-full" style={{ background: TIPOS[o.tipo].c }} />OC {o.oc}</span>
                           <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${o.ator ? 'bg-rose-500/15 text-rose-500' : (isDark ? 'bg-white/10 text-gray-300' : 'bg-gray-100 text-gray-600')}`}>{o.max.toFixed(0)} d en nodo</span>
                         </div>
-                        <div className={`text-[10px] ${t.textMuted}`}>{o.prov} · {o.goa} · {o.us.length} {o.us.length === 1 ? 'tienda' : 'tiendas'} · {fmt(o.pzs)} pzs{o.us[0]?.etapa === 'FULFILLMENT' && o.us[0].ubic ? ` · ${o.us[0].ubic}` : ''}{o.ator ? ` · ${o.ator} atoradas` : ''}{o.us.length === 1 && o.us[0].traslado ? ` · Tr ${o.us[0].traslado}${o.us[0].fechaEntPlan ? ` · entrega ${fdate(new Date(o.us[0].fechaEntPlan))}` : ''}` : ''}{o.us.some((u) => u.trVencido) ? <b className="text-rose-500"> · {o.us.filter((u) => u.trVencido).length} traslado(s) vencido(s)</b> : ''}</div>
+                        <div className={`text-[10px] ${t.textMuted}`}>{o.prov} · {o.goa} · {o.us.length} {o.us.length === 1 ? 'tienda' : 'tiendas'} · {fmt(o.pzs)} pzs{o.us[0]?.etapa === 'FULFILLMENT' && o.us[0].ubic ? ` · ${o.us[0].ubic}` : ''}{o.ator ? ` · ${o.ator} atoradas` : ''}{o.us.length === 1 && o.us[0].traslado ? ` · Tr ${o.us[0].traslado}${o.us[0].fechaEntPlan ? ` · entrega ${fdate(new Date(o.us[0].fechaEntPlan))}` : ''}` : ''}{o.us.some((u) => u.trVencido) ? <b className="text-rose-500"> · {o.us.filter((u) => u.trVencido).length} traslado(s) vencido(s)</b> : ''}{o.us.some((u) => u.incompleto) ? <b className="text-amber-500"> · OC incompleta: no entregado por el proveedor</b> : ''}</div>
                       </button>
                       {expOC === o.oc && o.us.length > 1 && (
                         <div className={`ml-4 pl-2 border-l ${isDark ? 'border-white/10' : 'border-gray-200'}`}>
@@ -992,6 +1008,8 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
             const pzs = ocUs.reduce((a, u) => a + u.pzs, 0), ator = ocUs.filter((u) => u.atorado).length;
             const comp = ocUs.find((u) => u.fechaComp)?.fechaComp, ini = ocUs.reduce((m, u) => (u.inicio && (!m || u.inicio < m) ? u.inicio : m), null);
             const llego = ocUs.filter((u) => u.at.ALMACEN || u.at.CROSSDOCK || u.fin).length;
+            const inc = ocUs.find((u) => u.ocInc)?.ocInc, falt = ocUs.filter((u) => u.incompleto);
+            if (falt.length) route.push('NOENT');
             return (
               <div data-hud className={`absolute left-3 bottom-3 rounded-2xl border shadow-xl p-4 ${glass} ${sel ? 'right-[404px]' : 'right-3'} max-lg:right-3`}>
                 <div className="flex items-start justify-between mb-3 gap-3">
@@ -999,14 +1017,28 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
                     <div className={`text-sm font-black flex items-center gap-2 flex-wrap ${t.text}`}><Truck size={15} /> OC {f.oc}
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full" style={{ background: `${col}22`, color: col }}>{TIPOS[f.tipo].l}</span>
                       <span className={`text-[10px] font-bold ${t.textMuted}`}>{f.prov} · {[...new Set(ocUs.map((u) => u.goa || u.modelo || u.sku))].slice(0, 3).join(', ')} · {fmt(pzs)} pzs · {N} {N === 1 ? 'tienda' : 'tiendas'}</span></div>
-                    <div className={`text-[11px] ${t.textMuted}`}>OC del {fdate(ini)}{comp ? ` · compromiso ${fdate(comp)}` : ' · sin compromiso'}{comp && hoy > comp && llego < N ? <b className="text-rose-500"> · vencida</b> : ''} · llegó a CEDIS {llego}/{N}{ator ? <b className="text-rose-500"> · {ator} atoradas</b> : ''}</div>
+                    <div className={`text-[11px] ${t.textMuted}`}>OC del {fdate(ini)}{comp ? ` · fin de vigencia ${fdate(comp)}` : ' · sin compromiso'}{inc ? <> · entregada a CEDIS {fdate(inc.fEnt)}{comp && inc.fEnt > comp ? <b className="text-rose-500"> ({Math.round(dias(comp, inc.fEnt))} d tarde)</b> : ''}</> : <>{comp && hoy > comp && llego < N ? <b className="text-rose-500"> · vencida</b> : ''} · llegó a CEDIS {llego}/{N}</>}{ator ? <b className="text-rose-500"> · {ator} atoradas</b> : ''}</div>
+                    {inc && <div className="text-[11px] mt-0.5"><b className="text-amber-500">Pedido incompleto · cerrado:</b> <span className={t.textMuted}>entregó {fmt(inc.rec)} de {fmt(inc.ped)} pzs ({inc.ped ? (inc.rec / inc.ped * 100).toFixed(1) : '—'}%){inc.mPed ? ` · $${fmt(inc.mEnt)} de $${fmt(inc.mPed)} PV · faltan $${fmt(inc.mPed - inc.mEnt)}` : ''}{falt.length ? ` · ${falt.length} ${falt.length === 1 ? 'tienda' : 'tiendas'} sin mercancía (no es atorado)` : ''}</span></div>}
                   </div>
                   <button onClick={() => setSelOC('')} className={t.textMuted}><X size={15} /></button>
                 </div>
                 <div className="flex items-start overflow-x-auto pb-1">
                   {route.map((k, i) => {
-                    const pas = ocUs.filter((u) => u.at[k]), aqui = ocUs.filter((u) => u.etapa === k), aqAt = aqui.some((u) => u.atorado);
-                    const todo = pas.length === N && !aqui.length, algo = pas.length > 0;
+                    if (k === 'NOENT') return (
+                      <div key={k} className="flex items-start flex-1 min-w-[96px]">
+                        <div className="flex flex-col items-center text-center w-full">
+                          <div className="flex items-center w-full">
+                            <div className="h-[3px] flex-1 rounded" style={{ background: 'repeating-linear-gradient(90deg,#F59E0B 0 4px,transparent 4px 8px)' }} />
+                            <div className="w-8 h-8 rounded-full flex items-center justify-center text-[10px] font-black text-white" style={{ background: '#F59E0B', boxShadow: '0 0 0 5px #F59E0B33' }}>{falt.length}</div>
+                            <div className="h-[3px] flex-1 rounded opacity-0" />
+                          </div>
+                          <div className="text-[10px] font-bold mt-1 text-amber-500">No entregado</div>
+                          <div className={`text-[9px] ${t.textMuted}`}>faltante del proveedor</div>
+                          <div className="text-[9px] font-bold text-amber-500">{fk(falt.reduce((a, u) => a + u.pzs, 0))} pzs</div>
+                        </div>
+                      </div>);
+                    const pas = ocUs.filter((u) => u.at[k]), aqui = ocUs.filter((u) => u.etapa === k && !u.incompleto), aqAt = aqui.some((u) => u.atorado);
+                    const todo = pas.length >= N - falt.length && !aqui.length, algo = pas.length > 0;
                     const prim = pas.reduce((m, u) => (!m || u.at[k] < m ? u.at[k] : m), null);
                     const bg = aqui.length ? (aqAt ? '#E5484D' : FINALES.includes(k) || k === 'RECIBIDO' ? '#22C55E' : col) : todo || algo ? col : (isDark ? '#ffffff18' : '#E2E8F0');
                     return (
