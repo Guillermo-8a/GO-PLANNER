@@ -7,6 +7,7 @@ import { createElement, useState, useEffect, useMemo, useRef } from 'react';
 import { Upload, Download, Trash2, Search, AlertTriangle, Truck, Package, Clock, CheckCircle2, ZoomIn, ZoomOut, RotateCcw, Play, Pause, Settings, X, Store, ChevronDown, ShieldAlert, Wand2, Warehouse as WhIcon, Camera, ShoppingBag, Factory, Activity } from 'lucide-react';
 import { lazy, Suspense } from 'react';
 import FilterMenu, { FilterSection } from '../components/FilterMenu';
+import MS from '../components/MultiSelect';
 import { siteOfKey } from './pedidos/layout';
 const Scene3D = lazy(() => import('./pedidos/Scene3D'));
 
@@ -337,34 +338,8 @@ function buildUnits(ev, umbral, hoy) {
 const bucketOf = (u) => STAGES[SIDX[u.etapa]].b;
 const inS = (st, v) => !st.size || st.has(v); // filtro multi-selección: vacío = todos
 
-function MultiSel({ label, options, sel, onChange, t, isDark, inCls, fmtOpt = (x) => x }) {
-  const [open, setOpen] = useState(false), [q, setQ] = useState(''), ref = useRef(null);
-  useEffect(() => { if (!open) return; const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }; document.addEventListener('mousedown', h); return () => document.removeEventListener('mousedown', h); }, [open]);
-  const qq = norm(q), shown = options.filter((o) => !qq || norm(fmtOpt(o)).includes(qq));
-  const toggle = (v) => { const nx = new Set(sel); nx.has(v) ? nx.delete(v) : nx.add(v); onChange(nx); };
-  return (
-    <div className="relative" ref={ref}>
-      <button type="button" onClick={() => setOpen((o) => !o)} className={`flex items-center justify-between gap-2 w-44 ${inCls} ${sel.size ? (isDark ? '!border-violet-400/60 text-violet-300' : '!border-violet-400 text-violet-700') : ''}`}>
-        <span className="truncate">{sel.size ? (sel.size === 1 ? fmtOpt([...sel][0]) : `${label}: ${sel.size}`) : `${label}: todas`}</span><ChevronDown size={12} />
-      </button>
-      {open && (
-        <div className={`absolute z-50 mt-1 w-72 rounded-xl border p-2 ${t.menuBg}`}>
-          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar…" className={`w-full mb-2 ${inCls}`} />
-          <div className="flex gap-3 mb-1 px-1">
-            <button type="button" onClick={() => onChange(new Set(shown))} className="text-[10px] font-bold text-violet-500">Seleccionar visibles</button>
-            <button type="button" onClick={() => onChange(new Set())} className={`text-[10px] ${t.textMuted}`}>Limpiar</button>
-          </div>
-          <div className="max-h-64 overflow-auto">
-            {shown.map((o) => (
-              <label key={o} className={`flex items-center gap-2 px-1.5 py-1 rounded text-xs cursor-pointer ${isDark ? 'hover:bg-white/5' : 'hover:bg-gray-50'} ${t.text}`}>
-                <input type="checkbox" checked={sel.has(o)} onChange={() => toggle(o)} className="accent-violet-500" /><span className="flex-1 truncate">{fmtOpt(o)}</span>
-              </label>))}
-            {!shown.length && <p className={`text-xs px-1 py-2 ${t.textMuted}`}>Sin opciones</p>}
-          </div>
-        </div>
-      )}
-    </div>
-  );
+function MultiSel({ label, options, sel, onChange, t, isDark, fmtOpt = (x) => x }) {
+  return <MS label={label} options={options.map((o) => ({ value: o, label: fmtOpt(o) }))} selected={[...sel]} onChange={(a) => onChange(new Set(a))} t={t} isDark={isDark} />;
 }
 
 export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc }) {

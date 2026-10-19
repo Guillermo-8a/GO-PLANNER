@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import FilterMenu, { FilterSection } from '../components/FilterMenu';
+import MultiSelect from '../components/MultiSelect';
 import { useAltTabs } from '../utils/excelNav';
 import { Settings, Store, Package, Upload, ArrowUpDown, Sliders, Layers, MoreVertical, Sun, Moon, Info, Map as MapIcon, Database, ShoppingCart, BarChart3, Plus, Trash2, Save, Download, Zap, DollarSign, Target, FileSpreadsheet, Edit3, Lightbulb, CalendarDays, Compass, Activity, Wand2, RefreshCw, ClipboardList, Calculator, ChevronDown, ChevronRight, LayoutList } from 'lucide-react';
 import * as XLSX from 'xlsx';
@@ -1994,10 +1995,7 @@ export default function App() {
             {activeTab === 'data' && (goas || []).length > 0 && (
               <FilterMenu isDark={theme === 'dark'} count={filterGoa !== 'ALL' ? 1 : 0} width={360}>
                 <FilterSection label="Base de tiendas" isDark={theme === 'dark'}>
-                  <select value={filterGoa} onChange={(e) => setFilterGoa(e.target.value)} className={`px-3 py-1.5 rounded-lg border text-xs font-bold ${t.input}`}>
-                    <option value="ALL">Todos los GOAs</option>
-                    {(goas || []).map(g => <option key={g.id} value={g.name}>{g.name}</option>)}
-                  </select>
+                  <MultiSelect single label="GOA" options={(goas || []).map(g => g.name)} selected={filterGoa === 'ALL' ? [] : [filterGoa]} onChange={(v) => setFilterGoa(v[0] || 'ALL')} t={t} isDark={theme === 'dark'} />
                 </FilterSection>
               </FilterMenu>
             )}

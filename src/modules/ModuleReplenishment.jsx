@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect } from 'react';
 import FilterMenu from '../components/FilterMenu';
+import MultiSelect from '../components/MultiSelect';
 import { 
   TrendingUp, Package, ShoppingCart, BarChart2, Box, Database, RefreshCw,
   Search, Calendar, Filter, CheckCircle2, AlertCircle, Upload, Download,
@@ -74,13 +75,13 @@ export default function App() {
     const [sheetUrl, setSheetUrl] = useState('');
     
     // ESTADOS DE FILTROS
-    const [filterCentro, setFilterCentro] = useState('');
-    const [filterSeccion, setFilterSeccion] = useState('');
-    const [filterMarca, setFilterMarca] = useState('');
-    const [filterGoa, setFilterGoa] = useState('');
-    const [filterModelo, setFilterModelo] = useState('');
-    const [filterNorma, setFilterNorma] = useState('');
-    const [filterSku, setFilterSku] = useState('');
+    const [filterCentro, setFilterCentro] = useState([]);
+    const [filterSeccion, setFilterSeccion] = useState([]);
+    const [filterMarca, setFilterMarca] = useState([]);
+    const [filterGoa, setFilterGoa] = useState([]);
+    const [filterModelo, setFilterModelo] = useState([]);
+    const [filterNorma, setFilterNorma] = useState([]);
+    const [filterSku, setFilterSku] = useState([]);
     
     // ORDENAMIENTO
     const [sortBy, setSortBy] = useState('toBuy_desc');
@@ -306,12 +307,12 @@ export default function App() {
                 if (d.periodStart)  setPeriodStart(d.periodStart);
                 if (d.periodEnd)    setPeriodEnd(d.periodEnd);
                 if (d.data?.length) setData(d.data.map(fixRow)); // repara acentos de datos guardados antes del arreglo
-                if (d.filterCentro)  setFilterCentro(d.filterCentro);
-                if (d.filterSeccion) setFilterSeccion(d.filterSeccion);
-                if (d.filterMarca)   setFilterMarca(d.filterMarca);
-                if (d.filterGoa)     setFilterGoa(d.filterGoa);
-                if (d.filterModelo)  setFilterModelo(d.filterModelo);
-                if (d.filterNorma)   setFilterNorma(d.filterNorma);
+                if (d.filterCentro)  setFilterCentro(Array.isArray(d.filterCentro) ? d.filterCentro : [d.filterCentro]);
+                if (d.filterSeccion) setFilterSeccion(Array.isArray(d.filterSeccion) ? d.filterSeccion : [d.filterSeccion]);
+                if (d.filterMarca)   setFilterMarca(Array.isArray(d.filterMarca) ? d.filterMarca : [d.filterMarca]);
+                if (d.filterGoa)     setFilterGoa(Array.isArray(d.filterGoa) ? d.filterGoa : [d.filterGoa]);
+                if (d.filterModelo)  setFilterModelo(Array.isArray(d.filterModelo) ? d.filterModelo : [d.filterModelo]);
+                if (d.filterNorma)   setFilterNorma(Array.isArray(d.filterNorma) ? d.filterNorma : [d.filterNorma]);
             }
         } catch {}
     }, []);
@@ -617,60 +618,60 @@ export default function App() {
     const optionsCentros = useMemo(() => [...new Set(computedData.map(d => d.centro))].sort(), [computedData]);
     const optionsSecciones = useMemo(() => {
         let filtered = computedData;
-        if (filterCentro) filtered = filtered.filter(d => d.centro === filterCentro);
+        if (filterCentro.length) filtered = filtered.filter(d => filterCentro.includes(d.centro));
         return [...new Set(filtered.map(d => d.seccion))].sort();
     }, [computedData, filterCentro]);
     const optionsMarcas = useMemo(() => {
         let filtered = computedData;
-        if (filterCentro) filtered = filtered.filter(d => d.centro === filterCentro);
-        if (filterSeccion) filtered = filtered.filter(d => d.seccion === filterSeccion);
+        if (filterCentro.length) filtered = filtered.filter(d => filterCentro.includes(d.centro));
+        if (filterSeccion.length) filtered = filtered.filter(d => filterSeccion.includes(d.seccion));
         return [...new Set(filtered.map(d => d.marca))].sort();
     }, [computedData, filterCentro, filterSeccion]);
     const optionsGoas = useMemo(() => {
         let filtered = computedData;
-        if (filterCentro) filtered = filtered.filter(d => d.centro === filterCentro);
-        if (filterSeccion) filtered = filtered.filter(d => d.seccion === filterSeccion);
-        if (filterMarca) filtered = filtered.filter(d => d.marca === filterMarca);
+        if (filterCentro.length) filtered = filtered.filter(d => filterCentro.includes(d.centro));
+        if (filterSeccion.length) filtered = filtered.filter(d => filterSeccion.includes(d.seccion));
+        if (filterMarca.length) filtered = filtered.filter(d => filterMarca.includes(d.marca));
         return [...new Set(filtered.map(d => d.goa))].sort();
     }, [computedData, filterCentro, filterSeccion, filterMarca]);
     const optionsModelos = useMemo(() => {
         let filtered = computedData;
-        if (filterCentro) filtered = filtered.filter(d => d.centro === filterCentro);
-        if (filterSeccion) filtered = filtered.filter(d => d.seccion === filterSeccion);
-        if (filterMarca) filtered = filtered.filter(d => d.marca === filterMarca);
-        if (filterGoa) filtered = filtered.filter(d => d.goa === filterGoa);
+        if (filterCentro.length) filtered = filtered.filter(d => filterCentro.includes(d.centro));
+        if (filterSeccion.length) filtered = filtered.filter(d => filterSeccion.includes(d.seccion));
+        if (filterMarca.length) filtered = filtered.filter(d => filterMarca.includes(d.marca));
+        if (filterGoa.length) filtered = filtered.filter(d => filterGoa.includes(d.goa));
         return [...new Set(filtered.map(d => d.modelo))].sort();
     }, [computedData, filterCentro, filterSeccion, filterMarca, filterGoa]);
     const optionsNormas = useMemo(() => {
         let filtered = computedData;
-        if (filterCentro) filtered = filtered.filter(d => d.centro === filterCentro);
-        if (filterSeccion) filtered = filtered.filter(d => d.seccion === filterSeccion);
-        if (filterMarca) filtered = filtered.filter(d => d.marca === filterMarca);
-        if (filterGoa) filtered = filtered.filter(d => d.goa === filterGoa);
-        if (filterModelo) filtered = filtered.filter(d => d.modelo === filterModelo);
+        if (filterCentro.length) filtered = filtered.filter(d => filterCentro.includes(d.centro));
+        if (filterSeccion.length) filtered = filtered.filter(d => filterSeccion.includes(d.seccion));
+        if (filterMarca.length) filtered = filtered.filter(d => filterMarca.includes(d.marca));
+        if (filterGoa.length) filtered = filtered.filter(d => filterGoa.includes(d.goa));
+        if (filterModelo.length) filtered = filtered.filter(d => filterModelo.includes(d.modelo));
         return [...new Set(filtered.map(d => d.norma))].sort();
     }, [computedData, filterCentro, filterSeccion, filterMarca, filterGoa, filterModelo]);
     const optionsSkus = useMemo(() => {
         let filtered = computedData;
-        if (filterCentro) filtered = filtered.filter(d => d.centro === filterCentro);
-        if (filterSeccion) filtered = filtered.filter(d => d.seccion === filterSeccion);
-        if (filterMarca) filtered = filtered.filter(d => d.marca === filterMarca);
-        if (filterGoa) filtered = filtered.filter(d => d.goa === filterGoa);
-        if (filterModelo) filtered = filtered.filter(d => d.modelo === filterModelo);
-        if (filterNorma) filtered = filtered.filter(d => d.norma === filterNorma);
+        if (filterCentro.length) filtered = filtered.filter(d => filterCentro.includes(d.centro));
+        if (filterSeccion.length) filtered = filtered.filter(d => filterSeccion.includes(d.seccion));
+        if (filterMarca.length) filtered = filtered.filter(d => filterMarca.includes(d.marca));
+        if (filterGoa.length) filtered = filtered.filter(d => filterGoa.includes(d.goa));
+        if (filterModelo.length) filtered = filtered.filter(d => filterModelo.includes(d.modelo));
+        if (filterNorma.length) filtered = filtered.filter(d => filterNorma.includes(d.norma));
         return [...new Set(filtered.map(d => d.sku))].sort();
     }, [computedData, filterCentro, filterSeccion, filterMarca, filterGoa, filterModelo, filterNorma]);
 
     // APLICACIÓN DE FILTROS EN TABLA CON ORDENAMIENTO
     const enrichedData = useMemo(() => {
         let result = computedData;
-        if (filterCentro) result = result.filter(d => d.centro === filterCentro);
-        if (filterSeccion) result = result.filter(d => d.seccion === filterSeccion);
-        if (filterMarca) result = result.filter(d => d.marca === filterMarca);
-        if (filterGoa) result = result.filter(d => d.goa === filterGoa);
-        if (filterModelo) result = result.filter(d => d.modelo === filterModelo);
-        if (filterNorma) result = result.filter(d => d.norma === filterNorma);
-        if (filterSku) result = result.filter(d => d.sku === filterSku);
+        if (filterCentro.length) result = result.filter(d => filterCentro.includes(d.centro));
+        if (filterSeccion.length) result = result.filter(d => filterSeccion.includes(d.seccion));
+        if (filterMarca.length) result = result.filter(d => filterMarca.includes(d.marca));
+        if (filterGoa.length) result = result.filter(d => filterGoa.includes(d.goa));
+        if (filterModelo.length) result = result.filter(d => filterModelo.includes(d.modelo));
+        if (filterNorma.length) result = result.filter(d => filterNorma.includes(d.norma));
+        if (filterSku.length) result = result.filter(d => filterSku.includes(d.sku));
         
         return [...result].sort((a, b) => {
             if (sortBy === 'toBuy_desc') return b.toBuy - a.toBuy;
@@ -737,8 +738,8 @@ export default function App() {
     const globalAggregatedItem = useMemo(() => {
         if (enrichedData.length === 0) return null;
         const agg = {
-            centro: filterCentro || 'TODOS LOS CENTROS',
-            marca: filterMarca || 'FILTROS ACTUALES',
+            centro: filterCentro.join(', ') || 'TODOS LOS CENTROS',
+            marca: filterMarca.join(', ') || 'FILTROS ACTUALES',
             sku_nombre: 'Resumen Acumulado (Global)',
             sku: 'Múltiples',
             toBuy: 0,
@@ -824,11 +825,11 @@ export default function App() {
     const safeString = (str, fallback) => str ? str.replace(/[^a-zA-Z0-9]/g, '_') : fallback;
     
     const buildFilename = (prefix) => {
-        const cen = safeString(filterCentro, 'TodosCen');
-        const sec = safeString(filterSeccion, 'TodasSec');
-        const mar = safeString(filterMarca, 'TodasMar');
-        const mod = safeString(filterModelo, 'TodosMod');
-        const nor = safeString(filterNorma, 'TodasNor');
+        const cen = safeString(filterCentro.join('-'), 'TodosCen');
+        const sec = safeString(filterSeccion.join('-'), 'TodasSec');
+        const mar = safeString(filterMarca.join('-'), 'TodasMar');
+        const mod = safeString(filterModelo.join('-'), 'TodosMod');
+        const nor = safeString(filterNorma.join('-'), 'TodasNor');
         return `${prefix}_${cen}_${sec}_${mar}_${mod}_${nor}.csv`;
     };
 
@@ -943,57 +944,36 @@ export default function App() {
 
                 <div className="w-full md:w-auto flex flex-col sm:flex-row items-center gap-3">
                     {data.length > 0 && (
-                        <FilterMenu count={[filterCentro, filterSeccion, filterMarca, filterGoa, filterModelo, filterNorma, filterSku].filter(Boolean).length} width={760}>
+                        <FilterMenu count={[filterCentro, filterSeccion, filterMarca, filterGoa, filterModelo, filterNorma, filterSku].filter(a => a.length).length} width={760}>
                             <div className="text-[9px] font-black uppercase tracking-widest text-gray-500 dark:text-gray-400">Filtros</div>
                             <div className="flex flex-wrap gap-3">
                         <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
                             <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1"><Filter className="w-3 h-3"/> Centro</label>
-                            <select value={filterCentro} onChange={(e) => { setFilterCentro(e.target.value); setFilterSeccion(''); setFilterMarca(''); setFilterGoa(''); setFilterModelo(''); setFilterNorma(''); setFilterSku(''); }} className="bg-gray-50 dark:bg-[#1c1720] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
-                                <option value="">Todos</option>
-                                {optionsCentros.map(c => <option key={c} value={c}>{c}</option>)}
-                            </select>
+                            <MultiSelect label="Centro" options={optionsCentros} selected={filterCentro} onChange={(v) => { setFilterCentro(v); setFilterSeccion([]); setFilterMarca([]); setFilterGoa([]); setFilterModelo([]); setFilterNorma([]); setFilterSku([]); }} />
                         </div>
                         <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
                             <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1"><Filter className="w-3 h-3"/> Sección</label>
-                            <select value={filterSeccion} onChange={(e) => { setFilterSeccion(e.target.value); setFilterMarca(''); setFilterGoa(''); setFilterModelo(''); setFilterNorma(''); setFilterSku(''); }} className="bg-gray-50 dark:bg-[#1c1720] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
-                                <option value="">Todas</option>
-                                {optionsSecciones.map(s => <option key={s} value={s}>{s}</option>)}
-                            </select>
+                            <MultiSelect label="Sección" options={optionsSecciones} selected={filterSeccion} onChange={(v) => { setFilterSeccion(v); setFilterMarca([]); setFilterGoa([]); setFilterModelo([]); setFilterNorma([]); setFilterSku([]); }} />
                         </div>
                         <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
                             <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1"><Filter className="w-3 h-3"/> Marca/Prov.</label>
-                            <select value={filterMarca} onChange={(e) => { setFilterMarca(e.target.value); setFilterGoa(''); setFilterModelo(''); setFilterNorma(''); setFilterSku(''); }} className="bg-gray-50 dark:bg-[#1c1720] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
-                                <option value="">Todas</option>
-                                {optionsMarcas.map(m => <option key={m} value={m}>{m}</option>)}
-                            </select>
+                            <MultiSelect label="Marca" options={optionsMarcas} selected={filterMarca} onChange={(v) => { setFilterMarca(v); setFilterGoa([]); setFilterModelo([]); setFilterNorma([]); setFilterSku([]); }} />
                         </div>
                         <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
                             <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1"><Filter className="w-3 h-3"/> GOA</label>
-                            <select value={filterGoa} onChange={(e) => { setFilterGoa(e.target.value); setFilterModelo(''); setFilterNorma(''); setFilterSku(''); }} className="bg-gray-50 dark:bg-[#1c1720] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
-                                <option value="">Todos</option>
-                                {optionsGoas.map(g => <option key={g} value={g}>{g}</option>)}
-                            </select>
+                            <MultiSelect label="GOA" options={optionsGoas} selected={filterGoa} onChange={(v) => { setFilterGoa(v); setFilterModelo([]); setFilterNorma([]); setFilterSku([]); }} />
                         </div>
                         <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
                             <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1"><Filter className="w-3 h-3"/> Modelo</label>
-                            <select value={filterModelo} onChange={(e) => { setFilterModelo(e.target.value); setFilterNorma(''); setFilterSku(''); }} className="bg-gray-50 dark:bg-[#1c1720] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
-                                <option value="">Todos</option>
-                                {optionsModelos.map(m => <option key={m} value={m}>{m}</option>)}
-                            </select>
+                            <MultiSelect label="Modelo" options={optionsModelos} selected={filterModelo} onChange={(v) => { setFilterModelo(v); setFilterNorma([]); setFilterSku([]); }} />
                         </div>
                         <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
                             <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1"><Filter className="w-3 h-3"/> Norma</label>
-                            <select value={filterNorma} onChange={(e) => { setFilterNorma(e.target.value); setFilterSku(''); }} className="bg-gray-50 dark:bg-[#1c1720] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
-                                <option value="">Todas</option>
-                                {optionsNormas.map(n => <option key={n} value={n}>{n}</option>)}
-                            </select>
+                            <MultiSelect label="Norma" options={optionsNormas} selected={filterNorma} onChange={(v) => { setFilterNorma(v); setFilterSku([]); }} />
                         </div>
                         <div className="flex flex-col gap-1 flex-1 min-w-[100px]">
                             <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1"><Search className="w-3 h-3"/> SKU</label>
-                            <select value={filterSku} onChange={(e) => setFilterSku(e.target.value)} className="bg-gray-50 dark:bg-[#1c1720] border border-gray-300 dark:border-[#333] text-gray-900 dark:text-white text-xs rounded-lg p-2 outline-none focus:border-purple-500 transition-colors">
-                                <option value="">Todos</option>
-                                {optionsSkus.map(s => <option key={s} value={s}>{s}</option>)}
-                            </select>
+                            <MultiSelect label="SKU" options={optionsSkus} selected={filterSku} onChange={(v) => { setFilterSku(v); }} />
                         </div>
                         <div className="flex flex-col gap-1 flex-[2] min-w-[150px]">
                             <label className="text-[10px] text-gray-500 uppercase font-semibold flex items-center gap-1" title={`Periodos ${nPer <= 12 ? 'mensuales (1 = Ene … 12 = Dic; 13 = Ene del año siguiente)' : 'semanales (1–52; 53 = S1 del año siguiente)'}`}><Calendar className="w-3 h-3"/> Rango · {rangoTxt}</label>

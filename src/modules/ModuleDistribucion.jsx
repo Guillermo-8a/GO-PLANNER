@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useAltTabs } from '../utils/excelNav';
 import * as Icons from '../utils/icons';
 import FilterMenu, { FilterSection } from '../components/FilterMenu';
+import MultiSelect from '../components/MultiSelect';
 import { scoreItems, assignClusters, DEFAULT_SCORE_WEIGHTS, DEFAULT_CLUSTER_STRATEGY } from '../utils/clusterScore';
 import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
@@ -147,7 +148,7 @@ export default function Distribucion() {
   const [brandMatrix, setBrandMatrix] = useState({}); 
   const [matrixMetadata, setMatrixMetadata] = useState({ sections: [], brandsBySection: {}, allBrands: [] });
   const [selectedGoaFilter, setSelectedGoaFilter] = useState('ALL'); 
-  const [dashGoaFilter, setDashGoaFilter] = useState('ALL'); 
+  const [dashGoaFilter, setDashGoaFilter] = useState([]); 
 
   const [showParamModal, setShowParamModal] = useState(false);
   const [paramForm, setParamForm] = useState({ etiquetaAP: 8, nivelFcst: 3, stockMax: 0, wos: 5, leadTime: 30, aat: 0, minAllo: 0, maxAllo: 0, tipoDistribucion: 0 });
@@ -2549,8 +2550,8 @@ useEffect(() => {
   };
 
   const filteredDistResult = useMemo(() => {
-    if (dashGoaFilter === 'ALL') return distributionResult;
-    return distributionResult.filter(r => r.goa === dashGoaFilter);
+    if (!dashGoaFilter.length) return distributionResult;
+    return distributionResult.filter(r => dashGoaFilter.includes(r.goa));
   }, [distributionResult, dashGoaFilter]);
 
   const topStoresData = useMemo(() => {
@@ -2853,10 +2854,7 @@ useEffect(() => {
             <FilterMenu isDark={theme === 'dark'} count={(storeNameFilter ? 1 : 0) + (selectedGoaFilter !== 'ALL' ? 1 : 0)} width={520}>
               <FilterSection label="Base de tiendas" isDark={theme === 'dark'}>
                 <input type="text" placeholder="Buscar tienda…" value={storeNameFilter} onChange={e => setStoreNameFilter(e.target.value)} className={`px-3 py-1.5 rounded-lg border text-xs outline-none w-48 ${t.input}`} />
-                <select value={selectedGoaFilter} onChange={(e) => setSelectedGoaFilter(e.target.value)} className={`px-3 py-1.5 rounded-lg text-xs font-bold border outline-none cursor-pointer max-w-[180px] truncate ${t.input}`}>
-                  <option value="ALL">Todos los GOAs</option>
-                  {goas.map(g => <option key={`filt-${g.id}`} value={g.name.toUpperCase()}>{g.name}</option>)}
-                </select>
+                <MultiSelect single label="GOA" options={goas.map(g => ({ value: g.name.toUpperCase(), label: g.name }))} selected={selectedGoaFilter === 'ALL' ? [] : [selectedGoaFilter]} onChange={(v) => setSelectedGoaFilter(v[0] || 'ALL')} t={t} isDark={theme === 'dark'} />
                 {(storeNameFilter || selectedGoaFilter !== 'ALL') && <button onClick={() => { setStoreNameFilter(''); setSelectedGoaFilter('ALL'); }} className={`px-3 py-1.5 rounded-lg border text-xs font-bold ${t.input}`}>✕ Limpiar</button>}
               </FilterSection>
             </FilterMenu>
@@ -4067,16 +4065,7 @@ useEffect(() => {
                     <Icons.BarChart3 className={`mr-2 ${t.textAccent1}`} size={20} />
                     Dashboard de Resultados
                   </h3>
-                  <select 
-                    value={dashGoaFilter} 
-                    onChange={(e) => setDashGoaFilter(e.target.value)}
-                    className={`px-3 py-1.5 rounded-lg text-xs font-bold border outline-none cursor-pointer max-w-[200px] truncate ${t.input}`}
-                  >
-                    <option value="ALL">Visualizando Todos los GOAs</option>
-                    {Array.from(new Set(distributionResult.map(r => r.goa))).map(g => (
-                        <option key={`dash-filt-${g}`} value={g}>{g}</option>
-                    ))}
-                  </select>
+                  <MultiSelect label="GOA" options={Array.from(new Set(distributionResult.map(r => r.goa)))} selected={dashGoaFilter} onChange={setDashGoaFilter} t={t} isDark={theme === 'dark'} />
                 </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">

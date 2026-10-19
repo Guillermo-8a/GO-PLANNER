@@ -3,6 +3,7 @@ import { seasonalShift } from '../utils/fcstEngine';
 import { useAltTabs } from '../utils/excelNav';
 import * as Icons from '../utils/icons';
 import FilterMenu, { FilterSection } from '../components/FilterMenu';
+import MultiSelect from '../components/MultiSelect';
 import { useDispatch, useGlobal, globalActions } from '../context/GlobalContext';
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
@@ -227,13 +228,13 @@ export default function Traslados() {
   const [showPanelGoas, setShowPanelGoas] = useState(false);
   const [showPanelNiv,  setShowPanelNiv]  = useState(true);
 
-  const [filterSku,          setFilterSku]          = useState('ALL');
-  const [filterTipoCentro,   setFilterTipoCentro]   = useState('ALL');
-  const [filterSeccion,      setFilterSeccion]      = useState('ALL');
-  const [filterMarca,        setFilterMarca]        = useState('ALL');
-  const [filterGoa,          setFilterGoa]          = useState('ALL');
+  const [filterSku,          setFilterSku]          = useState([]);
+  const [filterTipoCentro,   setFilterTipoCentro]   = useState([]);
+  const [filterSeccion,      setFilterSeccion]      = useState([]);
+  const [filterMarca,        setFilterMarca]        = useState([]);
+  const [filterGoa,          setFilterGoa]          = useState([]);
   const [letrasExcluidas,    setLetrasExcluidas]    = useState(new Set()); // letras de descuento a excluir
-  const [filterZona,         setFilterZona]         = useState('ALL');
+  const [filterZona,         setFilterZona]         = useState([]);
   const [minPzsTraslado,     setMinPzsTraslado]     = useState(0);   // mínimo pzs para considerar traslado
   const [minPesosTraslado,   setMinPesosTraslado]   = useState(0);   // mínimo pesos para considerar traslado
   const [costoPorPza,        setCostoPorPza]        = useState(35); // costo logístico por pieza
@@ -620,10 +621,10 @@ export default function Traslados() {
         const tipoClima = goasTemporada[goa];
         if (!tipoClima || tipoClima === 'TODO') return;
 
-        if (filterGoa      !== 'ALL' && goa         !== filterGoa)     return;
-        if (filterSku      !== 'ALL' && meta.sku     !== filterSku)     return;
-        if (filterMarca    !== 'ALL' && marca        !== filterMarca)   return;
-        if (filterSeccion  !== 'ALL' && meta.seccion !== filterSeccion) return;
+        if (filterGoa.length     && !filterGoa.includes(goa))              return;
+        if (filterSku.length     && !filterSku.includes(meta.sku))         return;
+        if (filterMarca.length   && !filterMarca.includes(marca))          return;
+        if (filterSeccion.length && !filterSeccion.includes(meta.seccion)) return;
 
         // Receptores válidos del SKU: clima conocido y compatible, permiso de marca y venta (no se manda a tiendas sin historia).
         // Capacidad = venta mensual proyectada × MOS máx − OH actual; se reparte para no concentrar todo en una tienda.
@@ -640,8 +641,8 @@ export default function Traslados() {
 
         Object.entries(centros).forEach(([centroOrigen, dataOrigen]) => {
           if (dataOrigen.oh <= 0) return;
-          if (filterTipoCentro !== 'ALL' && dataOrigen.tipoCentro !== filterTipoCentro) return;
-          if (filterZona       !== 'ALL' && dataOrigen.zona       !== filterZona)       return;
+          if (filterTipoCentro.length && !filterTipoCentro.includes(dataOrigen.tipoCentro)) return;
+          if (filterZona.length       && !filterZona.includes(dataOrigen.zona))             return;
 
           const zonaOrigen = dataOrigen.zona || '';
           const tcOrigen   = normClima(climaMatrix[dataOrigen.centro] || dataOrigen.tipoCentro);
@@ -1122,7 +1123,7 @@ export default function Traslados() {
   const [nivMinPzs,      setNivMinPzs]      = useState(0);     // mínimo pzs por traslado
   const [nivMesesNuevo,  setNivMesesNuevo]  = useState(2);     // modelos con menos de X meses = nuevos
   const [nivSkusExcluir, setNivSkusExcluir] = useState('');    // SKUs/modelos a excluir manualmente
-  const [nivGoaFiltro,   setNivGoaFiltro]   = useState('ALL'); // desglose MOS por GOA
+  const [nivGoaFiltro,   setNivGoaFiltro]   = useState([]); // desglose MOS por GOA
   const [nivResumen,     setNivResumen]     = useState(null);  // cuadro de pestañas
   const [nivTabActiva,   setNivTabActiva]   = useState('total');
   const [mosObjetivoMin, setMosObjetivoMin] = useState(2);
@@ -1413,7 +1414,7 @@ export default function Traslados() {
     const centros = {};
     dataOp.forEach(r => {
       // Desglose por GOA si está filtrado
-      if (nivGoaFiltro !== 'ALL' && r.goa !== nivGoaFiltro) return;
+      if (nivGoaFiltro.length && !nivGoaFiltro.includes(r.goa)) return;
       if (!centros[r.centro]) centros[r.centro] = { centro: r.centro, nombre: r.nCentro || r.centro, zona: r.zona, oh: 0, vta3m: 0 };
       centros[r.centro].oh    += r.oh;
       centros[r.centro].vta3m += getVta3m(r);
@@ -1571,16 +1572,14 @@ export default function Traslados() {
                 { label: 'Tipo Centro', val: filterTipoCentro, set: setFilterTipoCentro, opts: opcionesTipoCentro },
                 { label: 'Zona', val: filterZona, set: setFilterZona, opts: opcionesZona },
               ];
-              const n = F.filter((f) => f.val !== 'ALL').length;
+              const n = F.filter((f) => f.val.length).length;
               return (
                 <FilterMenu isDark={isDark} count={n} width={620}>
                   <FilterSection label="Filtros" isDark={isDark}>
                     {F.map(({ label, val, set, opts }) => (
-                      <select key={label} value={val} onChange={e => set(e.target.value)} className={`text-xs px-3 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}>
-                        {opts.map(o => <option key={o} value={o}>{o === 'ALL' ? `${label}: Todos` : o}</option>)}
-                      </select>
+                      <MultiSelect key={label} label={label} options={opts.filter(o => o !== 'ALL')} selected={val} onChange={set} t={t} isDark={isDark} />
                     ))}
-                    {n > 0 && <button onClick={() => F.forEach((f) => f.set('ALL'))} className={`text-xs px-3 py-1.5 rounded-lg border font-bold ${t.btnGhost}`}>✕ Limpiar</button>}
+                    {n > 0 && <button onClick={() => F.forEach((f) => f.set([]))} className={`text-xs px-3 py-1.5 rounded-lg border font-bold ${t.btnGhost}`}>✕ Limpiar</button>}
                   </FilterSection>
                 </FilterMenu>
               );
@@ -2747,11 +2746,7 @@ export default function Traslados() {
                 <div className={`p-4 rounded-xl border ${t.cardInner}`}>
                   <div className="flex items-center justify-between mb-3 gap-2 flex-wrap">
                     <h4 className={`text-sm font-bold ${t.textMain}`}>📦 Inventario y MOS por Zona</h4>
-                    <select value={nivGoaFiltro} onChange={e => setNivGoaFiltro(e.target.value)}
-                      className={`text-[10px] px-2 py-1 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}>
-                      <option value="ALL">Todos los GOAs</option>
-                      {opcionesGoa.filter(g => g !== 'ALL').map(g => <option key={g} value={g}>{g}</option>)}
-                    </select>
+                    <MultiSelect label="GOA" options={opcionesGoa.filter(g => g !== 'ALL')} selected={nivGoaFiltro} onChange={setNivGoaFiltro} t={t} isDark={isDark} />
                   </div>
                   <div className="space-y-3">
                     {nivChartData.zonaInvMos.map((z, i) => {

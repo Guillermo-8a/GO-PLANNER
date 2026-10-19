@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
 import * as Icons from '../utils/icons';
+import MultiSelect from '../components/MultiSelect';
 import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
 
 // Histórico de R² (venta vs inventario promedio entre tiendas) por sección y mes, LY vs TY.
@@ -31,7 +32,7 @@ export const saveHist = (rows) => { try { localStorage.setItem(KEY, JSON.stringi
 
 export default function DispersionHistorico({ t, isDark }) {
   const [data, setData] = useState(() => { try { return JSON.parse(localStorage.getItem(KEY)) || []; } catch { return []; } });
-  const [div, setDiv] = useState('');
+  const [div, setDiv] = useState([]);
   const [selSec, setSelSec] = useState('');
   const [err, setErr] = useState('');
   const ref = useRef(null);
@@ -40,7 +41,7 @@ export default function DispersionHistorico({ t, isDark }) {
   const upload = (e) => {
     const f = e.target.files[0]; if (!f) return;
     const r = new FileReader();
-    r.onload = (ev) => { try { setData(parseHist(ev.target.result)); setErr(''); setDiv(''); setSelSec(''); } catch (x) { setErr(x.message); } e.target.value = ''; };
+    r.onload = (ev) => { try { setData(parseHist(ev.target.result)); setErr(''); setDiv([]); setSelSec(''); } catch (x) { setErr(x.message); } e.target.value = ''; };
     r.readAsText(f, 'UTF-8');
   };
 
@@ -53,7 +54,7 @@ export default function DispersionHistorico({ t, isDark }) {
   const filas = useMemo(() => {
     const m = new Map();
     for (const r of data) {
-      if (div && r.div !== div) continue;
+      if (div.length && !div.includes(r.div)) continue;
       const k = `${r.div}|${r.key || r.sec}`;
       const o = m.get(k) || { div: r.div, key: r.key, sec: r.sec, ly: Array(12).fill(null), ty: Array(12).fill(null) };
       if (r.ano === LY) o.ly[r.mes - 1] = r.r2;
@@ -89,7 +90,6 @@ export default function DispersionHistorico({ t, isDark }) {
     return isDark ? 'bg-rose-500/25 text-rose-200' : 'bg-rose-100 text-rose-800';
   };
   const delta = (v) => (v == null ? '' : <span className={`font-black ${v >= 0 ? 'text-emerald-500' : 'text-rose-500'}`}>{v > 0 ? '+' : ''}{v.toFixed(2)}</span>);
-  const sel = `text-xs px-3 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`;
   const th = 'px-2 py-2 text-right whitespace-nowrap';
 
   return (
@@ -98,7 +98,7 @@ export default function DispersionHistorico({ t, isDark }) {
         <input ref={ref} type="file" accept=".csv,.txt" className="hidden" onChange={upload} />
         <button onClick={() => ref.current?.click()} className={`flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-bold border ${t.btnGhost}`}><Icons.Upload size={14} /> CSV histórico R²</button>
         {data.length > 0 && <>
-          <select value={div} onChange={(e) => { setDiv(e.target.value); setSelSec(''); }} className={sel}><option value="">División: Todas</option>{divs.map((v) => <option key={v}>{v}</option>)}</select>
+          <MultiSelect label="División" options={divs} selected={div} onChange={(v) => { setDiv(v); setSelSec(''); }} t={t} isDark={isDark} />
           <span className={`px-3 py-1 rounded-full text-[10px] font-black border ${t.badgeAmber}`}>Corte: {MES[ultMes - 1] || '—'} {TY}</span>
           <span className={`px-3 py-1 rounded-full text-[10px] font-black border ${t.badge}`}>{LY} vs {TY} · {filas.length} secciones</span>
         </>}

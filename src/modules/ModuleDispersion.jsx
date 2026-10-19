@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import MultiSelect from '../components/MultiSelect';
 import * as Icons from '../utils/icons';
 import { useGlobal } from '../context/GlobalContext';
 import DispersionHistorico, { parseHist, saveHist } from './DispersionHistorico';
@@ -123,6 +124,7 @@ export default function ModuleDispersion(){
   const [level,setLevel]=useState('tienda');
   const [excludeZeros,setExcludeZeros]=useState(false);
   const [filters,setFilters]=useState({});
+  const fOk=(k,v)=>!(filters[k]?.length)||filters[k].includes(v);
   const [hover,setHover]=useState(null);
   const [sortKey,setSortKey]=useState('venta');
   const [sortDir,setSortDir]=useState('desc');
@@ -136,7 +138,7 @@ export default function ModuleDispersion(){
     try{ const d=await idbGet('data'); if(Array.isArray(d)&&d.length){ setData(d); setCols(d._cols||[]); } }catch{}
     try{ const c=localStorage.getItem('gop_dispersion'); if(c){ const o=JSON.parse(c);
       o.xKey&&setXKey(o.xKey); o.yKey&&setYKey(o.yKey); o.level&&setLevel(o.level);
-      o.excludeZeros!=null&&setExcludeZeros(o.excludeZeros); o.filters&&setFilters(o.filters); o.sortKey&&setSortKey(o.sortKey); o.sortDir&&setSortDir(o.sortDir); } }catch{}
+      o.excludeZeros!=null&&setExcludeZeros(o.excludeZeros); o.filters&&setFilters(Object.fromEntries(Object.entries(o.filters).map(([k,v])=>[k,Array.isArray(v)?v:(v?[v]:[])]))); o.sortKey&&setSortKey(o.sortKey); o.sortDir&&setSortDir(o.sortDir); } }catch{}
     setLoading(false);
   })(); },[]);
   useEffect(()=>{ if(!loading) try{ localStorage.setItem('gop_dispersion',JSON.stringify({xKey,yKey,level,excludeZeros,filters,sortKey,sortDir})); }catch{} },[xKey,yKey,level,excludeZeros,filters,sortKey,sortDir,loading]);
@@ -156,10 +158,10 @@ export default function ModuleDispersion(){
   const clearData=()=>{ if(window.confirm('¿Borrar datos?')){ setData([]); setCols([]); idbSet('data',[]).catch(()=>{}); } };
 
   const opts=useMemo(()=>{ const o={};
-    for(const d of FILTER_DIMS){ const rows=data.filter(r=>FILTER_DIMS.every(f=>f.key===d.key||!filters[f.key]||r[f.key]===filters[f.key]));
-      const set=new Set(rows.map(r=>r[d.key]).filter(Boolean)); if(filters[d.key]) set.add(filters[d.key]); o[d.key]=[...set].sort(); }
+    for(const d of FILTER_DIMS){ const rows=data.filter(r=>FILTER_DIMS.every(f=>f.key===d.key||fOk(f.key,r[f.key])));
+      const set=new Set(rows.map(r=>r[d.key]).filter(Boolean)); (filters[d.key]||[]).forEach(v=>set.add(v)); o[d.key]=[...set].sort(); }
     return o; },[data,filters]);
-  const passFilters=r=>FILTER_DIMS.every(d=>!filters[d.key]||r[d.key]===filters[d.key]);
+  const passFilters=r=>FILTER_DIMS.every(d=>fOk(d.key,r[d.key]));
 
   const { points, reg, dropped, raw, xMin, xMax } = useMemo(()=>{
     let rows=data.filter(passFilters);
@@ -183,7 +185,7 @@ export default function ModuleDispersion(){
       {key:'marca',label:'Marca'},
     ];
     // Solo muestra niveles con filtro activo (drill-down progresivo)
-    const activeLevels=hier.filter(h=>filters[h.key]);
+    const activeLevels=hier.filter(h=>filters[h.key]?.length);
     if(activeLevels.length===0){
       // Sin filtros: muestra R² global (todos los datos agregados a tienda)
       let pts=aggXY(data,r=>r.tienda||'N/D',xKey,yKey); if(excludeZeros) pts=pts.filter(p=>p.x!==0&&p.y!==0);
@@ -191,9 +193,9 @@ export default function ModuleDispersion(){
     }
     return activeLevels.map(h=>{
       // Filtra data hasta este nivel y todos los anteriores
-      const subset=data.filter(r=>activeLevels.slice(0,activeLevels.indexOf(h)+1).every(lv=>r[lv.key]===filters[lv.key]));
+      const subset=data.filter(r=>activeLevels.slice(0,activeLevels.indexOf(h)+1).every(lv=>filters[lv.key].includes(r[lv.key])));
       let pts=aggXY(subset,r=>r.tienda||'N/D',xKey,yKey); if(excludeZeros) pts=pts.filter(p=>p.x!==0&&p.y!==0);
-      return {...h, value:filters[h.key], ...linearRegression(pts), nGroups:pts.length};
+      return {...h, value:filters[h.key].join(', '), ...linearRegression(pts), nGroups:pts.length};
     });
   },[data,filters,xKey,yKey,excludeZeros]);
 
@@ -240,7 +242,7 @@ export default function ModuleDispersion(){
             </div>
             <div className="relative" ref={filtRef}>
               <button onClick={()=>tab==='disp'&&hasData&&setShowFilt(v=>!v)} disabled={tab!=='disp'||!hasData} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all disabled:opacity-40 ${showFilt||Object.values(filters).some(Boolean)?t.badge:t.btnGhost}`}>
-                <Icons.Filter size={14}/> Filtros{Object.values(filters).filter(Boolean).length?` (${Object.values(filters).filter(Boolean).length})`:''}<Icons.ChevronDown size={12}/>
+                <Icons.Filter size={14}/> Filtros{Object.values(filters).filter(v=>v?.length).length?` (${Object.values(filters).filter(v=>v?.length).length})`:''}<Icons.ChevronDown size={12}/>
               </button>
               {showFilt&&(
                 <div className={`absolute right-0 mt-2 z-40 w-[min(92vw,640px)] p-4 rounded-2xl border space-y-3 ${isDark?'bg-[#1c1720] border-white/10 shadow-[0_0_40px_-10px_rgba(139,92,246,0.5)]':'bg-white border-gray-200 shadow-2xl'} backdrop-blur-xl`}>
@@ -257,12 +259,9 @@ export default function ModuleDispersion(){
                     <div className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} mb-1`}>Filtros</div>
                     <div className="flex flex-wrap gap-2">
                       {FILTER_DIMS.map(d=>(
-                        <select key={d.key} value={filters[d.key]||''} onChange={e=>setFilters(f=>({...f,[d.key]:e.target.value}))} className={`text-xs px-3 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}>
-                          <option value="">{d.label}: Todos ({opts[d.key]?.length||0})</option>
-                          {opts[d.key]?.map(v=><option key={v} value={v}>{v}</option>)}
-                        </select>
+                        <MultiSelect key={d.key} label={d.label} options={opts[d.key]||[]} selected={filters[d.key]||[]} onChange={v=>setFilters(f=>({...f,[d.key]:v}))} t={t} isDark={isDark}/>
                       ))}
-                      {Object.values(filters).some(Boolean)&&<button onClick={()=>setFilters({})} className={`text-xs px-3 py-1.5 rounded-lg border font-bold ${t.btnGhost}`}>✕ Limpiar</button>}
+                      {Object.values(filters).some(v=>v?.length)&&<button onClick={()=>setFilters({})} className={`text-xs px-3 py-1.5 rounded-lg border font-bold ${t.btnGhost}`}>✕ Limpiar</button>}
                     </div>
                   </div>
                 </div>

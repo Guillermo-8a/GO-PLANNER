@@ -3,6 +3,7 @@ import { bestForecast } from '../utils/fcstEngine';
 import { useAltTabs } from '../utils/excelNav';
 import * as Icons from '../utils/icons';
 import FilterMenu, { FilterSection } from '../components/FilterMenu';
+import MultiSelect from '../components/MultiSelect';
 
 // ─── HELPERS ────────────────────────────────────────────────────────────────
 
@@ -565,16 +566,16 @@ export default function Forecast() {
 
   // Filtros + orden tabla centros (declarados antes del useMemo que los usa)
   const [filtroTexto, setFiltroTexto]       = useState('');
-  const [filtroTipo, setFiltroTipo]         = useState('TODOS');
-  const [filtroTipoTda, setFiltroTipoTda]   = useState('TODOS');
+  const [filtroTipo, setFiltroTipo]         = useState([]);
+  const [filtroTipoTda, setFiltroTipoTda]   = useState([]);
   const [ordenCol, setOrdenCol]             = useState('vta');
   const [ordenDir, setOrdenDir]             = useState('desc');
 
   // Lista filtrada y ordenada para la tabla del catálogo
   const centrosListaFiltrada = useMemo(() => {
     let arr = centrosLista.filter(c => {
-      if (filtroTipo !== 'TODOS' && c.tipo !== filtroTipo) return false;
-      if (filtroTipoTda !== 'TODOS' && c.tipoTda !== filtroTipoTda) return false;
+      if (filtroTipo.length && !filtroTipo.includes(c.tipo)) return false;
+      if (filtroTipoTda.length && !filtroTipoTda.includes(c.tipoTda)) return false;
       if (filtroTexto.trim()) {
         const q = filtroTexto.toLowerCase();
         if (!c.centro.toLowerCase().includes(q) && !c.nombre.toLowerCase().includes(q)) return false;
@@ -2337,11 +2338,11 @@ export default function Forecast() {
   // Filtros Tab 3
   const [t3Tab, setT3Tab]           = useState('otb'); // otb | crec | rot | mkdmsi
   const [t3Filtro, setT3Filtro]     = useState('');
-  const [t3FiltroGoa, setT3FiltroGoa] = useState('TODOS');
+  const [t3FiltroGoa, setT3FiltroGoa] = useState([]);
 
   const planCruceFiltrado = useMemo(() => {
     let arr = planCruceCompleto;
-    if (t3FiltroGoa !== 'TODOS') arr = arr.filter(r => r.goa === t3FiltroGoa);
+    if (t3FiltroGoa.length) arr = arr.filter(r => t3FiltroGoa.includes(r.goa));
     if (t3Filtro.trim()) {
       const q = t3Filtro.toLowerCase();
       arr = arr.filter(r => r.centro.toLowerCase().includes(q) || r.nombre.toLowerCase().includes(q));
@@ -2421,23 +2422,15 @@ export default function Forecast() {
           </div>
           <div className="flex flex-wrap gap-2 items-center">
             {centrosLista.length > 0 && (
-              <FilterMenu isDark={isDark} count={(filtroTexto ? 1 : 0) + (filtroTipo !== 'TODOS' ? 1 : 0) + (filtroTipoTda !== 'TODOS' ? 1 : 0)} width={560}>
+              <FilterMenu isDark={isDark} count={(filtroTexto ? 1 : 0) + (filtroTipo.length ? 1 : 0) + (filtroTipoTda.length ? 1 : 0)} width={560}>
                 <FilterSection label="Catálogo de centros" isDark={isDark}>
                   <div className="relative">
                     <Icons.Search size={13} className={`absolute left-3 top-1/2 -translate-y-1/2 ${t.textMuted}`} />
                     <input type="text" placeholder="Buscar centro o nombre..." value={filtroTexto} onChange={e => setFiltroTexto(e.target.value)} className={`w-56 text-xs pl-9 pr-3 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`} />
                   </div>
-                  <select value={filtroTipo} onChange={e => setFiltroTipo(e.target.value)} className={`text-xs px-3 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}>
-                    <option value="TODOS">Todos los tipos</option>
-                    <option value="NORMAL">Normal</option>
-                    <option value="APERTURA">Apertura</option>
-                    <option value="NUEVA">Nueva</option>
-                  </select>
-                  <select value={filtroTipoTda} onChange={e => setFiltroTipoTda(e.target.value)} className={`text-xs px-3 py-1.5 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}>
-                    <option value="TODOS">Todos los Tipo Tda</option>
-                    {tiposTdaUnicos.map(tt => <option key={tt} value={tt}>{tt}</option>)}
-                  </select>
-                  {(filtroTexto || filtroTipo !== 'TODOS' || filtroTipoTda !== 'TODOS') && <button onClick={() => { setFiltroTexto(''); setFiltroTipo('TODOS'); setFiltroTipoTda('TODOS'); }} className={`text-xs px-3 py-1.5 rounded-lg border font-bold ${t.btnGhost}`}>✕ Limpiar</button>}
+                  <MultiSelect label="Tipo" options={[{ value: 'NORMAL', label: 'Normal' }, { value: 'APERTURA', label: 'Apertura' }, { value: 'NUEVA', label: 'Nueva' }]} selected={filtroTipo} onChange={setFiltroTipo} t={t} isDark={isDark} />
+                  <MultiSelect label="Tipo Tda" options={tiposTdaUnicos} selected={filtroTipoTda} onChange={setFiltroTipoTda} t={t} isDark={isDark} />
+                  {(filtroTexto || filtroTipo.length > 0 || filtroTipoTda.length > 0) && <button onClick={() => { setFiltroTexto(''); setFiltroTipo([]); setFiltroTipoTda([]); }} className={`text-xs px-3 py-1.5 rounded-lg border font-bold ${t.btnGhost}`}>✕ Limpiar</button>}
                 </FilterSection>
               </FilterMenu>
             )}
@@ -4110,11 +4103,7 @@ export default function Forecast() {
                             onChange={e => setT3Filtro(e.target.value)}
                             className={`w-full text-xs pl-9 pr-3 py-2 rounded-lg border ${t.input} focus:outline-none focus:ring-1`} />
                         </div>
-                        <select value={t3FiltroGoa} onChange={e => setT3FiltroGoa(e.target.value)}
-                          className={`text-xs px-3 py-2 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}>
-                          <option value="TODOS">Todos los GOAs</option>
-                          {goasMaestro.map(g => <option key={g} value={g}>{g}</option>)}
-                        </select>
+                        <MultiSelect label="GOA" options={goasMaestro} selected={t3FiltroGoa} onChange={setT3FiltroGoa} t={t} isDark={isDark} />
                       </div>
                       <div className="overflow-x-auto max-h-[40vh] custom-scrollbar">
                         <table className="w-full text-left min-w-max">
@@ -4209,11 +4198,7 @@ export default function Forecast() {
                             onChange={e => setT3Filtro(e.target.value)}
                             className={`w-full text-xs pl-9 pr-3 py-2 rounded-lg border ${t.input} focus:outline-none focus:ring-1`} />
                         </div>
-                        <select value={t3FiltroGoa} onChange={e => setT3FiltroGoa(e.target.value)}
-                          className={`text-xs px-3 py-2 rounded-lg border ${t.input} focus:outline-none focus:ring-1`}>
-                          <option value="TODOS">Todos los GOAs</option>
-                          {goasMaestro.map(g => <option key={g} value={g}>{g}</option>)}
-                        </select>
+                        <MultiSelect label="GOA" options={goasMaestro} selected={t3FiltroGoa} onChange={setT3FiltroGoa} t={t} isDark={isDark} />
                       </div>
 
                       <div className="overflow-x-auto max-h-[55vh] custom-scrollbar">
@@ -4599,15 +4584,7 @@ export default function Forecast() {
                 <div className={`p-4 rounded-xl border ${t.cardInner} flex items-center justify-between flex-wrap gap-3`}>
                   <div className="flex items-center gap-2">
                     <span className={`text-[10px] font-black uppercase tracking-widest ${t.textMuted}`}>Centro:</span>
-                    <select value={t5Centro} onChange={e => setT5Centro(e.target.value)}
-                      className={`text-xs px-3 py-2 rounded border ${t.input} min-w-[200px]`}>
-                      <option value="">— Todos (resumen) —</option>
-                      {planPorCentro.map(c => (
-                        <option key={c.centro} value={c.centro}>
-                          {c.centro} · {c.nombre} {(centros[c.centro]?.tipo === 'APERTURA' || centros[c.centro]?.tipo === 'NUEVA') ? '🆕' : ''}
-                        </option>
-                      ))}
-                    </select>
+                    <MultiSelect single label="Centro" allLabel="Todos (resumen)" options={planPorCentro.map(c => ({ value: c.centro, label: `${c.centro} · ${c.nombre}${(centros[c.centro]?.tipo === 'APERTURA' || centros[c.centro]?.tipo === 'NUEVA') ? ' 🆕' : ''}` }))} selected={t5Centro ? [t5Centro] : []} onChange={(v) => setT5Centro(v[0] || '')} t={t} isDark={isDark} />
                   </div>
                   <div className={`flex rounded-lg border ${t.border} overflow-hidden`}>
                     <button onClick={() => setT5Vista('porGoa')}

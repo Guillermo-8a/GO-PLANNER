@@ -8,6 +8,7 @@ import * as XLSX from 'xlsx';
 import { Upload, Download, Trash2, Settings, AlertTriangle, AlertOctagon, CheckCircle2, Search } from 'lucide-react';
 import ModuleHeader from '../components/ModuleHeader';
 import FilterMenu, { FilterSection } from '../components/FilterMenu';
+import MultiSelect from '../components/MultiSelect';
 
 const LS_KEY = 'gop_allocation_meta';
 const DB_NAME = 'gop_allocation_db';
@@ -327,7 +328,7 @@ export default function ModuleAllocation({ t, isDark, navIcon, navLabel, navDesc
   const [cfg, setCfg] = useState(() => { try { return { ...DEF_CFG, ...JSON.parse(localStorage.getItem(LS_KEY) || '{}').cfg }; } catch { return DEF_CFG; } });
   const [showCfg, setShowCfg] = useState(false);
   const [msg, setMsg] = useState(null);
-  const [fRule, setFRule] = useState(null);
+  const [fRule, setFRule] = useState([]);
   const [fSev, setFSev] = useState('all');
   const [q, setQ] = useState('');
   const fileRef = useRef(null);
@@ -335,7 +336,7 @@ export default function ModuleAllocation({ t, isDark, navIcon, navLabel, navDesc
   useEffect(() => { idbGet('data').then((d) => d && setData(d)); }, []);
   // meta: umbrales + archivos cargados (la barra "Datos:" marca el módulo solo si hay archivos)
   useEffect(() => { try { localStorage.setItem(LS_KEY, JSON.stringify({ cfg })); localStorage.setItem('gop_allocation_files', JSON.stringify([data.param?.name, data.oc?.name].filter(Boolean))); } catch {} }, [cfg, data]);
-  useEffect(() => { setFRule(null); setQ(''); }, [tab]);
+  useEffect(() => { setFRule([]); setQ(''); }, [tab]);
   useEffect(() => {
     const TABS = ['param', 'oc'];
     const h = (e) => { if (!e.altKey || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return; e.preventDefault(); setTab((cur) => TABS[(TABS.indexOf(cur) + 1) % 2]); };
@@ -386,7 +387,7 @@ export default function ModuleAllocation({ t, isDark, navIcon, navLabel, navDesc
   const counts = useMemo(() => { const m = {}; F.forEach((f) => (m[f.rule] = (m[f.rule] || 0) + 1)); return m; }, [F]);
   const shown = useMemo(() => {
     const s = norm(q);
-    return F.filter((f) => (!fRule || f.rule === fRule) && (fSev === 'all' || f.sev === fSev) && (!s || norm(`${f.where} ${f.detalle}`).includes(s)))
+    return F.filter((f) => (!fRule.length || fRule.includes(f.rule)) && (fSev === 'all' || f.sev === fSev) && (!s || norm(`${f.where} ${f.detalle}`).includes(s)))
       .sort((a, b) => (a.sev === b.sev ? 0 : a.sev === 'error' ? -1 : 1));
   }, [F, fRule, fSev, q]);
   const nErr = F.filter((f) => f.sev === 'error').length, nWarn = F.length - nErr;
@@ -396,7 +397,7 @@ export default function ModuleAllocation({ t, isDark, navIcon, navLabel, navDesc
   const headerRight = (
     <>
       {src && (
-        <FilterMenu isDark={isDark} count={(fRule ? 1 : 0) + (fSev !== 'all' ? 1 : 0) + (q ? 1 : 0)} width={560}>
+        <FilterMenu isDark={isDark} count={(fRule.length ? 1 : 0) + (fSev !== 'all' ? 1 : 0) + (q ? 1 : 0)} width={560}>
           <FilterSection label="Buscar" isDark={isDark}>
             <div className="relative">
               <Search size={12} className={`absolute left-2 top-1/2 -translate-y-1/2 ${t.textMuted}`} />
@@ -411,11 +412,8 @@ export default function ModuleAllocation({ t, isDark, navIcon, navLabel, navDesc
             </div>
           </FilterSection>
           <FilterSection label="Regla" isDark={isDark}>
-            <select value={fRule || ''} onChange={(e) => setFRule(e.target.value || null)} className={inCls} style={isDark ? { colorScheme: 'dark' } : undefined}>
-              <option value="">Todas las reglas</option>
-              {Object.entries(RULES).map(([k, r]) => <option key={k} value={k}>{r.label}{counts[k] ? ` (${counts[k]})` : ''}</option>)}
-            </select>
-            {(fRule || fSev !== 'all' || q) && <button onClick={() => { setFRule(null); setFSev('all'); setQ(''); }} className={`px-3 py-1.5 text-xs rounded-lg ${t.btnGhost}`}>✕ Limpiar</button>}
+            <MultiSelect label="Regla" allLabel="Todas" options={Object.entries(RULES).map(([k, r]) => ({ value: k, label: `${r.label}${counts[k] ? ` (${counts[k]})` : ''}` }))} selected={fRule} onChange={setFRule} t={t} isDark={isDark} />
+            {(fRule.length || fSev !== 'all' || q) && <button onClick={() => { setFRule([]); setFSev('all'); setQ(''); }} className={`px-3 py-1.5 text-xs rounded-lg ${t.btnGhost}`}>✕ Limpiar</button>}
           </FilterSection>
         </FilterMenu>
       )}
@@ -491,9 +489,9 @@ export default function ModuleAllocation({ t, isDark, navIcon, navLabel, navDesc
           {/* Reglas: click filtra */}
           <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-4 gap-2">
             {Object.entries(RULES).map(([k, r]) => {
-              const n = counts[k] || 0, on = fRule === k;
+              const n = counts[k] || 0, on = fRule.includes(k);
               return (
-                <button key={k} onClick={() => setFRule(on ? null : k)} className={`text-left rounded-xl border px-3 py-2 ${on ? (isDark ? 'border-[#E0BB3E]/60 bg-[#E0BB3E]/10' : 'border-blue-400 bg-blue-50') : t.cardInner} ${!n ? 'opacity-50' : ''}`}>
+                <button key={k} onClick={() => setFRule((p) => (on ? p.filter((x) => x !== k) : [...p, k]))} className={`text-left rounded-xl border px-3 py-2 ${on ? (isDark ? 'border-[#E0BB3E]/60 bg-[#E0BB3E]/10' : 'border-blue-400 bg-blue-50') : t.cardInner} ${!n ? 'opacity-50' : ''}`}>
                   <div className="flex items-center justify-between gap-2">
                     <span className={`text-xs font-bold ${t.text}`}>{r.label}</span>
                     <span className={`text-xs font-black tabular-nums ${!n ? t.success : r.sev === 'error' ? t.danger : t.warning}`}>{n ? fmt(n) : '✓'}</span>
@@ -506,7 +504,7 @@ export default function ModuleAllocation({ t, isDark, navIcon, navLabel, navDesc
 
           <div className={card}>
             <div className="flex items-center gap-2 mb-3 flex-wrap">
-              <span className={`text-xs ${t.textMuted}`}>{fmt(shown.length)} hallazgos{fRule ? ` · ${RULES[fRule].label}` : ''}</span>
+              <span className={`text-xs ${t.textMuted}`}>{fmt(shown.length)} hallazgos{fRule.length ? ` · ${fRule.map((k) => RULES[k].label).join(', ')}` : ''}</span>
               <button onClick={() => exportFindings(shown, RULES, `Hallazgos_${tab === 'param' ? 'Param' : 'OC'}.csv`)} disabled={!shown.length} className={`ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg ${t.btnGhost} disabled:opacity-40`}><Download size={12} />Hallazgos</button>
             </div>
             {!shown.length ? (

@@ -9,6 +9,7 @@ import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis
 import { Upload, Download, Trash2, Settings, Search, ChevronDown } from 'lucide-react';
 import ModuleHeader from '../components/ModuleHeader';
 import FilterMenu, { FilterSection } from '../components/FilterMenu';
+import MS from '../components/MultiSelect';
 
 const LS_CFG = 'gop_nulo_cfg', LS_FILES = 'gop_nulo_files', DB_NAME = 'gop_nulo_db';
 
@@ -275,36 +276,8 @@ const NULO_C = '#D63F8C';
 const grpLetra = (l) => { const s = norm(l); return !s || s === '—' || s === 'RG' || s === 'REGULAR' ? 'RG' : ['PR', 'SR', 'TR'].includes(s) || /^(PRIMERA|SEGUNDA|TERCERA) REBAJA$/.test(s) ? 'LQ' : 'RB'; };
 
 // ─── Multiselect ──────────────────────────────────────────────────────────────
-function MultiSelect({ label, options, sel, onChange, t, isDark, inCls }) {
-  const [open, setOpen] = useState(false), [q, setQ] = useState(''), ref = useRef(null);
-  useEffect(() => { if (!open) return; const h = (e) => { if (ref.current && !ref.current.contains(e.target)) setOpen(false); }; document.addEventListener('mousedown', h); return () => document.removeEventListener('mousedown', h); }, [open]);
-  const s = norm(q), shown = options.filter((o) => (o.m > 0 || sel.has(o.v)) && (!s || norm(o.label).includes(s)));
-  const toggle = (v) => { const nx = new Set(sel); nx.has(v) ? nx.delete(v) : nx.add(v); onChange(nx); };
-  return (
-    <div className="relative" ref={ref}>
-      <button onClick={() => setOpen((o) => !o)} className={`flex items-center justify-between gap-2 w-44 ${inCls} ${sel.size ? (isDark ? '!border-violet-400/60 text-violet-300' : '!border-violet-400 text-violet-700') : ''}`}>
-        <span className="truncate">{sel.size ? (sel.size === 1 ? options.find((o) => sel.has(o.v))?.label : `${sel.size} seleccionados`) : `${label}: Todos`}</span><ChevronDown size={12} />
-      </button>
-      {open && (
-        <div className={`absolute z-50 mt-1 w-72 rounded-xl border p-2 ${t.menuBg}`}>
-          <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar…" className={`w-full mb-2 ${inCls}`} />
-          <div className="flex gap-2 mb-1">
-            <button onClick={() => onChange(new Set(shown.map((o) => o.v)))} className={`text-[10px] ${t.accent1}`}>Seleccionar visibles</button>
-            <button onClick={() => onChange(new Set())} className={`text-[10px] ${t.textMuted}`}>Limpiar</button>
-          </div>
-          <div className="max-h-64 overflow-auto">
-            {shown.map((o) => (
-              <label key={o.v} className={`flex items-center gap-2 px-1.5 py-1 rounded text-xs cursor-pointer ${t.tableRow} ${t.text}`}>
-                <input type="checkbox" checked={sel.has(o.v)} onChange={() => toggle(o.v)} className="accent-violet-500" />
-                <span className="flex-1 truncate">{o.label}</span><span className={`tabular-nums text-[10px] ${t.textMuted}`}>{fmtM(o.m)}</span>
-              </label>
-            ))}
-            {!shown.length && <p className={`text-xs px-1 py-2 ${t.textMuted}`}>Sin opciones</p>}
-          </div>
-        </div>
-      )}
-    </div>
-  );
+function MultiSelect({ label, options, sel, onChange, t, isDark }) {
+  return <MS label={label} options={options.filter((o) => o.m > 0 || sel.has(o.v)).map((o) => ({ value: o.v, label: o.label, hint: fmtM(o.m) }))} selected={[...sel]} onChange={(a) => onChange(new Set(a))} t={t} isDark={isDark} />;
 }
 
 // ─── Módulo ───────────────────────────────────────────────────────────────────

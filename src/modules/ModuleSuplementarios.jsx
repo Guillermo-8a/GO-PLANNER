@@ -8,6 +8,7 @@ import { ResponsiveContainer, ComposedChart, LineChart, Bar, Line, XAxis, YAxis,
 import { Upload, Download, Lock, RotateCcw, Check, AlertCircle, Trash2, Copy } from 'lucide-react';
 import ModuleHeader from '../components/ModuleHeader';
 import FilterMenu, { FilterSection } from '../components/FilterMenu';
+import MultiSelect from '../components/MultiSelect';
 import { SEASONAL_CURVE_MX } from '../utils/fcstEngine';
 
 const LS_KEY = 'gop_suplementarios';
@@ -378,7 +379,7 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
     return () => window.removeEventListener('keydown', h);
   }, []);
   const [metric, setMetric] = useState('vta');
-  const [ent, setEnt] = useState('__total');
+  const [ent, setEnt] = useState([]); // [] = Total OTB; varias = suma de las seleccionadas
   const [msg, setMsg] = useState(null);
   const fileRef = useRef(null);
   const { dim, otb, entities, cfg, locks } = st;
@@ -775,7 +776,9 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
   );
 
   // ── Tab 3: Análisis ──
-  const sel = byEnt[ent] || byEnt.__total;
+  const selEnt = ent.filter((n) => byEnt[n]);
+  const sel = !selEnt.length ? byEnt.__total : selEnt.length === 1 ? byEnt[selEnt[0]]
+    : Object.fromEntries(['plan', 'hist', 'base', 'ly', 'lly'].map((tp) => [tp, Object.fromEntries(METRICS.map((m) => [m.key, rng(nCols(m.key)).map((k) => sum(selEnt.map((n) => +byEnt[n][tp][m.key]?.[k] || 0)))]))]));
   const hasLY = sum(sel.ly?.vta || []) > 0;
   const chartData = R12.map((k) => ({ mes: MONTHS[k], 'Vta LLY': sel.lly?.vta?.[k] || 0, 'Vta LY': sel.ly?.vta?.[k] || 0, 'Vta Plan': sel.plan.vta?.[k] || 0, 'Inv ini Plan': sel.plan.inv?.[k] || 0 }));
   const seas = (arr) => { const avg = sum(arr.slice(0, 12)) / 12; return R12.map((k) => (avg ? arr[k] / avg : null)); };
@@ -921,12 +924,9 @@ export default function ModuleSuplementarios({ t, isDark, navIcon, navLabel, nav
 
   // Filtros y vista en el menú del header
   const filtroMenu = entities.length > 0 && (
-    <FilterMenu isDark={isDark} count={ent !== '__total' ? 1 : 0} width={520}>
+    <FilterMenu isDark={isDark} count={ent.length ? 1 : 0} width={520}>
       <FilterSection label={`${dim} (Análisis)`} isDark={isDark}>
-        <select value={ent} onChange={(e) => setEnt(e.target.value)} style={selStyle} className={selCls}>
-          <option value="__total">Total OTB</option>
-          {[...activos].sort((a, b) => sum(byEnt[b.name].plan.vta) - sum(byEnt[a.name].plan.vta)).map((e) => <option key={e.name} value={e.name}>{e.name}</option>)}
-        </select>
+        <MultiSelect label={dim} allLabel="Total OTB" options={[...activos].sort((a, b) => sum(byEnt[b.name].plan.vta) - sum(byEnt[a.name].plan.vta)).map((e) => e.name)} selected={ent} onChange={setEnt} t={t} isDark={isDark} />
       </FilterSection>
       <FilterSection label="Bajada" isDark={isDark}>
         <label className={`flex items-center gap-1.5 text-xs ${t.textMuted}`}>HIST (real) hasta
