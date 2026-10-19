@@ -186,7 +186,7 @@ const idbSet = async (k, v) => { const db = await idb(); return new Promise((res
 // ─── Cálculo ──────────────────────────────────────────────────────────────────
 const BUCKETS = ['0 – 3 meses', '4 – 6 meses', '7 – 9 meses', '10 – 12 meses', '13+ meses', 'Sin venta en la ventana'];
 const bucketOf = (m) => (m < 0 ? 5 : m <= 3 ? 0 : m <= 6 ? 1 : m <= 9 ? 2 : m <= 12 ? 3 : 4);
-const FILTERS = [['sec', 'Sección'], ['goa', 'GOA'], ['marca', 'Marca'], ['norma', 'Norma'], ['estatus', 'Estatus del artículo'], ['letra', 'Letra de rebaja'], ['bucket', 'Meses desde últ. venta'], ['zona', 'Zona'], ['tipo', 'Tipo de centro'], ['modelo', 'Modelo'], ['talla', 'Talla'], ['centro', 'Tienda / bodega']];
+const FILTERS = [['sec', 'Sección'], ['goa', 'GOA'], ['marca', 'Marca'], ['norma', 'Norma'], ['estatus', 'Estatus del artículo'], ['letra', 'Letra de rebaja'], ['bucket', 'Meses desde últ. venta'], ['zona', 'Zona'], ['centro', 'Tienda / bodega'], ['tipo', 'Tipo de centro'], ['modelo', 'Modelo'], ['talla', 'Talla']];
 const FKEYS = FILTERS.map((f) => f[0]);
 const DEF_CFG = { umbral: 3, porSeccion: {}, corte: '' };
 

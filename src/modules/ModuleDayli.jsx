@@ -1144,7 +1144,7 @@ export default function ModuleDaily(){
 
           {/* PAGO + NORMA */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
-            {[{title:'Tipo de Pago',data:byPago,colors:['bg-violet-500','bg-purple-500','bg-blue-500','bg-purple-500']},
+            {[...(byPago.some(p=>p.key!=='N/D')?[{title:'Tipo de Pago',data:byPago,colors:['bg-violet-500','bg-purple-500','bg-blue-500','bg-purple-500']}]:[]),
               {title:'Norma de Compra',data:byNorma,colors:['bg-amber-500','bg-orange-500','bg-yellow-500']}].map(({title,data,colors})=>(
               <div key={title} className={`p-4 rounded-2xl border ${t.card}`}>
                 <h4 className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} mb-3`}>{title}</h4>
