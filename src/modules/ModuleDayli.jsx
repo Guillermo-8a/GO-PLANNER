@@ -229,8 +229,8 @@ const parseSalesCSV = text => {
   const H=rows[0].map(h=>h.toUpperCase().trim().replace(/\s+/g,'_').replace(/[#ÁÉÍÓÚ]/g,c=>({'#':'NUM',Á:'A',É:'E',Í:'I',Ó:'O',Ú:'U'}[c]||c)));
   const idx=(...ns)=>ns.map(n=>H.findIndex(h=>h===n||h.includes(n))).find(i=>i>=0)??-1;
   const I={div:idx('DIVISION','DIV'),sec:idx('SECCION','SECTION'),numSec:idx('NUMSECCION','NUM_SECCION','_SECCION'),goa:idx('GOA','FAMILIA'),
-    marca:idx('MARCA','PROVEEDOR','BRAND'),norma:idx('NORMA','TIPO_COMPRA'),canal:idx('CANAL','CHANNEL'),
-    pago:idx('TIPO_PAGO','PAGO','PAYMENT'),fecha:idx('FECHA','DATE','DIA'),vp:idx('VENTA_','VENTA$','VENTA_PESOS','VENTAS'),
+    marca:idx('MARCA','PROVEEDOR','BRAND'),norma:idx('NORMA','TIPO_COMPRA'),canal:idx('SUBCANAL','CANAL_VENTA','CANAL_DE_VENTA','CANAL','CHANNEL'),
+    pago:idx('TIPO_PAGO','TIPO_DE_PAGO','FORMA_PAGO','FORMA_DE_PAGO','MEDIO_PAGO','MEDIO_DE_PAGO','PAGO','TENDER','PAYMENT','TARJETA'),fecha:idx('FECHA','DATE','DIA'),vp:idx('VENTA_','VENTA$','VENTA_PESOS','VENTAS'),
     vu:idx('VENTA_U','UNIDADES','PIEZAS'),mg:idx('MG','MARGEN'),util:idx('UTILIDAD','UTIL'),md:idx('MARKDOWN','DESCUENTO','MD')};
   const out=[];
   for(let i=1;i<rows.length;i++){ const r=rows[i]; if(!r||r.every(c=>!c)) continue;
@@ -253,7 +253,7 @@ const parseInvCSV = text => {
   // exacto primero (OH no debe atrapar OH_PESOS), luego "contiene"
   const idx=(...ns)=>{ const e=ns.map(n=>H.indexOf(n)).find(i=>i>=0); return e??(ns.map(n=>H.findIndex(h=>h.includes(n))).find(i=>i>=0)??-1); };
   const I={div:idx('DIVISION','DIV'),sec:idx('SECCION'),numSec:idx('NUMSECCION','NUM_SECCION','_SECCION'),goa:idx('GOA','FAMILIA'),marca:idx('MARCA','PROVEEDOR'),norma:idx('NORMA','TIPO_COMPRA'),
-    ubic:idx('UBICACION','CENTRO','TIENDA','BODEGA'),tipo:idx('TIPO_UBICACION','TIPO_CENTRO','TIPO'),oh:idx('OH','ON_HAND','INVENTARIO'),
+    ohLY:idx('OH_AA','OH_LY','OH_AANT','OH_ANIO_ANT','INV_AA'),ubic:idx('UBICACION','CENTRO','TIENDA','BODEGA'),tipo:idx('TIPO_UBICACION','TIPO_CENTRO','TIPO'),oh:idx('OH','ON_HAND','INVENTARIO'),
     oo:idx('OO','ON_ORDER','PEDIDO'),ohP:idx('OH_PESOS','OH_$','OH$','OH_P','VALOR_OH'),ooP:idx('OO_PESOS','OO_$','OO$','OO_P','VALOR_OO'),cv:idx('COSTO_VENDIDO','COSTO'),uv:idx('UTILIDAD_VENDIDA','UTIL_VENDIDA'),comp:idx('COMPRADO','COMPRA_TOTAL'),
     nac:idx('NACIONAL','NAC'),imp:idx('IMPORTACION','IMP'),vref:idx('VENTA','VENTAS')};
   const out=[];
@@ -268,7 +268,7 @@ const parseInvCSV = text => {
     const seccion=(/^\d+$/.test(secRaw)&&secName&&!/^\d+$/.test(secName))?secName.toUpperCase():secRaw.toUpperCase();
     out.push({ division:I.div>=0?r[I.div].trim().toUpperCase():'', seccion,
       goa:I.goa>=0?r[I.goa].trim().toUpperCase():'', marca:I.marca>=0?r[I.marca].trim().toUpperCase():'', norma:I.norma>=0?r[I.norma].trim().toUpperCase():'',
-      ubicacion:ubicRaw, tipo, oh:num(I.oh>=0?r[I.oh]:0), oo:num(I.oo>=0?r[I.oo]:0), ohP:I.ohP>=0?num(r[I.ohP]):null, ooP:I.ooP>=0?num(r[I.ooP]):null, costoVendido:num(I.cv>=0?r[I.cv]:0),
+      ubicacion:ubicRaw, tipo, oh:num(I.oh>=0?r[I.oh]:0), ohLY:I.ohLY>=0?num(r[I.ohLY]):null, oo:num(I.oo>=0?r[I.oo]:0), ohP:I.ohP>=0?num(r[I.ohP]):null, ooP:I.ooP>=0?num(r[I.ooP]):null, costoVendido:num(I.cv>=0?r[I.cv]:0),
       utilidadVendida:num(I.uv>=0?r[I.uv]:0), comprado:num(I.comp>=0?r[I.comp]:0), nacional:num(I.nac>=0?r[I.nac]:0),
       importacion:num(I.imp>=0?r[I.imp]:0), ventaRef:num(I.vref>=0?r[I.vref]:0) });
   }
@@ -590,10 +590,10 @@ export default function ModuleDaily(){
   const pivot=useMemo(()=>{
     const LV=['division','seccion','goa']; const root={kids:{}};
     const add=(r,f)=>{ let n=root; const path=[]; LV.forEach(k=>{ const v=r[k]||'N/D'; path.push(v);
-      if(!n.kids[v]) n.kids[v]={id:path.join('›'),key:v,v:0,u:0,util:0,lyV:0,lyUtil:0,oh:0,plV:0,plUtil:0,kids:{}}; n=n.kids[v]; f(n); }); };
+      if(!n.kids[v]) n.kids[v]={id:path.join('›'),key:v,v:0,u:0,util:0,lyV:0,lyU:0,lyUtil:0,oh:0,ohLY:0,plV:0,plUtil:0,kids:{}}; n=n.kids[v]; f(n); }); };
     tyData.forEach(r=>add(r,n=>{ n.v+=r.ventaP; n.u+=r.ventaU; n.util+=r.utilidad; }));
-    lyData.forEach(r=>add(r,n=>{ n.lyV+=r.ventaP; n.lyUtil+=r.utilidad; }));
-    filtInv.forEach(r=>add(r,n=>{ n.oh+=r.oh; }));
+    lyData.forEach(r=>add(r,n=>{ n.lyV+=r.ventaP; n.lyU+=r.ventaU; n.lyUtil+=r.utilidad; }));
+    filtInv.forEach(r=>add(r,n=>{ n.oh+=r.oh; n.ohLY+=r.ohLY||0; }));
     // Plan mensual prorrateado a los días del periodo TY (primer día con venta → último día con data)
     const fs=tyData.filter(r=>r.fecha).map(r=>r.fecha);
     if(planData.length&&fs.length){ const a=new Date(minOf(fs)), b=new Date(maxOf(fs)); a.setHours(0,0,0,0); b.setHours(0,0,0,0);
@@ -602,10 +602,10 @@ export default function ModuleDaily(){
       planData.forEach(p=>{ const f=fac[p.mes]; if(!f||!ok(fDiv,p.division)||!ok(fSec,p.seccion)||!ok(fGoa,p.goa)||!ok(fMarca,p.marca)) return;
         add(p,n=>{ n.plV+=p.v*f; n.plUtil+=p.util*f; }); }); }
     const pDays=new Set(tyData.filter(r=>r.fecha).map(r=>r.fecha.toDateString())).size||1;
-    const fin=n=>({...n, mg:n.v>0?n.util/n.v*100:null, mgLY:n.lyV>0?n.lyUtil/n.lyV*100:null, dV:delta(n.v,n.lyV), dPl:n.plV>0?delta(n.v,n.plV):null, mgPl:n.plV>0?n.plUtil/n.plV*100:null,
+    const fin=n=>({...n, mg:n.v>0?n.util/n.v*100:null, mgLY:n.lyV>0?n.lyUtil/n.lyV*100:null, dV:delta(n.v,n.lyV), dU:delta(n.u,n.lyU), dOH:n.ohLY>0?delta(n.oh,n.ohLY):null, dPl:n.plV>0?delta(n.v,n.plV):null, mgPl:n.plV>0?n.plUtil/n.plV*100:null,
       rot:n.oh>0?(n.u/pDays*365)/n.oh:null, kids:Object.values(n.kids).map(fin).sort((a,b)=>b.v-a.v)});
     const top=Object.values(root.kids).map(fin).sort((a,b)=>b.v-a.v);
-    const tot=top.reduce((a,n)=>({v:a.v+n.v,u:a.u+n.u,util:a.util+n.util,lyV:a.lyV+n.lyV,lyUtil:a.lyUtil+n.lyUtil,oh:a.oh+n.oh,plV:a.plV+n.plV,plUtil:a.plUtil+n.plUtil}),{v:0,u:0,util:0,lyV:0,lyUtil:0,oh:0,plV:0,plUtil:0});
+    const tot=top.reduce((a,n)=>({v:a.v+n.v,u:a.u+n.u,util:a.util+n.util,lyV:a.lyV+n.lyV,lyU:a.lyU+n.lyU,lyUtil:a.lyUtil+n.lyUtil,oh:a.oh+n.oh,ohLY:a.ohLY+n.ohLY,plV:a.plV+n.plV,plUtil:a.plUtil+n.plUtil}),{v:0,u:0,util:0,lyV:0,lyU:0,lyUtil:0,oh:0,ohLY:0,plV:0,plUtil:0});
     return {rows:top, tot:fin({...tot,id:'TOTAL',key:'TOTAL',kids:{}}), pDays};
   },[tyData,lyData,filtInv,planData,fDiv,fSec,fGoa,fMarca]);
 
@@ -838,7 +838,7 @@ export default function ModuleDaily(){
   const ResumenPivot=()=>{
     const tog=id=>setPvOpen(p=>{ const n=new Set(p); n.has(id)?n.delete(id):n.add(id); return n; });
     const all=[]; const walk=(ns,d)=>ns.forEach(n=>{ if(d<2){ all.push(n.id); walk(n.kids,d+1); } }); walk(pivot.rows,0);
-    const totV=pivot.tot.v||1; const hasPl=pivot.tot.plV>0; const T=pivot.tot;
+    const totV=pivot.tot.v||1; const hasPl=pivot.tot.plV>0; const T=pivot.tot; const hasOhLY=T.ohLY>0;
     const mgC=v=>v==null?t.textMuted:v>=45?'text-violet-400':v>=35?'text-amber-400':'text-rose-400';
     const rotC=v=>v==null?t.textMuted:v>=4?'text-violet-400':v>=2.5?'text-amber-400':'text-rose-400';
     const ppC=v=>v==null?t.textMuted:v>=0?'text-violet-400':'text-rose-400';
@@ -853,10 +853,14 @@ export default function ModuleDaily(){
           <td className={`p-2 font-mono text-right ${t.textMuted}`}>{fmtP(n.v/totV*100)}</td>
           <td className="p-2 text-right"><DeltaBadge value={n.dV}/></td>
           {hasPl&&<td className="p-2 text-right">{n.dPl!=null?<DeltaBadge value={n.dPl}/>:<span className={t.textMuted}>—</span>}</td>}
+          <td className={`p-2 font-mono text-right ${t.textMain}`}>{fmt(n.u)}</td>
+          <td className="p-2 text-right"><DeltaBadge value={n.dU}/></td>
           <td className={`p-2 font-bold text-right ${mgC(n.mg)}`}>{n.mg!=null?fmtP(n.mg):'—'}</td>
           <td className={`p-2 font-mono text-right ${ppC(dpp)}`}>{pp(dpp)}</td>
           {hasPl&&<td className={`p-2 font-mono text-right ${ppC(dppPl)}`}>{pp(dppPl)}</td>}
           <td className={`p-2 font-bold text-right ${rotC(n.rot)}`}>{n.rot!=null?n.rot.toFixed(1)+'x':'—'}</td>
+          <td className={`p-2 font-mono text-right ${t.textMain}`}>{n.oh?fmt(n.oh):'—'}</td>
+          <td className="p-2 text-right">{hasOhLY?<DeltaBadge value={n.dOH}/>:<span className={t.textMuted}>—</span>}</td>
         </tr>
         {open&&n.kids.map(k=><Row key={k.id} n={k} d={d+1}/>)}
       </>; };
@@ -876,7 +880,7 @@ export default function ModuleDaily(){
         <div className="overflow-auto custom-scrollbar max-h-[70vh]">
           <table className="w-full text-xs min-w-max">
             <thead><tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 z-10 ${isDark?'bg-[#1c1720] text-gray-400 border-b border-white/10':'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
-              {['Jerarquía','Venta','% Part','vs AA',...(hasPl?['vs Plan']:[]),'MG %','Δ MG vs AA',...(hasPl?['Δ MG vs Plan']:[]),'Rot'].map((h,i)=><th key={h} className={`p-2 whitespace-nowrap ${i?'text-right':'text-left'}`}>{h}</th>)}
+              {['Jerarquía','Venta','% Part','vs AA',...(hasPl?['vs Plan']:[]),'Pzs','Pzs vs AA','MG %','Δ MG vs AA',...(hasPl?['Δ MG vs Plan']:[]),'Rot','Inv OH','Inv vs AA'].map((h,i)=><th key={h} className={`p-2 whitespace-nowrap ${i?'text-right':'text-left'}`}>{h}</th>)}
             </tr></thead>
             <tbody className={`divide-y ${isDark?'divide-zinc-800/50':'divide-gray-100'}`}>{pivot.rows.map(n=><Row key={n.id} n={n} d={0}/>)}</tbody>
             <tfoot><tr className={`font-black sticky bottom-0 ${isDark?'bg-[#1c1720] border-t-2 border-violet-500/50':'bg-violet-50 border-t-2 border-violet-300'}`}>
@@ -885,14 +889,18 @@ export default function ModuleDaily(){
               <td className={`p-2 font-mono text-right ${t.textMuted}`}>100%</td>
               <td className="p-2 text-right"><DeltaBadge value={T.dV}/></td>
               {hasPl&&<td className="p-2 text-right"><DeltaBadge value={T.dPl}/></td>}
+              <td className={`p-2 font-mono text-right ${t.textMain}`}>{fmt(T.u)}</td>
+              <td className="p-2 text-right"><DeltaBadge value={T.dU}/></td>
               <td className={`p-2 text-right ${mgC(T.mg)}`}>{T.mg!=null?fmtP(T.mg):'—'}</td>
               <td className={`p-2 font-mono text-right ${ppC(T.mg!=null&&T.mgLY!=null?T.mg-T.mgLY:null)}`}>{pp(T.mg!=null&&T.mgLY!=null?T.mg-T.mgLY:null)}</td>
               {hasPl&&<td className={`p-2 font-mono text-right ${ppC(T.mg!=null&&T.mgPl!=null?T.mg-T.mgPl:null)}`}>{pp(T.mg!=null&&T.mgPl!=null?T.mg-T.mgPl:null)}</td>}
               <td className={`p-2 text-right ${rotC(pivot.tot.rot)}`}>{pivot.tot.rot!=null?pivot.tot.rot.toFixed(1)+'x':'—'}</td>
+              <td className={`p-2 font-mono text-right ${t.textMain}`}>{T.oh?fmt(T.oh):'—'}</td>
+              <td className="p-2 text-right">{hasOhLY?<DeltaBadge value={T.dOH}/>:<span className={t.textMuted}>—</span>}</td>
             </tr></tfoot>
           </table>
         </div>
-        <p className={`text-[10px] mt-2 ${t.textMuted}`}>Respeta filtros y rango. Rot = venta pzs anualizada ({pivot.pDays} días con venta × 365) ÷ OH pzs{filtInv.length?'':' · carga CSV de inventario para ver Rot'}. Click en una fila para abrir/cerrar. vs AA = mismo periodo año anterior. vs Plan = plan mensual (CSV: MES, DIVISION, SECCION, GOA, VENTA, UTILIDAD o MG) prorrateado a los días del periodo{hasPl?'':' · carga el CSV Plan para verlo'}.</p>
+        <p className={`text-[10px] mt-2 ${t.textMuted}`}>Respeta filtros y rango. Rot = venta pzs anualizada ({pivot.pDays} días con venta × 365) ÷ OH pzs{filtInv.length?'':' · carga CSV de inventario para ver Rot'}. Inv vs AA requiere columna OH_AA en el CSV de inventario{hasOhLY?'':' (no viene)'}. Click en una fila para abrir/cerrar. vs AA = mismo periodo año anterior. vs Plan = plan mensual (CSV: MES, DIVISION, SECCION, GOA, VENTA, UTILIDAD o MG) prorrateado a los días del periodo{hasPl?'':' · carga el CSV Plan para verlo'}.</p>
       </div>);
   };
 
