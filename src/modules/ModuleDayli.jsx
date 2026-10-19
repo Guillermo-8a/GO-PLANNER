@@ -766,9 +766,6 @@ export default function ModuleDaily(){
         <input type="checkbox" checked={showInv} onChange={e=>setShowInv(e.target.checked)} className="accent-violet-500"/> Inventario
       </label>
       <label className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border font-bold cursor-pointer ${t.btnGhost}`}>
-        <input type="checkbox" checked={moneyK} onChange={e=>setMoneyK(e.target.checked)} className="accent-violet-500"/> $ en miles
-      </label>
-      <label className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border font-bold cursor-pointer ${t.btnGhost}`}>
         <input type="checkbox" checked={usarPromosFijas} onChange={e=>setUsarPromosFijas(e.target.checked)} className="accent-violet-500"/> Promos fijas
       </label>
       {(fCanal.length||fDiv.length||fSec.length||fGoa.length||fMarca.length||fNorma.length||fPago.length||dateFrom||dateTo)?(
@@ -785,7 +782,7 @@ export default function ModuleDaily(){
         {label:'MG %',val:fmtP(kpiTY.mgPct),d:null,c:kpiTY.mgPct>=45?'text-violet-400':kpiTY.mgPct>=35?'text-amber-400':'text-red-400'},
         {label:'Utilidad',val:fmtM(kpiTY.utilidad),d:null,c:'text-purple-400'},
         {label:'Markdowns',val:fmtM(kpiTY.markdown),d:null,c:'text-amber-400'},
-        {label:'PVP Prom',val:fmtMd(kpiTY.atv*(moneyK?1000:1)),d:null,c:t.textAccent1,sub:moneyK?'venta/pza (pesos)':'venta/pza'}].map(({label,val,d,c,sub})=>(
+        {label:'PVP Prom',val:fmtMd(kpiTY.atv>0&&kpiTY.atv<50?kpiTY.atv*1000:kpiTY.atv),d:null,c:t.textAccent1,sub:'venta/pza (pesos)'}].map(({label,val,d,c,sub})=>(
         <div key={label} className={`p-3 rounded-xl border text-center flex flex-col items-center justify-center ${t.cardInner}`}>
           <div className={`text-[11px] font-black uppercase tracking-widest ${t.textMuted} mb-1`}>{label}</div>
           <div className={`text-xl md:text-2xl font-black ${c}`}>{val}</div>{sub&&<div className={`text-[10px] ${t.textMuted}`}>{sub}</div>}
