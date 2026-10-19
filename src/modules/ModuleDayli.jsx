@@ -88,6 +88,21 @@ const FIXED_PROMOS=[
   {name:'El Buen Fin',uplift:35,calc:y=>{ const mon=nthWeekday(y,10,1,3); return [addDays(mon,-3),mon]; }}, // vie-lun del 3er lunes nov
   {name:'Venta Nocturna',uplift:20,calc:y=>{ const s=nthWeekday(y,7,5,2); return [s,addDays(s,2)]; }}, // ~2do vie ago, fin de semana
 ];
+// ── Eventos comerciales con fechas reales (calendario de Eventos). Sustituyen al cálculo aproximado del mismo nombre ese año.
+const DATED_PROMOS=[
+  {name:'GVL SS (invierno)',ini:'2025-12-25',fin:'2026-02-02',uplift:0},
+  {name:'MS SS 2026',ini:'2026-04-13',fin:'2026-04-26',uplift:20},
+  {name:'GVL SS 2026',ini:'2026-05-22',fin:'2026-08-22',uplift:0},
+  {name:'Hot Sale',ini:'2026-05-25',fin:'2026-06-02',uplift:30},
+  {name:'BTS 2026',ini:'2026-09-01',fin:'2026-09-30',uplift:0},
+  {name:'MS FW 2026',ini:'2026-09-14',fin:'2026-09-27',uplift:20},
+  {name:'ATH FW 2026',ini:'2026-09-24',fin:'2026-09-27',uplift:20},
+  {name:'Aniversario',ini:'2026-10-12',fin:'2026-10-25',uplift:25},
+  {name:'NM ANV',ini:'2026-10-16',fin:'2026-10-18',uplift:20},
+  {name:'El Buen Fin',ini:'2026-11-13',fin:'2026-11-17',uplift:35},
+  {name:'Black Days',ini:'2026-11-27',fin:'2026-11-30',uplift:25},
+  {name:'Noche Morada Navidad',ini:'2026-12-10',fin:'2026-12-13',uplift:20},
+];
 const isWeekend = d => d.getDay()===0||d.getDay()===6;
 const dayType = d => holidayName(d)?'festivo':isWeekend(d)?'finde':'normal';
 
@@ -432,7 +447,10 @@ export default function ModuleDaily(){
 
   // Promos fijas recurrentes (Hot Sale, Buen Fin, etc.) resueltas por año
   const fixedPromoEntries=useMemo(()=>{ if(!usarPromosFijas) return []; const out=[];
-    [tyYear,lyYear].forEach(y=>FIXED_PROMOS.forEach(p=>{ const [s,e]=p.calc(y); if(!s||!e) return;
+    const yrs=[tyYear,lyYear];
+    DATED_PROMOS.forEach(p=>{ if(!yrs.some(y=>p.ini.startsWith(String(y))||p.fin.startsWith(String(y)))) return;
+      for(let d=new Date(p.ini+'T00:00:00'); d<=new Date(p.fin+'T00:00:00'); d.setDate(d.getDate()+1)) out.push({fecha:isoOf(new Date(d)),nombre:p.name,seccion:'',marca:'',uplift:p.uplift,fija:true}); });
+    yrs.forEach(y=>FIXED_PROMOS.forEach(p=>{ if(DATED_PROMOS.some(q=>q.name===p.name&&q.ini.startsWith(String(y)))) return; const [s,e]=p.calc(y); if(!s||!e) return;
       for(let d=new Date(s); d<=e; d.setDate(d.getDate()+1)) out.push({fecha:isoOf(new Date(d)),nombre:p.name,seccion:'',marca:'',uplift:p.uplift,fija:true}); })); return out;
   },[usarPromosFijas,tyYear,lyYear]);
   const allPromoEntries=useMemo(()=>[...promoEntries,...fixedPromoEntries],[promoEntries,fixedPromoEntries]);
