@@ -1,12 +1,24 @@
-// TeamTrackerPage.jsx — GO PLANNER Team Tracker con GO-Bot Integrado
+// Página independiente para GO PLANNER (fuera del patrón de módulos).
+// Este archivo NO está pensado para verse como artifact aquí en Claude —
+// es código fuente para copiar a tu proyecto de GO PLANNER (Vite + React).
+//
+// Wiring en tu router (ya tienes react-router-dom instalado):
+// 1) agrega una <Route> con path "/team-tracker" apuntando a este componente.
+// 2) agrega un botón/Link en tu topbar o sidebar que navegue a esa ruta.
+//
+// Antes de usarla, pega tu URL de Apps Script (termina en /exec) aquí abajo:
 const APPS_SCRIPT_URL = 'https://script.google.com/macros/s/AKfycbyO2WhyRMxeMFO38SjerexylRPT5UHJaGpMLhc6c_zk4vEfey76SevEROqGfEsGHV8j/exec';
 
+// Si tienes el logo real de GO PLANNER, reemplaza <LogoMark /> más abajo por
+// <img src="/ruta/a/tu/logo.svg" className="tt-logo-img" /> — dejé un monograma
+// de placeholder para que no se vea vacío mientras tanto.
+
 import React, { useState, useEffect, useMemo, useRef, useLayoutEffect } from 'react';
+import { Link } from 'react-router-dom';
 import { Home } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import AppHeader from './components/AppHeader';
 import { THEMES } from './App';
-import { useGoBot } from './context/GoBotContext';
 
 const STATUS_ORDER = ['pending', 'progress', 'done'];
 const STATUS = {
@@ -28,32 +40,74 @@ const PILAR = {
   bomberazos: { label: 'Bomberazos', dot: '#F2F2F2' },
 };
 const PILAR_ORDER = ['financiero', 'demand', 'inventarios', 'bomberazos'];
+const AVATAR_GRADIENTS = [
+  'linear-gradient(135deg, #8A73AD, #4B4550)',
+  'linear-gradient(135deg, #E0BB3E, #8A6E1F)',
+  'linear-gradient(135deg, #9A9CA3, #4B4550)',
+  'linear-gradient(135deg, #8A73AD, #E0BB3E)',
+];
+const GLOW_COLORS = ['#8A73AD', '#E0BB3E', '#9A9CA3', '#B39DDB'];
 
-// --- Utilidades auxiliares de fecha y texto ---
-function todayISO() { return new Date().toISOString().split('T')[0]; }
-function toISO(d) { return d.toISOString().split('T')[0]; }
-function addDays(d, n) { const x = new Date(d); x.setDate(x.getDate() + n); return x; }
-function startOfWeek(d) { const x = new Date(d); const day = x.getDay(); const diff = x.getDate() - day + (day === 0 ? -6 : 1); return new Date(x.setDate(diff)); }
-function fmtShort(iso) { if (!iso) return ''; const p = iso.split('-'); return `${p[2]}/${p[1]}`; }
-function isoWeekNumber(d) { const t = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate())); const dayNum = t.getUTCDay() || 7; t.setUTCDate(t.getUTCDate() + 4 - dayNum); const yearStart = new Date(Date.UTC(t.getUTCFullYear(), 0, 1)); return Math.ceil(((t - yearStart) / 86400000 + 1) / 7); }
-function uid() { return Math.random().toString(36).substr(2, 9); }
-function initials(name) { if (!name) return '??'; const p = name.trim().split(/\s+/); return p.length >= 2 ? (p[0][0] + p[1][0]).toUpperCase() : p[0].substring(0, 2).toUpperCase(); }
-function avatarGradient(name) {
-  const g = ['linear-gradient(135deg, #A78BFA, #7C3AED)', 'linear-gradient(135deg, #34D399, #059669)', 'linear-gradient(135deg, #F472B6, #DB2777)', 'linear-gradient(135deg, #60A5FA, #2563EB)', 'linear-gradient(135deg, #FBBF24, #D97706)'];
-  let h = 0; for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
-  return g[Math.abs(h) % g.length];
+function hashName(name) {
+  let h = 0;
+  for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
+  return Math.abs(h);
 }
-function avatarGlow(name) {
-  const g = ['rgba(124,58,237,0.35)', 'rgba(5,150,105,0.35)', 'rgba(219,39,119,0.35)', 'rgba(37,99,235,0.35)', 'rgba(217,119,6,0.35)'];
-  let h = 0; for (let i = 0; i < name.length; i++) h = name.charCodeAt(i) + ((h << 5) - h);
-  return g[Math.abs(h) % g.length];
-}
+function avatarGradient(name) { return AVATAR_GRADIENTS[hashName(name) % AVATAR_GRADIENTS.length]; }
+function avatarGlow(name) { return GLOW_COLORS[hashName(name) % GLOW_COLORS.length]; }
 
-// Función que faltaba y causaba pantalla blanca
+function uid() {
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+function toISO(d) {
+  return d.toISOString().slice(0, 10);
+}
+function todayISO() {
+  return toISO(new Date());
+}
+function startOfWeek(d) {
+  const date = new Date(d);
+  const day = date.getDay();
+  const diff = (day === 0 ? -6 : 1) - day;
+  date.setDate(date.getDate() + diff);
+  date.setHours(0, 0, 0, 0);
+  return date;
+}
+function addDays(d, n) {
+  const date = new Date(d);
+  date.setDate(date.getDate() + n);
+  return date;
+}
+function isoWeekNumber(d) {
+  const date = new Date(Date.UTC(d.getFullYear(), d.getMonth(), d.getDate()));
+  const dayNum = date.getUTCDay() || 7;
+  date.setUTCDate(date.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(date.getUTCFullYear(), 0, 1));
+  return Math.ceil(((date - yearStart) / 86400000 + 1) / 7);
+}
+function fmtShort(iso) {
+  if (!iso) return '—';
+  const [y, m, d] = iso.split('-');
+  const meses = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
+  return `${parseInt(d, 10)} ${meses[parseInt(m, 10) - 1]}`;
+}
+function initials(name) {
+  return name.split(' ').map((p) => p[0]).join('').slice(0, 2).toUpperCase();
+}
 function emptyForm(team) {
-  return { id: null, title: '', assignee: team && team.length ? team[0] : '', dueDate: todayISO(), priority: 'B', pilar: 'financiero', status: 'pending', notas: '' };
+  return {
+    id: null,
+    title: '',
+    assignee: (team && team[0]) || '',
+    dueDate: todayISO(),
+    priority: 'B',
+    pilar: 'financiero',
+    status: 'pending',
+    notas: '',
+  };
 }
 
+// --- Backend: Google Sheets vía Apps Script (una hoja "KV" de key/value) ---
 async function kvLoadAll() {
   const res = await fetch(APPS_SCRIPT_URL);
   if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -73,8 +127,6 @@ const MESES = ['Enero', 'Febrero', 'Marzo', 'Abril', 'Mayo', 'Junio', 'Julio', '
 const DOW = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
 
 export default function TeamTrackerPage() {
-  const { triggerSurprisePeek } = useGoBot() || {};
-
   const [tasks, setTasks] = useState(null);
   const [team, setTeam] = useState(null);
   const [adminPin, setAdminPin] = useState(null);
@@ -91,7 +143,7 @@ export default function TeamTrackerPage() {
   const [renamingMember, setRenamingMember] = useState(null);
   const [renameValue, setRenameValue] = useState('');
   const [notice, setNotice] = useState('');
-  const [form, setForm] = useState(() => emptyForm([]));
+  const [form, setForm] = useState(emptyForm([]));
   const [drafts, setDrafts] = useState({});
   const [collapsed, setCollapsed] = useState(false);
   const [groupBy, setGroupBy] = useState('status');
@@ -101,6 +153,8 @@ export default function TeamTrackerPage() {
   const editingRef = useRef(false);
   const [indicator, setIndicator] = useState({ left: 0, width: 0 });
 
+  // El modal de tarea, el de equipo, el PIN o un rename en curso bloquean
+  // que un refresco automático pise lo que se está escribiendo.
   useEffect(() => {
     editingRef.current = !!(showForm || pinModal || renamingMember || newMemberName);
   }, [showForm, pinModal, renamingMember, newMemberName]);
@@ -108,31 +162,47 @@ export default function TeamTrackerPage() {
   async function loadAll({ silent } = {}) {
     try {
       const all = await kvLoadAll();
-      if (editingRef.current) return;
+      if (editingRef.current) return; // no pisar mientras hay algo abierto
       const nextTasks = all['tasks-board'] ? JSON.parse(all['tasks-board']) : [];
       const nextTeam = all['team-roster'] ? JSON.parse(all['team-roster']) : [];
       const nextPin = all['admin-pin'] != null && all['admin-pin'] !== '' ? String(all['admin-pin']) : null;
-      setTasks((prev) => (prev && JSON.stringify(prev) === JSON.stringify(nextTasks) ? prev : nextTasks));
-      setTeam((prev) => (prev && JSON.stringify(prev) === JSON.stringify(nextTeam) ? prev : nextTeam));
+      setTasks((prev) => {
+        const s = JSON.stringify(nextTasks);
+        return prev && JSON.stringify(prev) === s ? prev : nextTasks;
+      });
+      setTeam((prev) => {
+        const s = JSON.stringify(nextTeam);
+        return prev && JSON.stringify(prev) === s ? prev : nextTeam;
+      });
       setAdminPin(nextPin);
       const nextHo = all['ho-board'] ? { ...HO_DEFAULT, ...JSON.parse(all['ho-board']) } : HO_DEFAULT;
       setHo((prev) => (prev && JSON.stringify(prev) === JSON.stringify(nextHo) ? prev : nextHo));
     } catch (e) {
       if (!silent) {
-        setNotice('No se pudo conectar con el backend: ' + (e && e.message ? e.message : 'error'));
-        setTasks([]); setTeam([]); setAdminPin(null); setHo(HO_DEFAULT);
+        setNotice('No se pudo conectar con el backend: ' + (e && e.message ? e.message : 'error desconocido'));
+        setTasks([]);
+        setTeam([]);
+        setAdminPin(null);
+        setHo(HO_DEFAULT);
       }
+      // en un refresco silencioso en segundo plano, si falla, dejamos lo
+      // que ya está en pantalla en vez de vaciarlo
     }
   }
 
   useEffect(() => {
     loadAll();
     let ticks = 0;
+    // Con el foco: cada 7s. Sin foco (ventana de fondo, ej. otro monitor
+    // mientras trabajas en otra app): cada ~42s, para no gastar cuota de
+    // Apps Script cuando nadie está realmente viendo la pantalla.
     const interval = setInterval(() => {
       ticks++;
       if (document.hasFocus() || ticks % 6 === 0) loadAll({ silent: true });
     }, 7000);
-    const onFocusOrVisible = () => { if (document.visibilityState === 'visible') loadAll({ silent: true }); };
+    const onFocusOrVisible = () => {
+      if (document.visibilityState === 'visible') loadAll({ silent: true });
+    };
     document.addEventListener('visibilitychange', onFocusOrVisible);
     window.addEventListener('focus', onFocusOrVisible);
     return () => {
@@ -140,6 +210,7 @@ export default function TeamTrackerPage() {
       document.removeEventListener('visibilitychange', onFocusOrVisible);
       window.removeEventListener('focus', onFocusOrVisible);
     };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   useEffect(() => {
@@ -156,22 +227,24 @@ export default function TeamTrackerPage() {
   async function saveTasks(next) {
     setTasks(next);
     try { await kvSet('tasks-board', JSON.stringify(next)); }
-    catch (e) { setNotice('No se pudo guardar: ' + (e && e.message ? e.message : 'error')); }
+    catch (e) { setNotice('No se pudo guardar: ' + (e && e.message ? e.message : 'error desconocido')); }
   }
   async function saveTeam(next) {
     setTeam(next);
     try { await kvSet('team-roster', JSON.stringify(next)); }
-    catch (e) { setNotice('No se pudo guardar el equipo: ' + (e && e.message ? e.message : 'error')); }
+    catch (e) { setNotice('No se pudo guardar el equipo: ' + (e && e.message ? e.message : 'error desconocido')); }
   }
+
   async function saveHo(next) {
     setHo(next);
     try { await kvSet('ho-board', JSON.stringify(next)); }
-    catch (e) { setNotice('No se pudo guardar HO: ' + (e && e.message ? e.message : 'error')); }
+    catch (e) { setNotice('No se pudo guardar HO: ' + (e && e.message ? e.message : 'error desconocido')); }
   }
 
   function toggleAdmin() {
     if (isAdmin) { setIsAdmin(false); return; }
-    setPinInput(''); setPinError('');
+    setPinInput('');
+    setPinError('');
     setPinModal(adminPin ? 'enter' : 'create');
   }
 
@@ -180,8 +253,10 @@ export default function TeamTrackerPage() {
       if (pinInput.trim().length < 4) { setPinError('Usa al menos 4 caracteres.'); return; }
       try {
         await kvSet('admin-pin', pinInput.trim());
-        setAdminPin(pinInput.trim()); setIsAdmin(true); setPinModal(null);
-      } catch (e) { setPinError('No se pudo guardar PIN'); }
+        setAdminPin(pinInput.trim());
+        setIsAdmin(true);
+        setPinModal(null);
+      } catch (e) { setPinError('No se pudo guardar: ' + (e && e.message ? e.message : 'error desconocido')); }
     } else {
       if (pinInput.trim() === adminPin) { setIsAdmin(true); setPinModal(null); }
       else { setPinError('PIN incorrecto.'); }
@@ -194,42 +269,53 @@ export default function TeamTrackerPage() {
     setShowForm(true);
   }
 
+  function notifyNewTask(task) {
+    fetch(APPS_SCRIPT_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain' },
+      body: JSON.stringify({ type: 'notify', title: task.title, assignee: task.assignee, dueDate: task.dueDate, priority: task.priority }),
+    }).catch(() => {});
+  }
+
   function submitForm() {
     if (!form.title.trim() || !form.dueDate) return;
     if (form.id) {
       if (!form.assignee) return;
       if (form.groupId && editScope === 'group') {
-        saveTasks(tasks.map((t) => (t.groupId === form.groupId ? { ...t, title: form.title.trim(), dueDate: form.dueDate, priority: form.priority, pilar: form.pilar, notas: form.notas } : t)));
+        saveTasks(tasks.map((t) => (t.groupId === form.groupId
+          ? { ...t, title: form.title.trim(), dueDate: form.dueDate, priority: form.priority, pilar: form.pilar, notas: form.notas }
+          : t)));
       } else {
         saveTasks(tasks.map((t) => (t.id === form.id ? { ...t, ...form, title: form.title.trim() } : t)));
       }
     } else if (form.assignee === '__ALL__') {
       const groupId = uid();
-      const base = { title: form.title.trim(), dueDate: form.dueDate, createdDate: todayISO(), priority: form.priority, pilar: form.pilar, status: 'pending', completedAt: null, comment: '', notas: form.notas, groupId };
+      const base = {
+        title: form.title.trim(), dueDate: form.dueDate, createdDate: todayISO(),
+        priority: form.priority, pilar: form.pilar, status: 'pending', completedAt: null, comment: '', notas: form.notas, groupId,
+      };
       const newTasks = team.map((m) => ({ id: uid(), assignee: m, ...base }));
       saveTasks([...(tasks || []), ...newTasks]);
+      notifyNewTask({ title: base.title, assignee: `Todo el equipo (${team.length})`, dueDate: base.dueDate, priority: base.priority });
     } else {
       if (!form.assignee) return;
-      const task = { id: uid(), title: form.title.trim(), assignee: form.assignee, dueDate: form.dueDate, createdDate: todayISO(), priority: form.priority, pilar: form.pilar, status: 'pending', completedAt: null, comment: '', notas: form.notas, groupId: null };
+      const task = {
+        id: uid(), title: form.title.trim(), assignee: form.assignee, dueDate: form.dueDate,
+        createdDate: todayISO(), priority: form.priority, pilar: form.pilar,
+        status: 'pending', completedAt: null, comment: '', notas: form.notas, groupId: null,
+      };
       saveTasks([...(tasks || []), task]);
+      notifyNewTask(task);
     }
     setShowForm(false);
   }
 
-  // ✨ Dispara el GO-Bot asomándose abajo a la derecha cuando mueven tareas a en curso o hecho
   function cycleStatus(task) {
     const idx = STATUS_ORDER.indexOf(task.status);
     let next = STATUS_ORDER[(idx + 1) % STATUS_ORDER.length];
-    if (next === 'done' && !isAdmin) next = 'pending';
-
+    if (next === 'done' && !isAdmin) next = 'pending'; // solo admin confirma "Hecho"
     saveTasks(tasks.map((t) => (t.id === task.id ? { ...t, status: next, completedAt: next === 'done' ? todayISO() : null } : t)));
-
-    if (triggerSurprisePeek) {
-      if (next === 'done') triggerSurprisePeek('fortniteVictoryDance', 6000);
-      else if (next === 'progress') triggerSurprisePeek('threePointShot', 5000);
-    }
   }
-
   function deleteTask(id) { saveTasks(tasks.filter((t) => t.id !== id)); }
   function handleCommentChange(id, value) { setDrafts((d) => ({ ...d, [id]: value })); }
   function handleCommentBlur(id) {
@@ -340,7 +426,7 @@ export default function TeamTrackerPage() {
     .map((t) => ({ title: t.title, desc: `${t.assignee || 'Sin asignar'} · venció ${fmtShort(t.dueDate)}` }))
   ), [tasks]);
 
-  if (loading) return (<div className="tt-page"><style>{CSS}</style><div className="tt-root tt-loading"><p>Cargando el tablero…</p></div></div>);
+  if (loading) return (<div className="tt-page animate-fade-in"><style>{CSS}</style><div className="tt-root tt-loading"><p>Cargando el tablero…</p></div></div>);
 
   const TABS = [
     { key: 'board', label: 'Tablero' },
@@ -353,14 +439,15 @@ export default function TeamTrackerPage() {
   return (
     <div className="tt-page animate-fade-in">
       <style>{CSS}</style>
-      <AppHeader
+
+            <AppHeader
         t={THEMES.dark}
         isDark={true}
         sticky={false}
         subtitle="Team Tracker"
         bell={{ count: overdueCount, critical: overdueCount > 0, title: 'Pendientes vencidos', items: overdueTasks }}
         extraLinks={[{ to: '/', title: 'Volver a módulos', Icon: Home }]}
-        assistDescription="Pendientes del equipo, checklist, Gantt y resumen semanal."
+        assistDescription="Pendientes del equipo, checklist, Gantt y resumen semanal. El candado 🔒 desbloquea agregar, editar o borrar. Los datos viven en un Google Sheet aparte."
       />
 
       <div className="tt-root">
@@ -368,14 +455,14 @@ export default function TeamTrackerPage() {
           <div className="tt-side-head">
             {!collapsed && <span className="tt-tag">Equipo</span>}
             <div className="tt-side-actions">
-              {isAdmin && (
-                <button className={`tt-icon-btn ${showTeamEdit ? 'is-on' : ''}`} onClick={() => setShowTeamEdit((v) => !v)} title="Editar miembros">
+              <button className={`tt-icon-btn ${isAdmin ? 'is-on' : ''}`} title={isAdmin ? 'Salir de modo edición' : 'Modo edición'} onClick={toggleAdmin}>
+                <LockIcon open={isAdmin} />
+              </button>
+              {isAdmin && !collapsed && (
+                <button className="tt-icon-btn" title="Editar equipo" onClick={() => setShowTeamEdit((v) => !v)}>
                   <GearIcon />
                 </button>
               )}
-              <button className="tt-icon-btn" onClick={toggleAdmin} title={isAdmin ? 'Bloquear edición' : 'Desbloquear con PIN'}>
-                <LockIcon open={isAdmin} />
-              </button>
             </div>
           </div>
 
@@ -383,6 +470,7 @@ export default function TeamTrackerPage() {
             <span className="tt-avatar tt-avatar-all">{tasks.filter((t) => t.status !== 'done').length}</span>
             {!collapsed && <span className="tt-member-name">Todos</span>}
           </button>
+
 
           {team.map((m) => (
             <button key={m} className={`tt-member ${filter === m ? 'is-active' : ''}`} style={{ '--glow': avatarGlow(m) }} onClick={() => setFilter(m)} title={m}>
@@ -394,13 +482,17 @@ export default function TeamTrackerPage() {
           {isAdmin && showTeamEdit && !collapsed && (
             <div className="tt-team-edit">
               <div className="tt-inline-form">
-                <input value={newMemberName} onChange={(e) => setNewMemberName(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') addMember(); }} placeholder="Nombre" />
+                <input value={newMemberName} onChange={(e) => setNewMemberName(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') addMember(); }} placeholder="Nombre" />
                 <button type="button" onClick={addMember}>+</button>
               </div>
               {team.map((m) => (
                 <div key={m} className="tt-team-row">
                   {renamingMember === m ? (
-                    <input className="tt-rename-input" autoFocus value={renameValue} onChange={(e) => setRenameValue(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') setRenamingMember(null); }} onBlur={commitRename} />
+                    <input className="tt-rename-input" autoFocus value={renameValue}
+                      onChange={(e) => setRenameValue(e.target.value)}
+                      onKeyDown={(e) => { if (e.key === 'Enter') commitRename(); if (e.key === 'Escape') setRenamingMember(null); }}
+                      onBlur={commitRename} />
                   ) : (
                     <span className="tt-team-row-name" onClick={() => startRename(m)} title="Clic para renombrar">{m}</span>
                   )}
@@ -410,7 +502,9 @@ export default function TeamTrackerPage() {
             </div>
           )}
 
-          <button className="tt-collapse-btn" onClick={() => setCollapsed((v) => !v)} title={collapsed ? 'Expandir' : 'Colapsar'}>{collapsed ? '»' : '«'}</button>
+          <button className="tt-collapse-btn" onClick={() => setCollapsed((v) => !v)} title={collapsed ? 'Expandir' : 'Colapsar'}>
+            {collapsed ? '»' : '«'}
+          </button>
         </aside>
 
         <main className="tt-main">
@@ -418,7 +512,9 @@ export default function TeamTrackerPage() {
             <nav className="tt-tabs">
               <div className="tt-tabs-indicator" style={{ left: indicator.left, width: indicator.width }} />
               {TABS.map((t) => (
-                <button key={t.key} ref={(el) => (tabsRef.current[t.key] = el)} className={tab === t.key ? 'is-active' : ''} onClick={() => setTab(t.key)}>{t.label}</button>
+                <button key={t.key} ref={(el) => (tabsRef.current[t.key] = el)} className={tab === t.key ? 'is-active' : ''} onClick={() => setTab(t.key)}>
+                  {t.label}
+                </button>
               ))}
             </nav>
             <span className="tt-week-badge">Semana {isoWeekNumber(week.start)} · {fmtShort(week.startISO)}–{fmtShort(week.endISO)}</span>
@@ -446,76 +542,82 @@ export default function TeamTrackerPage() {
           {tab === 'desempeno' && isAdmin && <DesempenoView data={historical} />}
           {tab === 'ho' && <HOView team={team} ho={ho || HO_DEFAULT} isAdmin={isAdmin} onSave={saveHo} onNotice={setNotice} />}
         </main>
-      </div>
 
-      {showForm && (
-        <div className="tt-modal-back" onClick={() => setShowForm(false)}>
-          <div className="tt-modal" onClick={(e) => e.stopPropagation()}>
-            <h3>{form.id ? 'Editar pendiente' : 'Nuevo pendiente'}</h3>
-            <label>Actividad<input autoFocus value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Ej. Cerrar OTB de octubre" /></label>
-            <div className="tt-form-row">
-              <label>Asignado a
-                <select value={form.assignee} onChange={(e) => setForm({ ...form, assignee: e.target.value })}>
-                  {!form.id && <option value="__ALL__">Todo el equipo ({team.length})</option>}
-                  {team.map((m) => (<option key={m} value={m}>{m}</option>))}
-                </select>
+        {showForm && (
+          <div className="tt-modal-back" onClick={() => setShowForm(false)}>
+            <div className="tt-modal" onClick={(e) => e.stopPropagation()}>
+              <h3>{form.id ? 'Editar pendiente' : 'Nuevo pendiente'}</h3>
+              <label>Actividad
+                <input autoFocus value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })} placeholder="Ej. Cerrar OTB de octubre" />
               </label>
-              <label>Pilar
-                <select value={form.pilar} onChange={(e) => setForm({ ...form, pilar: e.target.value })}>
-                  {PILAR_ORDER.map((p) => (<option key={p} value={p}>{PILAR[p].label}</option>))}
-                </select>
-              </label>
-            </div>
-            <div className="tt-form-row">
-              <label>Fecha límite<input type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} /></label>
-              <label>Prioridad
-                <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
-                  {PRIORITY_ORDER.map((p) => (<option key={p} value={p}>{p}</option>))}
-                </select>
-              </label>
-            </div>
-            <label>Notas / enlaces (opcional)
-              <textarea className="tt-notes-input" rows={3} placeholder="Contexto, liga de Sheets, Drive…" value={form.notas || ''} onChange={(e) => setForm({ ...form, notas: e.target.value })} />
-            </label>
-            {form.id && form.groupId && (
-              <div className="tt-scope-row">
-                <span className="tt-scope-label">Aplicar cambios a:</span>
-                <div className="tt-group-toggle">
-                  <button type="button" className={editScope === 'solo' ? 'is-active' : ''} onClick={() => setEditScope('solo')}>Solo {form.assignee}</button>
-                  <button type="button" className={editScope === 'group' ? 'is-active' : ''} onClick={() => setEditScope('group')}>Todo el equipo</button>
-                </div>
+              <div className="tt-form-row">
+                <label>Asignado a
+                  <select value={form.assignee} onChange={(e) => setForm({ ...form, assignee: e.target.value })}>
+                    {!form.id && <option value="__ALL__">Todo el equipo ({team.length})</option>}
+                    {team.map((m) => (<option key={m} value={m}>{m}</option>))}
+                  </select>
+                </label>
+                <label>Pilar
+                  <select value={form.pilar} onChange={(e) => setForm({ ...form, pilar: e.target.value })}>
+                    {PILAR_ORDER.map((p) => (<option key={p} value={p}>{PILAR[p].label}</option>))}
+                  </select>
+                </label>
               </div>
-            )}
-            {form.id && (
-              <label>Estado
-                <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
-                  {STATUS_ORDER.map((s) => (<option key={s} value={s}>{STATUS[s].label}</option>))}
-                </select>
+              <div className="tt-form-row">
+                <label>Fecha límite
+                  <input type="date" value={form.dueDate} onChange={(e) => setForm({ ...form, dueDate: e.target.value })} />
+                </label>
+                <label>Prioridad
+                  <select value={form.priority} onChange={(e) => setForm({ ...form, priority: e.target.value })}>
+                    {PRIORITY_ORDER.map((p) => (<option key={p} value={p}>{p}</option>))}
+                  </select>
+                </label>
+              </div>
+              <label>Notas / enlaces (opcional)
+                <textarea className="tt-notes-input" rows={3} placeholder="Contexto, liga de Sheets, Drive, lo que necesiten saber…"
+                  value={form.notas || ''} onChange={(e) => setForm({ ...form, notas: e.target.value })} />
               </label>
-            )}
-            <div className="tt-modal-actions">
-              <button type="button" onClick={() => setShowForm(false)}>Cancelar</button>
-              <button type="button" className="tt-primary" onClick={submitForm}>Guardar</button>
+              {form.id && form.groupId && (
+                <div className="tt-scope-row">
+                  <span className="tt-scope-label">Aplicar cambios a:</span>
+                  <div className="tt-group-toggle">
+                    <button type="button" className={editScope === 'solo' ? 'is-active' : ''} onClick={() => setEditScope('solo')}>Solo {form.assignee}</button>
+                    <button type="button" className={editScope === 'group' ? 'is-active' : ''} onClick={() => setEditScope('group')}>Todo el equipo</button>
+                  </div>
+                </div>
+              )}
+              {form.id && (
+                <label>Estado
+                  <select value={form.status} onChange={(e) => setForm({ ...form, status: e.target.value })}>
+                    {STATUS_ORDER.map((s) => (<option key={s} value={s}>{STATUS[s].label}</option>))}
+                  </select>
+                </label>
+              )}
+              <div className="tt-modal-actions">
+                <button type="button" onClick={() => setShowForm(false)}>Cancelar</button>
+                <button type="button" className="tt-primary" onClick={submitForm}>Guardar</button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
 
-      {pinModal && (
-        <div className="tt-modal-back" onClick={() => setPinModal(null)}>
-          <div className="tt-modal tt-modal-narrow" onClick={(e) => e.stopPropagation()}>
-            <h3>{pinModal === 'create' ? 'Crea tu PIN de edición' : 'Modo edición'}</h3>
-            <label>{pinModal === 'create' ? 'Nuevo PIN (mín. 4 caracteres)' : 'PIN'}
-              <input autoFocus type="password" value={pinInput} onChange={(e) => setPinInput(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') submitPin(); }} />
-            </label>
-            {pinError && <p className="tt-pin-error">{pinError}</p>}
-            <div className="tt-modal-actions">
-              <button type="button" onClick={() => setPinModal(null)}>Cancelar</button>
-              <button type="button" className="tt-primary" onClick={submitPin}>{pinModal === 'create' ? 'Crear' : 'Entrar'}</button>
+        {pinModal && (
+          <div className="tt-modal-back" onClick={() => setPinModal(null)}>
+            <div className="tt-modal tt-modal-narrow" onClick={(e) => e.stopPropagation()}>
+              <h3>{pinModal === 'create' ? 'Crea tu PIN de edición' : 'Modo edición'}</h3>
+              <label>{pinModal === 'create' ? 'Nuevo PIN (mín. 4 caracteres)' : 'PIN'}
+                <input autoFocus type="password" value={pinInput} onChange={(e) => setPinInput(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === 'Enter') submitPin(); }} />
+              </label>
+              {pinError && <p className="tt-pin-error">{pinError}</p>}
+              <div className="tt-modal-actions">
+                <button type="button" onClick={() => setPinModal(null)}>Cancelar</button>
+                <button type="button" className="tt-primary" onClick={submitPin}>{pinModal === 'create' ? 'Crear' : 'Entrar'}</button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        )}
+      </div>
     </div>
   );
 }
@@ -543,7 +645,9 @@ function ProgressRing({ pct, size = 68, stroke = 6, color = '#E0BB3E' }) {
   return (
     <svg width={size} height={size} className="tt-ring">
       <circle cx={size / 2} cy={size / 2} r={r} stroke="rgba(255,255,255,0.12)" strokeWidth={stroke} fill="none" />
-      <circle cx={size / 2} cy={size / 2} r={r} stroke={color} strokeWidth={stroke} fill="none" strokeLinecap="round" strokeDasharray={c} strokeDashoffset={offset} style={{ transition: 'stroke-dashoffset 0.9s cubic-bezier(.4,0,.2,1)', transform: 'rotate(-90deg)', transformOrigin: '50% 50%' }} />
+      <circle cx={size / 2} cy={size / 2} r={r} stroke={color} strokeWidth={stroke} fill="none" strokeLinecap="round"
+        strokeDasharray={c} strokeDashoffset={offset}
+        style={{ transition: 'stroke-dashoffset 0.9s cubic-bezier(.4,0,.2,1)', transform: 'rotate(-90deg)', transformOrigin: '50% 50%' }} />
       <text x="50%" y="50%" textAnchor="middle" dy="0.35em" className="tt-ring-text">{pct === null ? '—' : `${pct}%`}</text>
     </svg>
   );
@@ -557,9 +661,12 @@ function PilarTag({ code }) {
   if (!p) return null;
   return <span className="tt-pilar-tag"><span className="tt-dot" style={{ background: p.dot }} />{p.label}</span>;
 }
+
 function linkify(text) {
   if (!text) return null;
-  return text.split(/(https?:\/\/[^\s]+)/g).map((part, i) => /^https?:\/\//.test(part) ? <a key={i} href={part} target="_blank" rel="noreferrer" className="tt-link">{part}</a> : part);
+  return text.split(/(https?:\/\/[^\s]+)/g).map((part, i) =>
+    /^https?:\/\//.test(part) ? <a key={i} href={part} target="_blank" rel="noreferrer" className="tt-link">{part}</a> : part
+  );
 }
 
 function TaskCard({ t, isAdmin, onCycle, onDelete, onEdit, drafts, onCommentChange, onCommentBlur, showAssignee = true }) {
@@ -588,9 +695,13 @@ function TaskCard({ t, isAdmin, onCycle, onDelete, onEdit, drafts, onCommentChan
         <span className={`tt-due ${overdue ? 'is-overdue-text' : ''}`}>{overdue ? 'venció ' : 'vence '}{fmtShort(t.dueDate)}</span>
       </div>
       {t.status === 'done' && (
-        <textarea className="tt-comment" placeholder="Bitácora: ¿qué pasó con esta tarea?" value={t.id in drafts ? drafts[t.id] : (t.comment || '')} onChange={(e) => onCommentChange(t.id, e.target.value)} onBlur={() => onCommentBlur(t.id)} />
+        <textarea className="tt-comment" placeholder="Bitácora: ¿qué pasó con esta tarea?"
+          value={t.id in drafts ? drafts[t.id] : (t.comment || '')}
+          onChange={(e) => onCommentChange(t.id, e.target.value)} onBlur={() => onCommentBlur(t.id)} />
       )}
-      <button className="tt-cycle" onClick={() => onCycle(t)}>Mover a {STATUS[nextKey].label.toLowerCase()}</button>
+      <button className="tt-cycle" onClick={() => onCycle(t)}>
+        Mover a {STATUS[nextKey].label.toLowerCase()}
+      </button>
     </div>
   );
 }
@@ -607,7 +718,9 @@ function BoardByStatus({ tasks, isAdmin, onCycle, onDelete, onEdit, drafts, onCo
         <div className="tt-col" key={col.key}>
           <div className="tt-col-head"><span className="tt-dot" style={{ background: STATUS[col.key].dot }} />{col.label}<span className="tt-col-count">{col.items.length}</span></div>
           <div className="tt-col-body">
-            {col.items.map((t) => (<TaskCard key={t.id} t={t} isAdmin={isAdmin} onCycle={onCycle} onDelete={onDelete} onEdit={onEdit} drafts={drafts} onCommentChange={onCommentChange} onCommentBlur={onCommentBlur} />))}
+            {col.items.map((t) => (
+              <TaskCard key={t.id} t={t} isAdmin={isAdmin} onCycle={onCycle} onDelete={onDelete} onEdit={onEdit} drafts={drafts} onCommentChange={onCommentChange} onCommentBlur={onCommentBlur} />
+            ))}
             {col.items.length === 0 && <p className="tt-col-empty">—</p>}
           </div>
         </div>
@@ -621,7 +734,8 @@ function BoardByPerson({ tasks, team, isAdmin, onCycle, onDelete, onEdit, drafts
   return (
     <div className="tt-person-board">
       {team.map((m) => {
-        const items = tasks.filter((t) => t.assignee === m).sort((a, b) => STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status) || PRIORITY_ORDER.indexOf(a.priority) - PRIORITY_ORDER.indexOf(b.priority));
+        const items = tasks.filter((t) => t.assignee === m)
+          .sort((a, b) => STATUS_ORDER.indexOf(a.status) - STATUS_ORDER.indexOf(b.status) || PRIORITY_ORDER.indexOf(a.priority) - PRIORITY_ORDER.indexOf(b.priority));
         return (
           <div className="tt-person-group" key={m}>
             <div className="tt-person-head">
@@ -631,7 +745,9 @@ function BoardByPerson({ tasks, team, isAdmin, onCycle, onDelete, onEdit, drafts
             </div>
             <div className="tt-person-cards">
               {items.length === 0 && <p className="tt-col-empty">Sin pendientes</p>}
-              {items.map((t) => (<TaskCard key={t.id} t={t} isAdmin={isAdmin} onCycle={onCycle} onDelete={onDelete} onEdit={onEdit} drafts={drafts} onCommentChange={onCommentChange} onCommentBlur={onCommentBlur} showAssignee={false} />))}
+              {items.map((t) => (
+                <TaskCard key={t.id} t={t} isAdmin={isAdmin} onCycle={onCycle} onDelete={onDelete} onEdit={onEdit} drafts={drafts} onCommentChange={onCommentChange} onCommentBlur={onCommentBlur} showAssignee={false} />
+              ))}
             </div>
           </div>
         );
@@ -730,6 +846,8 @@ function ResumenView({ week, totals, byMember, byPilar }) {
   );
 }
 
+// HO Comprometido: premio de 1 HO por semana por persona, mapeado para que siempre haya al menos la mitad presencial.
+// El equipo tiene `lives` vidas: cada incumplimiento en HO resta una; en 0 se acaba el HO semanal para todos.
 function HOView({ team, ho, isAdmin, onSave, onNotice }) {
   const [month, setMonth] = useState(() => { const d = new Date(); return new Date(d.getFullYear(), d.getMonth(), 1); });
   const [strike, setStrike] = useState({ name: '', reason: '', date: todayISO() });
@@ -750,7 +868,7 @@ function HOView({ team, ho, isAdmin, onSave, onNotice }) {
     if (next === 'ho') {
       if (!lives) { onNotice('Se acabó el HO semanal para todos.'); return; }
       if (hoInWeek(d, name)) { onNotice(`${name} ya tiene su HO de esa semana.`); return; }
-      if (team.length - outOn(d) - 1 < minOffice) { onNotice(`El ${fmtShort(d)} ya no se cumple la mitad presencial.`); return; }
+      if (team.length - outOn(d) - 1 < minOffice) { onNotice(`El ${fmtShort(d)} ya no se cumple la mitad presencial (mín. ${minOffice}).`); return; }
     }
     const dm = { ...(ho.days[d] || {}) };
     if (next) dm[name] = next; else delete dm[name];
@@ -771,7 +889,7 @@ function HOView({ team, ho, isAdmin, onSave, onNotice }) {
         <button className="tt-ghost-btn" onClick={() => setMonth(new Date(year, month.getMonth() - 1, 1))}>‹</button>
         <span className="tt-ho-month">{MESES[month.getMonth()]} {year}</span>
         <button className="tt-ghost-btn" onClick={() => setMonth(new Date(year, month.getMonth() + 1, 1))}>›</button>
-        <span className="tt-ho-legend"><i className="is-ho" />HO <i className="is-vac" />Vacaciones</span>
+        <span className="tt-ho-legend"><i className="is-ho" />HO <i className="is-vac" />Vacaciones · 1 HO por semana · mínimo presencial {minOffice} de {team.length}</span>
       </div>
       <div className="tt-ho-scroll">
         <table className="tt-ho-grid">
@@ -783,17 +901,64 @@ function HOView({ team, ho, isAdmin, onSave, onNotice }) {
             </tr>
           </thead>
           <tbody>
-            {team.map((name) => (
-              <tr key={name}>
-                <td className="tt-ho-name"><span className="tt-avatar tt-avatar-sm" style={{ background: avatarGradient(name) }}>{initials(name)}</span>{name}</td>
-                {days.map((d) => { const k = ho.days[d]?.[name] || ''; return <td key={d} className={`tt-ho-cell ${k ? 'is-' + k : ''} ${d === today ? 'is-today' : ''} ${new Date(d + 'T00:00').getDay() === 1 ? 'is-mon' : ''}`} onClick={() => cycle(d, name)}>{k === 'ho' ? 'HO' : k === 'vac' ? 'V' : ''}</td>; })}
-                <td className="tt-ho-tot">{used(name, 'ho')}</td>
-                <td className="tt-ho-tot">{used(name, 'vac')}</td>
-              </tr>
-            ))}
+            {team.map((name) => {
+              return (
+                <tr key={name}>
+                  <td className="tt-ho-name"><span className="tt-avatar tt-avatar-sm" style={{ background: avatarGradient(name) }}>{initials(name)}</span>{name}</td>
+                  {days.map((d) => { const k = ho.days[d]?.[name] || ''; return <td key={d} className={`tt-ho-cell ${k ? 'is-' + k : ''} ${d === today ? 'is-today' : ''} ${new Date(d + 'T00:00').getDay() === 1 ? 'is-mon' : ''}`} onClick={() => cycle(d, name)}>{k === 'ho' ? 'HO' : k === 'vac' ? 'V' : ''}</td>; })}
+                  <td className="tt-ho-tot">{used(name, 'ho')}</td>
+                  <td className="tt-ho-tot">{used(name, 'vac')}</td>
+                </tr>
+              );
+            })}
           </tbody>
+          <tfoot>
+            <tr>
+              <td className="tt-ho-name">Presenciales</td>
+              {days.map((d) => { const inOff = team.length - outOn(d); return <td key={d} className={`${inOff < minOffice ? 'is-bad' : ''} ${new Date(d + 'T00:00').getDay() === 1 ? 'is-mon' : ''}`}>{inOff}</td>; })}
+              <td colSpan={2} />
+            </tr>
+          </tfoot>
         </table>
       </div>
+
+      <div className={`tt-resumen-banner tt-ho-bolsa ${lives === 0 ? 'is-empty' : ''}`}>
+        <div>
+          <span className="tt-tag">HO semanal · premio por desempeño</span>
+          <div className="tt-hp">
+            <span className="tt-hp-label">HP</span>
+            <div className={`tt-hp-bar ${lives === 1 ? 'is-low' : ''}`}>
+              {Array.from({ length: ho.lives }, (_, i) => <span key={i} className={i < lives ? 'is-on' : ''} />)}
+            </div>
+            <span className="tt-hp-num">{lives}/{ho.lives}</span>
+          </div>
+          <p className="tt-banner-small">{lives === 0 ? 'Se acabó el HO semanal para todos. Gracias a los que no contestaron 🙃' : `Cada incumplimiento en HO (no contestar, no entregar) quita una vida a todo el equipo. Con 0 se acaba el HO semanal${lives === 1 ? ' — queda la última 👀' : ''}.`}</p>
+        </div>
+      </div>
+
+      <h4 className="tt-subhead">Incumplimientos</h4>
+      {isAdmin && (
+        <div className="tt-ho-strike-form">
+          <select value={strike.name} onChange={(e) => setStrike({ ...strike, name: e.target.value })}>
+            <option value="">¿Quién?</option>{team.map((m) => <option key={m}>{m}</option>)}
+          </select>
+          <input type="date" value={strike.date} onChange={(e) => setStrike({ ...strike, date: e.target.value })} />
+          <input placeholder="Motivo (ej. no contestó en HO)" value={strike.reason} onChange={(e) => setStrike({ ...strike, reason: e.target.value })} onKeyDown={(e) => e.key === 'Enter' && addStrike()} />
+          <button className="tt-new-btn" onClick={addStrike}>+ Registrar</button>
+          <label>Vidas <input type="number" min="1" value={ho.lives} onChange={(e) => setLives(e.target.value)} /></label>
+        </div>
+      )}
+      {ho.strikes.length === 0 ? <p className="tt-empty-hint">Sin incumplimientos. Que siga así.</p> : (
+        <div className="tt-ho-strikes">
+          {[...ho.strikes].sort((a, b) => b.date.localeCompare(a.date)).map((x) => (
+            <div key={x.id} className="tt-ho-strike">
+              <span className="tt-avatar tt-avatar-sm" style={{ background: avatarGradient(x.name) }}>{initials(x.name)}</span>
+              <b>{x.name}</b><span>{fmtShort(x.date)}</span><span className="tt-ho-reason">{x.reason}</span><span className="tt-bar-late">−1 vida</span>
+              {isAdmin && <button className="tt-ho-del" title="Quitar" onClick={() => onSave({ ...ho, strikes: ho.strikes.filter((y) => y.id !== x.id) })}>✕</button>}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
@@ -801,7 +966,7 @@ function HOView({ team, ho, isAdmin, onSave, onNotice }) {
 function DesempenoView({ data }) {
   return (
     <div className="tt-desempeno">
-      <p className="tt-empty-hint tt-desempeno-note">Vista privada de cumplimiento sobre pendientes.</p>
+      <p className="tt-empty-hint tt-desempeno-note">Vista privada, solo visible en modo edición. Cumplimiento sobre pendientes cuya fecha límite ya pasó.</p>
       {data.length === 0 && <p className="tt-empty-hint">Todavía no hay historial suficiente.</p>}
       <div className="tt-bars">
         {data.map((s) => {
@@ -810,7 +975,7 @@ function DesempenoView({ data }) {
             <div className="tt-bar-row" key={s.name}>
               <div className="tt-bar-label"><span className="tt-avatar tt-avatar-sm" style={{ background: avatarGradient(s.name) }}>{initials(s.name)}</span>{s.name}</div>
               <div className="tt-bar-track"><div className="tt-bar-fill" style={{ width: `${pct}%`, background: avatarGradient(s.name) }} /></div>
-              <div className="tt-bar-value">{s.done}/{s.total} · {pct}%</div>
+              <div className="tt-bar-value">{s.done}/{s.total} · {pct}%{s.onTime < s.done && <span className="tt-bar-late"> · {s.done - s.onTime} tarde</span>}</div>
             </div>
           );
         })}
@@ -822,106 +987,232 @@ function DesempenoView({ data }) {
 const CSS = `
 @keyframes ttFadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 @keyframes ttFadeIn { from { opacity: 0; } to { opacity: 1; } }
+
 html, body { margin: 0; padding: 0; }
 body { background: #14121a; }
-.tt-page { position: relative; height: 100vh; width: 100%; box-sizing: border-box; padding: 28px; overflow: hidden; display: flex; flex-direction: column; background: #14121a; }
-.tt-root { position: relative; display: flex; flex: 1; min-height: 0; overflow: hidden; color: #EDEBF2; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 14px; }
-.tt-side { width: 210px; flex-shrink: 0; padding: 16px 12px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto; background: rgba(255,255,255,0.045); border: 1px solid rgba(255,255,255,0.09); border-radius: 16px; margin-right: 16px; transition: width 0.28s ease; }
+.tt-page {
+  position: relative; height: 100vh; width: 100%; box-sizing: border-box;
+  padding: 28px; overflow: hidden; display: flex; flex-direction: column;
+  background: radial-gradient(ellipse 60% 50% at 15% 10%, rgba(138,115,173,0.35), transparent 60%),
+              radial-gradient(ellipse 55% 45% at 90% 85%, rgba(224,187,62,0.22), transparent 60%),
+              linear-gradient(160deg, #16141a 0%, #1c1720 45%, #14121a 100%);
+}
+.tt-root { position: relative; display: flex; flex: 1; min-height: 0; overflow: hidden; color: #EDEBF2; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif; font-size: 14px; }
+
+.tt-topbar { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; position: relative; z-index: 3; }
+.tt-topbar-brand { display: flex; align-items: center; gap: 10px; text-decoration: none; }
+.tt-topbar-titles { display: flex; flex-direction: column; line-height: 1.15; }
+.tt-topbar-title { font-size: 15px; font-weight: 800; letter-spacing: 0.02em; color: #EDEBF2; text-transform: uppercase; }
+.tt-topbar-title b { color: #B39DDB; }
+.tt-topbar-sub { font-size: 10px; font-weight: 700; letter-spacing: 0.1em; text-transform: uppercase; color: #948FA0; }
+.tt-topbar-actions { display: flex; gap: 8px; }
+.tt-topbar-icon { position: relative; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.09); color: #948FA0; width: 34px; height: 34px; border-radius: 9px; display: flex; align-items: center; justify-content: center; cursor: pointer; backdrop-filter: blur(10px); transition: all .15s ease; }
+.tt-topbar-icon:hover { color: #EDEBF2; background: rgba(255,255,255,0.12); }
+.tt-topbar-badge { position: absolute; top: -4px; right: -4px; background: #A1402C; color: #fff; font-size: 9px; font-weight: 800; min-width: 16px; height: 16px; padding: 0 3px; border-radius: 50%; display: flex; align-items: center; justify-content: center; }
+.tt-info-wrap { position: relative; }
+.tt-info-pop { position: absolute; top: 42px; right: 0; width: 230px; background: rgba(28,25,34,0.92); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.12); border-radius: 10px; padding: 12px; font-size: 11.5px; line-height: 1.5; color: #B7B2C4; z-index: 20; box-shadow: 0 12px 30px rgba(0,0,0,0.45); animation: ttFadeIn .15s ease; }
+.tt-info-pop b { color: #EDEBF2; }
+.tt-info-pop p { margin: 0 0 6px; }
+.tt-info-pop p:last-child { margin-bottom: 0; }
+
+.tt-side { width: 210px; flex-shrink: 0; padding: 16px 12px; display: flex; flex-direction: column; gap: 4px; overflow-y: auto;
+  background: rgba(255,255,255,0.045); backdrop-filter: blur(18px); border: 1px solid rgba(255,255,255,0.09);
+  border-radius: 16px; margin-right: 16px; position: relative; transition: width 0.28s cubic-bezier(.4,0,.2,1); }
 .tt-side.is-collapsed { width: 68px; align-items: center; }
+
+.tt-logo { display: flex; align-items: center; gap: 8px; padding: 2px 4px 16px; }
+.tt-logo-mark { width: 26px; height: 26px; border-radius: 7px; flex-shrink: 0; display: flex; align-items: center; justify-content: center;
+  font-size: 10px; font-weight: 800; letter-spacing: 0.02em; color: #16141a;
+  background: linear-gradient(135deg, #E0BB3E, #B39DDB); box-shadow: 0 0 14px rgba(224,187,62,0.35); }
+.tt-logo-word { font-size: 11px; font-weight: 700; letter-spacing: 0.08em; color: #B7B2C4; white-space: nowrap; }
+
 .tt-side-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; width: 100%; }
 .tt-side-actions { display: flex; gap: 6px; }
-.tt-tag { font-size: 11px; color: #948FA0; }
-.tt-icon-btn { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08); color: #948FA0; cursor: pointer; width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; }
-.tt-icon-btn.is-on { color: #16141a; background: #E0BB3E; }
-.tt-member { position: relative; display: flex; align-items: center; gap: 9px; width: 100%; padding: 7px 8px; border: none; background: none; color: #CFCBDA; border-radius: 9px; cursor: pointer; text-align: left; font-size: 13px; }
-.tt-member:hover { background: rgba(255,255,255,0.07); }
-.tt-member.is-active { background: rgba(255,255,255,0.1); color: #FFFFFF; font-weight: 600; }
+.tt-tag { font-size: 11px; letter-spacing: 0.02em; color: #948FA0; }
+.tt-icon-btn { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08); color: #948FA0; cursor: pointer; width: 26px; height: 26px; border-radius: 7px; display: flex; align-items: center; justify-content: center; transition: all .18s ease; }
+.tt-icon-btn:hover { color: #EDEBF2; background: rgba(255,255,255,0.12); }
+.tt-icon-btn.is-on { color: #16141a; background: #E0BB3E; border-color: #E0BB3E; }
+
+.tt-member { position: relative; display: flex; align-items: center; gap: 9px; width: 100%; padding: 7px 8px; border: none; background: none; color: #CFCBDA; border-radius: 9px; cursor: pointer; text-align: left; font-size: 13px; transition: all .2s ease; }
+.tt-member:hover { background: rgba(255,255,255,0.07); backdrop-filter: blur(6px); box-shadow: 0 10px 24px -8px var(--glow, transparent); transform: translateY(-1px); }
+.tt-member.is-active { background: rgba(255,255,255,0.1); color: #FFFFFF; font-weight: 600; box-shadow: 0 8px 20px -6px var(--glow, transparent); }
+.tt-side.is-collapsed .tt-member { justify-content: center; padding: 7px 0; }
 .tt-member-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tt-member-count { font-size: 11px; background: rgba(255,255,255,0.1); padding: 1px 6px; border-radius: 10px; }
-.tt-avatar { width: 24px; height: 24px; border-radius: 50%; color: #16141a; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; flex-shrink: 0; }
+
+.tt-avatar { width: 24px; height: 24px; border-radius: 50%; color: #16141a; display: flex; align-items: center; justify-content: center; font-size: 10px; font-weight: 700; flex-shrink: 0; box-shadow: 0 2px 6px rgba(0,0,0,0.3); }
 .tt-avatar-all { background: rgba(255,255,255,0.14); color: #EDEBF2; }
 .tt-avatar-sm { width: 19px; height: 19px; font-size: 9px; }
+
 .tt-collapse-btn { margin-top: auto; align-self: flex-end; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.08); color: #948FA0; width: 22px; height: 22px; border-radius: 6px; cursor: pointer; font-size: 11px; }
+.tt-collapse-btn:hover { color: #EDEBF2; background: rgba(255,255,255,0.12); }
+
 .tt-team-edit { margin-top: 10px; border-top: 1px solid rgba(255,255,255,0.08); padding-top: 10px; width: 100%; }
 .tt-inline-form { display: flex; gap: 6px; margin-bottom: 8px; }
 .tt-inline-form input { flex: 1; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); color: #EDEBF2; border-radius: 6px; padding: 5px 7px; font-size: 12px; }
-.tt-inline-form button { background: #E0BB3E; border: none; color: #16141a; border-radius: 6px; padding: 5px 10px; font-weight: 700; cursor: pointer; }
+.tt-inline-form button { background: #E0BB3E; border: none; color: #16141a; border-radius: 6px; padding: 5px 10px; font-size: 13px; cursor: pointer; font-weight: 700; }
 .tt-team-row { display: flex; justify-content: space-between; align-items: center; padding: 4px 2px; font-size: 12px; color: #CFCBDA; gap: 6px; }
 .tt-team-row-name { cursor: pointer; border-bottom: 1px dashed rgba(255,255,255,0.25); }
+.tt-team-row-name:hover { color: #E0BB3E; }
 .tt-rename-input { flex: 1; background: rgba(255,255,255,0.08); border: 1px solid #E0BB3E; color: #EDEBF2; border-radius: 5px; padding: 3px 6px; font-size: 12px; }
-.tt-team-row button { background: none; border: none; color: #C99A9A; cursor: pointer; font-size: 11px; }
+.tt-team-row button { background: none; border: none; color: #C99A9A; cursor: pointer; font-size: 11px; flex-shrink: 0; }
+
 .tt-empty-hint { color: #948FA0; font-size: 12px; padding: 6px 2px; }
 .tt-empty-big { padding: 40px 0; text-align: center; font-size: 14px; }
-.tt-main { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; padding: 4px; }
+
+.tt-main { flex: 1; min-width: 0; min-height: 0; overflow-y: auto; padding: 4px 4px 4px 0; }
 .tt-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; gap: 12px; flex-wrap: wrap; }
-.tt-tabs { position: relative; display: flex; gap: 2px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); padding: 3px; border-radius: 10px; }
-.tt-tabs-indicator { position: absolute; top: 3px; bottom: 3px; border-radius: 7px; background: linear-gradient(135deg, #8A73AD, #6E5B8A); transition: left .3s ease, width .3s ease; z-index: 0; }
-.tt-tabs button { position: relative; z-index: 1; border: none; background: none; padding: 7px 14px; border-radius: 7px; font-size: 13px; cursor: pointer; color: #B7B2C4; }
+.tt-tabs { position: relative; display: flex; gap: 2px; background: rgba(255,255,255,0.05); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.08); padding: 3px; border-radius: 10px; }
+.tt-tabs-indicator { position: absolute; top: 3px; bottom: 3px; border-radius: 7px; background: linear-gradient(135deg, #8A73AD, #6E5B8A); box-shadow: 0 4px 14px rgba(138,115,173,0.45); transition: left .3s cubic-bezier(.4,0,.2,1), width .3s cubic-bezier(.4,0,.2,1); z-index: 0; }
+.tt-tabs button { position: relative; z-index: 1; border: none; background: none; padding: 7px 14px; border-radius: 7px; font-size: 13px; cursor: pointer; color: #B7B2C4; transition: color .2s ease; }
 .tt-tabs button.is-active { color: #FFFFFF; font-weight: 600; }
-.tt-week-badge { font-size: 11px; font-weight: 700; color: #B39DDB; background: rgba(139,115,173,0.12); border: 1px solid rgba(139,115,173,0.3); padding: 6px 12px; border-radius: 9px; }
+.tt-week-badge { font-size: 11px; font-weight: 700; color: #B39DDB; background: rgba(139,115,173,0.12); border: 1px solid rgba(139,115,173,0.3); padding: 6px 12px; border-radius: 9px; white-space: nowrap; }
 .tt-header-actions { display: flex; gap: 8px; }
-.tt-new-btn { background: linear-gradient(135deg, #8A73AD, #6E5B8A); color: #FFFFFF; border: none; padding: 8px 14px; border-radius: 9px; font-size: 13px; cursor: pointer; font-weight: 600; }
-.tt-ghost-btn { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #EDEBF2; padding: 8px 14px; border-radius: 9px; font-size: 13px; cursor: pointer; }
-.tt-notice { background: rgba(224,187,62,0.12); color: #E0BB3E; border: 1px solid rgba(224,187,62,0.3); padding: 8px 12px; border-radius: 9px; font-size: 12px; margin-bottom: 12px; }
+.tt-new-btn { background: linear-gradient(135deg, #8A73AD, #6E5B8A); color: #FFFFFF; border: none; padding: 8px 14px; border-radius: 9px; font-size: 13px; cursor: pointer; font-weight: 600; box-shadow: 0 6px 16px rgba(138,115,173,0.35); transition: transform .15s ease; }
+.tt-new-btn:hover:not(:disabled) { transform: translateY(-1px); }
+.tt-new-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+.tt-ghost-btn { background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.12); color: #EDEBF2; padding: 8px 14px; border-radius: 9px; font-size: 13px; cursor: pointer; backdrop-filter: blur(8px); }
+.tt-ghost-btn:hover { background: rgba(255,255,255,0.12); }
+
+.tt-notice { background: rgba(224,187,62,0.12); color: #E0BB3E; border: 1px solid rgba(224,187,62,0.3); padding: 8px 12px; border-radius: 9px; font-size: 12px; margin-bottom: 12px; backdrop-filter: blur(8px); }
+
 .tt-group-toggle { display: inline-flex; gap: 2px; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.08); padding: 3px; border-radius: 8px; margin-bottom: 14px; }
 .tt-group-toggle button { border: none; background: none; padding: 5px 12px; border-radius: 6px; font-size: 12px; cursor: pointer; color: #B7B2C4; }
 .tt-group-toggle button.is-active { background: rgba(255,255,255,0.12); color: #FFFFFF; }
+
 .tt-board { display: flex; gap: 14px; align-items: flex-start; }
-.tt-col { flex: 1; min-width: 0; background: rgba(255,255,255,0.045); border: 1px solid rgba(255,255,255,0.09); border-radius: 12px; }
+.tt-col { flex: 1; min-width: 0; background: rgba(255,255,255,0.045); backdrop-filter: blur(14px); border: 1px solid rgba(255,255,255,0.09); border-radius: 12px; }
 .tt-col-head { display: flex; align-items: center; gap: 7px; padding: 11px 13px; font-size: 12px; font-weight: 600; color: #CFCBDA; border-bottom: 1px solid rgba(255,255,255,0.08); }
 .tt-dot { width: 7px; height: 7px; border-radius: 50%; flex-shrink: 0; }
 .tt-col-count { margin-left: auto; color: #948FA0; font-weight: 400; }
 .tt-col-body { padding: 10px; display: flex; flex-direction: column; gap: 8px; min-height: 60px; }
 .tt-col-empty { color: #6E6A7A; font-size: 12px; text-align: center; padding: 10px 0; }
+
 .tt-person-board { display: flex; flex-direction: column; gap: 14px; }
-.tt-person-group { background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; overflow: hidden; }
+.tt-person-group { background: rgba(255,255,255,0.04); backdrop-filter: blur(14px); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; overflow: hidden; }
 .tt-person-head { display: flex; align-items: center; gap: 9px; padding: 11px 14px; font-size: 13px; font-weight: 600; border-bottom: 1px solid rgba(255,255,255,0.08); }
 .tt-person-name { flex: 1; }
 .tt-person-cards { padding: 10px; display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 8px; }
-.tt-card { background: rgba(255,255,255,0.055); border: 1px solid rgba(255,255,255,0.09); border-radius: 10px; padding: 10px 11px; transition: transform .18s ease; }
-.tt-card:hover { transform: translateY(-2px); border-color: rgba(255,255,255,0.2); }
+
+.tt-card { background: rgba(255,255,255,0.055); backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.09); border-radius: 10px; padding: 10px 11px; animation: ttFadeUp .35s ease both; transition: transform .18s ease, box-shadow .18s ease, border-color .18s ease; }
+.tt-card:hover { transform: translateY(-2px); border-color: rgba(255,255,255,0.2); box-shadow: 0 14px 28px -10px var(--glow, rgba(0,0,0,0.4)); }
 .tt-card.is-overdue { border-color: rgba(196,120,120,0.5); background: rgba(196,120,120,0.08); }
 .tt-card-top { display: flex; align-items: center; gap: 6px; margin-bottom: 6px; flex-wrap: wrap; }
 .tt-card-admin-actions { margin-left: auto; display: flex; gap: 4px; }
-.tt-card-icon { background: none; border: none; color: #6E6A7A; cursor: pointer; font-size: 13px; }
+.tt-card-icon { background: none; border: none; color: #6E6A7A; cursor: pointer; font-size: 13px; line-height: 1; }
 .tt-card-icon:hover { color: #EDEBF2; }
 .tt-card-x:hover { color: #D98A8A; }
-.tt-prio { font-size: 10.5px; font-weight: 800; padding: 1px 6px; border-radius: 4px; font-family: monospace; }
+.tt-prio { font-size: 10.5px; font-weight: 800; padding: 1px 6px; border-radius: 4px; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .tt-pilar-tag { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; color: #A9A4B6; }
 .tt-card-title { font-size: 13px; line-height: 1.35; margin: 0 0 8px; color: #F2F0F6; }
 .tt-card-foot { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; flex-wrap: wrap; }
 .tt-status-chip { display: inline-flex; align-items: center; gap: 4px; font-size: 10.5px; color: #A9A4B6; }
-.tt-due { font-size: 11px; color: #948FA0; font-family: monospace; margin-left: auto; }
+.tt-due { font-size: 11px; color: #948FA0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; margin-left: auto; }
 .tt-due.is-overdue-text { color: #E0A0A0; font-weight: 600; }
-.tt-comment { width: 100%; resize: vertical; min-height: 40px; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 6px 8px; font-size: 12px; color: #EDEBF2; background: rgba(0,0,0,0.2); margin-bottom: 8px; }
-.tt-cycle { width: 100%; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); color: #CFCBDA; border-radius: 7px; padding: 6px 0; font-size: 11px; cursor: pointer; }
+.tt-comment { width: 100%; resize: vertical; min-height: 40px; border: 1px solid rgba(255,255,255,0.1); border-radius: 6px; padding: 6px 8px; font-size: 12px; font-family: inherit; margin-bottom: 8px; color: #EDEBF2; background: rgba(0,0,0,0.2); }
+.tt-cycle { width: 100%; background: rgba(255,255,255,0.06); border: 1px solid rgba(255,255,255,0.1); color: #CFCBDA; border-radius: 7px; padding: 6px 0; font-size: 11px; cursor: pointer; transition: background .15s ease; }
 .tt-cycle:hover { background: rgba(255,255,255,0.14); }
-.tt-modal-back { position: fixed; inset: 0; background: rgba(10,9,13,0.6); display: flex; align-items: center; justify-content: center; z-index: 100; }
-.tt-modal { background: #1c1720; border: 1px solid rgba(255,255,255,0.12); border-radius: 14px; padding: 22px; width: 340px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); }
-.tt-modal h3 { margin: 0 0 4px; font-size: 15px; color: #FFFFFF; }
-.tt-modal label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #B7B2C4; }
-.tt-modal input, .tt-modal select, .tt-modal textarea { border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.05); border-radius: 7px; padding: 7px 9px; font-size: 13px; color: #EDEBF2; }
-.tt-modal select option { background: #1c1720; }
-.tt-form-row { display: flex; gap: 10px; }
-.tt-form-row label { flex: 1; }
-.tt-notes-input { width: 100%; box-sizing: border-box; }
-.tt-card-notes { font-size: 12px; color: #B7B2C4; line-height: 1.4; margin: 0 0 8px; white-space: pre-wrap; }
-.tt-link { color: #B39DDB; text-decoration: underline; }
-.tt-scope-row { display: flex; flex-direction: column; gap: 6px; }
-.tt-scope-label { font-size: 12px; color: #B7B2C4; }
-.tt-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
-.tt-modal-actions button { border: none; padding: 8px 14px; border-radius: 8px; font-size: 13px; cursor: pointer; background: rgba(255,255,255,0.08); color: #EDEBF2; }
-.tt-modal-actions .tt-primary { background: linear-gradient(135deg, #8A73AD, #6E5B8A); color: #FFFFFF; font-weight: 600; }
+
+.tt-gantt { font-size: 12px; animation: ttFadeIn .3s ease; }
+.tt-gantt-grid { display: flex; }
+.tt-gantt-labels-col { width: 240px; flex-shrink: 0; display: flex; flex-direction: column; }
+.tt-gantt-labels-spacer { height: 34px; flex-shrink: 0; }
+.tt-gantt-label { height: 33px; flex-shrink: 0; display: flex; align-items: center; gap: 6px; padding-right: 10px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.tt-gantt-tracks-col { flex: 1; min-width: 0; }
+.tt-gantt-scale { position: relative; height: 34px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+.tt-gantt-day-line { position: absolute; top: 16px; bottom: 0; width: 1px; background: rgba(255,255,255,0.05); }
+.tt-gantt-day-line.is-week { top: 0; background: rgba(255,255,255,0.18); }
+.tt-gantt-day-line em { position: absolute; top: 0; left: 0; font-style: normal; color: #948FA0; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; white-space: nowrap; }
+.tt-gantt-body { position: relative; }
+.tt-gantt-today { position: absolute; top: 0; bottom: 0; width: 2px; background: #E0BB3E; box-shadow: 0 0 8px #E0BB3E; z-index: 1; }
+.tt-gantt-track { position: relative; height: 33px; border-bottom: 1px solid rgba(255,255,255,0.06); }
+.tt-gantt-bar { position: absolute; top: 8px; bottom: 8px; border-radius: 5px; background: #9A9CA3; transition: width .5s ease; }
+.tt-gantt-bar.status-pending { background: #9A9CA3; }
+.tt-gantt-bar.status-progress { background: #E0BB3E; }
+.tt-gantt-bar.status-done { background: #8A73AD; }
+.tt-gantt-bar.is-overdue { background: #D98A8A; }
+
 .tt-subhead { font-size: 12.5px; font-weight: 600; color: #B7B2C4; margin: 22px 0 10px; }
-.tt-resumen-banner { display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.05); border: 1px solid rgba(255,255,255,0.09); border-radius: 14px; padding: 20px 24px; }
+.tt-resumen-banner { display: flex; align-items: center; justify-content: space-between; background: rgba(255,255,255,0.05); backdrop-filter: blur(16px); border: 1px solid rgba(255,255,255,0.09); border-radius: 14px; padding: 20px 24px; animation: ttFadeIn .3s ease; }
+.tt-resumen-banner .tt-tag { color: #948FA0; }
 .tt-banner-big { font-size: 27px; font-weight: 700; margin: 6px 0 0; }
 .tt-banner-small { font-size: 13px; font-weight: 400; color: #948FA0; }
 .tt-ring-text { font-size: 14px; font-weight: 700; fill: #EDEBF2; }
+
 .tt-bars { display: flex; flex-direction: column; gap: 12px; }
 .tt-bar-row { display: flex; align-items: center; gap: 12px; }
-.tt-bar-label { width: 170px; flex-shrink: 0; display: flex; align-items: center; gap: 6px; font-size: 13px; }
+.tt-bar-label { width: 170px; flex-shrink: 0; display: flex; align-items: center; gap: 6px; font-size: 13px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .tt-bar-track { flex: 1; height: 10px; background: rgba(255,255,255,0.08); border-radius: 5px; overflow: hidden; }
-.tt-bar-fill { height: 100%; border-radius: 5px; }
-.tt-bar-value { width: 130px; flex-shrink: 0; font-size: 12px; color: #B7B2C4; font-family: monospace; }
+.tt-bar-fill { height: 100%; border-radius: 5px; transition: width .7s cubic-bezier(.4,0,.2,1); }
+.tt-bar-value { width: 130px; flex-shrink: 0; font-size: 12px; color: #B7B2C4; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
 .tt-bar-late { color: #E0A0A0; }
+.tt-desempeno-note { margin-bottom: 14px; }
+
+.tt-ho { display: flex; flex-direction: column; gap: 14px; animation: ttFadeIn .3s ease; }
+.tt-ho-head { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+.tt-ho-month { font-size: 15px; font-weight: 700; min-width: 140px; text-align: center; }
+.tt-ho-legend { margin-left: auto; font-size: 11.5px; color: #948FA0; display: flex; align-items: center; gap: 6px; }
+.tt-ho-legend i { display: inline-block; width: 10px; height: 10px; border-radius: 3px; }
+.tt-ho-legend i.is-ho, .tt-ho-cell.is-ho { background: rgba(138,115,173,0.45); }
+.tt-ho-legend i.is-vac, .tt-ho-cell.is-vac { background: rgba(224,187,62,0.35); }
+.tt-ho-scroll { overflow-x: auto; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.08); border-radius: 12px; }
+.tt-ho-grid { border-collapse: collapse; font-size: 12px; width: 100%; }
+.tt-ho-grid th, .tt-ho-grid td { padding: 6px 4px; text-align: center; border-bottom: 1px solid rgba(255,255,255,0.06); min-width: 30px; }
+.tt-ho-grid th { color: #948FA0; font-weight: 600; font-size: 11px; }
+.tt-ho-grid th span { display: block; font-size: 9.5px; opacity: .7; }
+.tt-ho-grid .is-mon { border-left: 1px solid rgba(255,255,255,0.14); }
+.tt-ho-grid .is-today { box-shadow: inset 0 0 0 1px rgba(224,187,62,0.6); }
+.tt-ho-name { text-align: left !important; white-space: nowrap; padding-left: 12px !important; display: flex; align-items: center; gap: 6px; min-width: 150px; position: sticky; left: 0; background: #1c1720; z-index: 1; }
+.tt-ho-cell { cursor: pointer; font-size: 10.5px; font-weight: 700; color: #EDEBF2; transition: background .15s ease; }
+.tt-ho-cell:hover { background: rgba(255,255,255,0.08); }
+.tt-ho-tot { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; color: #B7B2C4; min-width: 52px !important; }
+.tt-ho-grid tfoot td { color: #8BC9A3; font-weight: 700; border-bottom: none; }
+.tt-ho-grid .is-bad { color: #E0A0A0 !important; }
+.tt-ho-bolsa.is-empty { border-color: rgba(217,138,138,0.5); box-shadow: 0 0 40px -12px rgba(217,138,138,0.5); }
+.tt-ho-bolsa > div { flex: 1; }
+.tt-ho-bolsa .tt-banner-small { display: block; margin-top: 4px; }
+.tt-hp { display: flex; align-items: center; gap: 12px; margin: 12px 0 6px; }
+.tt-hp-label, .tt-hp-num { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 800; font-size: 14px; color: #B39DDB; letter-spacing: 1px; }
+.tt-hp-bar { flex: 1; max-width: 520px; display: flex; gap: 4px; padding: 4px; border: 2px solid rgba(179,157,219,0.45); border-radius: 6px; background: rgba(0,0,0,0.35); }
+.tt-hp-bar span { flex: 1; height: 18px; border-radius: 2px; background: rgba(255,255,255,0.06); transition: all .4s ease; }
+.tt-hp-bar span.is-on { background: linear-gradient(180deg, #D4C4F0 0%, #B39DDB 35%, #8A73AD 100%); box-shadow: 0 0 12px rgba(179,157,219,0.55), inset 0 2px 0 rgba(255,255,255,0.35); }
+.tt-hp-bar.is-low span.is-on { animation: ttHpPulse 1.1s ease-in-out infinite; }
+@keyframes ttHpPulse { 50% { opacity: .45; } }
+.tt-ho-bolsa.is-empty .tt-hp-label, .tt-ho-bolsa.is-empty .tt-hp-num { color: #948FA0; }
+.tt-ho-strike-form { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.tt-ho-strike-form input, .tt-ho-strike-form select { border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.05); border-radius: 7px; padding: 6px 8px; font-size: 12.5px; color: #EDEBF2; font-family: inherit; color-scheme: dark; }
+.tt-ho-strike-form select option { background: #1c1720; }
+.tt-ho-strike-form input:not([type]) { flex: 1; min-width: 200px; }
+.tt-ho-strike-form label { font-size: 11.5px; color: #948FA0; display: flex; align-items: center; gap: 6px; }
+.tt-ho-strike-form label input { width: 54px; }
+.tt-ho-strikes { display: flex; flex-direction: column; gap: 6px; }
+.tt-ho-strike { display: flex; align-items: center; gap: 10px; font-size: 12.5px; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.07); border-radius: 9px; padding: 7px 10px; }
+.tt-ho-reason { flex: 1; color: #B7B2C4; }
+.tt-ho-del { border: none; background: none; color: #948FA0; cursor: pointer; }
+.tt-ho-del:hover { color: #E0A0A0; }
+
+.tt-modal-back { position: fixed; inset: 0; background: rgba(10,9,13,0.6); backdrop-filter: blur(4px); display: flex; align-items: center; justify-content: center; z-index: 10; animation: ttFadeIn .15s ease; }
+.tt-modal { background: rgba(28,25,34,0.85); backdrop-filter: blur(24px); border: 1px solid rgba(255,255,255,0.12); border-radius: 14px; padding: 22px; width: 340px; display: flex; flex-direction: column; gap: 12px; box-shadow: 0 20px 60px rgba(0,0,0,0.5); animation: ttFadeUp .2s ease; }
+.tt-modal-narrow { width: 280px; }
+.tt-modal h3 { margin: 0 0 4px; font-size: 15px; color: #FFFFFF; }
+.tt-modal label { display: flex; flex-direction: column; gap: 4px; font-size: 12px; color: #B7B2C4; }
+.tt-modal input, .tt-modal select, .tt-modal textarea { border: 1px solid rgba(255,255,255,0.14); background: rgba(255,255,255,0.05); border-radius: 7px; padding: 7px 9px; font-size: 13px; color: #EDEBF2; font-family: inherit; }
+.tt-modal select { appearance: none; -webkit-appearance: none; background-image: linear-gradient(45deg, transparent 50%, #948FA0 50%), linear-gradient(135deg, #948FA0 50%, transparent 50%); background-position: calc(100% - 16px) center, calc(100% - 11px) center; background-size: 5px 5px, 5px 5px; background-repeat: no-repeat; }
+.tt-modal select option { background: #1c1720; color: #EDEBF2; }
+.tt-modal textarea { resize: vertical; font-family: inherit; }
+.tt-notes-input { width: 100%; box-sizing: border-box; }
+.tt-card-notes { font-size: 12px; color: #B7B2C4; line-height: 1.4; margin: 0 0 8px; white-space: pre-wrap; word-break: break-word; }
+.tt-link { color: #B39DDB; text-decoration: underline; }
+.tt-scope-row { display: flex; flex-direction: column; gap: 6px; }
+.tt-scope-label { font-size: 12px; color: #B7B2C4; }
+.tt-form-row { display: flex; gap: 10px; }
+.tt-form-row label { flex: 1; }
+.tt-assign-all-note { border: 1px dashed rgba(255,255,255,0.18); border-radius: 6px; padding: 7px 9px; font-size: 12.5px; color: #B39DDB; background: rgba(139,115,173,0.08); }
+.tt-checkbox-row { display: flex; flex-direction: row; align-items: center; gap: 8px; font-size: 12.5px; color: #CFCBDA; cursor: pointer; }
+.tt-checkbox-row input { width: auto; }
+.tt-batch-tag { font-size: 11px; }
+.tt-pin-error { color: #E0A0A0; font-size: 12px; margin: -6px 0 0; }
+.tt-modal-actions { display: flex; justify-content: flex-end; gap: 8px; margin-top: 4px; }
+.tt-modal-actions button { border: none; padding: 8px 14px; border-radius: 8px; font-size: 13px; cursor: pointer; background: rgba(255,255,255,0.08); color: #EDEBF2; }
+.tt-modal-actions .tt-primary { background: linear-gradient(135deg, #8A73AD, #6E5B8A); color: #FFFFFF; font-weight: 600; }
 `;
