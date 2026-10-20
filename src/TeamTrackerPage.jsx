@@ -18,7 +18,6 @@ import { Link } from 'react-router-dom';
 import { Home } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import AppHeader from './components/AppHeader';
-import GoBot3DAvatar from './components/GoBot3DAvatar';
 import { THEMES } from './App';
 
 const STATUS_ORDER = ['pending', 'progress', 'done'];
@@ -385,23 +384,6 @@ export default function TeamTrackerPage() {
         extraLinks={[{ to: '/', title: 'Volver a módulos', Icon: Home }]}
         assistDescription="Pendientes del equipo, checklist, Gantt y resumen semanal. El candado 🔒 desbloquea agregar, editar o borrar. Los datos viven en un Google Sheet aparte."
       />
-
-      <GoBotCoach byPilar={weekByPilar} />
-      <div className="tt-root">
-        <aside className={`tt-side ${collapsed ? 'is-collapsed' : ''}`}>
-          <div className="tt-side-head">
-            {!collapsed && <span className="tt-tag">Equipo</span>}
-            <div className="tt-side-actions">
-              <button className={`tt-icon-btn ${isAdmin ? 'is-on' : ''}`} title={isAdmin ? 'Salir de modo edición' : 'Modo edición'} onClick={toggleAdmin}>
-                <LockIcon open={isAdmin} />
-              </button>
-              {isAdmin && !collapsed && (
-                <button className="tt-icon-btn" title="Editar equipo" onClick={() => setShowTeamEdit((v) => !v)}>
-                  <GearIcon />
-                </button>
-              )}
-            </div>
-          </div>
 
           <button className={`tt-member ${filter === 'all' ? 'is-active' : ''}`} onClick={() => setFilter('all')} title="Todos">
             <span className="tt-avatar tt-avatar-all">{tasks.filter((t) => t.status !== 'done').length}</span>
