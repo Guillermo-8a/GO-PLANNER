@@ -8,7 +8,6 @@ import {
 } from 'lucide-react';
 import { CSV_SCHEMAS } from './csvSchemas';
 
-// ── Hook: detecta si el elemento es visible ───────────────────────────────────
 function useInView(threshold = 0.15) {
   const ref = useRef(null);
   const [visible, setVisible] = useState(false);
@@ -23,7 +22,6 @@ function useInView(threshold = 0.15) {
   return [ref, visible];
 }
 
-// ── Hook: parallax con scroll ─────────────────────────────────────────────────
 function useParallax(speed = 0.3) {
   const [offset, setOffset] = useState(0);
   useEffect(() => {
@@ -34,7 +32,6 @@ function useParallax(speed = 0.3) {
   return offset;
 }
 
-// ── Datos ─────────────────────────────────────────────────────────────────────
 const WORLDS = [
   {
     id: 'plan', tag: 'PLANES FINANCIEROS',
@@ -43,653 +40,105 @@ const WORLDS = [
     accent: '#8b5cf6', glow: 'rgba(139,92,246,0.18)',
     modules: [
       { label: 'Planning', Icon: BarChart3, desc: 'Construye Mejor Estimado, Ajusta tu OTB, Alinea tu canales, y baja a nivel tienda.' },
-      { label: 'Suplementarios', Icon: PieChart, desc: 'Baja el OTB mensual (venta, mkds, CMSI, compra, utilidad, inventario) a marca o proveedor con histórico o IS, siempre cuadrando al OTB general.' },
+      { label: 'Suplementarios', Icon: PieChart, desc: 'Baja el OTB mensual a marca o proveedor con histórico o IS, siempre cuadrando al OTB general.' },
     ],
   },
   {
     id: 'demanda', tag: 'PLANEACIÓN DE LA DEMANDA',
     name: 'Assortment · Forecasting · Distribución · Resurtido',
-    desc: 'Conecta la estrategia con la ejecución diaria. Vista unificada que une forecast, OTB y distribución. Proyecta demanda, define el surtido óptimo. |y mantiene el inventario saludable.',
+    desc: 'Conecta la estrategia con la ejecución diaria. Vista unificada que une forecast, OTB y distribución.',
     accent: '#f59e0b', glow: 'rgba(245,158,11,0.15)',
     modules: [
-      { label: 'Forecasting',    Icon: TrendingUp,   desc: 'Regresión lineal con ajuste estacional y 4 escenarios IS.' },
-      { label: 'Assortment', Icon: ShoppingCart, desc: 'Presupuesto de compra y OTB mensual. La resultante da piezas y modelos por mes por combinación GOA × Bucket × Regla (varias reglas por bucket, ej. OPP/MID/MAX con su PVP y %, sugeridas por los escalones de precio del histórico LY/LLY); la curva solo reparte tallas por centro. Estrategia Venta × Capacidad: clústeres por venta y m²/espacio, corridas sugeridas desde la venta, reparto por venta de cada tienda con afinidad de precio por clúster, piezas al precio neto (OTB a venta neta) y prueba de espacio con o sin centralización por GOA. Basta la base de venta por tienda × PVP (CENTRO_KEY, GOA, PVP, VENTA_U, VENTA_P) más el archivo de capacidad o m².' },
-      { label: 'Resurtido',      Icon: RefreshCw,    desc: 'Reposición por días de inventario: pedido = demanda/día × (lead time + WOS + seguridad) − (OH+OO), con ajustes editables por cluster de tienda (CSV o A/B/C automático) y forecast TDM por GOA.' },
-      { label: 'Distribución', Icon: Map,            desc: 'Surtido inicial por cluster, curva de tallas y chequera.' },
+      { label: 'Forecasting', Icon: TrendingUp, desc: 'Regresión lineal con ajuste estacional y 4 escenarios IS.' },
+      { label: 'Assortment', Icon: ShoppingCart, desc: 'Presupuesto de compra y OTB mensual. Curvas y piezas por modelo.' },
+      { label: 'Resurtido', Icon: RefreshCw, desc: 'Reposición por días de inventario con ajustes por cluster.' },
+      { label: 'Distribución', Icon: Map, desc: 'Surtido inicial por cluster, curva de tallas y chequera.' },
     ],
-   }, 
+  },
   {
     id: 'inventario', tag: 'CONTROL DE INVENTARIOS',
     name: 'Disperción · Traslados · Chequera',
-    desc: 'Movimiento de mercancía entre tiendas. Detecta excedentes y cubre necesidades por presupuesto con ayuda y como base la famosa Chequera.',
+    desc: 'Movimiento de mercancía entre tiendas. Detecta excedentes y cubre necesidades.',
     accent: '#10b981', glow: 'rgba(16,185,129,0.15)',
     modules: [
-      { label: 'Traslados',    Icon: ArrowLeftRight, desc: 'Excedente de temporada por clima, aperturas por corrida completa y nivelación por MOS (misma zona, metro, todas u óptimo en cascada), con exclusión de bodegas y desglose a SKU.' },
-      { label: 'Dispersión',    Icon: ArrowLeftRight, desc: 'Dispersión entre ventas e inventario por centro, goa, o el filtro que necesites.' },
-      { label: 'Chequera',    Icon: ArrowLeftRight, desc: 'Información de modelos a nivel SKU, para organizar y administrar la compra.' },
+      { label: 'Traslados', Icon: ArrowLeftRight, desc: 'Excedente de temporada y nivelación por MOS.' },
+      { label: 'Dispersión', Icon: ArrowLeftRight, desc: 'Dispersión entre ventas e inventario por centro o GOA.' },
+      { label: 'Chequera', Icon: ArrowLeftRight, desc: 'Información a nivel SKU para organizar la compra.' },
     ],
   },
- {
+  {
     id: 'check', tag: 'CHECK DE COORDINADORES',
     name: 'Daily · Eventos · Allocation · Pedidos · Nulo Movimiento',
-    desc: 'Detalle de ventas e inventarios diarios y por evento promocional, con proyección de venta y utilidades. Revisión de parametrizaciones y OC antes de que salga la mercancía.',
+    desc: 'Detalle diario, eventos promocionales, parametrizaciones y rastreo de OCs.',
     accent: '#06b6d4', glow: 'rgba(6, 182, 212, 0.15)',
     modules: [
-       { label: 'Daily',    Icon: Calendar,  desc: 'Ajustes diarios de inventario, ventas y margen.' },
-       { label: 'Eventos',  Icon: Tag,       desc: 'Venta, margen, sell-through e inventario inicial de eventos promocionales (BTS, Navidad, etc.), comparado automáticamente contra el año anterior.' },
-       { label: 'Allocation', Icon: ListChecks, desc: 'Reportero de parametrizaciones ZO9_DM (matriz de marca, clima, AP8, WOS, compra vs mínimos, curvas, clusters) y de OC (mínimos, destalle, picos, concentración). Dice qué está mal, dónde y a qué cambiarlo, y baja el CSV corregido para volver a parametrizar.' },
-       { label: 'Pedidos', Icon: Truck, desc: 'Rastreador de OCs en un mapa 3D (Three.js: luces, sombras, órbita de cámara) con 3 rutas (importación, nacional, directo a tienda): proveedor, barcos en tránsito, aduana, PLAN (almacén y cross dock), bodegas regionales, fulfillment, foro fotográfico y zonas de tiendas. Piezas en on order, in process, in transit, bodegas, foro, fulfillment y tienda sin entrada; atorados por umbral editable, costo atorado y en tránsito (COSTO_ASIG; importación en USD convertida al tipo de cambio del día de la OC), proveedores nacionales e importación por separado, hasta 14 zonas, filtro por mes de recepción (compromiso), aviso de antigüedad de la base, mapa de tiendas por zona, lead time por tipo y tramo, antigüedad y línea de tiempo por OC' },
-       { label: 'Nulo Movimiento', Icon: Hourglass, desc: 'Inventario sin venta en cada combinación SKU × centro (tiendas y bodegas) desde el CSV de BigQuery: nulo = más de 3 meses desde la última venta (umbral editable por sección; si no vendió en la ventana cuenta la antigüedad desde la 1a recepción). Monto, piezas, meses promedio, proveedor top, % estatus, % marca, % nulo por zona y por tienda, top artículos, GOA y tabla por sección; filtros de sección, GOA, marca, norma, estatus, meses, zona y tipo de centro, y tab Detalle con las combinaciones y CSV.' },
-     ],
-   },
- ];
-
-const FAQS = [
-  { q: '¿Qué es GO PLANNER?', a: 'Sistema integrado de planeación comercial desarrollado por el propio equipo de PAC. Cubre el ciclo completo de los 3 pilares del negocio: Planeación financiera → Planeación de la demanda → Control de inventarios.' },
-  { q: '¿Los módulos comparten datos?', a: 'Sí. El pipeline conecta Forecasting → OTB → Distribución → Resurtido automáticamente. El sidebar muestra qué módulos tienen información activa.' },
-  { q: '¿Cómo funciona GO PLANNER?', a: 'Funciona con información dentro de un csv, una vez cargada en cada módulo el app hace los calculos con esa información.' },
-  { q: '¿Se guarda mi trabajo?', a: 'Sí. Cada módulo persiste en localStorage (gop_forecast, gop_assortment, etc.). Al volver encontrarás todo como lo dejaste.' },
-  { q: '¿Mi información corre peligro?', a: 'No. Toda la información cargada en los csv, vive en los csv y en la memoria RAM de tu equipo, GO PLANNER no tiene la facultad ni la memoria para almacenar tu información, todos los procesos trabajan en tu equipo, no en un servidor.' },
+      { label: 'Daily', Icon: Calendar, desc: 'Ajustes diarios de inventario, ventas y margen.' },
+      { label: 'Eventos', Icon: Tag, desc: 'Venta, margen y sell-through de eventos promocionales.' },
+      { label: 'Allocation', Icon: ListChecks, desc: 'Reportero de parametrizaciones ZO9_DM y de OC.' },
+      { label: 'Pedidos', Icon: Truck, desc: 'Rastreador de OCs con rutas de importación y nacional.' },
+      { label: 'Nulo Movimiento', Icon: Hourglass, desc: 'Inventario sin venta en cada combinación SKU × centro.' },
+    ],
+  },
 ];
 
-// ── Cursor glow ───────────────────────────────────────────────────────────────
-function CursorGlow() {
-  const [pos, setPos] = useState({ x: -200, y: -200 });
-  useEffect(() => {
-    const h = (e) => setPos({ x: e.clientX, y: e.clientY });
-    window.addEventListener('mousemove', h);
-    return () => window.removeEventListener('mousemove', h);
-  }, []);
-  return (
-    <div style={{
-      position: 'fixed', pointerEvents: 'none', zIndex: 1,
-      left: pos.x - 200, top: pos.y - 200,
-      width: 400, height: 400, borderRadius: '60%',
-      background: 'radial-gradient(circle, rgba(139,92,246,0.06) 0%, transparent 70%)',
-      transition: 'left 0.1s ease, top 0.1s ease',
-    }} />
-  );
-}
+const FAQS = [
+  { q: '¿Qué es GO PLANNER?', a: 'Sistema integrado de planeación comercial desarrollado por PAC.' },
+  { q: '¿Los módulos comparten datos?', a: 'Sí. El pipeline conecta Forecasting → OTB → Distribución → Resurtido automáticamente.' },
+  { q: '¿Cómo funciona GO PLANNER?', a: 'Funciona con la información cargada en los CSVs en la memoria RAM.' },
+  { q: '¿Se guarda mi trabajo?', a: 'Sí. Cada módulo persiste en localStorage.' },
+  { q: '¿Mi información corre peligro?', a: 'No. Todo procesa de forma local en tu equipo, sin servidores externos.' },
+];
 
-// ── Grid de fondo animado ─────────────────────────────────────────────────────
 function GridBg() {
   return (
     <div style={{
       position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none',
-      backgroundImage: `
-        linear-gradient(rgba(139,92,246,0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(139,92,246,0.03) 1px, transparent 1px)
-      `,
+      backgroundImage: `linear-gradient(rgba(139,92,246,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(139,92,246,0.03) 1px, transparent 1px)`,
       backgroundSize: '60px 60px',
     }} />
   );
 }
 
-// ── Navbar ────────────────────────────────────────────────────────────────────
 function NavBar({ navigate }) {
-  const [scrolled, setScrolled] = useState(false);
-  useEffect(() => {
-    const h = () => setScrolled(window.scrollY > 30);
-    window.addEventListener('scroll', h);
-    return () => window.removeEventListener('scroll', h);
-  }, []);
   return (
     <nav style={{
       position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
-      padding: '0 2.5rem', height: '64px',
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      background: scrolled ? 'rgba(0,0,0,0.8)' : 'transparent',
-      backdropFilter: scrolled ? 'blur(20px)' : 'none',
-      borderBottom: scrolled ? '1px solid rgba(139,92,246,0.15)' : 'none',
-      transition: 'all 0.4s ease',
+      padding: '0 2.5rem', height: '64px', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+      background: 'rgba(0,0,0,0.8)', backdropFilter: 'blur(20px)', borderBottom: '1px solid rgba(139,92,246,0.15)',
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-        <img src="/logo.png" alt="GO PLANNER" style={{ width: 'clamp(90px, 10vw, 130px)', height: 'auto', margin: '0 0 -36px -18px', filter: 'drop-shadow(0 0 30px rgba(139,92,246,0.35))' }} />
+        <img src="/logo.png" alt="GO PLANNER" style={{ width: '120px', height: 'auto', filter: 'drop-shadow(0 0 30px rgba(139,92,246,0.35))' }} />
       </div>
-      <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-        {['PILARES', 'FORMATOS', 'PREGUNTAS'].map(w => (
-          <a key={w} href={`#${w.toLowerCase()}`} style={{
-            fontSize: '12px', fontWeight: 600, color: '#71717a',
-            textDecoration: 'none', transition: 'color 0.2s',
-          }}
-          onMouseEnter={e => e.target.style.color = '#8b5cf6'}
-          onMouseLeave={e => e.target.style.color = '#71717a'}
-          >{w}</a>
-        ))}
-        <button onClick={() => navigate('/')} style={{
-          display: 'flex', alignItems: 'center', gap: '6px',
-          background: 'linear-gradient(135deg, #7c3aed, #5b21b6)',
-          color: 'white', border: 'none', borderRadius: '12px',
-          padding: '9px 20px', fontSize: '13px', fontWeight: 700,
-          cursor: 'pointer', boxShadow: '0 0 24px rgba(124,58,237,0.4)',
-          transition: 'transform 0.2s, box-shadow 0.2s',
-        }}
-        onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.04)'; e.currentTarget.style.boxShadow = '0 0 32px rgba(124,58,237,0.6)'; }}
-        onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 0 24px rgba(124,58,237,0.4)'; }}
-        >
-          Abrir app <ArrowRight size={13} />
-        </button>
-      </div>
+      <button onClick={() => navigate('/')} style={{
+        background: 'linear-gradient(135deg, #7c3aed, #5b21b6)', color: 'white', border: 'none',
+        borderRadius: '12px', padding: '9px 20px', fontSize: '13px', fontWeight: 700, cursor: 'pointer',
+      }}>
+        Abrir app <ArrowRight size={13} />
+      </button>
     </nav>
   );
 }
 
-// ── Hero ──────────────────────────────────────────────────────────────────────
-function Hero({ navigate }) {
-  const parallax = useParallax(0.2);
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => { setTimeout(() => setMounted(true), 100); }, []);
-
-  return (
-    <section style={{
-      minHeight: '100vh', display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center',
-      padding: '0 2rem', textAlign: 'center', position: 'relative',
-      overflow: 'hidden',
-    }}>
-      {/* Orbs de fondo */}
-      <div style={{
-        position: 'absolute', top: '10%', left: '20%',
-        width: '500px', height: '500px', borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(124,58,237,0.12) 0%, transparent 70%)',
-        transform: `translateY(${parallax * 0.5}px)`,
-        transition: 'transform 0.1s linear',
-        pointerEvents: 'none',
-      }} />
-      <div style={{
-        position: 'absolute', bottom: '10%', right: '15%',
-        width: '400px', height: '400px', borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(16,185,129,0.08) 0%, transparent 70%)',
-        transform: `translateY(${-parallax * 0.3}px)`,
-        transition: 'transform 0.1s linear',
-        pointerEvents: 'none',
-      }} />
-
-      {/* Badge */}
-      <div style={{
-        display: 'inline-flex', alignItems: 'center', gap: '8px',
-        padding: '7px 16px', borderRadius: '100px',
-        border: '1px solid rgba(139,92,246,0.35)',
-        background: 'rgba(139,92,246,0.08)',
-        marginBottom: '36px',
-        opacity: mounted ? 1 : 0,
-        transform: mounted ? 'translateY(0)' : 'translateY(20px)',
-        transition: 'all 0.7s ease',
-      }}>
-        <Zap size={11} color="#8b5cf6" />
-        <span style={{ fontSize: '11px', fontWeight: 700, color: '#8b5cf6', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
-          Sistema de planeación comercial · SBB
-        </span>
-      </div>
-
-      {/* Título */}
-      <div style={{
-        opacity: mounted ? 1 : 0,
-        transform: mounted ? 'translateY(0)' : 'translateY(30px)',
-        transition: 'all 0.8s ease 0.1s',
-      }}>
-        <h1 style={{
-          fontSize: 'clamp(72px, 14vw, 160px)',
-          fontWeight: 900, lineHeight: 0.85,
-          letterSpacing: '-6px', textTransform: 'uppercase',
-          color: 'white', margin: '0 0 8px',
-        }}>GO</h1>
-        <h1 style={{
-          fontSize: 'clamp(60px, 12vw, 140px)',
-          fontWeight: 900, lineHeight: 0.85,
-          letterSpacing: '-5px', textTransform: 'uppercase',
-          margin: '0 0 32px',
-          background: 'linear-gradient(135deg, #8b5cf6 0%, #a78bfa 50%, #7c3aed 100%)',
-          WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-          filter: 'drop-shadow(0 0 40px rgba(139,92,246,0.4))',
-        }}>PLANNER</h1>
-      </div>
-
-      {/* Desc */}
-      <p style={{
-        fontSize: '17px', color: '#71717a', maxWidth: '560px',
-        lineHeight: 1.7, margin: '0 0 44px',
-        opacity: mounted ? 1 : 0,
-        transform: mounted ? 'translateY(0)' : 'translateY(20px)',
-        transition: 'all 0.8s ease 0.2s',
-      }}>
-        Aplicación integrada de planeación comercial para cubrir los tres pilares de PAC. Desde el plan hasta los traslados, todo en un sistema que funciona en tu equipo.
-      </p>
-
-      {/* CTAs */}
-      <div style={{
-        display: 'flex', gap: '14px', flexWrap: 'wrap', justifyContent: 'center',
-        marginBottom: '72px',
-        opacity: mounted ? 1 : 0,
-        transform: mounted ? 'translateY(0)' : 'translateY(20px)',
-        transition: 'all 0.8s ease 0.3s',
-      }}>
-        <button onClick={() => navigate('/')} style={{
-          display: 'flex', alignItems: 'center', gap: '8px',
-          background: 'linear-gradient(135deg, #7c3aed, #5b21b6)',
-          color: 'white', border: 'none', borderRadius: '16px',
-          padding: '16px 32px', fontSize: '15px', fontWeight: 700,
-          cursor: 'pointer', boxShadow: '0 0 40px rgba(124,58,237,0.5)',
-          transition: 'all 0.25s ease',
-        }}
-        onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.05) translateY(-2px)'; e.currentTarget.style.boxShadow = '0 0 60px rgba(124,58,237,0.7)'; }}
-        onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1) translateY(0)'; e.currentTarget.style.boxShadow = '0 0 40px rgba(124,58,237,0.5)'; }}
-        >
-          Abrir GO PLANNER <ArrowRight size={16} />
-        </button>
-        <a href="#pilares" style={{
-          display: 'flex', alignItems: 'center', gap: '8px',
-          background: 'rgba(255,255,255,0.04)', color: '#a1a1aa',
-          border: '1px solid rgba(255,255,255,0.1)',
-          borderRadius: '16px', padding: '16px 32px',
-          fontSize: '15px', fontWeight: 700, textDecoration: 'none',
-          transition: 'all 0.25s ease',
-        }}
-        onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(139,92,246,0.4)'; e.currentTarget.style.color = 'white'; }}
-        onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = '#a1a1aa'; }}
-        >
-          Ver pilares
-        </a>
-      </div>
-
-      {/* Stats */}
-      <div style={{
-        display: 'flex', gap: '60px', flexWrap: 'wrap', justifyContent: 'center',
-        opacity: mounted ? 1 : 0,
-        transition: 'all 0.8s ease 0.4s',
-      }}>
-        {[{ val: '10', label: 'Módulos' }, { val: '3', label: 'Pilares' }, { val: '∞', label: 'Tiendas' }].map(s => (
-          <div key={s.label} style={{ textAlign: 'center' }}>
-            <p style={{ fontSize: '48px', fontWeight: 900, color: 'white', lineHeight: 1, letterSpacing: '-2px', margin: 0 }}>{s.val}</p>
-            <p style={{ fontSize: '11px', color: '#52525b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px', marginTop: '6px' }}>{s.label}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Scroll hint */}
-      <div style={{ position: 'absolute', bottom: '36px', left: '50%', transform: 'translateX(-50%)', opacity: 0.35 }}>
-        <ChevronDown size={22} color="white" />
-      </div>
-    </section>
-  );
-}
-
-// ── World card ────────────────────────────────────────────────────────────────
-function WorldCard({ world, index, total }) {
-  const [ref, visible] = useInView(0.1);
-  const [hovered, setHovered] = useState(false);
-  const esUltimoSolitario = index === total - 1 && total % 3 === 1;
-
-  return (
-    <div
-      id={world.id}
-      ref={ref}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        gridColumn: esUltimoSolitario ? '1 / -1' : 'auto', // 👈 ESTA LÍNEA HACE LA MAGIA
-        background: hovered ? `rgba(255,255,255,0.035)` : 'rgba(255,255,255,0.02)',
-        border: `1px solid ${hovered ? world.accent + '50' : 'rgba(255,255,255,0.07)'}`,
-        borderRadius: '28px', padding: '36px',
-        position: 'relative', overflow: 'hidden',
-        opacity: visible ? 1 : 0,
-        transform: visible ? 'translateY(0)' : 'translateY(40px)',
-        transition: `opacity 0.7s ease ${index * 0.15}s, transform 0.7s ease ${index * 0.15}s, border-color 0.3s, background 0.3s`,
-        cursor: 'default',
-      }}
-    >
-      {/* Glow en hover */}
-      <div style={{
-        position: 'absolute', top: 0, right: 0,
-        width: '250px', height: '250px', borderRadius: '50%',
-        background: `radial-gradient(ellipse at top right, ${world.glow} 0%, transparent 65%)`,
-        opacity: hovered ? 1 : 0.4,
-        transition: 'opacity 0.4s ease',
-        pointerEvents: 'none',
-      }} />
-
-      <span style={{
-        display: 'inline-block', fontSize: '10px', fontWeight: 900,
-        letterSpacing: '2px', textTransform: 'uppercase',
-        color: world.accent, background: `${world.accent}15`,
-        border: `1px solid ${world.accent}35`,
-        padding: '5px 14px', borderRadius: '100px', marginBottom: '20px',
-      }}>{world.tag}</span>
-
-      <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'white', margin: '0 0 14px', lineHeight: 1.4 }}>
-        {world.name}
-      </h3>
-      <p style={{ fontSize: '13px', color: '#71717a', lineHeight: 1.75, margin: '0 0 28px' }}>
-        {world.desc}
-      </p>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        {world.modules.map(({ label, Icon, desc }) => (
-          <div key={label} style={{
-            display: 'flex', alignItems: 'flex-start', gap: '14px',
-            background: 'rgba(255,255,255,0.03)',
-            border: '1px solid rgba(255,255,255,0.06)',
-            borderRadius: '16px', padding: '14px',
-            transition: 'background 0.2s',
-          }}>
-            <div style={{ padding: '9px', borderRadius: '12px', background: `${world.accent}15`, flexShrink: 0 }}>
-              <Icon size={14} color={world.accent} />
-            </div>
-            <div>
-              <p style={{ fontSize: '12px', fontWeight: 800, color: 'white', margin: '0 0 4px' }}>{label}</p>
-              <p style={{ fontSize: '11px', color: '#52525b', margin: 0, lineHeight: 1.6 }}>{desc}</p>
-            </div>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-// ── Pilares ────────────────────────────────────────────────────────────────────
-function WorldsSection() {
-  const [ref, visible] = useInView(0.1);
-  return (
-    <section id="pilares" style={{ padding: '120px 2rem', maxWidth: '1140px', margin: '0 auto' }}>
-      <div ref={ref} style={{
-        textAlign: 'center', marginBottom: '72px',
-        opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(30px)',
-        transition: 'all 0.7s ease',
-      }}>
-        <p style={{ fontSize: '11px', fontWeight: 700, color: '#52525b', letterSpacing: '2.5px', textTransform: 'uppercase', marginBottom: '16px' }}>
-          Arquitectura modular
-        </p>
-        <h2 style={{ fontSize: 'clamp(36px, 6vw, 64px)', fontWeight: 900, color: 'white', letterSpacing: '-3px', margin: 0 }}>
-          Los 3 pilares
-        </h2>
-        <p style={{ color: '#52525b', marginTop: '16px', fontSize: '15px', maxWidth: '480px', margin: '16px auto 0' }}>
-          Módulos agrupados por función y flujo de trabajo. Cada pilar opera de forma independiente pero comparte datos con los demás.
-        </p>
-      </div>
-<div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-  {WORLDS.map((w, i) => (
-    <WorldCard key={w.id} world={w} index={i} total={WORLDS.length} />
-  ))}
-</div>
-    </section>
-  );
-}
-
-// ── Formatos CSV ──────────────────────────────────────────────────────────────
-// Encabezados de plantilla a partir de las columnas descritas: quita "*" y "(…)";
-// "A / B / C (opcionales)" → varias columnas, "A / B" → la primera; descripciones entre paréntesis se omiten.
-const templateRows = (f) => {
-  if (f.template) return f.template;
-  const head = f.columns.flatMap((c) => {
-    if (c.trim().startsWith('(')) return [];
-    const multi = /\(opcionales\)/i.test(c);
-    const parts = c.replace(/\(.*?\)/g, '').replace(/\*/g, '').split('/').map((x) => x.trim()).filter(Boolean);
-    return multi ? parts : parts.slice(0, 1);
-  });
-  return head.length ? [head] : null;
-};
-const downloadTemplate = (mod, f) => {
-  const rows = templateRows(f);
-  const csv = '\uFEFF' + rows.map((r) => r.map((v) => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : v)).join(',')).join('\n');
-  const a = document.createElement('a');
-  a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
-  a.download = `Plantilla_${mod}_${f.title}.csv`.replace(/[^\w.\-áéíóúñÁÉÍÓÚÑ]+/g, '_');
-  a.click();
-};
-
-function CSVFormatsSection() {
-  const [openModule, setOpenModule] = useState(null);
-  const [ref, visible] = useInView(0.1);
-
-  return (
-    <section id="formatos" style={{ padding: '80px 2rem', maxWidth: '900px', margin: '0 auto', scrollMarginTop: '70px' }}>
-      <div ref={ref} style={{
-        textAlign: 'center', marginBottom: '50px',
-        opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(30px)',
-        transition: 'all 0.7s ease',
-      }}>
-        <p style={{ fontSize: '11px', fontWeight: 700, color: '#52525b', letterSpacing: '2.5px', textTransform: 'uppercase', marginBottom: '16px' }}>
-          Referencia
-        </p>
-        <h2 style={{ fontSize: 'clamp(32px, 5vw, 52px)', fontWeight: 900, color: 'white', letterSpacing: '-2px', margin: 0 }}>
-          Formatos de CSV
-        </h2>
-        <p style={{ color: '#71717a', fontSize: '14px', margin: '14px auto 0', maxWidth: '520px', lineHeight: 1.6 }}>
-          Qué columnas espera cada módulo. Qué titulos necesita el csv y que datos debe contener. <code style={{ background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: '5px' }}>csvSchemas.js</code>.
-        </p>
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {CSV_SCHEMAS.map((mod, i) => {
-          const isOpen = openModule === i;
-          return (
-            <div key={mod.module} style={{
-              background: isOpen ? 'rgba(139,92,246,0.06)' : 'rgba(255,255,255,0.02)',
-              border: `1px solid ${isOpen ? 'rgba(139,92,246,0.3)' : 'rgba(255,255,255,0.07)'}`,
-              borderRadius: '18px', overflow: 'hidden',
-              transition: 'all 0.25s ease',
-              opacity: visible ? 1 : 0,
-              transform: visible ? 'translateY(0)' : 'translateY(20px)',
-              transitionDelay: `${i * 0.05}s`,
-            }}>
-              <button onClick={() => setOpenModule(isOpen ? null : i)} style={{
-                width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '20px 26px', background: 'none', border: 'none',
-                cursor: 'pointer', textAlign: 'left',
-              }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px', fontWeight: 700, color: 'white' }}>
-                  <FileSpreadsheet size={15} color="#8b5cf6" /> {mod.module}
-                </span>
-                <ChevronDown size={16} color={isOpen ? '#8b5cf6' : '#52525b'}
-                  style={{ flexShrink: 0, marginLeft: '12px', transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.25s' }} />
-              </button>
-              {isOpen && (
-                <div style={{
-                  padding: '0 26px 24px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '18px',
-                  display: 'flex', flexDirection: 'column', gap: '18px',
-                }}>
-                  {mod.formats.map((f, fi) => (
-                    <div key={fi}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', margin: '0 0 6px' }}>
-                        <p style={{ fontSize: '13px', fontWeight: 700, color: '#c4b5fd', margin: 0 }}>{f.title}</p>
-                        {templateRows(f) && (
-                          <button onClick={() => downloadTemplate(mod.module, f)} style={{
-                            display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0,
-                            background: 'rgba(139,92,246,0.12)', border: '1px solid rgba(139,92,246,0.35)', color: '#c4b5fd',
-                            borderRadius: '8px', padding: '5px 10px', fontSize: '11px', fontWeight: 700, cursor: 'pointer',
-                          }}>
-                            <Download size={12} /> Plantilla
-                          </button>
-                        )}
-                      </div>
-                      <p style={{ fontSize: '12.5px', color: '#a1a1aa', lineHeight: 1.6, margin: '0 0 10px' }}>{f.desc}</p>
-                      {f.columns.length > 0 && (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                          {f.columns.map(c => (
-                            <span key={c} style={{
-                              fontFamily: 'monospace', fontSize: '11px', color: '#e4e4e7',
-                              background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
-                              borderRadius: '6px', padding: '3px 8px',
-                            }}>{c}</span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-// ── FAQ ───────────────────────────────────────────────────────────────────────
-function FAQSection() {
-  const [open, setOpen] = useState(null);
-  const [ref, visible] = useInView(0.1);
-
-  return (
-    <section id="preguntas" style={{ padding: '80px 2rem 140px', maxWidth: '740px', margin: '0 auto', scrollMarginTop: '70px' }}>
-      <div ref={ref} style={{
-        textAlign: 'center', marginBottom: '60px',
-        opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(30px)',
-        transition: 'all 0.7s ease',
-      }}>
-        <p style={{ fontSize: '11px', fontWeight: 700, color: '#52525b', letterSpacing: '2.5px', textTransform: 'uppercase', marginBottom: '16px' }}>
-          Soporte
-        </p>
-        <h2 style={{ fontSize: 'clamp(32px, 5vw, 52px)', fontWeight: 900, color: 'white', letterSpacing: '-2px', margin: 0 }}>
-          Preguntas frecuentes
-        </h2>
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {FAQS.map((faq, i) => {
-          const isOpen = open === i;
-          return (
-            <div key={i} style={{
-              background: isOpen ? 'rgba(139,92,246,0.06)' : 'rgba(255,255,255,0.02)',
-              border: `1px solid ${isOpen ? 'rgba(139,92,246,0.3)' : 'rgba(255,255,255,0.07)'}`,
-              borderRadius: '18px', overflow: 'hidden',
-              transition: 'all 0.25s ease',
-              opacity: visible ? 1 : 0,
-              transform: visible ? 'translateY(0)' : 'translateY(20px)',
-              transitionDelay: `${i * 0.08}s`,
-            }}>
-              <button onClick={() => setOpen(isOpen ? null : i)} style={{
-                width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '22px 26px', background: 'none', border: 'none',
-                cursor: 'pointer', textAlign: 'left',
-              }}>
-                <span style={{ fontSize: '14px', fontWeight: 700, color: 'white' }}>{faq.q}</span>
-                <ChevronDown size={16} color={isOpen ? '#8b5cf6' : '#52525b'}
-                  style={{ flexShrink: 0, marginLeft: '12px', transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.25s' }} />
-              </button>
-              {isOpen && (
-                <p style={{
-                  fontSize: '13px', color: '#71717a', lineHeight: 1.75,
-                  padding: '0 26px 22px', margin: 0,
-                  borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '18px',
-                }}>{faq.a}</p>
-              )}
-            </div>
-          );
-        })}
-      </div>
-    </section>
-  );
-}
-
-// ── CTA final ─────────────────────────────────────────────────────────────────
-function CTASection({ navigate }) {
-  const [ref, visible] = useInView(0.2);
-  const [hovered, setHovered] = useState(false);
-  return (
-    <section style={{ padding: '0 2rem 120px', maxWidth: '900px', margin: '0 auto' }}>
-      <div ref={ref} style={{
-        background: 'linear-gradient(135deg, rgba(124,58,237,0.15) 0%, rgba(91,33,182,0.08) 100%)',
-        border: '1px solid rgba(139,92,246,0.25)',
-        borderRadius: '32px', padding: '64px 48px', textAlign: 'center',
-        opacity: visible ? 1 : 0, transform: visible ? 'scale(1)' : 'scale(0.96)',
-        transition: 'all 0.8s ease',
-        position: 'relative', overflow: 'hidden',
-      }}>
-        <div style={{
-          position: 'absolute', top: '-60px', left: '50%', transform: 'translateX(-50%)',
-          width: '400px', height: '300px', borderRadius: '50%',
-          background: 'radial-gradient(ellipse, rgba(139,92,246,0.15) 0%, transparent 70%)',
-          pointerEvents: 'none',
-        }} />
-        <p style={{ fontSize: '11px', fontWeight: 700, color: '#8b5cf6', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '20px' }}>
-          Listo para planear
-        </p>
-        <h2 style={{ fontSize: 'clamp(28px, 4vw, 48px)', fontWeight: 900, color: 'white', letterSpacing: '-2px', margin: '0 0 16px' }}>
-          Empieza a usar GO PLANNER
-        </h2>
-        <p style={{ color: '#71717a', fontSize: '15px', margin: '0 0 40px', lineHeight: 1.6 }}>
-          Todos los módulos disponibles. Sin configuración. Solo abre y planea.
-        </p>
-        <button
-          onClick={() => navigate('/')}
-          onMouseEnter={() => setHovered(true)}
-          onMouseLeave={() => setHovered(false)}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: '10px',
-            background: 'linear-gradient(135deg, #7c3aed, #5b21b6)',
-            color: 'white', border: 'none', borderRadius: '16px',
-            padding: '18px 40px', fontSize: '16px', fontWeight: 700,
-            cursor: 'pointer',
-            boxShadow: hovered ? '0 0 60px rgba(124,58,237,0.7)' : '0 0 30px rgba(124,58,237,0.4)',
-            transform: hovered ? 'scale(1.05) translateY(-2px)' : 'scale(1)',
-            transition: 'all 0.25s ease',
-          }}
-        >
-          Abrir GO PLANNER <ArrowRight size={18} />
-        </button>
-      </div>
-    </section>
-  );
-}
-
-// ── Footer ────────────────────────────────────────────────────────────────────
-function Footer({ navigate }) {
-  return (
-    <footer style={{
-      borderTop: '1px solid rgba(255,255,255,0.05)',
-      padding: '32px 2.5rem',
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      flexWrap: 'wrap', gap: '16px',
-      maxWidth: '1140px', margin: '0 auto',
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-        <div style={{ background: '#7c3aed', padding: '6px', borderRadius: '10px', display: 'flex' }}>
-          <Layers size={14} color="white" />
-        </div>
-        <span style={{ fontSize: '13px', fontWeight: 700, color: '#3f3f46' }}>
-          GO PLANNER · SBB · {new Date().getFullYear()}
-        </span>
-      </div>
-      <button onClick={() => navigate('/')} style={{
-        display: 'flex', alignItems: 'center', gap: '6px',
-        background: 'none', border: '1px solid rgba(255,255,255,0.07)',
-        borderRadius: '10px', padding: '8px 16px',
-        color: '#52525b', fontSize: '12px', fontWeight: 700, cursor: 'pointer',
-        transition: 'color 0.2s, border-color 0.2s',
-      }}
-      onMouseEnter={e => { e.currentTarget.style.color = 'white'; e.currentTarget.style.borderColor = 'rgba(139,92,246,0.4)'; }}
-      onMouseLeave={e => { e.currentTarget.style.color = '#52525b'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.07)'; }}
-      >
-        Abrir app <ArrowRight size={12} />
-      </button>
-    </footer>
-  );
-}
-
-// ── Page ──────────────────────────────────────────────────────────────────────
 export default function AboutPage() {
   const navigate = useNavigate();
   return (
-    <div className="animate-fade-in" style={{ background: '#000', minHeight: '100vh', fontFamily: 'system-ui, -apple-system, sans-serif', position: 'relative' }}>
-      <style>{`
-        * { box-sizing: border-box; margin: 0; }
-        html { scroll-behavior: smooth; }
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: #000; }
-        ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 3px; }
-      `}</style>
+    <div style={{ background: '#000', minHeight: '100vh', fontFamily: 'system-ui, sans-serif', color: 'white', position: 'relative' }}>
       <GridBg />
-      <CursorGlow />
-      <div style={{ position: 'relative', zIndex: 2 }}>
-        <NavBar navigate={navigate} />
-        <Hero navigate={navigate} />
-        <WorldsSection />
-        <CSVFormatsSection />
-        <FAQSection />
-        <CTASection navigate={navigate} />
-        <Footer navigate={navigate} />
+      <NavBar navigate={navigate} />
+      <div style={{ maxWidth: '1140px', margin: '0 auto', padding: '120px 2rem 80px' }}>
+        <h1 style={{ fontSize: '48px', fontWeight: 900, marginBottom: '20px' }}>Sobre GO PLANNER</h1>
+        <p style={{ color: '#a1a1aa', fontSize: '16px', lineHeight: 1.7, marginBottom: '40px' }}>
+          Sistema integrado de planeación comercial para cubrir los tres pilares del negocio.
+        </p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))', gap: '20px' }}>
+          {WORLDS.map(w => (
+            <div key={w.id} style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '20px', padding: '24px' }}>
+              <span style={{ fontSize: '10px', fontWeight: 900, color: w.accent, textTransform: 'uppercase' }}>{w.tag}</span>
+              <h3 style={{ fontSize: '18px', fontWeight: 800, margin: '8px 0 12px' }}>{w.name}</h3>
+              <p style={{ fontSize: '13px', color: '#71717a', lineHeight: 1.6 }}>{w.desc}</p>
+            </div>
+          ))}
+        </div>
       </div>
     </div>
   );
