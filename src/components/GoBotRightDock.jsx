@@ -1,18 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState } from 'react';
 import { Sparkles, X, ArrowRight, Lock, MessageSquare, Send } from 'lucide-react';
 import GoBot3DAvatar from './GoBot3DAvatar';
 import { useGoBot } from '../context/GoBotContext';
-
-// Mapa de tus videos 3D pre-renderizados en public/bots/
-const VIDEO_CLIPS = {
-  idle: '/bots/bot-peek.mp4',
-  scanning: '/bots/bot-peek.mp4',
-  chairSpin360: '/bots/bot-spin.mp4',
-  threePointShot: '/bots/bot-triple.mp4',
-  paperBallThrow: '/bots/bot-paper.mp4',
-  cocaColaBreak: '/bots/bot-drink.mp4',
-  fortniteVictoryDance: '/bots/bot-victory.mp4'
-};
 
 export default function GoBotRightDock({ isDark = true }) {
   const {
@@ -26,32 +15,11 @@ export default function GoBotRightDock({ isDark = true }) {
     runCognitiveAudit,
     chatHistory,
     askGoBotQuestion,
-    isAsking,
-    triggerSurprisePeek
+    isAsking
   } = useGoBot();
 
   const [tab, setTab] = useState('audit');
   const [inputQuestion, setInputQuestion] = useState('');
-  const [videoFailed, setVideoFailed] = useState(false);
-
-  const currentVideoSrc = VIDEO_CLIPS[animation] || VIDEO_CLIPS.idle;
-
-  // Resetear estado de video cuando cambia la animación
-  useEffect(() => {
-    setVideoFailed(false);
-  }, [currentVideoSrc]);
-
-  // Aparición sorpresa orgánica cada 3.5 minutos (sale detrás del muro 6 seg y se esconde)
-  useEffect(() => {
-    const randomAnims = ['chairSpin360', 'threePointShot', 'paperBallThrow', 'cocaColaBreak', 'fortniteVictoryDance'];
-    const interval = setInterval(() => {
-      if (!isPeekOpen && semaphore !== 'red') {
-        const pick = randomAnims[Math.floor(Math.random() * randomAnims.length)];
-        triggerSurprisePeek(pick, 6500);
-      }
-    }, 210000);
-    return () => clearInterval(interval);
-  }, [isPeekOpen, semaphore, triggerSurprisePeek]);
 
   const handleToggleBot = () => {
     if (!isPeekOpen) {
@@ -77,20 +45,12 @@ export default function GoBotRightDock({ isDark = true }) {
     setInputQuestion('');
   };
 
-  // Filtros de color neón según el semáforo para teñir la luz del video 3D
-  const semaphoreGlow = {
-    neutral: 'drop-shadow(0 0 18px rgba(56, 189, 248, 0.75))',
-    green: 'drop-shadow(0 0 20px rgba(52, 211, 153, 0.85)) hue-rotate(85deg)',
-    amber: 'drop-shadow(0 0 20px rgba(251, 191, 36, 0.85))',
-    red: 'drop-shadow(0 0 22px rgba(244, 63, 94, 0.95)) hue-rotate(320deg)'
-  };
-
   return (
     <div id="gobot-dock-root">
-      {/* 1. UN SOLO BOTÓN DISCRETO INTEGRADO EN TU BARRA LATERAL DERECHA (Debajo del icono '?') */}
+      {/* Botón único integrado en tu barra lateral derecha (debajo del icono '?') */}
       <button
         onClick={handleToggleBot}
-        title="Invocar GO-Bot Sentinel (Auditoría & Consultas)"
+        title="GO-Bot Sentinel"
         className={`fixed right-[7px] top-[190px] z-50 w-9 h-9 rounded-xl flex items-center justify-center transition-all duration-300 border ${
           semaphore === 'red'
             ? 'bg-rose-500/20 border-rose-500 text-rose-400 animate-pulse shadow-lg shadow-rose-500/30'
@@ -102,22 +62,19 @@ export default function GoBotRightDock({ isDark = true }) {
         <Sparkles className="w-4 h-4" />
       </button>
 
-      {/* 2. ESCENARIO "PEEK-A-BOO": USA EL BORDE DE LA BARRA DERECHA (48px) COMO MURO FÍSICO */}
+      {/* Panel y Avatar asomándose por detrás de la barra lateral derecha */}
       <div
         className="fixed right-[48px] bottom-4 z-40 pointer-events-none flex items-end justify-end overflow-hidden"
-        style={{ width: '560px', height: '460px' }}
+        style={{ width: '540px', height: '440px' }}
       >
         <div
           className={`pointer-events-auto flex items-end gap-2 transition-transform duration-500 ease-out ${
-            isBotVisible || isPeekOpen
-              ? 'translate-x-0'
-              : 'translate-x-[150%]' /* Escondido 100% detrás del muro de la barra lateral */
+            isBotVisible || isPeekOpen ? 'translate-x-0' : 'translate-x-[150%]'
           }`}
         >
-          {/* GLOBO DE DIÁLOGO (Solo visible cuando está abierto) */}
+          {/* Globo de diálogo */}
           {isPeekOpen && (
             <div className="mb-4 w-80 sm:w-[370px] p-4 rounded-3xl bg-slate-950/95 backdrop-blur-2xl border border-slate-800 text-slate-100 shadow-2xl transition-all duration-300">
-              {/* Pestañas limpias */}
               <div className="flex items-center justify-between gap-2 mb-3 pb-2 border-b border-slate-800/80">
                 <div className="flex gap-1.5">
                   <button
@@ -129,7 +86,7 @@ export default function GoBotRightDock({ isDark = true }) {
                     Auditoría en Vivo
                   </button>
                   <button
-                    onClick={() => setTab('chat')}
+                    onClick={() => { setTab('chat'); setIsPeekOpen(true); }}
                     className={`px-3 py-1 rounded-xl text-xs font-bold flex items-center gap-1 transition ${
                       tab === 'chat' ? 'bg-cyan-600 text-white' : 'bg-slate-900 text-slate-400 hover:text-white'
                     }`}
@@ -141,7 +98,6 @@ export default function GoBotRightDock({ isDark = true }) {
                 <button
                   onClick={handleClosePanel}
                   className="text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800"
-                  title="Esconder detrás de la barra"
                 >
                   <X className="w-4 h-4" />
                 </button>
@@ -183,7 +139,6 @@ export default function GoBotRightDock({ isDark = true }) {
                   )}
                 </div>
               ) : (
-                /* CHAT CONECTADO A LOS DATOS EN PANTALLA */
                 <div className="space-y-2.5">
                   <div className="max-h-48 overflow-y-auto space-y-2 pr-1">
                     {chatHistory.map((m, i) => (
@@ -200,7 +155,7 @@ export default function GoBotRightDock({ isDark = true }) {
                     ))}
                     {isAsking && (
                       <div className="text-[11px] text-cyan-400 animate-pulse px-1">
-                        Leyendo indicadores y tablas de tu pantalla...
+                        Leyendo indicadores de tu pantalla...
                       </div>
                     )}
                   </div>
@@ -210,7 +165,7 @@ export default function GoBotRightDock({ isDark = true }) {
                       type="text"
                       value={inputQuestion}
                       onChange={(e) => setInputQuestion(e.target.value)}
-                      placeholder="Pregunta sobre esta vista, Sell-Through, Rotación..."
+                      placeholder="Pregunta sobre esta vista..."
                       className="flex-1 px-3 py-2 rounded-xl bg-slate-900 border border-slate-700 text-xs text-white outline-none focus:border-cyan-400"
                     />
                     <button
@@ -225,28 +180,12 @@ export default function GoBotRightDock({ isDark = true }) {
             </div>
           )}
 
-          {/* CUERPO 3D DEL ROBOT ASOMÁNDOSE POR EL BORDE DEL MURO DERECHO */}
+          {/* Avatar 3D Vectorial Limpio (Cero dependencia de archivos de video externos) */}
           <div
             onClick={() => setIsPeekOpen(!isPeekOpen)}
-            className="cursor-pointer relative -mr-3 transition-transform duration-300 hover:-translate-x-1"
-            style={{ filter: semaphoreGlow[semaphore] || semaphoreGlow.neutral }}
+            className="cursor-pointer relative transition-transform duration-300 hover:scale-105"
           >
-            {!videoFailed ? (
-              <video
-                key={currentVideoSrc}
-                src={currentVideoSrc}
-                autoPlay
-                loop
-                muted
-                playsInline
-                onError={() => setVideoFailed(true)}
-                className="w-32 h-36 object-contain mix-blend-screen select-none pointer-events-none"
-              />
-            ) : (
-              <div className="transform -rotate-12 translate-x-2">
-                <GoBot3DAvatar variant={semaphore} animation={animation} isDark={isDark} size={96} />
-              </div>
-            )}
+            <GoBot3DAvatar variant={semaphore} animation={animation} isDark={isDark} size={92} />
           </div>
         </div>
       </div>
