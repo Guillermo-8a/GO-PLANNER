@@ -1,6 +1,5 @@
 // AboutPage.jsx — GO PLANNER landing con animaciones full
 import { useState, useEffect, useRef } from 'react';
-import GoBot3DAvatar from './components/GoBot3DAvatar';
 import { useNavigate } from 'react-router-dom';
 import {
   TrendingUp, ShoppingCart, Map, RefreshCw,
@@ -666,40 +665,6 @@ function Footer({ navigate }) {
         Abrir app <ArrowRight size={12} />
       </button>
     </footer>
-  );
-}
-
-// ── Escuadrón GO-Bot ─────────────────────────────────────────────────────────
-const SQUAD = [
-  { pillar: 'Financial', variant: 'neutral' },
-  { pillar: 'Demand Planner', variant: 'purple' },
-  { pillar: 'Inventory Control', variant: 'amber' },
-  { pillar: 'Check Coo', variant: 'green' },
-];
-const SQUAD_ANIMS = [
-  ['chairSpin360', '🪑 Silla 360°'], ['threePointShot', '🏀 Triple'], ['paperBallThrow', '📄 Papelazo'],
-  ['cocaColaBreak', '🥤 Coquita'], ['fortniteVictoryDance', '🕺 Victoria'],
-];
-function GoBotSquadSection() {
-  const [anim, setAnim] = useState('idle');
-  return (
-    <section style={{ padding: '80px 2rem', maxWidth: '1000px', margin: '0 auto', textAlign: 'center' }}>
-      <h2 style={{ color: 'white', fontSize: '28px', fontWeight: 900, marginBottom: '8px' }}>Escuadrón GO-Bot Sentinel</h2>
-      <p style={{ color: '#71717a', fontSize: '14px', marginBottom: '32px' }}>AI Retail Auditors · uno por pilar</p>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: '20px', marginBottom: '28px' }}>
-        {SQUAD.map((b) => (
-          <div key={b.pillar} style={{ padding: '24px 12px', borderRadius: '20px', border: '1px solid rgba(255,255,255,0.07)', background: 'rgba(255,255,255,0.02)' }}>
-            <GoBot3DAvatar variant={b.variant} animation={anim} size={90} />
-            <p style={{ color: '#e4e4e7', fontSize: '13px', fontWeight: 800, marginTop: '12px' }}>{b.pillar}</p>
-          </div>
-        ))}
-      </div>
-      <div style={{ display: 'flex', gap: '8px', justifyContent: 'center', flexWrap: 'wrap' }}>
-        {SQUAD_ANIMS.map(([a, label]) => (
-          <button key={a} onClick={() => setAnim(a)} style={{ padding: '8px 14px', borderRadius: '10px', border: `1px solid ${anim === a ? '#8b5cf6' : 'rgba(255,255,255,0.1)'}`, background: anim === a ? 'rgba(139,92,246,0.15)' : 'none', color: '#e4e4e7', fontSize: '12px', fontWeight: 700, cursor: 'pointer' }}>{label}</button>
-        ))}
-      </div>
-    </section>
   );
 }
 
