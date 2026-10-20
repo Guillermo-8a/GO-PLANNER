@@ -18,6 +18,7 @@ import { Link } from 'react-router-dom';
 import { Home } from 'lucide-react';
 import * as XLSX from 'xlsx';
 import AppHeader from './components/AppHeader';
+import GoBot3DAvatar from './components/GoBot3DAvatar';
 import { THEMES } from './App';
 
 const STATUS_ORDER = ['pending', 'progress', 'done'];
@@ -40,6 +41,37 @@ const PILAR = {
   bomberazos: { label: 'Bomberazos', dot: '#F2F2F2' },
 };
 const PILAR_ORDER = ['financiero', 'demand', 'inventarios', 'bomberazos'];
+const COACH_PILLARS = { financiero: 'Financial', demand: 'Demand Planner', inventarios: 'Inventory Control', bomberazos: 'Check Coo' };
+
+function GoBotCoach({ byPilar }) {
+  const [anim, setAnim] = useState('idle');
+  const btn = { padding: '6px 10px', borderRadius: 10, border: '1px solid #3a3342', background: '#1c1720', color: '#E8E4F0', fontSize: 11, fontWeight: 700, cursor: 'pointer' };
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap', padding: '12px 20px', borderBottom: '1px solid #2a2430', background: '#141016' }}>
+      <GoBot3DAvatar variant={anim === 'fortniteVictoryDance' ? 'green' : 'neutral'} animation={anim} size={60} />
+      <div style={{ flex: 1, minWidth: 220 }}>
+        <p style={{ fontSize: 12, fontWeight: 900, color: '#E8E4F0', marginBottom: 6 }}>GO-Bot Team Coach · avance semanal por pilar</p>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(140px, 1fr))', gap: 8 }}>
+          {PILAR_ORDER.map((p) => {
+            const { total = 0, done = 0 } = byPilar[p] || {};
+            const pct = total ? Math.round((done / total) * 100) : 0;
+            return (
+              <div key={p}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11, color: '#B7B2C4' }}><span>{COACH_PILLARS[p]}</span><span>{done}/{total}</span></div>
+                <div style={{ height: 6, borderRadius: 3, background: '#2a2430' }}><div style={{ width: `${pct}%`, height: '100%', borderRadius: 3, background: PILAR[p].dot }} /></div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+        <button style={btn} onClick={() => setAnim('fortniteVictoryDance')}>🕺 Celebrar</button>
+        <button style={btn} onClick={() => setAnim('cocaColaBreak')}>🥤 Coquita</button>
+        <button style={btn} onClick={() => setAnim('threePointShot')}>🏀 Triple</button>
+      </div>
+    </div>
+  );
+}
 const AVATAR_GRADIENTS = [
   'linear-gradient(135deg, #8A73AD, #4B4550)',
   'linear-gradient(135deg, #E0BB3E, #8A6E1F)',
@@ -450,6 +482,7 @@ export default function TeamTrackerPage() {
         assistDescription="Pendientes del equipo, checklist, Gantt y resumen semanal. El candado 🔒 desbloquea agregar, editar o borrar. Los datos viven en un Google Sheet aparte."
       />
 
+      <GoBotCoach byPilar={weekByPilar} />
       <div className="tt-root">
         <aside className={`tt-side ${collapsed ? 'is-collapsed' : ''}`}>
           <div className="tt-side-head">
