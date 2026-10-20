@@ -1,149 +1,168 @@
-import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useCallback } from 'react';
 
 const GoBotContext = createContext(null);
 
-const FIVE_ANIMATIONS = [
-  {
-    anim: 'chairSpin360',
-    title: '🪑 Vuelta 360° en la Silla',
-    text: 'Me aburrí tantito en lo que pensabas ese número, bro, así que me di un giro de 360° en mi silla ejecutiva. ¡Tú dime qué módulo auditamos!'
-  },
-  {
-    anim: 'threePointShot',
-    title: '🏀 ¡Desde el estacionamiento... TRIPLE!',
-    text: '¡Bang! Clavé ese triple igualito a como vas a clavar el Sell-Through de esta temporada.'
-  },
-  {
-    anim: 'paperBallThrow',
-    title: '📄 ¡Pelotazo de papel al Bot de al lado!',
-    text: 'Le aventé una orden de compra arrugada al Bot de Nulo Movimiento para que despierte en el Dock Derecho.'
-  },
-  {
-    anim: 'cocaColaBreak',
-    title: '🥤 Break de Coquita bien fría con hielos',
-    text: '¡Tssss... Ahhh! Me destapé una Coquita helada después de revisar los 4 pilares. Échate un trago tú también, brother.'
-  },
-  {
-    anim: 'fortniteVictoryDance',
-    title: '🕺 #1 VICTORY ROYALE! (Plan Cuadrado)',
-    text: '¡Todo cuadra al centavo con la Chequera y el WOS está en rango! Sacando los pasos prohibidos de Fortnite.'
+// Lee en vivo los KPIs, tablas y tarjetas que están realmente en la pantalla actual
+function captureLiveScreenData() {
+  if (typeof document === 'undefined') return { moduleTitle: 'GO Planner', rawText: '' };
+
+  // Captura el contenido visible del módulo activo ignorando el propio globo del bot
+  const mainClone = document.body.cloneNode(true);
+  const botDock = mainClone.querySelector('#gobot-dock-root');
+  if (botDock) botDock.remove();
+
+  const visibleText = (mainClone.innerText || '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 6000); // Suficiente para capturar todos los KPIs, tablas y semáforos en pantalla
+
+  return {
+    urlPath: window.location.pathname,
+    visibleText
+  };
+}
+
+// Analizador local sobre los números reales en pantalla (por si falla la red o no hay API Key)
+function analyzeRealDOMFallback(visibleText, userQuestion = '') {
+  const text = visibleText || '';
+  const q = userQuestion.toLowerCase();
+
+  // Si es una pregunta en el chat
+  if (userQuestion) {
+    if (q.includes('sell') || q.includes('through') || q.includes('trough')) {
+      const hasSinInv = /SELL THROUGH\s*Sin inv/i.test(text);
+      return `📐 Fórmula en GO Planner: Sell-Through % = Venta Unidades / (Inventario Inicial + Recibos) × 100. ${
+        hasSinInv
+          ? 'Ojo bro: en la pantalla actual tu tarjeta de SELL THROUGH marca "Sin inv", necesitas subir el CSV Inventario para calculártelo en vivo.'
+          : ''
+      }`;
+    }
+    if (q.includes('forecast') || q.includes('fcst') || q.includes('niña')) {
+      if (!text.toLowerCase().includes('forecast') && text.includes('Daily')) {
+        return 'Bro, ahorita estás en el módulo Daily (veo cargados los datos de Venta TY y Markdowns, pero no una corrida de Forecast para ese filtro). Entra al módulo Forecasting o filtra la sección para leerte el número real sin inventarte datos.';
+      }
+    }
+    return `Revisando los datos que tienes abiertos ahorita en pantalla: ${text.slice(0, 320)}... Dime si quieres que profundice en alguno de estos indicadores o sube el CSV correspondiente si aún marca "Sin inv".`;
   }
-];
+
+  // Si es Auditoría de la pantalla actual (ej. Daily)
+  const ventaMatch = text.match(/VENTA TY\s*(\$[0-9,]+(?:\.[0-9]+)?)/i);
+  const vsLyMatch = text.match(/([+-]?[0-9.]+%)/);
+  const mgMatch = text.match(/MG %\s*([0-9.]+%)/i);
+  const mdPctMatch = text.match(/MARKDOWN \/ VENTA\s*([0-9.]+%)/i);
+  const sinInv = /Sin inv/i.test(text);
+
+  if (ventaMatch || mdPctMatch) {
+    const venta = ventaMatch ? ventaMatch[1] : 'actual';
+    const mg = mgMatch ? mgMatch[1] : 'N/A';
+    const mdPct = mdPctMatch ? mdPctMatch[1] : 'alto';
+    return {
+      semaphore: parseFloat(mdPct) > 5 ? 'red' : 'amber',
+      title: '¡Oye bro, revisé tus números reales aquí en pantalla!',
+      message: `Traes Venta TY en ${venta} (${vsLyMatch ? vsLyMatch[1] : ''} vs LY) con Margen de ${mg}. El foco rojo es que Markdown/Venta está en ${mdPct} (la meta es < 5%). ${
+        sinInv ? 'Además, Sell-Through y Cobertura marcan "Sin inv" porque falta cargar el CSV de Inventario.' : ''
+      }`,
+      suggestion: sinInv ? 'Subir CSV Inventario y revisar SKUs con mayor Markdown' : 'Revisar SKUs que están inflando el Markdown > 5%'
+    };
+  }
+
+  return {
+    semaphore: 'neutral',
+    title: 'Pantalla escaneada en vivo',
+    message: `Leí los indicadores activos en tu vista actual (${text.slice(0, 180)}...). No detecto bloqueos críticos por ahora.`,
+    suggestion: null
+  };
+}
 
 export function GoBotProvider({ children }) {
-  const [activeModule, setActiveModule] = useState('Dashboard');
   const [semaphore, setSemaphore] = useState('neutral');
   const [animation, setAnimation] = useState('idle');
-  const [isPeekOpen, setIsPeekOpen] = useState(false);
+  const [isPeekOpen, setIsPeekOpen] = useState(false); // OCULTO detrás de la barra por defecto
+  const [isBotVisible, setIsBotVisible] = useState(false); // Solo sale cuando se asoma
   const [isAsking, setIsAsking] = useState(false);
 
   const [chatHistory, setChatHistory] = useState([
     {
       role: 'bot',
-      text: '¡Qué onda, bro! Soy tu GO-Bot Sentinel. Pregúntame cuánto vendiste el año pasado por Sección, GOA o Marca, cómo se calcula el Sell-Through o qué hacer para subir tu Rotación.'
+      text: '¡Qué onda, bro! Leo directamente lo que tienes cargado en tu pantalla. Pregúntame sobre los indicadores visibles, fórmulas o sube tus CSVs para cruzarlos.'
     }
   ]);
 
   const [auditReport, setAuditReport] = useState({
-    title: 'GO-Bot Sentinel • Auditor & Copiloto Activo',
-    message: 'Vigilando tus 4 Pilares (Financial, Demand Planner, Inventory Control y Check Coo). Oprime Check o hazme una pregunta.',
+    title: 'GO-Bot Sentinel',
+    message: 'Presiona auditar para leer los KPIs reales de esta pantalla.',
     suggestion: null,
-    pillar: 'General',
-    canFix: false,
-    onApplyFix: null
+    pillar: 'Auditor en Vivo',
+    canFix: false
   });
 
-  const triggerFunBreak = useCallback((specificAnim) => {
-    const chosen = specificAnim
-      ? FIVE_ANIMATIONS.find(m => m.anim === specificAnim) || FIVE_ANIMATIONS[0]
-      : FIVE_ANIMATIONS[Math.floor(Math.random() * FIVE_ANIMATIONS.length)];
+  // Hace que el robot se asome por detrás de la barra lateral unos segundos y luego se esconda si no abrieron el panel
+  const triggerSurprisePeek = useCallback((animName = 'chairSpin360', autoHideMs = 6000) => {
+    setAnimation(animName);
+    setIsBotVisible(true);
+    if (autoHideMs > 0) {
+      setTimeout(() => {
+        setIsBotVisible(prev => (isPeekOpen ? prev : false));
+      }, autoHideMs);
+    }
+  }, [isPeekOpen]);
 
-    setSemaphore(chosen.anim === 'fortniteVictoryDance' ? 'green' : 'neutral');
-    setAnimation(chosen.anim);
-    setIsPeekOpen(true);
-    setAuditReport({
-      title: chosen.title,
-      message: chosen.text,
-      suggestion: null,
-      pillar: 'Animación GO-Bot',
-      canFix: false,
-      onApplyFix: null
-    });
-  }, []);
-
-  useEffect(() => {
-    const timer = setInterval(() => {
-      if (semaphore !== 'red') triggerFunBreak();
-    }, 210000);
-    return () => clearInterval(timer);
-  }, [semaphore, triggerFunBreak]);
-
-  const runCognitiveAudit = useCallback(async (screenPayload = {}) => {
+  const runCognitiveAudit = useCallback(async () => {
+    const liveScreen = captureLiveScreenData();
+    setIsBotVisible(true);
     setIsPeekOpen(true);
     setAnimation('scanning');
-    setAuditReport(prev => ({
-      ...prev,
-      title: 'Escaneando coherencia con Gemini Enterprise...',
-      message: 'Validando WOS, MOS, Sell-Through, Margen, Rotación, ROI, Fill Rate y cuadre de Chequera...'
-    }));
+    setAuditReport({
+      title: 'Leyendo indicadores reales en tu pantalla...',
+      message: 'Analizando KPIs, semáforos y tablas cargadas en esta vista...',
+      suggestion: null,
+      pillar: 'Escaneo en Vivo',
+      canFix: false
+    });
 
     try {
       const response = await fetch('/api/gemini-agent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: 'AUDIT_SCREEN', activeModule, screenPayload })
+        body: JSON.stringify({
+          mode: 'AUDIT_SCREEN',
+          screenPayload: liveScreen
+        })
       });
-      if (!response.ok) throw new Error('Fallback');
+      if (!response.ok) throw new Error('Usar analizador DOM real');
       const data = await response.json();
 
-      setAnimation(data.semaphore === 'green' ? 'fortniteVictoryDance' : 'idle');
+      // Si el backend devolvió el fallback viejo hardcodeado ("19.2 WOS"), lo ignoramos y usamos la lectura real del DOM
+      if (data?.message?.includes('19.2 WOS') || data?.message?.includes('16 semanas')) {
+        throw new Error('Ignorar fallback estático viejo');
+      }
+
+      setAnimation('idle');
       setSemaphore(data.semaphore || 'amber');
       setAuditReport({
-        title: data.title || '¡Oye, aquí hay algo raro, bro!',
+        title: data.title || 'Diagnóstico de tu pantalla actual',
         message: data.message,
         suggestion: data.suggestion,
-        pillar: data.pillar || activeModule,
-        canFix: Boolean(data.suggestion),
-        onApplyFix: () => {
-          setSemaphore('green');
-          setAnimation('fortniteVictoryDance');
-          setAuditReport({
-            title: '🕺 ¡Victory Royale! Todo cuadra al 100%',
-            message: 'Ajuste aplicado. WOS en 8.5 sem, Margen en meta y Chequera cuadrada.',
-            suggestion: null,
-            pillar: activeModule,
-            canFix: false
-          });
-        }
+        pillar: 'Auditoría Real',
+        canFix: Boolean(data.suggestion)
       });
     } catch {
-      setTimeout(() => {
-        setAnimation('idle');
-        setSemaphore('amber');
-        setAuditReport({
-          title: '¡Oye, aquí hay algo raro, bro!',
-          message: `En ${activeModule}: Detecté SKUs con 19.2 WOS (4.4 Meses de Cobertura) pidiendo compra cuando tienes unidades en St-CDis y Stock Back-Room.`,
-          suggestion: 'Priorizar Traslados desde Back-Room/CDis y ajustar a 8.5 WOS',
-          pillar: activeModule,
-          canFix: true,
-          onApplyFix: () => {
-            setSemaphore('green');
-            setAnimation('fortniteVictoryDance');
-            setAuditReport({
-              title: '🕺 ¡Victory Royale, brother! Plan cuadrado',
-              message: 'Se liberó presupuesto de la Chequera usando tu inventario de Back-Room y CDis.',
-              suggestion: null,
-              pillar: activeModule,
-              canFix: false
-            });
-          }
-        });
-      }, 850);
+      const realAnalysis = analyzeRealDOMFallback(liveScreen.visibleText);
+      setAnimation('idle');
+      setSemaphore(realAnalysis.semaphore);
+      setAuditReport({
+        title: realAnalysis.title,
+        message: realAnalysis.message,
+        suggestion: realAnalysis.suggestion,
+        pillar: 'Lectura Directa en Pantalla',
+        canFix: false
+      });
     }
-  }, [activeModule]);
+  }, []);
 
-  const askGoBotQuestion = useCallback(async (userQuestion, localCatalogSnapshot = {}) => {
+  const askGoBotQuestion = useCallback(async (userQuestion) => {
     if (!userQuestion.trim()) return;
+    const liveScreen = captureLiveScreenData();
     setChatHistory(prev => [...prev, { role: 'user', text: userQuestion }]);
     setIsAsking(true);
     setAnimation('scanning');
@@ -152,31 +171,42 @@ export function GoBotProvider({ children }) {
       const res = await fetch('/api/gemini-agent', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ mode: 'CHAT_QA', activeModule, userQuestion, localCatalogSnapshot })
+        body: JSON.stringify({
+          mode: 'CHAT_QA',
+          userQuestion,
+          localCatalogSnapshot: liveScreen
+        })
       });
-      if (!res.ok) throw new Error('Fallback QA');
+      if (!res.ok) throw new Error('Usar analizador DOM real');
       const data = await res.json();
-      setAnimation('cocaColaBreak');
+
+      if (!data.answer || data.answer.includes('+14.2%')) {
+        throw new Error('Ignorar respuesta enlatada vieja');
+      }
+
+      setAnimation('idle');
       setChatHistory(prev => [...prev, { role: 'bot', text: data.answer }]);
     } catch {
-      const q = userQuestion.toLowerCase();
-      let reply = '';
-      if (q.includes('sell') || q.includes('trough') || q.includes('through')) {
-        reply = '📐 El Sell-Through % se calcula como: Venta Unidades / (Inventario Inicial Piso+BR + Recibos) × 100. Buscamos >12% semanal o >45% mensual a precio full antes de meter Letra de Rebaja.';
-      } else if (q.includes('rot') || q.includes('mejorar')) {
-        reply = '🚀 Para subir tu Rotación: 1) Mueve en ModuleTraslados los SKUs detectados en ModuleNulo hacia tiendas Top Cluster, 2) Pasa el Stock Back-Room a Piso, y 3) En modelos con WOS >16 sem activa Letra de Rebaja en ModuleEventos.';
-      } else {
-        reply = '📊 En esa Sección / GOA y Marca el año pasado cerraste con crecimiento YoY de +14.2%, Sell-Through de 68.4% y Margen de 53.8%. Los GOAs clave generaron el 64% del ROI.';
-      }
-      setAnimation('cocaColaBreak');
-      setChatHistory(prev => [...prev, { role: 'bot', text: reply }]);
+      const honestReply = analyzeRealDOMFallback(liveScreen.visibleText, userQuestion);
+      setAnimation('idle');
+      setChatHistory(prev => [...prev, { role: 'bot', text: honestReply }]);
     } finally {
       setIsAsking(false);
     }
-  }, [activeModule]);
+  }, []);
 
   return (
-    <GoBotContext.Provider value={{ activeModule, setActiveModule, semaphore, setSemaphore, animation, setAnimation, isPeekOpen, setIsPeekOpen, isAsking, auditReport, setAuditReport, chatHistory, askGoBotQuestion, runCognitiveAudit, triggerFunBreak, isSubmissionBlocked: semaphore === 'red' }}>
+    <GoBotContext.Provider
+      value={{
+        semaphore, setSemaphore,
+        animation, setAnimation,
+        isPeekOpen, setIsPeekOpen,
+        isBotVisible, setIsBotVisible,
+        auditReport, runCognitiveAudit,
+        chatHistory, askGoBotQuestion, isAsking,
+        triggerSurprisePeek
+      }}
+    >
       {children}
     </GoBotContext.Provider>
   );
