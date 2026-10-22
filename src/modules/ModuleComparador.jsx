@@ -159,7 +159,7 @@ export default function ModuleComparador({ t, isDark, navIcon, navLabel, navDesc
       />
 
       {/* Barra de control */}
-      <div className={`p-4 rounded-2xl border flex flex-wrap items-center gap-3 ${t.card}`}>
+      <div className={`relative z-20 p-4 rounded-2xl border flex flex-wrap items-center gap-3 ${t.card}`}>
         <div className={`relative shrink-0 ${status === 'scanning' ? 'animate-pulse' : ''}`}>
           {status === 'scanning' && <span className="absolute inset-2 rounded-full bg-violet-500/30 animate-ping" />}
           <BotClip clip={clip} size={72} isDark={isDark} framed />

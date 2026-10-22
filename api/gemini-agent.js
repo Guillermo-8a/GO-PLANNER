@@ -1,6 +1,6 @@
 // Vercel Serverless Function: POST /api/gemini-agent
 // Modos:
-//   CHAT_QA           { question, snapshot }          → { answer }
+//   CHAT_QA           { question, snapshot }          → { answer }  (consulta chat_ventas en BigQuery si hace falta)
 //   AUDIT_SCREEN      { snapshot }                    → { level, title, items[] }
 //   COMPETITOR_RADAR  { items[], stores[] }           → { results[], sources[] }
 // Env vars (Vercel → Settings → Environment Variables):
@@ -9,13 +9,15 @@
 //   GOP_API_TOKEN    misma contraseña que /api/bq (header x-gop-token)
 // Sin llave o sin red responde 503 y el front usa su fallback local (nunca inventa precios).
 
+import { runQuery } from './_bq.js';
+
 const MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
-async function gemini(prompt, { search = false } = {}) {
+async function gemini(prompt, { search = false, json = false } = {}) {
   const url = `https://generativelanguage.googleapis.com/v1beta/models/${MODEL}:generateContent?key=${process.env.GEMINI_API_KEY}`;
   const body = {
     contents: [{ role: 'user', parts: [{ text: prompt }] }],
-    generationConfig: { temperature: 0.2 },
+    generationConfig: { temperature: 0.2, ...(json ? { responseMimeType: 'application/json' } : {}) },
     ...(search ? { tools: [{ google_search: {} }] } : {}),
   };
   const r = await fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
@@ -51,14 +53,41 @@ export default async function handler(req, res) {
   try {
     if (mode === 'CHAT_QA') {
       const { question, snapshot } = req.body;
+      const q = String(question || '').slice(0, 500);
+      const hoy = new Date().toISOString().slice(0, 10);
+
+      // 1) ¿La pregunta necesita venta histórica de BigQuery? (venta por Sección/GOA/Marca en un periodo)
+      let bqData = null;
+      if (process.env.GCP_SA_KEY) {
+        try {
+          const { text: plan } = await gemini(
+            `Hoy es ${hoy}. Decide si esta pregunta necesita venta histórica (unidades, pesos, margen, descuentos) por Sección, GOA o Marca.
+Responde SOLO JSON: {"bq":true|false,"dim":"SECCION|GOA|MARCA","filtro":"<sección, GOA o marca mencionada o vacío>","ini":"YYYY-MM-DD","fin":"YYYY-MM-DD"}.
+"Año pasado" = año calendario anterior completo; si no dice periodo usa los últimos 30 días.
+PREGUNTA: ${q}`, { json: true }
+          );
+          const p = parseJSON(plan);
+          if (p.bq && /^\d{4}-\d{2}-\d{2}$/.test(p.ini) && /^\d{4}-\d{2}-\d{2}$/.test(p.fin)) {
+            const rows = await runQuery('chat_ventas', { dim: p.dim, filtro: p.filtro || '', ini: p.ini, fin: p.fin });
+            bqData = { periodo: `${p.ini} a ${p.fin}`, por: p.dim, filtro: p.filtro || 'todo', filas: rows };
+          }
+        } catch (e) {
+          bqData = { error: `No se pudo consultar BigQuery: ${e.message.slice(0, 120)}` };
+        }
+      }
+
+      // 2) Respuesta corta con pantalla + CSV del módulo + BigQuery
       const { text } = await gemini(
-        `Eres GO-Bot, copiloto de un planner/buyer de retail de calzado en México. Responde en español mexicano informal, directo y en máximo 6 líneas.
-Usa SOLO los datos de la pantalla que te paso. Si el dato no está, dilo y sugiere qué módulo o archivo cargar. Nunca inventes cifras.
-Puedes explicar fórmulas de retail (Sell-Through, WOS, MOS, rotación, margen, OTB, fill rate).
-DATOS DE PANTALLA: ${snap(snapshot)}
-PREGUNTA: ${String(question || '').slice(0, 500)}`
+        `Eres GO-Bot, copiloto de un planner/buyer de calzado en México. Español mexicano, directo.
+Máximo 3 líneas. Primero el dato/número, luego (si aplica) una acción concreta. Sin saludos ni relleno.
+Usa SOLO estos datos: pantalla del módulo, CSV cargado y BigQuery. Si el dato no está, dilo en una línea y di qué cargar. Nunca inventes cifras.
+VTAS_P y GM vienen en pesos. Puedes explicar fórmulas retail (Sell-Through, WOS, MOS, rotación, margen, OTB, fill rate) en una línea.
+PANTALLA: ${snap(snapshot)}
+CSV DEL MÓDULO: ${String(snapshot?.csv || 'sin archivo').slice(0, 12000)}
+BIGQUERY: ${bqData ? JSON.stringify(bqData).slice(0, 8000) : 'no aplica'}
+PREGUNTA: ${q}`
       );
-      return res.json({ answer: text.trim() });
+      return res.json({ answer: text.trim(), usedBQ: Boolean(bqData?.filas) });
     }
 
     if (mode === 'AUDIT_SCREEN') {

@@ -1,27 +1,32 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { useGlobal } from './GlobalContext';
+import { LOCAL_DATA_KEYS } from '../utils/localDataKeys';
 
-// Clips en public/bots/*.mp4 (fondo negro → se integran con mix-blend-screen).
-// Para sumar uno nuevo (ej. bot-paper.mp4) basta con agregarlo aquí.
-export const CLIPS = {
-  peek: { phrase: '¿Me hablabas? Aquí ando vigilando tus números.' },
-  spin: { phrase: 'Me aburrí tantito y me di una vuelta en la silla. ¿Auditamos algo?' },
-  triple: { phrase: '¡Triple! Así hay que clavar el sell-through esta temporada.' },
-  victory: { phrase: '¡Victory Royale! Si todo cuadra, se baila.' },
-};
-const EASTER_EGG = ['spin', 'triple', 'victory'];
+const GLOBAL_DATA = { forecast: 'forecastData', assortment: 'otbData', distribucion: 'distributionData', resurtido: 'replenishmentData' };
+
+// Al asomarse siempre usa public/bots/bot-peek.mp4 (spin/triple/victory se usan en el Radar).
+const PHRASES = [
+  '¿Me hablabas? Aquí ando vigilando tus números.',
+  '¿Auditamos esta pantalla? Dale clic al 🤖.',
+  'Pregúntame la venta LY de una sección, GOA o marca.',
+];
 const EASTER_EVERY_MS = 210000; // 3.5 min
 const EASTER_SHOW_MS = 6000;
 
 const GoBotContext = createContext(null);
 
 const api = async (body) => {
-  const tok = (() => { try { return localStorage.getItem('gop_api_token') || ''; } catch { return ''; } })();
+  let tok = '';
+  try {
+    tok = localStorage.getItem('gop_api_token') || '';
+    if (!tok) { tok = window.prompt('Token de GO PLANNER (GOP_API_TOKEN):') || ''; if (tok) localStorage.setItem('gop_api_token', tok); }
+  } catch { /* sin storage */ }
   const r = await fetch('/api/gemini-agent', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-gop-token': tok },
     body: JSON.stringify(body),
   });
+  if (r.status === 401) { try { localStorage.removeItem('gop_api_token'); } catch { /* */ } }
   if (!r.ok) throw new Error(r.status === 401 ? 'token' : String(r.status));
   return r.json();
 };
@@ -47,7 +52,7 @@ export function GoBotProvider({ children }) {
   const [audit, setAudit] = useState(null);
   const [isBusy, setIsBusy] = useState(false);
   const [chat, setChat] = useState([
-    { role: 'bot', text: 'Pregúntame por lo que tienes en pantalla: KPIs, alertas, un SKU, una sección o cómo se calcula una métrica.' },
+    { role: 'bot', text: 'Pregúntame por lo que ves en pantalla, tu CSV o venta histórica (BigQuery) por Sección, GOA o Marca.' },
   ]);
   const hideTimer = useRef(null);
   const modeRef = useRef(mode);
@@ -61,8 +66,15 @@ export function GoBotProvider({ children }) {
       kpis,
       alerts: alerts.map((a) => ({ level: a.level, title: a.title, desc: a.desc, module: a.module })),
       text: el ? el.innerText.replace(/\n{2,}/g, '\n').slice(0, 6000) : '',
+      csv: (() => {
+        try {
+          const parts = (LOCAL_DATA_KEYS[activeModule] || []).map((k) => localStorage.getItem(k)).filter(Boolean);
+          if (GLOBAL_DATA[activeModule] && global[GLOBAL_DATA[activeModule]]) parts.push(JSON.stringify(global[GLOBAL_DATA[activeModule]]));
+          return parts.join('\n').slice(0, 12000);
+        } catch { return ''; }
+      })(),
     };
-  }, [activeModule, kpis, alerts]);
+  }, [activeModule, kpis, alerts, global]);
 
   const localAudit = useCallback(() => {
     const crit = alerts.filter((a) => a.level === 'critical');
@@ -89,14 +101,12 @@ export function GoBotProvider({ children }) {
   const runAudit = useCallback(async ({ withAI = false } = {}) => {
     const base = localAudit();
     setAudit(base);
-    setClip(base.level === 'green' ? 'victory' : 'peek');
     if (!withAI) return;
     setIsBusy(true);
     try {
       const ai = await api({ mode: 'AUDIT_SCREEN', snapshot: snapshot() });
       const level = [base.level, ai.level].includes('red') ? 'red' : [base.level, ai.level].includes('amber') ? 'amber' : 'green';
       setAudit({ level, title: ai.title || base.title, items: [...base.items, ...(ai.items || [])].slice(0, 7), source: 'ia' });
-      setClip(level === 'green' ? 'victory' : 'peek');
     } catch (e) {
       setAudit({ ...base, note: e.message === 'token' ? 'IA sin token: guarda tu GOP_API_TOKEN (se pide en Eventos).' : 'IA no disponible; auditoría local.' });
     } finally {
@@ -116,13 +126,12 @@ export function GoBotProvider({ children }) {
       const ql = q.toLowerCase();
       const formula = FORMULAS.find(([re]) => re.test(ql))?.[1];
       const words = ql.split(/\W+/).filter((w) => w.length > 3);
-      const lines = snapshot().text.split('\n').filter((l) => words.some((w) => l.toLowerCase().includes(w))).slice(0, 5);
+      const lines = snapshot().text.split('\n').filter((l) => words.some((w) => l.toLowerCase().includes(w))).slice(0, 3);
       const text = [
         formula,
-        lines.length ? `En pantalla encontré:\n${lines.join('\n')}` : null,
-        !formula && !lines.length ? 'No encontré ese dato en lo que tienes cargado. Abre el módulo o carga el archivo y vuelve a preguntar.' : null,
-        '(Modo sin IA)',
-      ].filter(Boolean).join('\n\n');
+        lines.length ? lines.join('\n') : null,
+        !formula && !lines.length ? 'No lo veo en pantalla. Abre el módulo con ese dato (sin IA no consulto BigQuery).' : null,
+      ].filter(Boolean).join('\n');
       setChat((c) => [...c, { role: 'bot', text }]);
     } finally {
       setIsBusy(false);
@@ -141,9 +150,8 @@ export function GoBotProvider({ children }) {
   useEffect(() => {
     const id = setInterval(() => {
       if (document.hidden || modeRef.current !== 'hidden') return;
-      const c = EASTER_EGG[Math.floor(Math.random() * EASTER_EGG.length)];
-      setClip(c);
-      setBubble(CLIPS[c].phrase);
+      setClip('peek');
+      setBubble(PHRASES[Math.floor(Math.random() * PHRASES.length)]);
       setMode('peek');
       hideTimer.current = setTimeout(() => setMode((x) => (x === 'peek' ? 'hidden' : x)), EASTER_SHOW_MS);
     }, EASTER_EVERY_MS);

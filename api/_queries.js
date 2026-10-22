@@ -85,6 +85,26 @@ export const QUERIES = {
       GROUP BY 1, 2, 3, 4, 5, 6, 7, 8`,
   },
 
+  // GO-Bot (chat): venta agregada por SECCION | GOA | MARCA en [ini, fin]. @filtro = texto libre
+  // (sección, GOA o marca; vacío = todo). Top 40 por venta para que la respuesta sea chica.
+  chat_ventas: {
+    params: ['dim', 'filtro', 'ini', 'fin'],
+    sql: () => `
+      SELECT CASE @dim WHEN 'GOA' THEN GRUPO_ARTICULOS WHEN 'MARCA' THEN MARCA ELSE SECCION END AS DIM,
+             SUM(VTAS_U) AS VTAS_U, ROUND(SUM(Vtas_P)) AS VTAS_P, ROUND(SUM(GM)) AS GM,
+             ROUND(SUM(Total_Descuentos)) AS DESCUENTOS
+      FROM \`crp-pro-dwh-semanticagold.mus_pro_dwh_views_sap.VEIL_ANALISIS_VTAS_DIARIAS\`
+      WHERE DIA_PERIODO BETWEEN DATE(@ini) AND DATE(@fin)
+        AND (@filtro = ''
+             OR UPPER(SECCION) LIKE CONCAT('%', UPPER(@filtro), '%')
+             OR LTRIM(SECCION_KEY, '0') = LTRIM(@filtro, '0')
+             OR UPPER(GRUPO_ARTICULOS) LIKE CONCAT('%', UPPER(@filtro), '%')
+             OR UPPER(MARCA) LIKE CONCAT('%', UPPER(@filtro), '%'))
+      GROUP BY 1
+      ORDER BY VTAS_P DESC
+      LIMIT 40`,
+  },
+
   // Traslados: base de artículos GOA × SKU × Centro.
   traslados: {
     sql: (DS) => `

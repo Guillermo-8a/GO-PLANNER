@@ -28,6 +28,7 @@ import ModuleValidador from "./modules/ModuleValidador";
 import ModuleDemanda from "./modules/ModuleDemanda";
 import ModuleComparador from "./modules/ModuleComparador";
 import { GoBotProvider } from "./context/GoBotContext";
+import { LOCAL_DATA_KEYS } from "./utils/localDataKeys";
 import GoBotStage, { GoBotRailButton } from "./components/GoBotRightDock";
 
 import {
@@ -130,22 +131,6 @@ const NAV_ITEMS = [
   { id: 'nulo', label: 'Nulo Movimiento', Icon: Hourglass, desc: 'Mercancía sin venta por SKU × centro', dataKey: null },
 ];
 
-// Módulos que no guardan su data en el estado global (dataKey: null) sino en
-// su propio localStorage — para la barra "Datos:" del header.
-const LOCAL_DATA_KEYS = {
-  traslados: ['gop_traslados_exc', 'gop_traslados_nec', 'gop_traslados_niv'],
-  eventos:   ['gop_eventos'],
-  chequera:  ['chequera_externa', 'chequera_propia'],
-  dayli:     ['gop_daily_v3'],
-  planning:  ['gop_forecast_setup'],
-  suplementarios: ['gop_suplementarios'],
-  allocation: ['gop_allocation_files'],
-  pedidos: ['gop_pedidos_has'],
-  nulo: ['gop_nulo_files'],
-  validador: ['gop_validador_files'],
-  demanda: ['gop_demanda_files'],
-  comparador: ['gop_comparador'],
-};
 function moduleHasData(m, global) {
   return m.dataKey ? !!global[m.dataKey] : hasLocalData(m.id);
 }
@@ -563,7 +548,7 @@ function Shell() {
         <div className="relative shrink-0 z-40" style={{ width: '58px' }}>
         <aside
           onMouseEnter={sbEnter} onMouseLeave={sbLeave}
-          className={`absolute inset-y-0 left-0 flex flex-col border-r transition-[width,box-shadow] duration-200 ease-out ${t.sidebar} ${sidebarExpanded ? (isDark ? '!bg-[#16121a]/95 shadow-2xl shadow-black/60' : 'shadow-2xl shadow-gray-400/40') : ''}`}
+          className={`absolute inset-y-0 left-0 flex flex-col border-r transition-[width,box-shadow] duration-200 ease-out ${t.sidebar} ${sidebarExpanded ? (isDark ? '!bg-[#16121a] !backdrop-blur-none shadow-2xl shadow-black/60' : '!backdrop-blur-none shadow-2xl shadow-gray-400/40') : ''}`}
           style={{ width: sidebarExpanded ? '216px' : '58px' }}
         >
           {/* Botón toggle expansión */}

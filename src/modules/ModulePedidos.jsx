@@ -59,9 +59,19 @@ const SEMAFORO = { aTiempo: { ok: 90, riesgo: 75 }, leadObjetivo: 30, nodo: { ri
 const BUCKET_SEL = { OO: { key: 'B:OO', stages: ['PROVEEDOR', 'TRANSITO_INT', 'ADUANA'], titulo: 'On order' }, INP: { key: 'XD', stages: ['CROSSDOCK'], titulo: 'PLAN · Cross dock (in process)' }, TRN: { key: 'B:TRN', stages: ['TRANSITO_TDA'], titulo: 'In transit a tienda' }, BOD: { key: 'B:BOD', stages: ['ALMACEN', 'BODEGA_REG'], titulo: 'Bodegas (PLAN + regionales)' }, FORO: { key: 'FORO', stages: ['FORO'], titulo: 'Foro fotográfico' }, FUL: { key: 'FUL', stages: ['FULFILLMENT'], titulo: 'Fulfillment · E-commerce' }, TDA: { key: 'B:TDA', stages: ['TIENDA'], titulo: 'Tienda sin entrada' } };
 
 const norm = (s) => String(s ?? '').trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[_.\-/]+/g, ' ').replace(/\s+/g, ' ').trim();
+// Estatus de la OC de importación (SAP): el código dice exactamente dónde está la mercancía
+const IMP_STATUS = {
+  1: ['PROVEEDOR', '01 Pendiente de embarque'],
+  2: ['PROVEEDOR', '02 En almacén (origen)'],
+  3: ['TRANSITO_INT', '03 En tránsito'],
+  4: ['ADUANA', '04 En aduana'],
+  5: ['ALMACEN', '05 En CEDIS'],
+};
+const impStatus = (v) => { const m = norm(v).match(/^0?([1-5])(?:\s|$)/); return m ? IMP_STATUS[m[1]] : null; };
 const stageOf = (v) => {
   const s = norm(v);
   if (!s) return null;
+  const imp = impStatus(s); if (imp) return imp[0];
   if (/FORO|FOTO/.test(s)) return 'FORO';
   if (/FULFIL|E ?COMMERCE|ECOM|DIGITAL|WEB/.test(s)) return 'FULFILLMENT';
   if (/RECIB|ENTRADA|REGISTR|\bGR\b|INGRES/.test(s)) return 'RECIBIDO';
@@ -219,7 +229,8 @@ function parseEventos(text) {
     if (cols.etapa != null) {
       const st = stageOf(g(r, 'etapa')) || stageOf(base.ubic);
       const f = toDate(g(r, 'fecha'));
-      if (st && f) ev.push({ ...base, etapa: st, fecha: f });
+      const imp = impStatus(g(r, 'etapa'));
+      if (st && f) ev.push({ ...base, etapa: st, fecha: f, ubic: imp ? [imp[1], base.ubic].filter(Boolean).join(' · ') : base.ubic, ...(imp ? { origen: base.origen || 'IMP' } : {}) });
     } else wide.forEach(({ i, st }) => { const f = toDate(r[i]); if (f) ev.push({ ...base, etapa: st, fecha: f }); });
   });
   return { ev, aviso: ev.length ? '' : 'No encontré eventos con etapa y fecha válidas.' };
@@ -368,9 +379,11 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
   const hoy = useMemo(() => new Date(), [ev]);
 
   // La base real (decenas de miles de líneas) no cabe en localStorage → se guarda en IndexedDB
-  const idbReady = useRef(false);
-  useEffect(() => { idb('readonly', (st) => st.get('ev')).then((x) => { if (Array.isArray(x) && x.length && !ev.length) setEv(x); }).catch(() => {}).finally(() => { idbReady.current = true; }); }, []);
-  useEffect(() => { if (!idbReady.current) return; idb('readwrite', (st) => st.put(ev, 'ev')).catch(() => {}); try { localStorage.removeItem(LS_KEY); if (ev.length) localStorage.setItem('gop_pedidos_has', '1'); else localStorage.removeItem('gop_pedidos_has'); } catch { /* nada */ } }, [ev]);
+  // (al abrir se lee de IndexedDB y NO se vuelve a escribir: re-guardar decenas de miles de líneas congelaba la pantalla)
+  const idbReady = useRef(false), skipSave = useRef(false);
+  const [cargando, setCargando] = useState(true);
+  useEffect(() => { idb('readonly', (st) => st.get('ev')).then((x) => { if (Array.isArray(x) && x.length && !ev.length) { skipSave.current = true; setEv(x); } }).catch(() => {}).finally(() => { idbReady.current = true; setCargando(false); }); }, []);
+  useEffect(() => { if (!idbReady.current) return; if (skipSave.current) { skipSave.current = false; return; } idb('readwrite', (st) => st.put(ev, 'ev')).catch(() => {}); try { localStorage.removeItem(LS_KEY); if (ev.length) localStorage.setItem('gop_pedidos_has', '1'); else localStorage.removeItem('gop_pedidos_has'); } catch { /* nada */ } }, [ev]);
   useEffect(() => { try { localStorage.setItem(LS_CFG, JSON.stringify(cfg)); } catch { /* sin espacio */ } }, [cfg]);
   const onFile = (e) => {
     const f = e.target.files?.[0]; if (!f) return;
@@ -393,7 +406,16 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
       .then((j) => { const m = { ...fx }; Object.entries(j.rates || {}).forEach(([d, r]) => { if (r.MXN) m[d] = r.MXN; }); setFx(m); try { localStorage.setItem('gop_fx_usdmxn', JSON.stringify(m)); } catch { /* sin espacio */ } })
       .catch(() => {});
   }, [ev]);
-  const tcDe = useMemo(() => { const ks = Object.keys(fx).sort(); return (d) => { if (!d || !ks.length) return null; const k = new Date(d).toISOString().slice(0, 10); let r = null; for (const x of ks) { if (x > k) break; r = fx[x]; } return r ?? fx[ks[0]]; }; }, [fx]);
+  const tcDe = useMemo(() => {
+    const ks = Object.keys(fx).sort(), memo = new Map();
+    return (d) => {
+      if (!d || !ks.length) return null;
+      const k = new Date(d).toISOString().slice(0, 10);
+      if (memo.has(k)) return memo.get(k);
+      let lo = 0, hi = ks.length - 1, r = -1; while (lo <= hi) { const mid = (lo + hi) >> 1; if (ks[mid] <= k) { r = mid; lo = mid + 1; } else hi = mid - 1; }
+      const v = fx[ks[Math.max(r, 0)]]; memo.set(k, v); return v;
+    };
+  }, [fx]);
   const zonaTraslados = useMemo(() => { try { const d = JSON.parse(localStorage.getItem('gop_traslados_exc') || 'null'); const m = {}; (d?.rawData || []).forEach((r) => { if (r.centro && r.zona) m[ctr(r.centro)] = norm(r.zona); }); return m; } catch { return {}; } }, []);
   const allUnits = useMemo(() => {
     const us = buildUnits(ev.filter((e) => !e.itbi), cfg.umbral, hoy);
@@ -826,7 +848,9 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
         {[['rastreo', 'Rastreo'], ['resumen', 'Resumen ejecutivo'], ['validador', `Validador${validador.length ? ` · ${validador.length}` : ''}`]].map(([k, l]) => (
           <button key={k} onClick={() => setPTab(k)} className={`px-4 py-1.5 rounded-lg text-xs font-black transition-all ${pTab === k ? (isDark ? 'bg-violet-600 text-white' : 'bg-violet-600 text-white') : t.textMuted}`}>{l}</button>))}
       </div>
-      {pTab === 'resumen' ? ResumenCompra() : pTab === 'validador' ? Validador() : !ev.length ? (
+      {pTab === 'resumen' ? ResumenCompra() : pTab === 'validador' ? Validador() : !ev.length && cargando ? (
+        <div className={`rounded-2xl border p-10 text-center text-sm font-bold animate-pulse ${t.card} ${t.textMuted}`}>Cargando pedidos guardados…</div>
+      ) : !ev.length ? (
         <div className={`rounded-2xl border p-10 text-center ${t.card}`}>
           <Truck size={40} className={`mx-auto mb-3 ${t.textMuted}`} />
           <p className={`font-bold ${t.text}`}>Carga el CSV de eventos de tus pedidos o usa los datos de prueba</p>
