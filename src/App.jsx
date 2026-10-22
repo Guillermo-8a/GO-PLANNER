@@ -24,6 +24,7 @@ import ModuleSuplementarios from "./modules/ModuleSuplementarios" ;
 import ModuleAllocation from "./modules/ModuleAllocation" ;
 import ModulePedidos from "./modules/ModulePedidos";
 import ModuleNulo from "./modules/ModuleNulo";
+import ModuleValidador from "./modules/ModuleValidador";
 import ModuleDemanda from "./modules/ModuleDemanda";
 import ModuleComparador from "./modules/ModuleComparador";
 import { GoBotProvider } from "./context/GoBotContext";
@@ -31,7 +32,7 @@ import GoBotStage, { GoBotRailButton } from "./components/GoBotRightDock";
 
 import {
   Layers, Bell, Sun, Moon, ShoppingCart, Map, LayoutDashboard, Radar,
-  HelpCircle, Wallet, Zap, Search, Mail, Circle, Tag, PieChart, ListChecks, Truck, Hourglass, Stethoscope,} from 'lucide-react';
+  HelpCircle, Wallet, Zap, Search, Mail, Circle, Tag, PieChart, ListChecks, Truck, Hourglass, Stethoscope, ShieldCheck,} from 'lucide-react';
 
 // ─── Paletas de tema ──────────────────────────────────────────────────────────
 export const THEMES = {
@@ -125,6 +126,7 @@ const NAV_ITEMS = [
   { id: 'allocation', label: 'Allocation', Icon: ListChecks, desc: 'Revisión parametrización y OC', dataKey: null },
   { id: 'pedidos', label: 'Pedidos', Icon: Truck, desc: 'Rastreador de OCs: dónde está la mercancía', dataKey: null },
   { id: 'comparador', label: 'Radar Competencia', Icon: Radar, desc: 'Precios vs Coppel, Liverpool, Amazon y más', dataKey: null },
+  { id: 'validador', label: 'Validador de parametrizaciones', Icon: ShieldCheck, desc: 'Combinaciones de O9, tipos de afectación y CSV corregido', dataKey: null },
   { id: 'nulo', label: 'Nulo Movimiento', Icon: Hourglass, desc: 'Mercancía sin venta por SKU × centro', dataKey: null },
 ];
 
@@ -140,6 +142,7 @@ const LOCAL_DATA_KEYS = {
   allocation: ['gop_allocation_files'],
   pedidos: ['gop_pedidos_has'],
   nulo: ['gop_nulo_files'],
+  validador: ['gop_validador_files'],
   demanda: ['gop_demanda_files'],
   comparador: ['gop_comparador'],
 };
@@ -170,7 +173,7 @@ const NAV_GROUPS = [
   { id: 'financial',  label: 'Financial',        Icon: Calculator,   color: '#B39DDB', items: ['planning', 'suplementarios', 'comparador'] },
   { id: 'demand',     label: 'Demand Planner',   Icon: TrendingUp,   color: '#E0BB3E', items: ['assortment', 'forecast', 'distribucion', 'resurtido', 'demanda'] },
   { id: 'inventory',  label: 'Inventory Control',Icon: Boxes,        color: '#8A73AD', items: ['dispersion', 'traslados', 'chequera'] },
-  { id: 'checkcoo',   label: 'Check Coo',        Icon: CircleCheck,  color: '#9A9CA3', items: ['dayli', 'eventos', 'allocation', 'pedidos', 'nulo'] },
+  { id: 'checkcoo',   label: 'Check Coo',        Icon: CircleCheck,  color: '#9A9CA3', items: ['dayli', 'eventos', 'allocation', 'pedidos', 'nulo', 'validador'] },
 ];
 
 // ─── Dashboard ────────────────────────────────────────────────────────────────
@@ -505,6 +508,7 @@ function Shell() {
       case 'allocation': return <ModuleAllocation {...moduleProps} />;
       case 'pedidos': return <ModulePedidos {...moduleProps} />;
       case 'nulo': return <ModuleNulo {...moduleProps} />;
+      case 'validador': return <ModuleValidador {...moduleProps} />;
       case 'demanda': return <ModuleDemanda {...moduleProps} />;
       case 'comparador': return <ModuleComparador {...moduleProps} />;
       default:             return <Dashboard {...moduleProps} />;

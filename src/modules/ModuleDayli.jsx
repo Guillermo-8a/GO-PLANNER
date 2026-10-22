@@ -82,6 +82,7 @@ const holidaysForYear=y=>{ const out=FIXED_HOLIDAYS.map(h=>({name:h.name,date:ne
   FLOATING_HOLIDAYS.forEach(h=>{ const d=h.calc(y); if(d) out.push({name:h.name,date:d}); }); return out; };
 const holidayName = d => { const f=holidaysForYear(d.getFullYear()).find(h=>h.date.getMonth()===d.getMonth()&&h.date.getDate()===d.getDate()); return f?f.name:null; };
 
+const KV_URL='https://script.google.com/macros/s/AKfycbyO2WhyRMxeMFO38SjerexylRPT5UHJaGpMLhc6c_zk4vEfey76SevEROqGfEsGHV8j/exec'; // mismo KV que Eventos
 // ── Promociones fijas recurrentes (fechas aprox., editables) ──
 const FIXED_PROMOS=[
   {name:'Hot Sale',uplift:30,calc:y=>{ const s=nthWeekday(y,4,1,3); return [s,addDays(s,8)]; }},     // ~3er lunes may, 9 días
@@ -341,6 +342,8 @@ export default function ModuleDaily(){
   const salesRef=useRef(null), invRef=useRef(null), promoRef=useRef(null);
   const [allData,setAllData]=useState([]);
   const [invData,setInvData]=useState([]);
+  const [eventos,setEventos]=useState(()=>{ try{ return JSON.parse(localStorage.getItem('gop_eventos')||'[]'); }catch{ return []; } });
+  useEffect(()=>{ fetch(KV_URL).then(r=>r.json()).then(all=>{ if(all['eventos-master']) setEventos(JSON.parse(all['eventos-master'])); }).catch(()=>{}); },[]);
   const [promoEntries,setPromoEntries]=useState([]);
   const [manualPromo,setManualPromo]=useState([]); // ISO strings (aplica a todo)
   const [defaultUplift,setDefaultUplift]=useState(20);
@@ -482,7 +485,8 @@ export default function ModuleDaily(){
     const diasMes=new Date(year,month+1,0).getDate();
     const mesRows=tyData.filter(r=>r.fecha&&r.fecha.getMonth()===month&&r.fecha.getFullYear()===year);
     const accMes=mesRows.reduce((s,r)=>s+r.ventaP,0), accMesU=mesRows.reduce((s,r)=>s+r.ventaU,0);
-    const runRate=diaActual>0?accMes/diaActual:0;
+    const diasConData=new Set(mesRows.filter(r=>r.fecha).map(r=>r.fecha.getDate())).size; // el rango puede no arrancar el día 1
+    const runRate=diasConData>0?accMes/diasConData:0;
     let projNeutral=0, promoDaysAhead=0;
     for(let n=diaActual+1;n<=diasMes;n++){
       const date=new Date(year,month,n), dow=(date.getDay()+6)%7;
@@ -506,9 +510,9 @@ export default function ModuleDaily(){
     const avgPrice=accMesU>0?accMes/accMesU:1;
     const mk=v=>({ventaP:v,ventaU:avgPrice>0?Math.round(v/avgPrice):0,mg:v*kpiTY.mgPct/100});
     return { diaActual,diasMes,runRate,accMes,lyMesTotal,crecLY,promoDaysAhead,
-      cons:mk(Math.max(0,(accMes+runRate*(diasMes-diaActual)*0.85))*ov),
-      neut:mk(Math.max(0,(accMes+projNeutral))*ov),
-      risk:mk(Math.max(0,(accMes+projRisk))*ov) };
+      cons:mk(Math.max(0,accMes+runRate*(diasMes-diaActual)*0.85*ov)),
+      neut:mk(Math.max(0,accMes+projNeutral*ov)),
+      risk:mk(Math.max(0,accMes+projRisk*ov)) };
   },[tyData,lyData,allData,dimsOk,lastDateTY,avgByDow,isPromoDate,upliftFor,lyYear,fcstOverridePct,kpiTY.mgPct]);
 
   // ── Serie diaria ──
@@ -557,10 +561,11 @@ export default function ModuleDaily(){
   // ── byKey con tendencia + fcst ──
   const byKeyFcst=useCallback((key)=>{
     const tyM={},lyM={};
-    tyData.forEach(r=>{ const k=r[key]||'N/D'; if(!tyM[k])tyM[k]={key:k,ventaP:0,ventaU:0,utilidad:0,markdown:0}; tyM[k].ventaP+=r.ventaP; tyM[k].ventaU+=r.ventaU; tyM[k].utilidad+=r.utilidad; tyM[k].markdown+=r.markdown; });
+    tyData.forEach(r=>{ const k=r[key]||'N/D'; if(!tyM[k])tyM[k]={key:k,mesP:0,ventaP:0,ventaU:0,utilidad:0,markdown:0}; if(r.fecha&&r.fecha.getMonth()===mM&&r.fecha.getFullYear()===mY){ tyM[k].mesP+=r.ventaP; mDias.add(r.fecha.getDate()); }
+      tyM[k].ventaP+=r.ventaP; tyM[k].ventaU+=r.ventaU; tyM[k].utilidad+=r.utilidad; tyM[k].markdown+=r.markdown; });
     lyData.forEach(r=>{ const k=r[key]||'N/D'; lyM[k]=(lyM[k]||0)+r.ventaP; });
     // Días reales con venta en el rango (antes dividía entre el día del mes aunque el rango fuera de varios meses)
-    const pDays=new Set(tyData.filter(r=>r.fecha).map(r=>r.fecha.toDateString())).size||1;
+    const pDays=mDias.size||1; // fcst = run-rate del MES del cierre (no del periodo completo)
     const diasMes=lastDateTY?new Date(lastDateTY.getFullYear(),lastDateTY.getMonth()+1,0).getDate():30;
     return Object.values(tyM).map(g=>({ ...g, mgPct:g.ventaP>0?g.utilidad/g.ventaP*100:0,
       tendencia:delta(g.ventaP,lyM[g.key]), fcst:g.ventaP/pDays*diasMes })).sort((a,b)=>b.ventaP-a.ventaP);
@@ -568,14 +573,14 @@ export default function ModuleDaily(){
 
   // Agrupador para tablas dashboard: RESPETA el filtro (período = header). Tend período vs LY mismo período; Cierre vs LY mes completo.
   const byKeyDash=useCallback((key)=>{
-    const tyM={},lyP={},lyFull={};
+    const tyM={},lyP={},lyFull={}, mM=lastDateTY?lastDateTY.getMonth():-1, mY=lastDateTY?lastDateTY.getFullYear():-1, mDias=new Set();
     tyData.forEach(r=>{ const k=r[key]||'N/D'; if(!tyM[k])tyM[k]={key:k,ventaP:0,ventaU:0,utilidad:0,markdown:0};
       tyM[k].ventaP+=r.ventaP; tyM[k].ventaU+=r.ventaU; tyM[k].utilidad+=r.utilidad; tyM[k].markdown+=r.markdown; });
     lyData.forEach(r=>{ const k=r[key]||'N/D'; lyP[k]=(lyP[k]||0)+r.ventaP; });
     if(lastDateTY){ const month=lastDateTY.getMonth(); allData.forEach(r=>{ if(r.year!==lyYear||!r.fecha||!dimsOk(r)||r.fecha.getMonth()!==month) return; const k=r[key]||'N/D'; lyFull[k]=(lyFull[k]||0)+r.ventaP; }); }
     const pDays=new Set(tyData.filter(r=>r.fecha).map(r=>r.fecha.toDateString())).size||1;
     const diasMes=lastDateTY?new Date(lastDateTY.getFullYear(),lastDateTY.getMonth()+1,0).getDate():30;
-    const base=Object.values(tyM).map(g=>({...g,fcstNat:g.ventaP/pDays*diasMes}));
+    const base=Object.values(tyM).map(g=>({...g,fcstNat:g.mesP/pDays*diasMes}));
     // Si hay escenario seleccionado, reparte ese total con la participación natural de cada grupo
     const sumNat=base.reduce((s,g)=>s+g.fcstNat,0);
     const target=(scenarioSel!=='actual'&&forecastMes)?forecastMes[scenarioSel].ventaP:null;
@@ -636,19 +641,18 @@ export default function ModuleDaily(){
       if(d!=null&&d<0&&tT!==lT) warnings.push(`Día ${n}: caída de ${Math.abs(d).toFixed(0)}% pero comparas ${tT.toUpperCase()} (TY) vs ${lT.toUpperCase()} (LY)`);
     } return {data,warnings}; },[tyData,lyData,lastDateTY,tyYear,lyYear]);
 
-  // Los días de promo (manual/CSV) normalmente se marcan solo en el calendario TY: si se checa la fecha
-  // exacta del año anterior, nunca hay match y "Venta Promo LY" sale $0. Se compara por mismo mes/día
-  // (la fecha LY "espejo" en tyYear), que sí cae dentro de lo marcado — las promos fijas siguen
-  // resolviendo su propia ventana en LY porque isPromoDate ya las calcula por año.
-  const cmpPromo=useMemo(()=>{ const mdOf=iso=>iso.slice(5);
-    const isPromoLY=iso=>isPromoDate(iso)||isPromoDate(`${tyYear}-${mdOf(iso)}`);
-    const sd=(rows,checker)=>{ let sum=0,days=new Set();
-      rows.forEach(r=>{ if(r.fecha&&checker(isoOf(r.fecha))){ sum+=r.ventaP; days.add(r.fecha.toDateString()); }}); return {sum,n:days.size}; };
-    const ty=sd(tyData,isPromoDate),ly=sd(lyData,isPromoLY);
-    const perDay={};
-    tyData.forEach(r=>{ if(r.fecha&&isPromoDate(isoOf(r.fecha))){ const k=isoOf(r.fecha); perDay[k]=perDay[k]||{label:`${r.fecha.getDate()}/${r.fecha.getMonth()+1}`,ty:0,ly:0}; perDay[k].ty+=r.ventaP; }});
-    return { tySum:ty.sum,tyN:ty.n,lySum:ly.sum,lyN:ly.n,delta:delta(ty.sum,ly.sum),
-      avgTY:ty.n>0?ty.sum/ty.n:0,avgLY:ly.n>0?ly.sum/ly.n:0,perDay:Object.values(perDay).sort((a,b)=>b.ty-a.ty) }; },[tyData,lyData,isPromoDate,tyYear]);
+  // Promo vs Promo: un conjunto de barras por promoción (Eventos + calendario fijo), TY vs LY sobre el mismo rango de días.
+  // LY se topa al espejo del último día con data TY para no comparar una promo en curso contra la promo LY completa.
+  const cmpEventos=useMemo(()=>{ if(!lastDateTY) return [];
+    const shiftY=(iso,n)=>`${+iso.slice(0,4)+n}${iso.slice(4)}`, last=isoOf(lastDateTY);
+    const src=[...eventos.filter(e=>e.nombre&&e.fechaInicio&&e.fechaFin).map(e=>({name:e.nombre,ini:e.fechaInicio,fin:e.fechaFin})),
+      ...(usarPromosFijas?DATED_PROMOS:[]).map(p=>({name:p.name,ini:p.ini,fin:p.fin}))];
+    const seen=new Set(), sumIn=(rows,a,z)=>{ let sum=0,days=new Set(); rows.forEach(r=>{ if(!r.fecha) return; const k=isoOf(r.fecha); if(k>=a&&k<=z){ sum+=r.ventaP; days.add(k); } }); return {sum,n:days.size}; };
+    return src.map(p=>{ const sh=tyYear-(+p.ini.slice(0,4)), ini=shiftY(p.ini,sh), fin=shiftY(p.fin,sh), key=p.name+ini;
+      if(seen.has(key)||ini>last) return null; seen.add(key);
+      const z=fin<last?fin:last, ty=sumIn(tyData,ini,z), ly=sumIn(lyData,shiftY(ini,-1),shiftY(z,-1));
+      return ty.n||ly.n?{label:p.name,ini,fin,ty:ty.sum,ly:ly.sum,nTY:ty.n,nLY:ly.n,delta:delta(ty.sum,ly.sum),enCurso:fin>last}:null; })
+      .filter(Boolean).sort((a,b)=>a.ini.localeCompare(b.ini)); },[eventos,usarPromosFijas,tyData,lyData,lastDateTY,tyYear]);
 
   const cmpHoliday=useMemo(()=>{ const tyH=holidaysForYear(tyYear),lyH=holidaysForYear(lyYear);
     return tyH.map(h=>{
@@ -953,37 +957,6 @@ export default function ModuleDaily(){
             TY hasta <strong className={t.textAccent1}>{lastTYAll?fmtDate(lastTYAll):'—'}</strong> (último día con data) vs LY topado al mismo día. Así la desv% es justa (no compara año parcial contra año completo).
           </p>
 
-          {/* SEMÁFOROS mejorados */}
-          <div className={`p-4 rounded-2xl border ${t.card}`}>
-            <h3 className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} mb-3`}>Semáforos</h3>
-            <div className="grid grid-cols-2 md:grid-cols-5 gap-3">
-              {[
-                {label:'Venta vs LY',val:delta(kpiTY.ventaP,kpiLY.ventaP),txt:delta(kpiTY.ventaP,kpiLY.ventaP)!=null?fmtP(delta(kpiTY.ventaP,kpiLY.ventaP)):'N/D',target:'≥ 0%',ok:delta(kpiTY.ventaP,kpiLY.ventaP)>=0,warn:delta(kpiTY.ventaP,kpiLY.ventaP)>=-5},
-                {label:'Margen',val:kpiTY.mgPct,txt:fmtP(kpiTY.mgPct),target:'≥ 40%',ok:kpiTY.mgPct>=40,warn:kpiTY.mgPct>=35},
-                {label:'Markdown / Venta',val:kpiTY.ventaP>0?kpiTY.markdown/kpiTY.ventaP*100:0,txt:kpiTY.ventaP>0?fmtP(kpiTY.markdown/kpiTY.ventaP*100):'N/D',target:'< 5%',ok:kpiTY.ventaP>0&&kpiTY.markdown/kpiTY.ventaP<0.05,warn:kpiTY.ventaP>0&&kpiTY.markdown/kpiTY.ventaP<0.08},
-                {label:'Sell Through',val:invKPI.st,txt:invKPI.st!=null?fmtP(invKPI.st):'Sin inv',target:'≥ 60%',ok:invKPI.st!=null?invKPI.st>=60:null,warn:invKPI.st!=null?invKPI.st>=45:null},
-                {label:'Cobertura',val:invKPI.cob,txt:invKPI.cob!=null?`${invKPI.cob.toFixed(0)} d`:'Sin inv',target:'< 60 d',ok:invKPI.cob!=null?invKPI.cob<=60:null,warn:invKPI.cob!=null?invKPI.cob<=90:null},
-              ].map(({label,txt,target,ok,warn})=>{
-                const color=ok===true?'violet':ok===false&&warn?'amber':ok==null?'gray':'red';
-                const cmap={violet:{t:'text-violet-400',b:'bg-violet-500',bd:isDark?'border-violet-500/40':'border-violet-300'},
-                  amber:{t:'text-amber-400',b:'bg-amber-400',bd:isDark?'border-amber-500/40':'border-amber-300'},
-                  red:{t:'text-red-400',b:'bg-red-500',bd:isDark?'border-red-500/40':'border-red-300'},
-                  gray:{t:t.textMuted,b:'bg-gray-400',bd:t.border}}[color];
-                return (
-                  <div key={label} className={`p-3 rounded-xl border ${cmap.bd} ${isDark?'bg-white/[0.045] backdrop-blur-xl transition-all duration-300 hover:border-white/20 hover:shadow-[0_0_35px_-10px_rgba(138,115,173,0.55)]':'bg-white'} relative overflow-hidden`}>
-                    <div className={`absolute top-0 left-0 w-1 h-full ${cmap.b}`}/>
-                    <div className="flex items-center justify-between mb-1 pl-1">
-                      <span className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted}`}>{label}</span>
-                      <span className={`inline-block w-2 h-2 rounded-full ${cmap.b}`}/>
-                    </div>
-                    <div className={`text-lg font-black pl-1 ${cmap.t}`}>{txt}</div>
-                    <div className={`text-[9px] pl-1 ${t.textMuted}`}>meta: {target}</div>
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-
           {/* COMPARACIONES */}
           <div className={`p-4 rounded-2xl border ${t.card}`}>
             <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
@@ -1052,25 +1025,28 @@ export default function ModuleDaily(){
             </>)}
 
             {cmpMode===2&&(<>
-              <p className={`text-[10px] mb-3 ${t.textMuted}`}>Días marcados con promoción (calendario abajo o CSV). Respeta filtros de sección/marca.</p>
-              {cmpPromo.tyN===0&&cmpPromo.lyN===0?(
-                <EmptyState icon={null} t={t} title="Sin días de promo marcados" sub="Marca días en el Promo Calendar abajo o carga el CSV de promos."/>
-              ):(
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
-                  {[{l:`Venta Promo TY (${cmpPromo.tyN}d)`,v:fmtM(cmpPromo.tySum),c:'text-violet-400'},
-                    {l:`Venta Promo LY (${cmpPromo.lyN}d)`,v:fmtM(cmpPromo.lySum),c:t.textMuted},
-                    {l:'Avg/día Promo TY',v:fmtM(cmpPromo.avgTY),c:'text-purple-400'},
-                    {l:'Δ vs LY',v:cmpPromo.delta!=null?fmtP(cmpPromo.delta):'N/D',c:(cmpPromo.delta||0)>=0?'text-violet-400':'text-red-400'}].map(({l,v,c})=>(
-                    <div key={l} className={`p-3 rounded-xl border ${t.cardInner}`}><div className={`text-[9px] uppercase font-black ${t.textMuted}`}>{l}</div><div className={`text-base font-black ${c}`}>{v}</div></div>))}
-                </div>)}
-              {cmpPromo.perDay.length>0&&(
-                <ResponsiveContainer width="100%" height={180}>
-                  <BarChart data={cmpPromo.perDay}><CartesianGrid strokeDasharray="3 3" stroke={gridC}/>
-                    <XAxis dataKey="label" tick={{fontSize:9,fill:txtC}} stroke={axisC}/>
+              <p className={`text-[10px] mb-3 ${t.textMuted}`}>Cada conjunto de barras es una promoción (Eventos + calendario fijo): TY vs LY en los mismos días. Respeta los filtros; una promo en curso se compara solo hasta el último día con data.</p>
+              {cmpEventos.length===0?(
+                <EmptyState icon={null} t={t} title="Sin promos con venta" sub="Ninguna promo de Eventos tiene ventas en el rango cargado."/>
+              ):(<>
+                <ResponsiveContainer width="100%" height={260}>
+                  <BarChart data={cmpEventos} margin={{bottom:40}}><CartesianGrid strokeDasharray="3 3" stroke={gridC}/>
+                    <XAxis dataKey="label" tick={{fontSize:9,fill:txtC}} stroke={axisC} angle={-25} textAnchor="end" height={60} interval={0}/>
                     <YAxis tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
-                    <Tooltip cursor={{fill:cursorFill}} content={<TTip/>}/><Bar dataKey="ty" name="Venta promo" fill="#8b5cf6" radius={[4,4,0,0]}/>
+                    <Tooltip cursor={{fill:cursorFill}} content={<TTip/>}/><Legend wrapperStyle={{fontSize:10}}/>
+                    <Bar dataKey="ly" name={`LY ${lyYear}`} fill={isDark?'#71717a':'#94a3b8'} radius={[4,4,0,0]}/>
+                    <Bar dataKey="ty" name={`TY ${tyYear}`} fill="#8b5cf6" radius={[4,4,0,0]}/>
                   </BarChart>
-                </ResponsiveContainer>)}
+                </ResponsiveContainer>
+                <div className="overflow-x-auto mt-3"><table className="w-full text-xs">
+                  <thead><tr className={`text-left ${t.textMuted}`}>{['Promo','Rango TY','Días TY / LY','Venta TY','Venta LY','Δ vs LY'].map(h=><th key={h} className="p-2 whitespace-nowrap">{h}</th>)}</tr></thead>
+                  <tbody>{cmpEventos.map(e=>(<tr key={e.label+e.ini} className={`border-t ${t.border}`}>
+                    <td className={`p-2 font-bold ${t.textMain}`}>{e.label}{e.enCurso&&<span className={`ml-2 px-2 py-0.5 rounded-full text-[9px] font-black border ${t.badgeAmber}`}>en curso</span>}</td>
+                    <td className={`p-2 ${t.textMuted}`}>{e.ini} → {e.fin}</td><td className={`p-2 ${t.textMuted}`}>{e.nTY} / {e.nLY}</td>
+                    <td className="p-2 font-bold text-violet-400">{fmtM(e.ty)}</td><td className={`p-2 ${t.textMuted}`}>{fmtM(e.ly)}</td>
+                    <td className={`p-2 font-black ${(e.delta||0)>=0?'text-violet-400':'text-red-400'}`}>{e.delta!=null?fmtP(e.delta):'N/D'}</td></tr>))}</tbody>
+                </table></div>
+              </>)}
             </>)}
 
             {cmpMode===3&&(<>

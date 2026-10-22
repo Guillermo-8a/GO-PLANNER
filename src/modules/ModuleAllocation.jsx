@@ -14,15 +14,15 @@ const LS_KEY = 'gop_allocation_meta';
 const DB_NAME = 'gop_allocation_db';
 
 // ─── Utilidades ───────────────────────────────────────────────────────────────
-const norm = (s) => String(s ?? '').trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[_.]+/g, ' ').replace(/\s+/g, ' ').trim();
+export const norm = (s) => String(s ?? '').trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[_.]+/g, ' ').replace(/\s+/g, ' ').trim();
 const num = (v) => (typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(/[$,\s%]/g, '')));
 const isBlank = (v) => v == null || String(v).trim() === '';
-const str = (v) => String(v ?? '').trim();
+export const str = (v) => String(v ?? '').trim();
 const ctr = (v) => { const s = str(v); return /^\d{1,3}$/.test(s) ? s.padStart(4, '0') : s; }; // centros con ceros a la izquierda
 const toDate = (v) => (v instanceof Date ? v : typeof v === 'number' ? new Date(Math.round((v - 25569) * 864e5)) : v ? new Date(v) : null);
 const fmt = (v) => (v == null || !isFinite(v) ? '—' : Math.round(v).toLocaleString('es-MX'));
 const pct = (v, d = 0) => (v == null || !isFinite(v) ? '—' : `${(v * 100).toFixed(d)}%`);
-const moda = (arr) => { const c = {}; arr.forEach((v) => (c[v] = (c[v] || 0) + 1)); return Object.entries(c).sort((a, b) => b[1] - a[1])[0]?.[0]; };
+export const moda = (arr) => { const c = {}; arr.forEach((v) => (c[v] = (c[v] || 0) + 1)); return Object.entries(c).sort((a, b) => b[1] - a[1])[0]?.[0]; };
 const groupBy = (rows, fn) => { const m = new Map(); rows.forEach((r) => { const k = fn(r); if (!m.has(k)) m.set(k, []); m.get(k).push(r); }); return m; };
 const lista = (s, n = 8) => { const a = [...s].sort(); return a.length > n ? `${a.slice(0, n).join(', ')} +${a.length - n}` : a.join(', '); };
 
@@ -55,7 +55,7 @@ const idbSet = async (k, v) => { const db = await idb(); return new Promise((res
 // MATRIZ CLIMA, COMPRA_MES, ZO9_MARA, BASE_FECHAS O9. No hace falta correr las fórmulas: todo se cruza aquí.
 // Las hojas pueden venir en uno o varios archivos; cada una se reconoce por sus encabezados.
 const findHdr = (aoa, test) => aoa.slice(0, 15).findIndex((r) => test(r.map(norm)));
-async function parseFile(file) {
+export async function parseFile(file) {
   const wb = XLSX.read(await file.arrayBuffer(), { type: 'array', cellDates: true });
   const out = {};
   wb.SheetNames.forEach((sn) => {
@@ -316,7 +316,7 @@ function checkOC(O, PW, cfg) {
 }
 
 const csvCell = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
-const downloadCSV = (name, aoa) => {
+export const downloadCSV = (name, aoa) => {
   const blob = new Blob(['﻿' + aoa.map((r) => r.map(csvCell).join(',')).join('\n')], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); URL.revokeObjectURL(a.href);
 };
