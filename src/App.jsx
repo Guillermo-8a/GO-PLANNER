@@ -25,9 +25,12 @@ import ModuleAllocation from "./modules/ModuleAllocation" ;
 import ModulePedidos from "./modules/ModulePedidos";
 import ModuleNulo from "./modules/ModuleNulo";
 import ModuleDemanda from "./modules/ModuleDemanda";
+import ModuleComparador from "./modules/ModuleComparador";
+import { GoBotProvider } from "./context/GoBotContext";
+import GoBotStage, { GoBotRailButton } from "./components/GoBotRightDock";
 
 import {
-  Layers, Bell, Sun, Moon, ShoppingCart, Map, LayoutDashboard,
+  Layers, Bell, Sun, Moon, ShoppingCart, Map, LayoutDashboard, Radar,
   HelpCircle, Wallet, Zap, Search, Mail, Circle, Tag, PieChart, ListChecks, Truck, Hourglass, Stethoscope,} from 'lucide-react';
 
 // ─── Paletas de tema ──────────────────────────────────────────────────────────
@@ -121,6 +124,7 @@ const NAV_ITEMS = [
   { id: 'eventos', label: 'Eventos', Icon: Tag, desc: 'Eventos promocionales', dataKey: null },
   { id: 'allocation', label: 'Allocation', Icon: ListChecks, desc: 'Revisión parametrización y OC', dataKey: null },
   { id: 'pedidos', label: 'Pedidos', Icon: Truck, desc: 'Rastreador de OCs: dónde está la mercancía', dataKey: null },
+  { id: 'comparador', label: 'Radar Competencia', Icon: Radar, desc: 'Precios vs Coppel, Liverpool, Amazon y más', dataKey: null },
   { id: 'nulo', label: 'Nulo Movimiento', Icon: Hourglass, desc: 'Mercancía sin venta por SKU × centro', dataKey: null },
 ];
 
@@ -137,6 +141,7 @@ const LOCAL_DATA_KEYS = {
   pedidos: ['gop_pedidos_has'],
   nulo: ['gop_nulo_files'],
   demanda: ['gop_demanda_files'],
+  comparador: ['gop_comparador'],
 };
 function moduleHasData(m, global) {
   return m.dataKey ? !!global[m.dataKey] : hasLocalData(m.id);
@@ -162,7 +167,7 @@ const PIPELINE_STEPS = [
 
 // ─── Mundos (agrupación del sidebar y del dashboard) ──────────────────────────
 const NAV_GROUPS = [
-  { id: 'financial',  label: 'Financial',        Icon: Calculator,   color: '#B39DDB', items: ['planning', 'suplementarios'] },
+  { id: 'financial',  label: 'Financial',        Icon: Calculator,   color: '#B39DDB', items: ['planning', 'suplementarios', 'comparador'] },
   { id: 'demand',     label: 'Demand Planner',   Icon: TrendingUp,   color: '#E0BB3E', items: ['assortment', 'forecast', 'distribucion', 'resurtido', 'demanda'] },
   { id: 'inventory',  label: 'Inventory Control',Icon: Boxes,        color: '#8A73AD', items: ['dispersion', 'traslados', 'chequera'] },
   { id: 'checkcoo',   label: 'Check Coo',        Icon: CircleCheck,  color: '#9A9CA3', items: ['dayli', 'eventos', 'allocation', 'pedidos', 'nulo'] },
@@ -305,6 +310,7 @@ function Shell() {
   const supportRef   = useRef(null);
   const settingsRef  = useRef(null);
   const recordRef    = useRef(null);
+  const railRef      = useRef(null);
   const mediaRecorderRef   = useRef(null);
   const recordedChunksRef  = useRef([]);
 
@@ -500,6 +506,7 @@ function Shell() {
       case 'pedidos': return <ModulePedidos {...moduleProps} />;
       case 'nulo': return <ModuleNulo {...moduleProps} />;
       case 'demanda': return <ModuleDemanda {...moduleProps} />;
+      case 'comparador': return <ModuleComparador {...moduleProps} />;
       default:             return <Dashboard {...moduleProps} />;
     }
   };
@@ -546,7 +553,7 @@ function Shell() {
         }
       />
 
-      <div className="flex flex-1 min-h-0 overflow-hidden">
+      <div className="relative flex flex-1 min-h-0 overflow-hidden">
 
         {/* ══════════ SIDEBAR ══════════ (reserva fija de 58px; al expandir flota encima del contenido) */}
         <div className="relative shrink-0 z-40" style={{ width: '58px' }}>
@@ -682,14 +689,14 @@ function Shell() {
         </div>
 
         {/* ══════════ CONTENIDO ══════════ */}
-        <main className={`flex-1 overflow-y-auto min-w-0 ${isDark ? 'bg-transparent' : 'bg-gray-50'}`}>
+        <main data-gobot-screen className={`flex-1 overflow-y-auto min-w-0 ${isDark ? 'bg-transparent' : 'bg-gray-50'}`}>
           <div key={activeModule} className="animate-fade-in">
   {renderModule()}
 </div>
         </main>
 
         {/* ══════════ RAIL DERECHO ══════════ */}
-        <aside className={`relative z-40 flex flex-col items-center gap-2 py-4 px-2 border-l shrink-0 ${t.sidebar}`}>
+        <aside ref={railRef} className={`relative z-40 flex flex-col items-center gap-2 py-4 px-2 border-l shrink-0 ${t.sidebar}`}>
           {/* Grabar */}
           <div className="relative" ref={recordRef}>
             <button
@@ -768,7 +775,12 @@ function Shell() {
               </div>
             )}
           </div>
+
+          {/* GO-Bot */}
+          <GoBotRailButton isDark={isDark} />
         </aside>
+
+        <GoBotStage isDark={isDark} railRef={railRef} />
       </div>
     </div>
   );
@@ -778,7 +790,9 @@ function Shell() {
 export default function App() {
   return (
     <GlobalProvider>
-      <Shell />
+      <GoBotProvider>
+        <Shell />
+      </GoBotProvider>
     </GlobalProvider>
   );
 }
