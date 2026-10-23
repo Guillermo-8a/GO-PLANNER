@@ -221,6 +221,7 @@ function compute(X, E, F, estado, M) {
   const opt = Object.fromEntries(FKEYS.map((k) => [k, new Float64Array(size(k))]));
   const z = (k) => new Float64Array(D[k].length);
   const byLetra = z('letra'), byLetraP = z('letra'), byEst = z('estatus'), byMarca = z('marca'), byGoa = z('goa'), bySku = z('sku'), byProv = z('prov');
+  const mkT = z('marca'), mkN = z('marca'), gT = z('goa'), gN = z('goa'), moT = new Float64Array(M.list.length), moN = new Float64Array(M.list.length);
   const zT = z('zona'), zN = z('zona'), cT = z('centro'), cN = z('centro'), tT = new Float64Array(M.tallas.length), tN = new Float64Array(M.tallas.length), secT = z('sec'), secN = z('sec');
   const sec = new Map(); const rows = [];
   let m$ = 0, mP = 0, all$ = 0, allN$ = 0, wM = 0, wD = 0;
@@ -232,6 +233,9 @@ function compute(X, E, F, estado, M) {
     if (fails === 1) { if (ok) opt[fk][val(fk, i)] += m; continue; }
     if (ok) for (const k of FKEYS) opt[k][val(k, i)] += m;
     const ti = M.skuTal[C.sku[i]];
+    const mo = M.skuMod[C.sku[i]];
+    mkT[C.marca[i]] += m; gT[C.goa[i]] += m; moT[mo] += m;
+    if (nu) { mkN[C.marca[i]] += m; gN[C.goa[i]] += m; moN[mo] += m; }
     all$ += m; zT[C.zona[i]] += m; cT[C.centro[i]] += m; secT[C.sec[i]] += m; tT[ti] += m;
     if (nu) { allN$ += m; zN[C.zona[i]] += m; cN[C.centro[i]] += m; secN[C.sec[i]] += m; tN[ti] += m; }
     if (!ok) continue;
@@ -248,6 +252,14 @@ function compute(X, E, F, estado, M) {
   };
   const share = (T, N, names, k) => [...T].map((t, i) => ({ name: names[i], t, nu: N[i], idx: i })).filter((x) => x.nu > 0)
     .sort((a, b) => b.nu - a.nu).slice(0, k).map((x) => ({ idx: x.idx, name: x.name, nulo: x.nu / x.t, mov: 1 - x.nu / x.t, nu: x.nu, t: x.t }));
+  // Proporción: % del inventario de cada grupo que está en NM (no cuánto pesa en el total).
+  // Se ignoran grupos con menos del 2% del inventario promedio por grupo para que 1 pieza suelta no salga al 100%.
+  const prop = (T, N, names) => {
+    const g = [...T].map((v, i) => ({ idx: i, name: names[i], t: v, nu: N[i] })).filter((x) => x.t > 0);
+    const min = g.length ? (all$ / g.length) * 0.02 : 0, avg = all$ ? allN$ / all$ : 0;
+    return g.filter((x) => x.nu > 0 && x.t >= min).map((x) => ({ ...x, r: x.nu / x.t, vs: avg ? x.nu / x.t / avg : null }))
+      .sort((a, b) => b.r - a.r || b.nu - a.nu).slice(0, 15);
+  };
   const provTop = top(byProv, D.prov, 1, false)[0];
   return {
     opt, rows, m$, mP, all$, allN$, mesesProm: wD ? wM / wD : null, prov: provTop?.name || '—', combos: rows.length,
@@ -257,6 +269,10 @@ function compute(X, E, F, estado, M) {
       return top(g, M.labels, 5, false);
     })(),
     zona: share(zT, zN, D.zona, 14),
+    prop: {
+      marca: prop(mkT, mkN, D.marca), goa: prop(gT, gN, D.goa), zona: prop(zT, zN, D.zona),
+      centro: prop(cT, cN, D.centro.map((ce) => X.info.centro[ce] || ce)), modelo: prop(moT, moN, M.labels),
+    },
     // % nulo por talla, en orden de talla (numéricas primero); top 30 por inventario
     talla: [...tT].map((t, i) => ({ name: M.tallas[i], t, nu: tN[i], idx: i })).filter((x) => x.t > 0 && x.name !== '—').sort((a, b) => b.t - a.t).slice(0, 30)
       .sort((a, b) => { const x = parseFloat(a.name), y = parseFloat(b.name); return isFinite(x) && isFinite(y) ? x - y : isFinite(x) ? -1 : isFinite(y) ? 1 : a.name.localeCompare(b.name); })
@@ -292,6 +308,7 @@ export default function ModuleNulo({ t, isDark, navIcon, navLabel, navDesc }) {
   const [msg, setMsg] = useState(null);
   const [q, setQ] = useState('');
   const [sort, setSort] = useState({ k: 'monto', d: -1 });
+  const [propDim, setPropDim] = useState('marca');
   const fileRef = useRef(null);
 
   useEffect(() => { idbGet('data').then((d) => d && setX(d)); }, []);
@@ -520,6 +537,7 @@ export default function ModuleNulo({ t, isDark, navIcon, navLabel, navDesc }) {
           </div>
           {R.talla.length > 1 && <ShareBars title="% nulo por talla · ¿qué talla se queda?" data={R.talla} k="talla" />}
 
+          <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 items-start">
           {R.letra.length > 0 && (
             <div className={card}>
               <p className={`text-xs font-bold text-center ${t.text}`}>Inventario por letra de rebaja · ¿regular o liquidado?</p>
@@ -547,6 +565,33 @@ export default function ModuleNulo({ t, isDark, navIcon, navLabel, navDesc }) {
               </div>
             </div>
           )}
+            <div className={card}>
+              <p className={`text-xs font-bold text-center ${t.text}`}>¿Quién tiene más de su inventario en NM? · en proporción</p>
+              <p className={`text-[10px] text-center mb-2 ${t.textMuted}`}>% de su propio inventario que está en nulo · "vs prom." = veces el % NM promedio ({pct(R.all$ ? R.allN$ / R.all$ : 0)}) · clic filtra</p>
+              <div className="flex flex-wrap justify-center gap-1 mb-2">
+                {[['marca', 'Marca'], ['goa', 'GOA'], ['zona', 'Zona'], ['centro', 'Tienda'], ['modelo', 'Modelo']].map(([k, l]) => (
+                  <button key={k} onClick={() => setPropDim(k)} className={`px-2.5 py-1 rounded-lg text-[11px] font-black ${propDim === k ? 'bg-violet-600 text-white' : t.btnGhost}`}>{l}</button>
+                ))}
+              </div>
+              <div className="overflow-auto max-h-[420px]">
+                <table className="w-full">
+                  <thead className="sticky top-0"><tr>{['Nombre', 'Inventario', 'En NM', '% en NM', 'vs prom.'].map((h, i) => <th key={h} className={`${th} ${i ? '!text-right' : ''}`}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {R.prop[propDim].map((x) => (
+                      <tr key={x.idx} onClick={() => pick(propDim, x.idx)} className={`border-t cursor-pointer ${t.border} ${t.tableRow}`}>
+                        <td className={`${td} font-bold ${t.text} max-w-[220px] truncate`} title={x.name}>{x.name}</td>
+                        <td className={`${td} text-right tabular-nums ${t.text}`}>{fmt$(x.t)}</td>
+                        <td className={`${td} text-right tabular-nums ${t.text}`}>{fmt$(x.nu)}</td>
+                        <td className={`${td} text-right tabular-nums font-black`} style={{ color: x.r >= 0.75 ? NULO_C : x.r >= 0.5 ? '#F59E0B' : undefined }}>{pct(x.r)}</td>
+                        <td className={`${td} text-right tabular-nums ${t.textMuted}`}>{x.vs != null ? `${x.vs.toFixed(1)}×` : '—'}</td>
+                      </tr>
+                    ))}
+                    {!R.prop[propDim].length && <tr><td colSpan={5} className={`${td} text-center ${t.textMuted}`}>Sin nulo en esta selección</td></tr>}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
 
           <div className={card}>
             <div className="flex items-center mb-2">

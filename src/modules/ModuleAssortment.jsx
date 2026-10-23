@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import FilterMenu, { FilterSection } from '../components/FilterMenu';
 import MultiSelect from '../components/MultiSelect';
 import { useAltTabs } from '../utils/excelNav';
+import ModuleHeader from '../components/ModuleHeader';
 import { Settings, Store, Package, Upload, ArrowUpDown, Sliders, Layers, MoreVertical, Sun, Moon, Info, Map as MapIcon, Database, ShoppingCart, BarChart3, Plus, Trash2, Save, Download, Zap, DollarSign, Target, FileSpreadsheet, Edit3, Lightbulb, CalendarDays, Compass, Activity, Wand2, RefreshCw, ClipboardList, Calculator, ChevronDown, ChevronRight, LayoutList } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -77,8 +78,8 @@ const parseCSV = (text) => {
 // --- COMPONENTES AUXILIARES ---
 function TabButton({ id, label, icon: Icon, activeTab, setActiveTab, t }) {
   return (
-    <button onClick={() => setActiveTab(id)} className={`flex items-center space-x-2 px-4 py-3 font-bold text-sm transition-colors border-b-2 ${activeTab === id ? t.tabActive : t.tabInactive}`}>
-      <Icon size={18} /><span>{label}</span>
+    <button onClick={() => setActiveTab(id)} className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-black whitespace-nowrap transition-all ${activeTab === id ? 'bg-violet-600 text-white' : t.textMuted}`}>
+      <Icon size={14} /><span>{label}</span>
     </button>
   );
 }
@@ -1977,20 +1978,9 @@ export default function App() {
   return (
     <div className={`min-h-screen w-full font-sans pb-12 transition-colors duration-300 ${t.appBg}`}>
       
-      {/* HEADER Y MINI MENU */}
-      <header className={`border-b sticky top-0 z-20 transition-colors duration-300 ${t.header}`}>
-        <div className="w-full mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex items-center justify-between py-3 min-h-16">
-            <div className="flex items-center gap-3">
-              <span className={`p-2 rounded-xl ${theme === 'dark' ? 'bg-violet-500/20' : 'bg-violet-50'}`}>
-                <ShoppingCart size={22} className={t.textAccent1} />
-              </span>
-              <div>
-                <h1 className={`text-2xl font-black tracking-tight leading-none ${t.textMain}`}>Assortment</h1>
-                <p className={`text-xs mt-1 ${t.textMuted}`}>Compra y presupuesto · Tiendas, curvas, forecast y preventa</p>
-              </div>
-            </div>
-            
+      {/* HEADER (mismo que los demás módulos) + pestañas */}
+      <div className="px-4 sm:px-6 lg:px-8 pt-4 md:pt-8 space-y-4">
+        <ModuleHeader Icon={ShoppingCart} label="Assortment" desc="Compra y presupuesto · Tiendas, curvas, forecast y preventa" t={t} isDark={theme === 'dark'} right={
             <div className="flex items-center gap-2">
             {activeTab === 'data' && (goas || []).length > 0 && (
               <FilterMenu isDark={theme === 'dark'} count={filterGoa !== 'ALL' ? 1 : 0} width={360}>
@@ -2020,8 +2010,8 @@ export default function App() {
               )}
             </div>
             </div>
-          </div>
-          <div className="flex space-x-6 mt-2 overflow-x-auto custom-scrollbar">
+        } />
+        <div className={`flex gap-1 p-1 rounded-xl border overflow-x-auto custom-scrollbar ${t.cardInner}`}>
             <TabButton id="data" label="1. Tiendas y Clústeres" icon={Store} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
             <TabButton id="calc" label="2. Curvas y Reglas" icon={ClipboardList} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
             <TabButton id="budget" label="3. Forecast GO Planner" icon={Database} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
@@ -2029,11 +2019,10 @@ export default function App() {
             <TabButton id="reports" label="5. Reportes / Plan OTB" icon={Compass} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
             <TabButton id="vsreal" label="6. VS Compra Real" icon={Activity} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
             <TabButton id="chequeras" label="7. Generador Chequeras" icon={FileSpreadsheet} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
-          </div>
         </div>
-      </header>
+      </div>
 
-      <main className="w-full mx-auto px-4 sm:px-6 lg:px-8 py-8 transition-colors duration-300">
+      <main className="w-full mx-auto px-4 sm:px-6 lg:px-8 pt-4 pb-8 transition-colors duration-300">
         
         {/* === PESTAÑA 1: BASE === */}
         {activeTab === 'data' && (

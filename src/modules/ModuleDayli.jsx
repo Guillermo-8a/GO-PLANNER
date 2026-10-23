@@ -560,7 +560,7 @@ export default function ModuleDaily(){
 
   // ── byKey con tendencia + fcst ──
   const byKeyFcst=useCallback((key)=>{
-    const tyM={},lyM={};
+    const tyM={},lyM={}, mM=lastDateTY?lastDateTY.getMonth():-1, mY=lastDateTY?lastDateTY.getFullYear():-1, mDias=new Set();
     tyData.forEach(r=>{ const k=r[key]||'N/D'; if(!tyM[k])tyM[k]={key:k,mesP:0,ventaP:0,ventaU:0,utilidad:0,markdown:0}; if(r.fecha&&r.fecha.getMonth()===mM&&r.fecha.getFullYear()===mY){ tyM[k].mesP+=r.ventaP; mDias.add(r.fecha.getDate()); }
       tyM[k].ventaP+=r.ventaP; tyM[k].ventaU+=r.ventaU; tyM[k].utilidad+=r.utilidad; tyM[k].markdown+=r.markdown; });
     lyData.forEach(r=>{ const k=r[key]||'N/D'; lyM[k]=(lyM[k]||0)+r.ventaP; });

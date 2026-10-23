@@ -935,7 +935,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
                 // Inventario almacenado en el nodo, por CEDIS: con traslado (ya asignado a tiendas) / sin traslado, y lo de 90+ días
                 const iv = {}; inv.forEach((u) => { const [pre, cen, b] = u.oc.split(' '); const o = (iv[cen] = iv[cen] || { cen, con: 0, sin: 0, v90: 0 }); if (pre === 'ASG') o.con += u.pzs; else o.sin += u.pzs; if (b === '90+') o.v90 += u.pzs; });
                 const ivR = Object.values(iv).sort((a, b) => b.con + b.sin - a.con - a.sin), ivT = ivR.reduce((a, o) => a + o.con + o.sin, 0);
-                const c = { n: us.length, pzs: us.reduce((a, u) => a + Math.max(0, u.pzs - u.pzsRec), 0), ator: us.filter((u) => u.atorado).length, maxDias: Math.max(0, ...us.map((u) => u.enEtapa || 0)) };
+                const c = { n: us.length, pzs: us.reduce((a, u) => a + Math.max(0, u.pzs - u.pzsRec), 0), ator: us.filter((u) => u.atorado).length, maxDias: us.reduce((a, u) => Math.max(a, u.enEtapa || 0), 0) };
                 const tp = ks.length === 1 ? tramoProm[ks[0]] : null;
                 return (<>
                   {ivT > 0 && (
