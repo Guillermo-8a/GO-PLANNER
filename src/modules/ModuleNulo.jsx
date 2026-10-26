@@ -434,13 +434,14 @@ export default function ModuleNulo({ t, isDark, navIcon, navLabel, navDesc }) {
       </div>
     </div>
   );
-  const ShareBars = ({ title, data, k }) => (
+  const ShareBars = ({ title, data, k, maxH }) => (
     <div className={card}>
       <p className={`text-xs font-bold text-center ${t.text}`}>{title}</p>
       <div className="flex justify-center gap-3 text-[10px] my-1">
         <span className="flex items-center gap-1"><span className="w-3 h-2 rounded-sm" style={{ background: NULO_C }} /><span className={t.textMuted}>Nulo</span></span>
         <span className="flex items-center gap-1"><span className={`w-3 h-2 rounded-sm ${isDark ? 'bg-white/15' : 'bg-gray-200'}`} /><span className={t.textMuted}>Con movimiento</span></span>
       </div>
+      <div style={maxH ? { maxHeight: maxH, overflowY: 'auto' } : undefined}>
       <div style={{ height: Math.max(160, data.length * 26 + 30) }}>
         <ResponsiveContainer>
           <BarChart data={data} layout="vertical" margin={{ left: 0, right: 8 }} barCategoryGap="18%">
@@ -451,6 +452,7 @@ export default function ModuleNulo({ t, isDark, navIcon, navLabel, navDesc }) {
             <Bar isAnimationActive={false} dataKey="mov" stackId="a" fill={isDark ? 'rgba(255,255,255,0.12)' : '#e5e7eb'} radius={[0, 4, 4, 0]} onClick={(d) => pick(k, d.idx)} cursor="pointer" />
           </BarChart>
         </ResponsiveContainer>
+      </div>
       </div>
     </div>
   );
@@ -535,7 +537,6 @@ export default function ModuleNulo({ t, isDark, navIcon, navLabel, navDesc }) {
             </div>
             <ShareBars title="Monto por tienda / bodega (top 12)" data={R.tienda} k="centro" />
           </div>
-          {R.talla.length > 1 && <ShareBars title="% nulo por talla · ¿qué talla se queda?" data={R.talla} k="talla" />}
 
           <div className="grid grid-cols-1 xl:grid-cols-2 gap-3 items-start">
           {R.letra.length > 0 && (
@@ -592,6 +593,8 @@ export default function ModuleNulo({ t, isDark, navIcon, navLabel, navDesc }) {
               </div>
             </div>
           </div>
+
+          {R.talla.length > 1 && <ShareBars title="% nulo por talla · ¿qué talla se queda?" data={R.talla} k="talla" maxH={340} />}
 
           <div className={card}>
             <div className="flex items-center mb-2">

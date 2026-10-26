@@ -10,6 +10,7 @@
 // Sin llave o sin red responde 503 y el front usa su fallback local (nunca inventa precios).
 
 import { runQuery } from './_bq.js';
+import { kbSearch } from '../src/data/goplannerKB.js';
 
 const MODEL = process.env.GEMINI_MODEL || 'gemini-2.5-flash';
 
@@ -76,12 +77,14 @@ PREGUNTA: ${q}`, { json: true }
         }
       }
 
-      // 2) Respuesta corta con pantalla + CSV del módulo + BigQuery
+      // 2) Respuesta corta con manual de GO PLANNER + pantalla + CSV del módulo + BigQuery
+      const manual = kbSearch(q, snapshot?.module, 3).map((e) => `## ${e.titulo}\n${e.texto}`).join('\n\n');
       const { text } = await gemini(
         `Eres GO-Bot, copiloto de un planner/buyer de calzado en México. Español mexicano, directo.
 Máximo 3 líneas. Primero el dato/número, luego (si aplica) una acción concreta. Sin saludos ni relleno.
-Usa SOLO estos datos: pantalla del módulo, CSV cargado y BigQuery. Si el dato no está, dilo en una línea y di qué cargar. Nunca inventes cifras.
+Usa SOLO: el MANUAL (cómo funciona y cómo calcula cada módulo), la pantalla, el CSV cargado y BigQuery. Si preguntan cómo funciona o cómo se calcula algo, contesta con el MANUAL. Si el dato no está, dilo en una línea y di qué cargar. Nunca inventes cifras.
 VTAS_P y GM vienen en pesos. Puedes explicar fórmulas retail (Sell-Through, WOS, MOS, rotación, margen, OTB, fill rate) en una línea.
+MANUAL: ${manual || 'sin sección relevante'}
 PANTALLA: ${snap(snapshot)}
 CSV DEL MÓDULO: ${String(snapshot?.csv || 'sin archivo').slice(0, 12000)}
 BIGQUERY: ${bqData ? JSON.stringify(bqData).slice(0, 8000) : 'no aplica'}

@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect, useRef, useCallback } from 'react';
 import { useGlobal } from './GlobalContext';
 import { LOCAL_DATA_KEYS } from '../utils/localDataKeys';
+import { kbSearch } from '../data/goplannerKB';
 
 const GLOBAL_DATA = { forecast: 'forecastData', assortment: 'otbData', distribucion: 'distributionData', resurtido: 'replenishmentData' };
 
@@ -30,16 +31,6 @@ const api = async (body) => {
   if (!r.ok) throw new Error(r.status === 401 ? 'token' : String(r.status));
   return r.json();
 };
-
-const FORMULAS = [
-  [/sell|through/, 'Sell-Through % = Venta unidades ÷ (Inventario inicial + Recibos) × 100.'],
-  [/wos|semanas|cobertura/, 'WOS = Inventario (OH + OO) ÷ Venta semanal promedio.'],
-  [/mos|meses/, 'MOS = Inventario ÷ Venta mensual promedio (≈ WOS ÷ 4.33).'],
-  [/rotaci/, 'Rotación = Venta a costo del periodo ÷ Inventario promedio a costo. Sube vendiendo más o cargando menos inventario: mueve Back-Room a piso, traslada nulo movimiento a tiendas top y rebaja lo que pase de 16 WOS.'],
-  [/margen/, 'Margen % = (Precio venta neto − Costo) ÷ Precio venta neto × 100.'],
-  [/otb/, 'OTB = Inventario final planeado + Venta + Rebajas − Inventario inicial − Pedidos colocados.'],
-  [/fill/, 'Fill Rate % = Unidades surtidas ÷ Unidades solicitadas × 100.'],
-];
 
 export function GoBotProvider({ children }) {
   const global = useGlobal();
@@ -123,20 +114,26 @@ export function GoBotProvider({ children }) {
       const { answer } = await api({ mode: 'CHAT_QA', question: q, snapshot: snapshot() });
       setChat((c) => [...c, { role: 'bot', text: answer }]);
     } catch {
-      const ql = q.toLowerCase();
-      const formula = FORMULAS.find(([re]) => re.test(ql))?.[1];
-      const words = ql.split(/\W+/).filter((w) => w.length > 3);
+      // Sin IA: manual de GO PLANNER para "¿cómo funciona / cómo se calcula?" y si no, lo que hay en pantalla
+      const ql = q.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+      const words = ql.split(/[^a-z0-9ñ]+/).filter((w) => w.length > 3);
+      const hit = kbSearch(q, activeModule, 1)[0];
+      const how = /como|que es|calcul|formula|funciona|por que|significa|regla/.test(ql);
       const lines = snapshot().text.split('\n').filter((l) => words.some((w) => l.toLowerCase().includes(w))).slice(0, 3);
-      const text = [
-        formula,
-        lines.length ? lines.join('\n') : null,
-        !formula && !lines.length ? 'No lo veo en pantalla. Abre el módulo con ese dato (sin IA no consulto BigQuery).' : null,
-      ].filter(Boolean).join('\n');
+      const fromKB = () => {
+        const ls = hit.texto.split('\n');
+        const sc = ls.map((l, i) => ({ i, s: words.filter((w) => l.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().includes(w)).length }));
+        const keep = sc.sort((a, b) => b.s - a.s).slice(0, 2).map((x) => x.i).sort((a, b) => a - b);
+        return `${hit.titulo}: ${keep.map((i) => ls[i]).join('\n')}`;
+      };
+      const text = hit && (how || !lines.length) ? fromKB()
+        : lines.length ? lines.join('\n')
+        : 'No lo veo en pantalla ni en el manual. Abre el módulo con ese dato (sin IA no consulto BigQuery).';
       setChat((c) => [...c, { role: 'bot', text }]);
     } finally {
       setIsBusy(false);
     }
-  }, [snapshot]);
+  }, [snapshot, activeModule]);
 
   // Alerta crítica nueva → el bot se asoma solo con la auditoría.
   const critCount = alerts.filter((a) => a.level === 'critical').length;
