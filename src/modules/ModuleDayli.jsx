@@ -568,17 +568,18 @@ export default function ModuleDaily(){
     const pDays=mDias.size||1; // fcst = run-rate del MES del cierre (no del periodo completo)
     const diasMes=lastDateTY?new Date(lastDateTY.getFullYear(),lastDateTY.getMonth()+1,0).getDate():30;
     return Object.values(tyM).map(g=>({ ...g, mgPct:g.ventaP>0?g.utilidad/g.ventaP*100:0,
-      tendencia:delta(g.ventaP,lyM[g.key]), fcst:g.ventaP/pDays*diasMes })).sort((a,b)=>b.ventaP-a.ventaP);
+      tendencia:delta(g.ventaP,lyM[g.key]), fcst:g.mesP/pDays*diasMes })).sort((a,b)=>b.ventaP-a.ventaP);
   },[tyData,lyData,lastDateTY]);
 
   // Agrupador para tablas dashboard: RESPETA el filtro (período = header). Tend período vs LY mismo período; Cierre vs LY mes completo.
   const byKeyDash=useCallback((key)=>{
     const tyM={},lyP={},lyFull={}, mM=lastDateTY?lastDateTY.getMonth():-1, mY=lastDateTY?lastDateTY.getFullYear():-1, mDias=new Set();
-    tyData.forEach(r=>{ const k=r[key]||'N/D'; if(!tyM[k])tyM[k]={key:k,ventaP:0,ventaU:0,utilidad:0,markdown:0};
+    tyData.forEach(r=>{ const k=r[key]||'N/D'; if(!tyM[k])tyM[k]={key:k,mesP:0,ventaP:0,ventaU:0,utilidad:0,markdown:0};
+      if(r.fecha&&r.fecha.getMonth()===mM&&r.fecha.getFullYear()===mY){ tyM[k].mesP+=r.ventaP; mDias.add(r.fecha.getDate()); }
       tyM[k].ventaP+=r.ventaP; tyM[k].ventaU+=r.ventaU; tyM[k].utilidad+=r.utilidad; tyM[k].markdown+=r.markdown; });
     lyData.forEach(r=>{ const k=r[key]||'N/D'; lyP[k]=(lyP[k]||0)+r.ventaP; });
     if(lastDateTY){ const month=lastDateTY.getMonth(); allData.forEach(r=>{ if(r.year!==lyYear||!r.fecha||!dimsOk(r)||r.fecha.getMonth()!==month) return; const k=r[key]||'N/D'; lyFull[k]=(lyFull[k]||0)+r.ventaP; }); }
-    const pDays=new Set(tyData.filter(r=>r.fecha).map(r=>r.fecha.toDateString())).size||1;
+    const pDays=mDias.size||1; // run-rate del MES del cierre (días con venta en ese mes)
     const diasMes=lastDateTY?new Date(lastDateTY.getFullYear(),lastDateTY.getMonth()+1,0).getDate():30;
     const base=Object.values(tyM).map(g=>({...g,fcstNat:g.mesP/pDays*diasMes}));
     // Si hay escenario seleccionado, reparte ese total con la participación natural de cada grupo
