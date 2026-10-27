@@ -111,4 +111,19 @@ export const QUERIES = {
       SELECT goa AS GOA, sku AS SKU, centro AS CENTRO, oh AS OH, zona AS ZONA, tipo_centro AS TIPO_CENTRO
       FROM \`${DS}.TODO_inventario_sku_centro\``,
   },
+  // Margen: utilidad comparativa TY vs LY (SAC). Sin ${DS}: la vista vive en el dataset semántico. @anio = año en curso,
+  // @mes = mes de corte (YTD). Trae anio-1 y anio. Encabezados = los que lee ModuleMargen.
+  margen: {
+    params: ['anio', 'mes'],
+    sql: () => `
+      SELECT EXTRACT(YEAR FROM MES_PERIODO) AS anio, DIVISION, SECCION, MARCA, TIPO_IMPORTACION, TIPO_MARCA,
+             SUM(Ventas_a_Precio_Lleno) AS precio_lleno, SUM(TOTAL_MARKDOWNS) AS mkd, SUM(Venta_Neta) AS venta_neta,
+             SUM(Costo_de_lo_Vendido) AS costo, SUM(Bonificaciones_Proveedor) AS bonif,
+             SUM(Provision_de_Merma) AS merma, SUM(Costo_Financiamiento_Inventarios) AS financ,
+             SUM(Utilidad_Bruta_de_Mercancias) AS ub_merc
+      FROM \`crp-pro-dwh-semanticagold.mus_pro_dwh_views_sap.VEIL_TAB_UTILIDAD_COMPARATIVO_S\`
+      WHERE EXTRACT(YEAR FROM MES_PERIODO) IN (CAST(@anio AS INT64) - 1, CAST(@anio AS INT64))
+        AND EXTRACT(MONTH FROM MES_PERIODO) <= CAST(@mes AS INT64)
+      GROUP BY 1, 2, 3, 4, 5, 6`,
+  },
 };

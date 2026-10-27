@@ -10,6 +10,7 @@ export const LOCAL_DATA_KEYS = {
   allocation: ['gop_allocation_files'],
   pedidos: ['gop_pedidos_has'],
   nulo: ['gop_nulo_files'],
+  margen: ['gop_margen_files'],
   validador: ['gop_validador_files'],
   demanda: ['gop_demanda_files'],
   comparador: ['gop_comparador'],

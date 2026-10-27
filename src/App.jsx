@@ -24,6 +24,7 @@ import ModuleSuplementarios from "./modules/ModuleSuplementarios" ;
 import ModuleAllocation from "./modules/ModuleAllocation" ;
 import ModulePedidos from "./modules/ModulePedidos";
 import ModuleNulo from "./modules/ModuleNulo";
+import ModuleMargen from "./modules/ModuleMargen";
 import ModuleValidador from "./modules/ModuleValidador";
 import ModuleDemanda from "./modules/ModuleDemanda";
 import ModuleComparador from "./modules/ModuleComparador";
@@ -33,7 +34,7 @@ import GoBotStage, { GoBotRailButton } from "./components/GoBotRightDock";
 
 import {
   Layers, Bell, Sun, Moon, ShoppingCart, Map, LayoutDashboard, Radar,
-  HelpCircle, Wallet, Zap, Search, Mail, Circle, Tag, PieChart, ListChecks, Truck, Hourglass, Stethoscope, ShieldCheck,} from 'lucide-react';
+  HelpCircle, Wallet, Zap, Search, Mail, Circle, Tag, PieChart, ListChecks, Truck, Hourglass, Stethoscope, ShieldCheck, Percent,} from 'lucide-react';
 
 // ─── Paletas de tema ──────────────────────────────────────────────────────────
 export const THEMES = {
@@ -128,6 +129,7 @@ const NAV_ITEMS = [
   { id: 'pedidos', label: 'Pedidos', Icon: Truck, desc: 'Rastreador de OCs: dónde está la mercancía', dataKey: null },
   { id: 'comparador', label: 'Radar Competencia', Icon: Radar, desc: 'Precios vs Coppel, Liverpool, Amazon y más', dataKey: null },
   { id: 'validador', label: 'Validador de parametrizaciones', Icon: ShieldCheck, desc: 'Combinaciones de O9, tipos de afectación y CSV corregido', dataKey: null },
+  { id: 'margen', label: 'Margen', Icon: Percent, desc: 'Dónde se mueve el margen: división, sección y marca', dataKey: null },
   { id: 'nulo', label: 'Nulo Movimiento', Icon: Hourglass, desc: 'Mercancía sin venta por SKU × centro', dataKey: null },
 ];
 
@@ -155,7 +157,7 @@ const PIPELINE_STEPS = [
 
 // ─── Mundos (agrupación del sidebar y del dashboard) ──────────────────────────
 const NAV_GROUPS = [
-  { id: 'financial',  label: 'Financial',        Icon: Calculator,   color: '#B39DDB', items: ['planning', 'suplementarios', 'comparador'] },
+  { id: 'financial',  label: 'Financial',        Icon: Calculator,   color: '#B39DDB', items: ['planning', 'suplementarios', 'margen', 'comparador'] },
   { id: 'demand',     label: 'Demand Planner',   Icon: TrendingUp,   color: '#E0BB3E', items: ['assortment', 'forecast', 'distribucion', 'resurtido', 'demanda'] },
   { id: 'inventory',  label: 'Inventory Control',Icon: Boxes,        color: '#8A73AD', items: ['dispersion', 'traslados', 'chequera'] },
   { id: 'checkcoo',   label: 'Check Coo',        Icon: CircleCheck,  color: '#9A9CA3', items: ['dayli', 'eventos', 'allocation', 'pedidos', 'nulo', 'validador'] },
@@ -492,6 +494,7 @@ function Shell() {
       case 'suplementarios': return <ModuleSuplementarios {...moduleProps} />;
       case 'allocation': return <ModuleAllocation {...moduleProps} />;
       case 'pedidos': return <ModulePedidos {...moduleProps} />;
+      case 'margen': return <ModuleMargen {...moduleProps} />;
       case 'nulo': return <ModuleNulo {...moduleProps} />;
       case 'validador': return <ModuleValidador {...moduleProps} />;
       case 'demanda': return <ModuleDemanda {...moduleProps} />;
