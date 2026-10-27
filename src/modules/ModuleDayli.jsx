@@ -230,7 +230,7 @@ const parseSalesCSV = text => {
   const H=rows[0].map(h=>h.toUpperCase().trim().replace(/\s+/g,'_').replace(/[#ÁÉÍÓÚ]/g,c=>({'#':'NUM',Á:'A',É:'E',Í:'I',Ó:'O',Ú:'U'}[c]||c)));
   const idx=(...ns)=>ns.map(n=>H.findIndex(h=>h===n||h.includes(n))).find(i=>i>=0)??-1;
   const I={div:idx('DIVISION','DIV'),sec:idx('SECCION','SECTION'),numSec:idx('NUMSECCION','NUM_SECCION','_SECCION'),goa:idx('GOA','FAMILIA'),
-    marca:idx('MARCA','PROVEEDOR','BRAND'),norma:idx('NORMA','TIPO_COMPRA'),canal:idx('SUBCANAL','CANAL_VENTA','CANAL_DE_VENTA','CANAL','CHANNEL'),
+    marca:idx('MARCA','PROVEEDOR','BRAND'),norma:idx('NORMA','TIPO_COMPRA'),canal:(H.indexOf('CANAL')>=0?H.indexOf('CANAL'):idx('CANAL_VENTA','CANAL_DE_VENTA','SUBCANAL','CHANNEL')),sub:H.indexOf('SUBCANAL'),
     pago:idx('TIPO_PAGO','TIPO_DE_PAGO','FORMA_PAGO','FORMA_DE_PAGO','MEDIO_PAGO','MEDIO_DE_PAGO','PAGO','TENDER','PAYMENT','TARJETA'),fecha:idx('FECHA','DATE','DIA'),vp:idx('VENTA_','VENTA$','VENTA_PESOS','VENTAS'),
     vu:idx('VENTA_U','UNIDADES','PIEZAS'),mg:idx('MG','MARGEN'),util:idx('UTILIDAD','UTIL'),md:idx('MARKDOWN','DESCUENTO','MD')};
   const out=[];
@@ -241,7 +241,7 @@ const parseSalesCSV = text => {
     const seccion=(/^\d+$/.test(secRaw)&&secName&&!/^\d+$/.test(secName))?secName.toUpperCase():(secRaw.toUpperCase()||'GENERAL');
     out.push({ division:I.div>=0?r[I.div].trim().toUpperCase():'GENERAL', seccion,
       numSec:secRaw, goa:I.goa>=0?r[I.goa].trim().toUpperCase():'', marca:I.marca>=0?r[I.marca].trim().toUpperCase():'SIN MARCA',
-      norma:I.norma>=0?r[I.norma].trim().toUpperCase():'', canal:I.canal>=0?r[I.canal].trim().toUpperCase():'SIN CANAL',
+      norma:I.norma>=0?r[I.norma].trim().toUpperCase():'', canal:I.canal>=0?r[I.canal].trim().toUpperCase():'SIN CANAL', subcanal:I.sub>=0?r[I.sub].trim().toUpperCase():'',
       pago:I.pago>=0?r[I.pago].trim().toUpperCase():'', fecha, year:fecha?fecha.getFullYear():0,
       ventaP:vp, ventaU:num(I.vu>=0?r[I.vu]:0), mg:num(I.mg>=0?r[I.mg]:0), utilidad:num(I.util>=0?r[I.util]:0), markdown:num(I.md>=0?r[I.md]:0) });
   }
@@ -416,7 +416,7 @@ export default function ModuleDaily(){
 
   // Filtros
   const [dateFrom,setDateFrom]=useState(''); const [dateTo,setDateTo]=useState('');
-  const [fCanal,setFCanal]=useState([]),[fDiv,setFDiv]=useState([]),[fSec,setFSec]=useState([]);
+  const [fCanal,setFCanal]=useState([]),[fSub,setFSub]=useState([]),[fDiv,setFDiv]=useState([]),[fSec,setFSec]=useState([]);
   const [fMarca,setFMarca]=useState([]),[fNorma,setFNorma]=useState([]),[fPago,setFPago]=useState([]),[fGoa,setFGoa]=useState([]);
   const [usarPromosFijas,setUsarPromosFijas]=useState(true);
   const [showInv,setShowInv]=useState(true);
@@ -448,7 +448,7 @@ export default function ModuleDaily(){
     if(d.moneyK!=null) setMoneyK(d.moneyK);
     if(d.bonifMes!=null) setBonifMes(d.bonifMes); if(d.bonifAcum!=null) setBonifAcum(d.bonifAcum);
     if(d.dateFrom) setDateFrom(d.dateFrom); if(d.dateTo) setDateTo(d.dateTo);
-    if(Array.isArray(d.fCanal)) setFCanal(d.fCanal); if(Array.isArray(d.fDiv)) setFDiv(d.fDiv); if(Array.isArray(d.fSec)) setFSec(d.fSec);
+    if(Array.isArray(d.fCanal)) setFCanal(d.fCanal); if(Array.isArray(d.fSub)) setFSub(d.fSub); if(Array.isArray(d.fDiv)) setFDiv(d.fDiv); if(Array.isArray(d.fSec)) setFSec(d.fSec);
     if(Array.isArray(d.fMarca)) setFMarca(d.fMarca); if(Array.isArray(d.fNorma)) setFNorma(d.fNorma); if(Array.isArray(d.fPago)) setFPago(d.fPago);
     if(Array.isArray(d.fGoa)) setFGoa(d.fGoa); if(d.usarPromosFijas!=null) setUsarPromosFijas(d.usarPromosFijas);
   }}catch{}
@@ -459,10 +459,10 @@ export default function ModuleDaily(){
     }catch{} finally{ setHydrated(true); } })();
   },[]);
   useEffect(()=>{ if(!hydrated) return; try{
-    const cfg={promoEntries,manualPromo,defaultUplift,moneyK,usarPromosFijas,bonifMes,bonifAcum,dateFrom,dateTo,fCanal,fDiv,fSec,fMarca,fNorma,fPago,fGoa};
+    const cfg={promoEntries,manualPromo,defaultUplift,moneyK,usarPromosFijas,bonifMes,bonifAcum,dateFrom,dateTo,fCanal,fSub,fDiv,fSec,fMarca,fNorma,fPago,fGoa};
     localStorage.setItem('gop_daily_v3',JSON.stringify(cfg));
   }catch{} },
-    [hydrated,promoEntries,manualPromo,defaultUplift,moneyK,usarPromosFijas,bonifMes,bonifAcum,dateFrom,dateTo,fCanal,fDiv,fSec,fMarca,fNorma,fPago,fGoa]);
+    [hydrated,promoEntries,manualPromo,defaultUplift,moneyK,usarPromosFijas,bonifMes,bonifAcum,dateFrom,dateTo,fCanal,fSub,fDiv,fSec,fMarca,fNorma,fPago,fGoa]);
   useEffect(()=>{ if(!hydrated) return; dbSet('allData',allData).catch(()=>{}); },[hydrated,allData]);
   useEffect(()=>{ if(!hydrated) return; dbSet('invData',invData).catch(()=>{}); },[hydrated,invData]);
   useEffect(()=>{ if(!hydrated) return; dbSet('planData',planData).catch(()=>{}); },[hydrated,planData]);
@@ -474,9 +474,9 @@ export default function ModuleDaily(){
 
   // Filtros — arreglos vacíos = todos
   const inF=(arr,v)=>arr.length===0||arr.includes(v);
-  const dimsOk=useCallback(r=>inF(fCanal,r.canal)&&inF(fDiv,r.division)&&inF(fSec,r.seccion)&&
+  const dimsOk=useCallback(r=>inF(fCanal,r.canal)&&inF(fSub,r.subcanal)&&inF(fDiv,r.division)&&inF(fSec,r.seccion)&&
     inF(fMarca,r.marca)&&inF(fNorma,r.norma)&&inF(fPago,r.pago)&&inF(fGoa,r.goa),
-    [fCanal,fDiv,fSec,fMarca,fNorma,fPago,fGoa]);
+    [fCanal,fSub,fDiv,fSec,fMarca,fNorma,fPago,fGoa]);
   // Último día con data (global, ignora filtros) → tope para comparación justa
   const lastTYAll=useMemo(()=>{ const d=allData.filter(r=>r.fecha).map(r=>r.fecha); return d.length?new Date(maxOf(d)):null; },[allData]);
   // TY = año del fin del rango (o del último dato si no hay rango); LY = mismo rango un año antes.
@@ -506,7 +506,7 @@ export default function ModuleDaily(){
   const filtInv=useMemo(()=>applyInvF(invData),[invData,applyInvF]);
 
   const opts=useMemo(()=>{ const s=k=>[...new Set(allData.map(r=>r[k]).filter(Boolean))].sort();
-    return {canal:s('canal'),div:s('division'),sec:s('seccion'),marca:s('marca'),norma:s('norma'),pago:s('pago'),goa:s('goa')}; },[allData]);
+    return {canal:s('canal'),sub:s('subcanal'),div:s('division'),sec:s('seccion'),marca:s('marca'),norma:s('norma'),pago:s('pago'),goa:s('goa')}; },[allData]);
 
   const agg=useCallback(rows=>{ const ventaP=rows.reduce((s,r)=>s+r.ventaP,0),ventaU=rows.reduce((s,r)=>s+r.ventaU,0),
     utilidad=rows.reduce((s,r)=>s+r.utilidad,0),markdown=rows.reduce((s,r)=>s+r.markdown,0);
@@ -827,7 +827,7 @@ export default function ModuleDaily(){
       })()}
      </FilterSection>
      <FilterSection label="Filtros" isDark={isDark}>
-      {[{label:'Canal',val:fCanal,set:setFCanal,ops:opts.canal},{label:'División',val:fDiv,set:setFDiv,ops:opts.div},
+      {[{label:'Canal',val:fCanal,set:setFCanal,ops:opts.canal},{label:'Subcanal',val:fSub,set:setFSub,ops:opts.sub},{label:'División',val:fDiv,set:setFDiv,ops:opts.div},
         {label:'Sección',val:fSec,set:setFSec,ops:opts.sec},{label:'GOA',val:fGoa,set:setFGoa,ops:opts.goa},
         {label:'Marca',val:fMarca,set:setFMarca,ops:opts.marca},{label:'Norma',val:fNorma,set:setFNorma,ops:opts.norma},
         {label:'Pago',val:fPago,set:setFPago,ops:opts.pago}].map(({label,val,set,ops})=>(
@@ -840,8 +840,8 @@ export default function ModuleDaily(){
       <label className={`flex items-center gap-2 text-xs px-3 py-1.5 rounded-lg border font-bold cursor-pointer ${t.btnGhost}`}>
         <input type="checkbox" checked={usarPromosFijas} onChange={e=>setUsarPromosFijas(e.target.checked)} className="accent-violet-500"/> Promos fijas
       </label>
-      {(fCanal.length||fDiv.length||fSec.length||fGoa.length||fMarca.length||fNorma.length||fPago.length||dateFrom||dateTo)?(
-        <button onClick={()=>{setFCanal([]);setFDiv([]);setFSec([]);setFGoa([]);setFMarca([]);setFNorma([]);setFPago([]);setDateFrom('');setDateTo('');}}
+      {(fCanal.length||fSub.length||fDiv.length||fSec.length||fGoa.length||fMarca.length||fNorma.length||fPago.length||dateFrom||dateTo)?(
+        <button onClick={()=>{setFCanal([]);setFSub([]);setFDiv([]);setFSec([]);setFGoa([]);setFMarca([]);setFNorma([]);setFPago([]);setDateFrom('');setDateTo('');}}
           className={`text-xs px-3 py-1.5 rounded-lg border font-bold ${t.btnGhost}`}>✕ Limpiar</button>):null}
      </FilterSection>
     </div>
@@ -997,7 +997,7 @@ export default function ModuleDaily(){
             <p className={`text-xs mt-1 ml-10 ${t.textMuted}`}>Desempeño diario · Venta, margen e inventario · {tyYear} vs {lyYear}</p>
           </div>
           <div className="flex flex-wrap gap-2 items-center">
-            {hasData&&<FilterMenu isDark={isDark} count={[fCanal,fDiv,fSec,fGoa,fMarca,fNorma,fPago].filter(a=>a.length).length+(dateFrom||dateTo?1:0)} width={920}>{FilterBar()}</FilterMenu>}
+            {hasData&&<FilterMenu isDark={isDark} count={[fCanal,fSub,fDiv,fSec,fGoa,fMarca,fNorma,fPago].filter(a=>a.length).length+(dateFrom||dateTo?1:0)} width={920}>{FilterBar()}</FilterMenu>}
             <input ref={salesRef} type="file" accept=".csv,.txt" className="hidden" onChange={upload(salesRef,setAllData,parseSalesCSV)}/>
             <button onClick={()=>salesRef.current?.click()} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${t.btnGhost}`}><UpIcon size={14}/> CSV Ventas</button>
             <input ref={invRef} type="file" accept=".csv,.txt" className="hidden" onChange={upload(invRef,setInvData,parseInvCSV)}/>
