@@ -45,7 +45,8 @@ function parseMes(v) {
 }
 
 // Bodegas regionales / PLAN: centro con S al final o nombre CR / PLAN / BODEGA / CEDIS
-const isBodega = (c, name) => /S$/i.test(c) || /^(CR |PLAN|BODEGA|CEDIS|FULFIL)/.test(norm(name));
+const BODEGAS_NUM = ['0670', '0782']; // bodegas con número de tienda
+const isBodega = (c, name) => /S$/i.test(c) || BODEGAS_NUM.includes(c) || /^(CR |PLAN|BODEGA|CEDIS|FULFIL)/.test(norm(name));
 
 const ALIAS = {
   secNum: ['# SECCION', '#SECCION', 'NUM SECCION', 'NO SECCION', 'ID SECCION', 'SECCION ID', 'CVE SECCION'],
@@ -282,6 +283,35 @@ function compute(X, E, F, estado, M) {
   };
 }
 
+// Bodegas: NM parado en bodegas (centros S, CR, PLAN, 0670, 0782) y si el mismo SKU vende en tiendas.
+// Respeta todos los filtros salvo Tipo; el filtro Tienda/bodega solo aplica a las bodegas (las tiendas siguen contando para la señal).
+function computeBodegas(X, E, F, M) {
+  const { n, C, D, tipo } = X, { nulo, bucket } = E;
+  const val = (k, i) => (k === 'bucket' ? bucket[i] : k === 'modelo' ? M.skuMod[C.sku[i]] : k === 'talla' ? M.skuTal[C.sku[i]] : C[k][i]);
+  const active = FKEYS.filter((k) => k !== 'tipo' && k !== 'centro' && F[k]?.size), fC = F.centro?.size ? F.centro : null;
+  const bod = new Map(), sku = new Map(), tdaVende = new Map(), tdaInv = new Float64Array(D.sku.length);
+  let nmTda = 0, nmBod = 0, invBod = 0, pzBod = 0;
+  for (let i = 0; i < n; i++) {
+    let ok = true; for (const k of active) if (!F[k].has(val(k, i))) { ok = false; break; }
+    if (!ok) continue;
+    const m = C.monto[i], nu = nulo[i] === 1, s = C.sku[i];
+    if (!tipo[C.centro[i]]) { tdaInv[s] += m; if (nu) nmTda += m; else { const c = tdaVende.get(s) || 0; tdaVende.set(s, c + 1); } continue; }
+    if (fC && !fC.has(C.centro[i])) continue;
+    let b = bod.get(C.centro[i]); if (!b) bod.set(C.centro[i], (b = { inv: 0, nm: 0, pz: 0, k: new Set(), wM: 0, wD: 0 }));
+    b.inv += m; invBod += m;
+    if (!nu) continue;
+    b.nm += m; b.pz += C.pzs[i]; b.k.add(s); nmBod += m; pzBod += C.pzs[i];
+    if (E.mU[i] >= 0) { b.wM += E.mU[i] * m; b.wD += m; }
+    let k = sku.get(s); if (!k) sku.set(s, (k = { m: 0, p: 0, c: new Set(), u: -1, i }));
+    k.m += m; k.p += C.pzs[i]; k.c.add(C.centro[i]); k.u = Math.max(k.u, E.mU[i] < 0 ? 999 : E.mU[i]);
+  }
+  return {
+    nmBod, nmTda, invBod, pzBod,
+    bodegas: [...bod].map(([ci, b]) => ({ ci, centro: D.centro[ci], name: X.info.centro[D.centro[ci]] || '', inv: b.inv, nm: b.nm, pz: b.pz, k: b.k.size, meses: b.wD ? b.wM / b.wD : null })).filter((b) => b.inv > 0).sort((a, b) => b.nm - a.nm),
+    skus: [...sku].map(([si, k]) => { const v = tdaVende.get(si) || 0; return { si, sku: D.sku[si], m: k.m, p: k.p, nb: k.c.size, bods: [...k.c].map((c) => D.centro[c]).join(', '), u: k.u, i: k.i, tdaVende: v, tdaInv: tdaInv[si], accion: v ? 'Distribuir a tiendas con venta' : tdaInv[si] ? 'Sin venta en tiendas → liquidar / devolver' : 'Solo en bodega → liquidar / devolver' }; }).sort((a, b) => b.m - a.m),
+  };
+}
+
 const csvCell = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
 const downloadCSV = (name, lines) => { const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); URL.revokeObjectURL(a.href); };
 
@@ -314,14 +344,15 @@ export default function ModuleNulo({ t, isDark, navIcon, navLabel, navDesc }) {
   useEffect(() => { idbGet('data').then((d) => d && setX(d)); }, []);
   useEffect(() => { try { localStorage.setItem(LS_CFG, JSON.stringify(cfg)); } catch {} }, [cfg]);
   useEffect(() => {
-    const TABS = ['resumen', 'detalle'];
-    const h = (e) => { if (!e.altKey || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return; e.preventDefault(); setTab((cur) => TABS[(TABS.indexOf(cur) + 1) % 2]); };
+    const TABS = ['resumen', 'bodegas', 'detalle'];
+    const h = (e) => { if (!e.altKey || (e.key !== 'ArrowDown' && e.key !== 'ArrowUp')) return; e.preventDefault(); setTab((cur) => TABS[(TABS.indexOf(cur) + (e.key === 'ArrowDown' ? 1 : 2)) % 3]); };
     window.addEventListener('keydown', h); return () => window.removeEventListener('keydown', h);
   }, []);
 
   const E = useMemo(() => (X ? effective(X, cfg) : null), [X, cfg]);
   const M = useMemo(() => (X ? modelIndex(X) : null), [X]);
   const R = useMemo(() => (X && E ? compute(X, E, F, estado, M) : null), [X, E, F, estado, M]);
+  const B = useMemo(() => (X && E && tab === 'bodegas' ? computeBodegas(X, E, F, M) : null), [X, E, F, M, tab]);
 
   const onFile = async (e) => {
     const f = e.target.files?.[0]; e.target.value = '';
@@ -489,7 +520,7 @@ export default function ModuleNulo({ t, isDark, navIcon, navLabel, navDesc }) {
       )}
 
       <div className={`flex gap-4 border-b ${t.border}`}>
-        {[['resumen', 'Resumen'], ['detalle', 'Detalle']].map(([id, l]) => (
+        {[['resumen', 'Resumen'], ['bodegas', 'Bodegas'], ['detalle', 'Detalle']].map(([id, l]) => (
           <button key={id} onClick={() => setTab(id)} className={`pb-2 text-sm font-bold border-b-2 ${tab === id ? t.tabActive : t.tabInactive}`}>{l}</button>
         ))}
         {X && <span className={`ml-auto self-center text-[10px] ${t.textMuted}`}>Corte {miTxt(E.corte)} · {X.name}</span>}
@@ -623,6 +654,72 @@ export default function ModuleNulo({ t, isDark, navIcon, navLabel, navDesc }) {
             </div>
           </div>
         </>
+      ) : tab === 'bodegas' ? (
+        !B.bodegas.length ? (
+          <div className={`${card} text-center py-12`}>
+            <p className={`font-bold ${t.text}`}>La base no trae bodegas</p>
+            <p className={`text-xs mt-1 ${t.textMuted}`}>Incluye en el query de BigQuery los centros con S al final (830S PLAN, 880S, 895S, CR …) y 0670 / 0782. Se marcan como bodega solos.</p>
+          </div>
+        ) : (
+          <>
+            <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+              {[
+                ['NM en bodegas $', fmt$(B.nmBod)], ['Piezas NM en bodegas', fmt(B.pzBod)],
+                ['% del NM total que está en bodegas', pct(B.nmBod + B.nmTda ? B.nmBod / (B.nmBod + B.nmTda) : null)],
+                ['% del inv. de bodegas en NM', pct(B.invBod ? B.nmBod / B.invBod : null)],
+                ['Bodegas con NM', fmt(B.bodegas.filter((b) => b.nm > 0).length)], ['SKUs NM en bodegas', fmt(B.skus.length)],
+              ].map(([l, v]) => (
+                <div key={l} className={`${card} text-center`}>
+                  <p className={`text-[10px] font-bold uppercase tracking-wide ${t.textMuted}`}>{l}</p>
+                  <p className={`text-xl font-black mt-1 tabular-nums ${t.text}`}>{v}</p>
+                </div>
+              ))}
+            </div>
+            <div className={card}>
+              <p className={`text-xs mb-2 ${t.textMuted}`}>Por bodega · clic filtra</p>
+              <div className="overflow-auto max-h-[40vh]">
+                <table className="w-full">
+                  <thead className="sticky top-0"><tr>{['Centro', 'Bodega', 'Inventario $', 'NM $', '% NM', 'Pzs NM', 'SKUs NM', 'Meses prom. s/vta'].map((h, i) => <th key={h} className={`${th} ${i > 1 ? '!text-right' : ''}`}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {B.bodegas.map((b) => (
+                      <tr key={b.ci} onClick={() => pick('centro', b.ci)} className={`border-t cursor-pointer ${t.border} ${t.tableRow}`} style={{ opacity: dim('centro', b.ci) }}>
+                        <td className={`${td} ${t.textMuted}`}>{b.centro}</td>
+                        <td className={`${td} font-bold ${t.text}`}>{b.name}</td>
+                        {[fmt$(b.inv), fmt$(b.nm), pct(b.inv ? b.nm / b.inv : null), fmt(b.pz), fmt(b.k), b.meses == null ? '>14' : b.meses.toFixed(1)].map((v, i) => <td key={i} className={`${td} text-right tabular-nums ${i === 1 ? `font-bold ${t.accent2}` : t.text}`}>{v}</td>)}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </div>
+            <div className={card}>
+              <div className="flex items-center mb-2">
+                <span className={`text-xs ${t.textMuted}`}>SKUs en NM dentro de bodegas · ¿el mismo SKU vende en tiendas?</span>
+                <button onClick={() => downloadCSV('Nulo_Bodegas_SKU.csv', [['SKU', 'Artículo', 'Modelo', 'Marca', 'Estatus', 'Letra', 'Bodegas', 'Pzs NM bodega', 'Monto NM bodega', 'Meses s/vta', 'Tiendas con venta', 'Inv. tiendas $', 'Acción sugerida'].join(','), ...B.skus.map((k) => { const sk = X.info.sku[k.sku] || {}; return [k.sku, sk.desc, sk.modelo, X.D.marca[X.C.marca[k.i]], X.D.estatus[X.C.estatus[k.i]], X.D.letra[X.C.letra[k.i]], k.bods, k.p, Math.round(k.m), k.u >= 999 ? '>14' : k.u, k.tdaVende, Math.round(k.tdaInv), k.accion].map(csvCell).join(','); })])} disabled={!B.skus.length} className={`ml-auto flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg ${t.btnSec} disabled:opacity-40`}><Download size={12} />CSV</button>
+              </div>
+              <div className="overflow-auto max-h-[55vh]">
+                <table className="w-full">
+                  <thead className="sticky top-0"><tr>{['SKU', 'Artículo', 'Marca', 'Estatus', 'Letra', 'Bodegas', 'Pzs', 'Monto', 'Meses s/vta', 'Tiendas con venta', 'Inv. tiendas $', 'Acción sugerida'].map((h, i) => <th key={h} className={`${th} ${i >= 6 && i <= 10 ? '!text-right' : ''}`}>{h}</th>)}</tr></thead>
+                  <tbody>
+                    {B.skus.slice(0, 500).map((k) => (
+                      <tr key={k.si} className={`border-t ${t.border} ${t.tableRow}`}>
+                        <td className={`${td} ${t.accent1}`}>{k.sku}</td>
+                        <td className={`${td} ${t.text} max-w-[220px] truncate`} title={X.info.sku[k.sku]?.desc}>{X.info.sku[k.sku]?.desc}</td>
+                        <td className={`${td} ${t.text}`}>{X.D.marca[X.C.marca[k.i]]}</td>
+                        <td className={`${td} ${t.text}`}>{X.D.estatus[X.C.estatus[k.i]]}</td>
+                        <td className={`${td} ${t.text}`}>{X.D.letra[X.C.letra[k.i]]}</td>
+                        <td className={`${td} ${t.textMuted}`}>{k.bods}</td>
+                        {[fmt(k.p), fmt$(k.m), k.u >= 999 ? '>14' : k.u, fmt(k.tdaVende), fmt$(k.tdaInv)].map((v, i) => <td key={i} className={`${td} text-right tabular-nums ${i === 1 ? `font-bold ${t.accent2}` : t.text}`}>{v}</td>)}
+                        <td className={`${td} font-bold ${k.tdaVende ? t.success : 'text-pink-500'}`}>{k.accion}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+                {B.skus.length > 500 && <p className={`mt-2 text-[10px] ${t.textMuted}`}>Mostrando 500 de {fmt(B.skus.length)} — baja el CSV para verlos todos.</p>}
+              </div>
+            </div>
+          </>
+        )
       ) : (
         <div className={card}>
           <div className="flex items-center gap-2 mb-3 flex-wrap">
