@@ -1180,7 +1180,7 @@ export default function ModuleDaily(){
                   <p className={`text-[10px] ${t.textMuted}`}>Venta negativa del periodo y filtros activos · % = devuelto ÷ venta bruta{devView==='dia'?' · barras ámbar = día de promo':''}</p>
                 </div>
                 <div className="flex gap-2 flex-wrap items-center">
-                  {[{l:'Devuelto $',v:fmtM(devol.devP),d:devol.dLY},{l:'Pzs devueltas',v:fmt(devol.devU)},{l:'% devolución',v:fmtP(devol.pct),sub:devol.pctLY!=null?`LY ${fmtP(devol.pctLY)}`:null}].map(({l,v,d,sub})=>(
+                  {[{l:'Devuelto $',v:fmtM(devol.devP),d:devol.dLY},{l:'Pzs devueltas',v:fmt(devol.devU)},{l:'% devolución',v:fmtP(devol.pct,2),sub:devol.pctLY!=null?`LY ${fmtP(devol.pctLY,2)}`:null}].map(({l,v,d,sub})=>(
                     <div key={l} className={`px-3 py-1.5 rounded-xl border text-center ${t.cardInner}`}>
                       <span className={`text-[8px] font-black uppercase tracking-widest ${t.textMuted} block`}>{l}</span>
                       <span className="text-sm font-black text-rose-400">{v}</span>
@@ -1196,13 +1196,13 @@ export default function ModuleDaily(){
                 <ComposedChart data={devView==='mes'?devol.mes:devol.dia}><CartesianGrid strokeDasharray="3 3" stroke={gridC}/>
                   <XAxis dataKey="label" tick={{fontSize:9,fill:txtC}} stroke={axisC}/>
                   <YAxis yAxisId="d" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
-                  <YAxis yAxisId="p" orientation="right" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>v.toFixed(1)+'%'}/>
+                  <YAxis yAxisId="p" orientation="right" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>v.toFixed(2)+'%'}/>
                   <Tooltip cursor={{fill:cursorFill}} content={({active,payload,label})=>{ if(!active||!payload?.length) return null; const d=payload[0].payload;
                     return <div className={`p-3 rounded-xl border text-xs shadow-xl ${t.card}`}>
                       <p className={`font-bold mb-1 ${t.textMain}`}>{label}{d.promo?' · 🏷️ promo':''}</p>
                       <p className="text-rose-400">Devuelto: {fmtM(d.devP)} · {fmt(d.devU)} pzs</p>
                       {d.devPLY!=null&&<p className={t.textMuted}>LY: {fmtM(d.devPLY)}</p>}
-                      <p className={t.textMain}>% devolución: {fmtP(d.pct)}{d.pctLY!=null?` (LY ${fmtP(d.pctLY)})`:''}</p>
+                      <p className={t.textMain}>% devolución: {fmtP(d.pct,2)}{d.pctLY!=null?` (LY ${fmtP(d.pctLY,2)})`:''}</p>
                     </div>; }}/>
                   <Legend wrapperStyle={{fontSize:10}}/>
                   <Bar yAxisId="d" dataKey="devP" name={`Devuelto $ ${tyYear}`} fill="#f43f5e" radius={[4,4,0,0]} maxBarSize={36}>
