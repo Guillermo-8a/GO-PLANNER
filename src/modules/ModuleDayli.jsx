@@ -256,7 +256,8 @@ const parseInvCSV = text => {
   const I={div:idx('DIVISION','DIV'),sec:idx('SECCION'),numSec:idx('NUMSECCION','NUM_SECCION','_SECCION'),goa:idx('GOA','FAMILIA'),marca:idx('MARCA','PROVEEDOR'),norma:idx('NORMA','TIPO_COMPRA'),
     ohLY:idx('OH_AA','OH_LY','OH_AANT','OH_ANIO_ANT','INV_AA'),ubic:idx('UBICACION','CENTRO','TIENDA','BODEGA'),tipo:idx('TIPO_UBICACION','TIPO_CENTRO','TIPO'),oh:idx('OH','ON_HAND','INVENTARIO'),
     oo:idx('OO','ON_ORDER','PEDIDO'),ohP:idx('OH_PESOS','OH_$','OH$','OH_P','VALOR_OH'),ooP:idx('OO_PESOS','OO_$','OO$','OO_P','VALOR_OO'),cv:idx('COSTO_VENDIDO','COSTO'),uv:idx('UTILIDAD_VENDIDA','UTIL_VENDIDA'),comp:idx('COMPRADO','COMPRA_TOTAL'),
-    nac:idx('NACIONAL','NAC'),imp:idx('IMPORTACION','IMP'),vref:idx('VENTA','VENTAS')};
+    nac:idx('NACIONAL','NAC'),imp:idx('IMPORTACION','IMP'),vref:idx('VENTA','VENTAS'),
+    ini:H.indexOf('INV_INI')>=0?H.indexOf('INV_INI'):H.indexOf('INV_INICIAL'),iniLY:H.indexOf('INV_INI_AA')>=0?H.indexOf('INV_INI_AA'):H.indexOf('INV_INICIAL_AA')};
   const out=[];
   for(let i=1;i<rows.length;i++){ const r=rows[i]; if(!r||r.every(c=>!c)) continue;
     const ubicRaw=I.ubic>=0?r[I.ubic].trim():''; let tipo=I.tipo>=0?r[I.tipo].trim().toUpperCase():'';
@@ -271,7 +272,7 @@ const parseInvCSV = text => {
       goa:I.goa>=0?r[I.goa].trim().toUpperCase():'', marca:I.marca>=0?r[I.marca].trim().toUpperCase():'', norma:I.norma>=0?r[I.norma].trim().toUpperCase():'',
       ubicacion:ubicRaw, tipo, oh:num(I.oh>=0?r[I.oh]:0), ohLY:I.ohLY>=0?num(r[I.ohLY]):null, oo:num(I.oo>=0?r[I.oo]:0), ohP:I.ohP>=0?num(r[I.ohP]):null, ooP:I.ooP>=0?num(r[I.ooP]):null, costoVendido:num(I.cv>=0?r[I.cv]:0),
       utilidadVendida:num(I.uv>=0?r[I.uv]:0), comprado:num(I.comp>=0?r[I.comp]:0), nacional:num(I.nac>=0?r[I.nac]:0),
-      importacion:num(I.imp>=0?r[I.imp]:0), ventaRef:num(I.vref>=0?r[I.vref]:0) });
+      importacion:num(I.imp>=0?r[I.imp]:0), ventaRef:num(I.vref>=0?r[I.vref]:0), ini:I.ini>=0?num(r[I.ini]):0, iniLY:I.iniLY>=0?num(r[I.iniLY]):0 });
   }
   return out;
 };
@@ -618,7 +619,7 @@ export default function ModuleDaily(){
     tyData.forEach(r=>{ const k=r[key]||'N/D'; if(!tyM[k])tyM[k]={key:k,mesP:0,ventaP:0,ventaU:0,utilidad:0,markdown:0};
       if(r.fecha&&r.fecha.getMonth()===mM&&r.fecha.getFullYear()===mY){ tyM[k].mesP+=r.ventaP; mDias.add(r.fecha.getDate()); }
       tyM[k].ventaP+=r.ventaP; tyM[k].ventaU+=r.ventaU; tyM[k].utilidad+=r.utilidad; tyM[k].markdown+=r.markdown; });
-    if(key!=='canal'&&key!=='pago') filtInv.forEach(r=>{ const k=r[key]||'N/D'; const o=(inv[k]=inv[k]||{oh:0,ohLY:0}); o.oh+=r.oh; o.ohLY+=r.ohLY||0; });
+    if(key!=='canal'&&key!=='pago') filtInv.forEach(r=>{ const k=r[key]||'N/D'; const o=(inv[k]=inv[k]||{oh:0,ohLY:0,ini:0,iniLY:0}); o.oh+=r.oh; o.ohLY+=r.ohLY||0; o.ini+=r.ini||0; o.iniLY+=r.iniLY||0; });
     lyData.forEach(r=>{ const k=r[key]||'N/D'; lyP[k]=(lyP[k]||0)+r.ventaP; lyU[k]=(lyU[k]||0)+r.utilidad; if(r.fecha&&r.fecha.getMonth()===mM&&r.fecha.getFullYear()===mY-1&&r.fecha.getDate()<=lastDateTY.getDate()) lyMTD[k]=(lyMTD[k]||0)+r.ventaP; });
     if(lastDateTY){ const month=lastDateTY.getMonth(); allData.forEach(r=>{ if(r.year!==lyYear||!r.fecha||!dimsOk(r)||r.fecha.getMonth()!==month) return; const k=r[key]||'N/D'; lyFull[k]=(lyFull[k]||0)+r.ventaP; }); }
     const pDays=mDias.size||1; // run-rate del MES del cierre (días con venta en ese mes)
@@ -636,7 +637,9 @@ export default function ModuleDaily(){
         tendPeriodo:delta(g.ventaP,lyP[g.key]), tendCierre:delta(fcst,lyFull[g.key]),
         lyP:lyP[g.key]||0, lyFull:lyFull[g.key]||0, lyUtil:lyU[g.key]||0, mgLY:lyP[g.key]>0?(lyU[g.key]||0)/lyP[g.key]*100:null, // MG = % (utilidad ÷ venta); utilidad = $
         crecMg:(g.ventaP>0&&lyP[g.key]>0&&lyU[g.key])?delta(g.utilidad/g.ventaP,lyU[g.key]/lyP[g.key]):null,
-        oh:inv[g.key]?.oh||0, ohLY:inv[g.key]?.ohLY||0, dInv:inv[g.key]?.ohLY>0?delta(inv[g.key].oh,inv[g.key].ohLY):null }; }).sort((a,b)=>b.ventaP-a.ventaP);
+        oh:inv[g.key]?.oh||0, ohLY:inv[g.key]?.ohLY||0, // Inv inicial del mes vs AA (INV_INI / INV_INI_AA); si el CSV no los trae, foto OH vs OH_AA
+        ini:inv[g.key]?.ini||0, iniLY:inv[g.key]?.iniLY||0,
+        dInv:inv[g.key]?.iniLY>0?delta(inv[g.key].ini,inv[g.key].iniLY):inv[g.key]?.ohLY>0?delta(inv[g.key].oh,inv[g.key].ohLY):null }; }).sort((a,b)=>b.ventaP-a.ventaP);
   },[tyData,lyData,allData,dimsOk,lastDateTY,lyYear,scenarioSel,forecastMes,repartoMode,filtInv]);
 
   // ── Resumen ejecutivo: pivote División > Sección > GOA (Venta, MG, Rot) ──
@@ -845,8 +848,8 @@ export default function ModuleDaily(){
 
   // Tabla dashboard: tendencia + fcst + fila TOTAL. Click en fila = filtra todo.
   const FcstTable=({title,data,accent,onPick,selected})=>{
-    const tot=data.reduce((a,r)=>({v:a.v+r.ventaP,u:a.u+r.ventaU,util:a.util+r.utilidad,f:a.f+r.fcst,lyP:a.lyP+(r.lyP||0),lyF:a.lyF+(r.lyFull||0),lyU:a.lyU+(r.lyUtil||0),oh:a.oh+(r.oh||0),ohLY:a.ohLY+(r.ohLY||0)}),{v:0,u:0,util:0,f:0,lyP:0,lyF:0,lyU:0,oh:0,ohLY:0});
-    const hasInv=tot.ohLY>0;
+    const tot=data.reduce((a,r)=>({v:a.v+r.ventaP,u:a.u+r.ventaU,util:a.util+r.utilidad,f:a.f+r.fcst,lyP:a.lyP+(r.lyP||0),lyF:a.lyF+(r.lyFull||0),lyU:a.lyU+(r.lyUtil||0),oh:a.oh+(r.oh||0),ohLY:a.ohLY+(r.ohLY||0),ini:a.ini+(r.ini||0),iniLY:a.iniLY+(r.iniLY||0)}),{v:0,u:0,util:0,f:0,lyP:0,lyF:0,lyU:0,oh:0,ohLY:0,ini:0,iniLY:0});
+    const hasIni=tot.iniLY>0, hasInv=hasIni||tot.ohLY>0, invH=hasIni?'Desv Inv ini AA':'Desv Inv AA';
     const per=tblBasis==='periodo';
     const tendOf=r=>per?r.tendPeriodo:r.tendCierre;
     const totTend=per?delta(tot.v,tot.lyP):delta(tot.f,tot.lyF);
@@ -859,7 +862,7 @@ export default function ModuleDaily(){
       <div className="overflow-x-auto custom-scrollbar max-h-[260px]">
         <table className="w-full text-left text-xs min-w-max">
           <thead><tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark?'bg-[#1c1720] text-gray-400 border-b border-white/10':'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
-            {['Nombre','Venta','PZS','MG%','Crec MG',per?'Tend período':'Tend cierre','Fcst Mes',...(hasInv?['Desv Inv AA']:[])].map(h=><th key={h} className="p-2 whitespace-nowrap" title={h==='Crec MG'?'Crecimiento % del MG% vs LY (MG = utilidad ÷ venta), mismo período':h==='Desv Inv AA'?'Inventario (OH) de la foto cargada vs OH_AA':undefined}>{h}</th>)}
+            {['Nombre','Venta','PZS','MG%','Crec MG',per?'Tend período':'Tend cierre','Fcst Mes',...(hasInv?[invH]:[])].map(h=><th key={h} className="p-2 whitespace-nowrap" title={h==='Crec MG'?'Crecimiento % del MG% vs LY (MG = utilidad ÷ venta), mismo período':h==='Desv Inv AA'?'Inventario (OH) de la foto cargada vs OH_AA':h==='Desv Inv ini AA'?'Inventario inicial del mes (INV_INI) vs mismo mes del año pasado (INV_INI_AA)':undefined}>{h}</th>)}
           </tr></thead>
           <tbody className={`divide-y ${isDark?'divide-zinc-800/50':'divide-gray-100'}`}>
             {data.slice(0,15).map((r,i)=>{ const sel=selected?.includes(r.key);
@@ -884,7 +887,7 @@ export default function ModuleDaily(){
             <td className="p-2"><DeltaBadge value={tot.v>0&&tot.lyP>0&&tot.lyU?delta(tot.util/tot.v,tot.lyU/tot.lyP):null}/></td>
             <td className="p-2"><DeltaBadge value={totTend}/></td>
             <td className={`p-2 font-mono ${t.textAccent2}`}>{fmtM(tot.f)}</td>
-            {hasInv&&<td className="p-2"><DeltaBadge value={delta(tot.oh,tot.ohLY)}/></td>}
+            {hasInv&&<td className="p-2"><DeltaBadge value={hasIni?delta(tot.ini,tot.iniLY):delta(tot.oh,tot.ohLY)}/></td>}
           </tr></tfoot>
         </table>
       </div>
