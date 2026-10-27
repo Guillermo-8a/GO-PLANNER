@@ -6,7 +6,6 @@
 // Env vars (Vercel → Settings → Environment Variables):
 //   GEMINI_API_KEY   llave de Google AI Studio / Gemini API
 //   GEMINI_MODEL     opcional (default gemini-2.5-flash)
-//   GOP_API_TOKEN    misma contraseña que /api/bq (header x-gop-token)
 // Sin llave o sin red responde 503 y el front usa su fallback local (nunca inventa precios).
 
 import { runQuery } from './_bq.js';
@@ -45,9 +44,6 @@ const snap = (s = {}) => JSON.stringify({
 
 export default async function handler(req, res) {
   if (req.method !== 'POST') return res.status(405).json({ error: 'Usa POST' });
-  if (process.env.GOP_API_TOKEN && req.headers['x-gop-token'] !== process.env.GOP_API_TOKEN) {
-    return res.status(401).json({ error: 'No autorizado' });
-  }
   if (!process.env.GEMINI_API_KEY) return res.status(503).json({ error: 'GEMINI_API_KEY no configurada' });
 
   const { mode } = req.body || {};

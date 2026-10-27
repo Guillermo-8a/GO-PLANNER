@@ -17,18 +17,8 @@ const EASTER_SHOW_MS = 6000;
 const GoBotContext = createContext(null);
 
 const api = async (body) => {
-  let tok = '';
-  try {
-    tok = localStorage.getItem('gop_api_token') || '';
-    if (!tok) { tok = window.prompt('Token de GO PLANNER (GOP_API_TOKEN):') || ''; if (tok) localStorage.setItem('gop_api_token', tok); }
-  } catch { /* sin storage */ }
-  const r = await fetch('/api/gemini-agent', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'x-gop-token': tok },
-    body: JSON.stringify(body),
-  });
-  if (r.status === 401) { try { localStorage.removeItem('gop_api_token'); } catch { /* */ } }
-  if (!r.ok) throw new Error(r.status === 401 ? 'token' : String(r.status));
+  const r = await fetch('/api/gemini-agent', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+  if (!r.ok) throw new Error(String(r.status));
   return r.json();
 };
 
@@ -99,7 +89,7 @@ export function GoBotProvider({ children }) {
       const level = [base.level, ai.level].includes('red') ? 'red' : [base.level, ai.level].includes('amber') ? 'amber' : 'green';
       setAudit({ level, title: ai.title || base.title, items: [...base.items, ...(ai.items || [])].slice(0, 7), source: 'ia' });
     } catch (e) {
-      setAudit({ ...base, note: e.message === 'token' ? 'IA sin token: guarda tu GOP_API_TOKEN (se pide en Eventos).' : 'IA no disponible; auditoría local.' });
+      setAudit({ ...base, note: 'IA no disponible; auditoría local.' });
     } finally {
       setIsBusy(false);
     }

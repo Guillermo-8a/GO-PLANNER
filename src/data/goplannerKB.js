@@ -44,7 +44,8 @@ El override % de Configuración aplica a lo que falta del mes. "vs LY mes" compa
 Validador de crecimiento: cada escenario muestra el crecimiento que implica vs el que llevas a la fecha; verde ≤3 pts, ámbar ≤8, rojo >8.
 "Fcst Mes" por fila: el total (escenario elegido o run-rate) se reparte con el modo elegido: Run-rate del mes (venta del mes ÷ días con venta × días del mes), Participación LY (peso de la fila en el mes LY completo) o Tendencia por fila (venta de la fila + su resto LY × (1 + su crecimiento)).
 Backtest ("Medir accuracy"): proyecta cada mes cerrado (últimos 12 con LY) al día 7, 14 y 21 y compara con el cierre real; accuracy = 100 − WMAPE y sesgo (+ = se pasa), para el total y para el reparto por sección.
-"Tend período" = venta vs LY del mismo filtro; "Tend cierre" = fcst vs LY del mes completo.`,
+"Tend período" = venta vs LY del mismo filtro; "Tend cierre" = fcst vs LY del mes completo.
+Detalle por segmento: "Crec MG" = utilidad ($) vs LY del mismo período; "Desv Inv AA" = OH de la foto de inventario cargada vs OH_AA.`,
   },
   {
     id: 'pedidos', modulo: 'pedidos', titulo: 'Pedidos',

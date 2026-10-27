@@ -113,20 +113,17 @@ export default function ModuleComparador({ t, isDark, navIcon, navLabel, navDesc
   const scan = async () => {
     const items = (sel.length ? rows.filter((r) => sel.includes(r.articulo)) : filtered.slice(0, MAX_SCAN));
     if (!items.length) return;
-    let tok = localStorage.getItem('gop_api_token') || '';
-    if (!tok) { tok = window.prompt('Token de GO PLANNER (GOP_API_TOKEN):') || ''; if (tok) localStorage.setItem('gop_api_token', tok); }
     setStatus('scanning'); setMsg('');
     const ids = items.map((r) => r.articulo);
     try {
       const r = await fetch('/api/gemini-agent', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'x-gop-token': tok },
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           mode: 'COMPETITOR_RADAR', stores: activeStores,
           items: items.map((x) => ({ 'Artículo': x.articulo, 'Código EAN/UPC': x.ean, 'Modelo': x.modelo, 'Marca': x.marca, 'Descripcion artículo': x.desc })),
         }),
       });
-      if (r.status === 401) localStorage.removeItem('gop_api_token');
       if (!r.ok) throw new Error((await r.json().catch(() => ({}))).error || `HTTP ${r.status}`);
       const data = await r.json();
       const by = {};

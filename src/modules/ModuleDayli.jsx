@@ -614,11 +614,12 @@ export default function ModuleDaily(){
 
   // Agrupador para tablas dashboard: RESPETA el filtro (período = header). Tend período vs LY mismo período; Cierre vs LY mes completo.
   const byKeyDash=useCallback((key)=>{
-    const tyM={},lyP={},lyFull={},lyMTD={}, mM=lastDateTY?lastDateTY.getMonth():-1, mY=lastDateTY?lastDateTY.getFullYear():-1, mDias=new Set();
+    const tyM={},lyP={},lyU={},lyFull={},lyMTD={},inv={}, mM=lastDateTY?lastDateTY.getMonth():-1, mY=lastDateTY?lastDateTY.getFullYear():-1, mDias=new Set();
     tyData.forEach(r=>{ const k=r[key]||'N/D'; if(!tyM[k])tyM[k]={key:k,mesP:0,ventaP:0,ventaU:0,utilidad:0,markdown:0};
       if(r.fecha&&r.fecha.getMonth()===mM&&r.fecha.getFullYear()===mY){ tyM[k].mesP+=r.ventaP; mDias.add(r.fecha.getDate()); }
       tyM[k].ventaP+=r.ventaP; tyM[k].ventaU+=r.ventaU; tyM[k].utilidad+=r.utilidad; tyM[k].markdown+=r.markdown; });
-    lyData.forEach(r=>{ const k=r[key]||'N/D'; lyP[k]=(lyP[k]||0)+r.ventaP; if(r.fecha&&r.fecha.getMonth()===mM&&r.fecha.getFullYear()===mY-1&&r.fecha.getDate()<=lastDateTY.getDate()) lyMTD[k]=(lyMTD[k]||0)+r.ventaP; });
+    if(key!=='canal'&&key!=='pago') filtInv.forEach(r=>{ const k=r[key]||'N/D'; const o=(inv[k]=inv[k]||{oh:0,ohLY:0}); o.oh+=r.oh; o.ohLY+=r.ohLY||0; });
+    lyData.forEach(r=>{ const k=r[key]||'N/D'; lyP[k]=(lyP[k]||0)+r.ventaP; lyU[k]=(lyU[k]||0)+r.utilidad; if(r.fecha&&r.fecha.getMonth()===mM&&r.fecha.getFullYear()===mY-1&&r.fecha.getDate()<=lastDateTY.getDate()) lyMTD[k]=(lyMTD[k]||0)+r.ventaP; });
     if(lastDateTY){ const month=lastDateTY.getMonth(); allData.forEach(r=>{ if(r.year!==lyYear||!r.fecha||!dimsOk(r)||r.fecha.getMonth()!==month) return; const k=r[key]||'N/D'; lyFull[k]=(lyFull[k]||0)+r.ventaP; }); }
     const pDays=mDias.size||1; // run-rate del MES del cierre (días con venta en ese mes)
     const diasMes=lastDateTY?new Date(lastDateTY.getFullYear(),lastDateTY.getMonth()+1,0).getDate():30;
@@ -633,8 +634,9 @@ export default function ModuleDaily(){
     return base.map(g=>{ const fcst=g.fcstNat*factor;
       return { ...g, fcst, mgPct:g.ventaP>0?g.utilidad/g.ventaP*100:0,
         tendPeriodo:delta(g.ventaP,lyP[g.key]), tendCierre:delta(fcst,lyFull[g.key]),
-        lyP:lyP[g.key]||0, lyFull:lyFull[g.key]||0 }; }).sort((a,b)=>b.ventaP-a.ventaP);
-  },[tyData,lyData,allData,dimsOk,lastDateTY,lyYear,scenarioSel,forecastMes,repartoMode]);
+        lyP:lyP[g.key]||0, lyFull:lyFull[g.key]||0, lyUtil:lyU[g.key]||0, crecMg:delta(g.utilidad,lyU[g.key]),
+        oh:inv[g.key]?.oh||0, ohLY:inv[g.key]?.ohLY||0, dInv:inv[g.key]?.ohLY>0?delta(inv[g.key].oh,inv[g.key].ohLY):null }; }).sort((a,b)=>b.ventaP-a.ventaP);
+  },[tyData,lyData,allData,dimsOk,lastDateTY,lyYear,scenarioSel,forecastMes,repartoMode,filtInv]);
 
   // ── Resumen ejecutivo: pivote División > Sección > GOA (Venta, MG, Rot) ──
   const pivot=useMemo(()=>{
@@ -842,7 +844,8 @@ export default function ModuleDaily(){
 
   // Tabla dashboard: tendencia + fcst + fila TOTAL. Click en fila = filtra todo.
   const FcstTable=({title,data,accent,onPick,selected})=>{
-    const tot=data.reduce((a,r)=>({v:a.v+r.ventaP,u:a.u+r.ventaU,util:a.util+r.utilidad,f:a.f+r.fcst,lyP:a.lyP+(r.lyP||0),lyF:a.lyF+(r.lyFull||0)}),{v:0,u:0,util:0,f:0,lyP:0,lyF:0});
+    const tot=data.reduce((a,r)=>({v:a.v+r.ventaP,u:a.u+r.ventaU,util:a.util+r.utilidad,f:a.f+r.fcst,lyP:a.lyP+(r.lyP||0),lyF:a.lyF+(r.lyFull||0),lyU:a.lyU+(r.lyUtil||0),oh:a.oh+(r.oh||0),ohLY:a.ohLY+(r.ohLY||0)}),{v:0,u:0,util:0,f:0,lyP:0,lyF:0,lyU:0,oh:0,ohLY:0});
+    const hasInv=tot.ohLY>0;
     const per=tblBasis==='periodo';
     const tendOf=r=>per?r.tendPeriodo:r.tendCierre;
     const totTend=per?delta(tot.v,tot.lyP):delta(tot.f,tot.lyF);
@@ -855,7 +858,7 @@ export default function ModuleDaily(){
       <div className="overflow-x-auto custom-scrollbar max-h-[260px]">
         <table className="w-full text-left text-xs min-w-max">
           <thead><tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark?'bg-[#1c1720] text-gray-400 border-b border-white/10':'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
-            {['Nombre','Venta','PZS','MG%',per?'Tend período':'Tend cierre','Fcst Mes'].map(h=><th key={h} className="p-2 whitespace-nowrap">{h}</th>)}
+            {['Nombre','Venta','PZS','MG%','Crec MG',per?'Tend período':'Tend cierre','Fcst Mes',...(hasInv?['Desv Inv AA']:[])].map(h=><th key={h} className="p-2 whitespace-nowrap" title={h==='Crec MG'?'Crecimiento de la utilidad ($) vs LY, mismo período':h==='Desv Inv AA'?'Inventario (OH) de la foto cargada vs OH_AA':undefined}>{h}</th>)}
           </tr></thead>
           <tbody className={`divide-y ${isDark?'divide-zinc-800/50':'divide-gray-100'}`}>
             {data.slice(0,15).map((r,i)=>{ const sel=selected?.includes(r.key);
@@ -866,8 +869,10 @@ export default function ModuleDaily(){
                 <td className={`p-2 font-mono ${accent||'text-violet-400'}`}>{fmtM(r.ventaP)}</td>
                 <td className={`p-2 font-mono ${t.textMuted}`}>{fmt(r.ventaU)}</td>
                 <td className={`p-2 font-bold ${r.mgPct>=45?'text-violet-400':r.mgPct>=35?'text-amber-400':'text-rose-400'}`}>{fmtP(r.mgPct)}</td>
+                <td className="p-2"><DeltaBadge value={r.crecMg}/></td>
                 <td className="p-2"><DeltaBadge value={tendOf(r)}/></td>
                 <td className={`p-2 font-mono font-bold ${t.textAccent2}`}>{fmtM(r.fcst)}</td>
+                {hasInv&&<td className="p-2"><DeltaBadge value={r.dInv}/></td>}
               </tr>); })}
           </tbody>
           <tfoot><tr className={`font-black sticky bottom-0 ${isDark?'bg-[#1c1720] border-t-2 border-violet-500/50':'bg-violet-50 border-t-2 border-violet-300'}`}>
@@ -875,8 +880,10 @@ export default function ModuleDaily(){
             <td className={`p-2 font-mono ${accent||'text-violet-400'}`}>{fmtM(tot.v)}</td>
             <td className={`p-2 font-mono ${t.textMain}`}>{fmt(tot.u)}</td>
             <td className={`p-2 ${tot.v>0&&tot.util/tot.v*100>=45?'text-violet-400':'text-amber-400'}`}>{fmtP(tot.v>0?tot.util/tot.v*100:0)}</td>
+            <td className="p-2"><DeltaBadge value={delta(tot.util,tot.lyU)}/></td>
             <td className="p-2"><DeltaBadge value={totTend}/></td>
             <td className={`p-2 font-mono ${t.textAccent2}`}>{fmtM(tot.f)}</td>
+            {hasInv&&<td className="p-2"><DeltaBadge value={delta(tot.oh,tot.ohLY)}/></td>}
           </tr></tfoot>
         </table>
       </div>
