@@ -3,7 +3,7 @@ import * as Icons from '../utils/icons';
 import FilterMenu, { FilterSection } from '../components/FilterMenu';
 import { useGlobal } from '../context/GlobalContext';
 import {
-  LineChart, Line, BarChart, Bar, ScatterChart, Scatter,
+  LineChart, Line, BarChart, Bar, ScatterChart, Scatter, ComposedChart, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 
@@ -431,6 +431,7 @@ export default function ModuleDaily(){
   const [tblBasis,setTblBasis]=useState('periodo'); // 'periodo' (vs LY mismo filtro) | 'cierre' (fcst vs LY mes completo)
   const [cmpDayMode,setCmpDayMode]=useState('detalle'); // 'detalle' (lun↔lun) | 'avg'
   const [scatterLevel,setScatterLevel]=useState(0);
+  const [devView,setDevView]=useState('mes'); // devoluciones: 'mes' | 'dia'
   const [dTab,setDTab]=useState('dash'); // 'dash' | 'resumen'
   const [planData,setPlanData]=useState([]); const planRef=useRef(null);
   const [pvOpen,setPvOpen]=useState(()=>new Set());
@@ -556,6 +557,22 @@ export default function ModuleDaily(){
     return { ...p, accMes:p.acc, lyMesTotal:p.lyFull, crecLY:p.crecRR, cons:mk(p.cons), neut:mk(p.neut), risk:mk(p.risk), tend:mk(p.tend) };
   },[tyData.length,fcstRows,lastDateTY,promoFns,fcstOverridePct,kpiTY.mgPct]);
   const backtest=useMemo(()=>(showBT&&lastDateTY?backtestFcst(fcstRows,promoFns,lastDateTY):null),[showBT,fcstRows,promoFns,lastDateTY]);
+
+  // ── Devoluciones: filas con venta negativa (respeta filtros y rango). % = devuelto ÷ venta bruta (solo filas positivas) ──
+  const devol=useMemo(()=>{
+    const acc=(rows,keyOf)=>{ const m={}; rows.forEach(r=>{ if(!r.fecha) return; const k=keyOf(r.fecha); const o=m[k]=m[k]||{devP:0,devU:0,bruta:0};
+      if(r.ventaP<0){ o.devP-=r.ventaP; o.devU+=Math.abs(r.ventaU); } else o.bruta+=r.ventaP; }); return m; };
+    const mk=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
+    const ty=acc(tyData,mk), ly=acc(lyData,d=>String(d.getMonth()+1).padStart(2,'0'));
+    const MES=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+    const mes=Object.keys(ty).sort().map(k=>{ const a=ty[k], b=ly[k.slice(5)]||{devP:0,devU:0,bruta:0};
+      return {label:`${MES[+k.slice(5)-1]} ${k.slice(2,4)}`, devP:a.devP, devU:a.devU, devPLY:b.devP||null, pct:a.bruta>0?a.devP/a.bruta*100:null, pctLY:b.bruta>0?b.devP/b.bruta*100:null}; });
+    const dd=acc(tyData,d=>isoOf(d));
+    const dia=Object.keys(dd).sort().map(k=>({label:k.slice(5).split('-').reverse().join('/'), fecha:k, devP:dd[k].devP, devU:dd[k].devU, pct:dd[k].bruta>0?dd[k].devP/dd[k].bruta*100:null, promo:isPromoDate(k)}));
+    const sum=(m)=>Object.values(m).reduce((o,x)=>({devP:o.devP+x.devP,devU:o.devU+x.devU,bruta:o.bruta+x.bruta}),{devP:0,devU:0,bruta:0});
+    const T=sum(ty), L=sum(ly);
+    return {mes, dia, devP:T.devP, devU:T.devU, pct:T.bruta>0?T.devP/T.bruta*100:null, pctLY:L.bruta>0?L.devP/L.bruta*100:null, dLY:delta(T.devP,L.devP)};
+  },[tyData,lyData,isPromoDate]);
 
   // ── Serie diaria ──
   const serieDiaria=useMemo(()=>{ const map={};
@@ -1151,6 +1168,50 @@ export default function ModuleDaily(){
                   {lyData.length>0&&<Line type="monotone" dataKey="ly" name={`LY ${lyYear}`} stroke={isDark?'#a1a1aa':'#94a3b8'} dot={false} strokeWidth={1.5} strokeDasharray="4 2"/>}
                   <Line type="monotone" dataKey="ty" name={`TY ${tyYear}`} stroke="#8b5cf6" dot={false} strokeWidth={2.5} activeDot={{r:4}}/>
                 </LineChart>
+              </ResponsiveContainer>
+            </div>)}
+
+          {/* DEVOLUCIONES */}
+          {devol.devP>0&&(
+            <div className={`p-4 rounded-2xl border ${t.card}`}>
+              <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                <div>
+                  <h4 className={`text-sm font-bold ${t.textMain}`}>↩️ Devoluciones {devView==='mes'?'por mes':'por día'}</h4>
+                  <p className={`text-[10px] ${t.textMuted}`}>Venta negativa del periodo y filtros activos · % = devuelto ÷ venta bruta{devView==='dia'?' · barras ámbar = día de promo':''}</p>
+                </div>
+                <div className="flex gap-2 flex-wrap items-center">
+                  {[{l:'Devuelto $',v:fmtM(devol.devP),d:devol.dLY},{l:'Pzs devueltas',v:fmt(devol.devU)},{l:'% devolución',v:fmtP(devol.pct),sub:devol.pctLY!=null?`LY ${fmtP(devol.pctLY)}`:null}].map(({l,v,d,sub})=>(
+                    <div key={l} className={`px-3 py-1.5 rounded-xl border text-center ${t.cardInner}`}>
+                      <span className={`text-[8px] font-black uppercase tracking-widest ${t.textMuted} block`}>{l}</span>
+                      <span className="text-sm font-black text-rose-400">{v}</span>
+                      {d!=null&&<span className={`ml-1 text-[9px] font-black ${d<=0?'text-violet-400':'text-rose-400'}`}>{d>=0?'▲':'▼'}{Math.abs(d).toFixed(0)}% vs LY</span>}
+                      {sub&&<span className={`block text-[9px] ${t.textMuted}`}>{sub}</span>}
+                    </div>))}
+                  <div className={`inline-flex p-0.5 rounded-lg border ${t.cardInner}`}>
+                    {[['mes','Mes'],['dia','Día']].map(([k,l])=><button key={k} onClick={()=>setDevView(k)} className={`px-3 py-1 rounded-md text-[10px] font-black ${devView===k?t.btnPrimary:t.textMuted}`}>{l}</button>)}
+                  </div>
+                </div>
+              </div>
+              <ResponsiveContainer width="100%" height={240}>
+                <ComposedChart data={devView==='mes'?devol.mes:devol.dia}><CartesianGrid strokeDasharray="3 3" stroke={gridC}/>
+                  <XAxis dataKey="label" tick={{fontSize:9,fill:txtC}} stroke={axisC}/>
+                  <YAxis yAxisId="d" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
+                  <YAxis yAxisId="p" orientation="right" tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>v.toFixed(1)+'%'}/>
+                  <Tooltip cursor={{fill:cursorFill}} content={({active,payload,label})=>{ if(!active||!payload?.length) return null; const d=payload[0].payload;
+                    return <div className={`p-3 rounded-xl border text-xs shadow-xl ${t.card}`}>
+                      <p className={`font-bold mb-1 ${t.textMain}`}>{label}{d.promo?' · 🏷️ promo':''}</p>
+                      <p className="text-rose-400">Devuelto: {fmtM(d.devP)} · {fmt(d.devU)} pzs</p>
+                      {d.devPLY!=null&&<p className={t.textMuted}>LY: {fmtM(d.devPLY)}</p>}
+                      <p className={t.textMain}>% devolución: {fmtP(d.pct)}{d.pctLY!=null?` (LY ${fmtP(d.pctLY)})`:''}</p>
+                    </div>; }}/>
+                  <Legend wrapperStyle={{fontSize:10}}/>
+                  <Bar yAxisId="d" dataKey="devP" name={`Devuelto $ ${tyYear}`} fill="#f43f5e" radius={[4,4,0,0]} maxBarSize={36}>
+                    {devView==='dia'&&devol.dia.map(d=><Cell key={d.fecha} fill={d.promo?'#f59e0b':'#f43f5e'}/>)}
+                  </Bar>
+                  {devView==='mes'&&lyData.length>0&&<Bar yAxisId="d" dataKey="devPLY" name={`Devuelto $ ${lyYear}`} fill={isDark?'#52525b':'#cbd5e1'} radius={[4,4,0,0]} maxBarSize={36}/>}
+                  <Line yAxisId="p" type="monotone" dataKey="pct" name="% devolución" stroke="#8b5cf6" strokeWidth={2} dot={devView==='mes'}/>
+                  {devView==='mes'&&lyData.length>0&&<Line yAxisId="p" type="monotone" dataKey="pctLY" name={`% devolución ${lyYear}`} stroke={isDark?'#a1a1aa':'#94a3b8'} strokeDasharray="4 2" dot={false}/>}
+                </ComposedChart>
               </ResponsiveContainer>
             </div>)}
 
