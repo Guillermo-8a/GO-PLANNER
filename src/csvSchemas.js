@@ -200,7 +200,7 @@ export const CSV_SCHEMAS = [
       {
         title: 'Ventas diarias TY + LY',
         desc: 'Un solo archivo con este año y el pasado (el año sale de FECHA). Acepta coma, punto y coma o tabulador. SECCION puede venir como número si agregas #SECCION con el nombre.',
-        columns: ['DIVISION', 'SECCION', '#SECCION', 'GOA', 'MARCA', 'NORMA', 'CANAL', 'SUBCANAL', 'TIPO_PAGO', 'FECHA*', 'VENTA_PESOS*', 'VENTA_U', 'MG', 'UTILIDAD', 'MARKDOWN'],
+        columns: ['DIVISION', 'SECCION', '#SECCION', 'GOA', 'MARCA', 'NORMA', 'CANAL', 'SUBCANAL', 'TIPO_PAGO', 'FECHA*', 'VENTA_PESOS*', 'VENTA_U', 'MG', 'UTILIDAD', 'MARKDOWN', 'DEVOLUCION_PESOS', 'DEVOLUCION_U'],
       },
       {
         title: 'Inventario',

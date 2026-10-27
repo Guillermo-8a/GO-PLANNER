@@ -232,7 +232,7 @@ const parseSalesCSV = text => {
   const I={div:idx('DIVISION','DIV'),sec:idx('SECCION','SECTION'),numSec:idx('NUMSECCION','NUM_SECCION','_SECCION'),goa:idx('GOA','FAMILIA'),
     marca:idx('MARCA','PROVEEDOR','BRAND'),norma:idx('NORMA','TIPO_COMPRA'),canal:(H.indexOf('CANAL')>=0?H.indexOf('CANAL'):idx('CANAL_VENTA','CANAL_DE_VENTA','SUBCANAL','CHANNEL')),sub:H.indexOf('SUBCANAL'),
     pago:idx('TIPO_PAGO','TIPO_DE_PAGO','FORMA_PAGO','FORMA_DE_PAGO','MEDIO_PAGO','MEDIO_DE_PAGO','PAGO','TENDER','PAYMENT','TARJETA'),fecha:idx('FECHA','DATE','DIA'),vp:idx('VENTA_','VENTA$','VENTA_PESOS','VENTAS'),
-    vu:idx('VENTA_U','UNIDADES','PIEZAS'),mg:idx('MG','MARGEN'),util:idx('UTILIDAD','UTIL'),md:idx('MARKDOWN','DESCUENTO','MD')};
+    vu:idx('VENTA_U','UNIDADES','PIEZAS'),mg:idx('MG','MARGEN'),util:idx('UTILIDAD','UTIL'),md:idx('MARKDOWN','DESCUENTO','MD'),dp:idx('DEVOLUCION_PESOS','DEV_PESOS'),du:idx('DEVOLUCION_U','DEV_U')};
   const out=[];
   for(let i=1;i<rows.length;i++){ const r=rows[i]; if(!r||r.every(c=>!c)) continue;
     const fecha=I.fecha>=0?parseDate(r[I.fecha]):null; const vp=num(I.vp>=0?r[I.vp]:0);
@@ -243,7 +243,8 @@ const parseSalesCSV = text => {
       numSec:secRaw, goa:I.goa>=0?r[I.goa].trim().toUpperCase():'', marca:I.marca>=0?r[I.marca].trim().toUpperCase():'SIN MARCA',
       norma:I.norma>=0?r[I.norma].trim().toUpperCase():'', canal:I.canal>=0?r[I.canal].trim().toUpperCase():'SIN CANAL', subcanal:I.sub>=0?r[I.sub].trim().toUpperCase():'',
       pago:I.pago>=0?r[I.pago].trim().toUpperCase():'', fecha, year:fecha?fecha.getFullYear():0,
-      ventaP:vp, ventaU:num(I.vu>=0?r[I.vu]:0), mg:num(I.mg>=0?r[I.mg]:0), utilidad:num(I.util>=0?r[I.util]:0), markdown:num(I.md>=0?r[I.md]:0) });
+      ventaP:vp, ventaU:num(I.vu>=0?r[I.vu]:0), mg:num(I.mg>=0?r[I.mg]:0), utilidad:num(I.util>=0?r[I.util]:0), markdown:num(I.md>=0?r[I.md]:0),
+      ...(I.dp>=0?{devP:Math.abs(num(r[I.dp])),devU:I.du>=0?Math.abs(num(r[I.du])):0}:{}) });
   }
   return out;
 };
@@ -561,7 +562,8 @@ export default function ModuleDaily(){
   // ── Devoluciones: filas con venta negativa (respeta filtros y rango). % = devuelto ÷ venta bruta (solo filas positivas) ──
   const devol=useMemo(()=>{
     const acc=(rows,keyOf)=>{ const m={}; rows.forEach(r=>{ if(!r.fecha) return; const k=keyOf(r.fecha); const o=m[k]=m[k]||{devP:0,devU:0,bruta:0};
-      if(r.ventaP<0){ o.devP-=r.ventaP; o.devU+=Math.abs(r.ventaU); } else o.bruta+=r.ventaP; }); return m; };
+      if(r.devP!==undefined){ o.devP+=r.devP; o.devU+=r.devU; o.bruta+=r.ventaP+r.devP; }
+      else if(r.ventaP<0){ o.devP-=r.ventaP; o.devU+=Math.abs(r.ventaU); } else o.bruta+=r.ventaP; }); return m; };
     const mk=d=>`${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}`;
     const ty=acc(tyData,mk), ly=acc(lyData,d=>String(d.getMonth()+1).padStart(2,'0'));
     const MES=['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
