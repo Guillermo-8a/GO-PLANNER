@@ -69,11 +69,11 @@ function bridge(L, T) {
   };
   return { ...x, total: t.m - l.m, mL: l.m, mT: t.m };
 }
-// Degradación sobre precio lleno: MG inicial → tras descuento → con bonif → tras merma → tras financ → UB final
+// Degradación sobre precio lleno: MG inicial → tras descuento → tras merma → tras financiamiento → con bonificación (sube) → MG final (incluye ajustes)
 function stages(s) {
   if (!s || s.pl <= 0) return null;
-  const p = s.pl, s0 = 1 - s.c / p, s1 = (s.vn - s.c) / p, s2 = s1 - s.b / p, s3 = s2 - s.me / p, s4 = s3 - s.f / p, s5 = s.ub / p;
-  return { ini: s0, desc: s1 - s0, bonif: s2 - s1, merma: s3 - s2, financ: s4 - s3, otros: s5 - s4, fin: s5, vn: s.vn > 0 ? s.ub / s.vn : null, cum: [s0, s1, s2, s3, s4, s5] };
+  const p = s.pl, s0 = 1 - s.c / p, s1 = (s.vn - s.c) / p, s2 = s1 - s.me / p, s3 = s2 - s.f / p, s4 = s3 - s.b / p, s5 = s.ub / p;
+  return { ini: s0, desc: s1 - s0, merma: s2 - s1, financ: s3 - s2, bonif: s4 - s3, otros: s5 - s4, fin: s5, vn: s.vn > 0 ? s.ub / s.vn : null, cum: [s0, s1, s2, s3, s4, s5] };
 }
 const CAUSA = {
   desc: ['Descuento', 'Frenar rebajas / cupones; revisar eventos y letras'],
@@ -85,7 +85,7 @@ const CAUSA = {
 };
 const MES = ['ene', 'feb', 'mar', 'abr', 'may', 'jun', 'jul', 'ago', 'sep', 'oct', 'nov', 'dic'];
 const DIMS = [['div', 'División'], ['sec', 'Sección'], ['marca', 'Marca'], ['orig', 'Origen'], ['tm', 'Tipo de marca']];
-const DEG = ['MG inicial', 'Tras descto', 'Con bonif.', 'Tras merma', 'Tras financ.', 'UB final'];
+const DEG = ['MG inicial', 'Tras descto', 'Tras merma', 'Tras financ.', 'Con bonif.', 'MG final'];
 const NEXT = { div: 'sec', sec: 'marca', marca: 'orig' };
 
 // ─── Supuesto: "si arreglamos esto, pasa esto" ────────────────────────────────
@@ -388,7 +388,7 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
               <table className="w-full mt-2">
                 <thead><tr><th className={`${th} !text-left`}>Paso (pts s/ precio lleno)</th><th className={th}>{R.ly}</th><th className={th}>{R.ty}</th><th className={th}>Δ</th></tr></thead>
                 <tbody>
-                  {[['MG inicial', 'ini', true], ['Descuento', 'desc'], ['Bonificación', 'bonif'], ['Merma', 'merma'], ['Financiamiento', 'financ'], ['Otros', 'otros'], ['UB s/ precio lleno', 'fin', true], ['UB s/ venta neta', 'vn', true]].map(([l, k, bold]) => {
+                  {[['MG inicial', 'ini', true], ['Descuento', 'desc'], ['Merma', 'merma'], ['Financiamiento', 'financ'], ['Bonificación', 'bonif'], ['Ajustes / saldos', 'otros'], ['UB s/ precio lleno', 'fin', true], ['UB s/ venta neta', 'vn', true]].map(([l, k, bold]) => {
                     const a = R.sL?.[k], b = R.sT?.[k], dl = a != null && b != null ? b - a : null;
                     return (
                       <tr key={k} className={`border-t ${isDark ? 'border-white/5' : 'border-gray-100'} ${bold ? 'font-black' : ''}`}>
