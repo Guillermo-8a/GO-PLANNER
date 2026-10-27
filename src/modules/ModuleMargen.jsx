@@ -142,9 +142,6 @@ function summary(R, F, SM) {
   }
   const mp = R.by.tm.find((x) => x.name === 'Marca Propia'), mv = R.by.tm.find((x) => x.name === 'Marca del Proveedor');
   if (mp && mv && mp.mT != null && mv.mT != null) afecta.push(`Marca propia: venta ${pc(mp.varV)}, margen ${pc(mp.mL)} → ${pc(mp.mT)}. Marca del proveedor: venta ${pc(mv.varV)}, margen ${pc(mv.mL)} → ${pc(mv.mT)}.`);
-  const sd = R.by.marca.find((x) => x.name === '(sin dato)');
-  if (sd && Math.abs(sd.contrib) >= 0.003) afecta.push(`Alerta de dato: renglones sin marca asignada (bonificación, merma, ajustes) pasan de ${fmtM(sd.L.ub)} a ${fmtM(sd.T.ub)} de UB (${pts(sd.contrib)} pts). Distorsiona el comparativo por marca; confirmar con Finanzas dónde quedó la bonificación.`);
-  if (R.br.financ >= 0.002) afecta.push(`El efecto de financiamiento (${pts(R.br.financ)} pts) puede venir de una base inflada del año anterior (cambio de nivel desde abr-2025); validar con Finanzas.`);
 
   const como = [];
   (SM?.rows || []).slice(0, 3).forEach((x) => como.push(`${CAUSA[x.k][0]} (${pts(x.eff)} pts): ${CAUSA[x.k][1]}.`));
@@ -458,7 +455,7 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
             </div>
             <p className={`text-[10px] mt-2 ${t.textMuted}`}>
               Descto = menor/mayor descuento (precio lleno → venta neta). Compra = costo ÷ precio lleno (IMU de compra y mezcla). Bonif/Merma/Financ = % sobre venta neta. Otros = ajustes y saldos de costo. Los efectos de cada fila son propios del segmento (pts de su venta); Contrib. = su aporte al Δ del total (tasa + mix) y suma exacta.
-              MG ini = 1 − costo ÷ precio lleno; Degrad. = UB ÷ precio lleno − MG ini (lo que se pierde en descuento, merma y financiamiento, neto de bonificación). La bonificación es mensual y se calcula sobre costo (crece con el descuento); una marca descontinuada ya no bonifica.
+              MG ini = 1 − costo ÷ precio lleno; Degrad. = UB ÷ precio lleno − MG ini (lo que se pierde en descuento, merma y financiamiento, neto de bonificación). La bonificación es mensual y se calcula sobre costo (crece con el descuento), y al cierre de año se ajusta por aduanas y tipo de cambio vs presupuesto; una marca descontinuada ya no bonifica.
             </p>
           </div>
           </>)}
