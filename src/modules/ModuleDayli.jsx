@@ -314,6 +314,70 @@ const parsePromoCSV = text => {
 };
 
 // ═══════════════════════════════════════════════════════════════════════════
+// ─── FORECAST DE CIERRE (puro: lo usan el forecast actual y el backtest) ──────────────────────────
+// Proyecta el cierre del mes (y, m) con la venta hasta el día `cut`. rows = filas ya filtradas por dimensión (todas las fechas).
+// promo = { isPromoDate, upliftFor } · ov = override (1 = sin ajuste, solo aplica a lo que falta del mes)
+function projectMonth(rows,y,m,cut,promo,ov=1){
+  const diasMes=new Date(y,m+1,0).getDate(), cutEnd=new Date(y,m,cut,23,59,59), from6=new Date(y,m,cut-41);
+  let acc=0,accU=0,lyMTD=0,lyFull=0; const dTY=new Set(),dLY=new Set(),dow={};
+  for(const r of rows){ const f=r.fecha; if(!f) continue; const fy=f.getFullYear(),fm=f.getMonth(),fd=f.getDate();
+    if(fy===y&&fm===m&&fd<=cut){ acc+=r.ventaP; accU+=r.ventaU||0; dTY.add(fd); }
+    else if(fy===y-1&&fm===m){ lyFull+=r.ventaP; if(fd<=cut){ lyMTD+=r.ventaP; dLY.add(fd); } }
+    if(f>=from6&&f<=cutEnd){ const w=(f.getDay()+6)%7; (dow[w]=dow[w]||{s:0,d:new Set()}).s+=r.ventaP; dow[w].d.add(fd+fm*40+fy*500); } }
+  const runRate=dTY.size?acc/dTY.size:0, lyRR=dLY.size?lyMTD/dLY.size:0;
+  const crecRR=lyRR>0?runRate/lyRR-1:0, crecMTD=lyMTD>0?acc/lyMTD-1:null; // crecMTD = crecimiento real a la fecha (mismos días)
+  const avgDow=w=>dow[w]?dow[w].s/dow[w].d.size:runRate;
+  let neutRest=0,promoDays=0;
+  for(let n=cut+1;n<=diasMes;n++){ const d=new Date(y,m,n), iso=isoOf(d), lyIso=`${y-1}-${String(m+1).padStart(2,'0')}-${String(n).padStart(2,'0')}`; let mult=1;
+    if(promo.isPromoDate(iso)){ mult*=1+promo.upliftFor(iso)/100; promoDays++; }
+    else if(promo.isPromoDate(lyIso)) mult*=1-promo.upliftFor(lyIso)/200; // LY tuvo promo, TY no → menos venta
+    neutRest+=avgDow((d.getDay()+6)%7)*mult; }
+  const lyRest=lyFull-lyMTD;
+  // Arriesgado: forma del resto del mes LY × crecimiento run-rate; sin LY del resto: neutral +5%
+  const riskRest=lyRest>0?Math.max(neutRest,lyRest*(1+crecRR)):neutRest*1.05;
+  // Tendencia mes: lo que falta = resto del mes LY × (1 + crecimiento real a la fecha)
+  const tendRest=crecMTD!=null&&lyRest>0?lyRest*(1+crecMTD):neutRest;
+  return { diaActual:cut,diasMes,runRate,acc,accU,lyMTD,lyFull,crecMTD,crecRR,promoDaysAhead:promoDays,
+    cons:acc+runRate*(diasMes-cut)*0.85*ov, neut:acc+neutRest*ov, risk:acc+riskRest*ov, tend:acc+tendRest*ov };
+}
+
+// Reparto del total del mes entre filas (sección, GOA…). nat[k] = peso de cada fila; luego se escala al total.
+//   rr   = run-rate de la fila (venta del mes ÷ días con venta × días del mes) · ly = participación de la fila en el mes LY completo
+//   tend = venta de la fila + resto del mes LY de la fila × (1 + crecimiento de la fila a la fecha)
+const REPARTOS=[['rr','Run-rate del mes'],['ly','Participación LY'],['tend','Tendencia por fila']];
+function repartoNat(mode,g,pDays,diasMes,crecTot){
+  if(mode==='ly') return g.lyFull||0;
+  if(mode==='tend'){ const c=g.lyMTD>0?g.mesP/g.lyMTD-1:crecTot; return g.mesP+Math.max(0,(g.lyFull||0)-(g.lyMTD||0))*(1+(c??0)); }
+  return g.mesP/pDays*diasMes;
+}
+
+// Backtest: en cada mes cerrado con LY (últimos 12), proyecta al día 7/14/21 y compara con el cierre real.
+// Accuracy = 100 − WMAPE; sesgo = (proyectado − real) ÷ real (+ = se pasa). Reparto: se mide por sección escalando al total real.
+const BT_CUTS=[7,14,21];
+const METODOS=[['cons','Conservador'],['neut','Neutral'],['risk','Arriesgado'],['tend','Tendencia mes']];
+function backtestFcst(rows,promo,lastDate){
+  const meses=new Map(); for(const r of rows){ if(!r.fecha) continue; const k=r.fecha.getFullYear()*12+r.fecha.getMonth(); meses.set(k,(meses.get(k)||0)+r.ventaP); }
+  const lastK=lastDate.getFullYear()*12+lastDate.getMonth();
+  const ks=[...meses.keys()].filter(k=>k<lastK&&meses.get(k-12)>0).sort((a,b)=>a-b).slice(-12);
+  const z=()=>Object.fromEntries(BT_CUTS.map(c=>[c,0]));
+  const met=Object.fromEntries(METODOS.map(([k])=>[k,{e:z(),b:z()}])), rep=Object.fromEntries(REPARTOS.map(([k])=>[k,z()])), real=z();
+  ks.forEach(k=>{ const y=Math.floor(k/12),m=k%12,tot=meses.get(k),diasMes=new Date(y,m+1,0).getDate();
+    BT_CUTS.forEach(c=>{ const p=projectMonth(rows,y,m,c,promo); real[c]+=tot;
+      METODOS.forEach(([mk])=>{ met[mk].e[c]+=Math.abs(p[mk]-tot); met[mk].b[c]+=p[mk]-tot; });
+      // reparto por sección
+      const G={}, dias=new Set();
+      for(const r of rows){ const f=r.fecha; if(!f||f.getMonth()!==m) continue; const fy=f.getFullYear(); if(fy!==y&&fy!==y-1) continue;
+        const g=(G[r.seccion||'N/D']=G[r.seccion||'N/D']||{mesP:0,lyMTD:0,lyFull:0,real:0});
+        if(fy===y){ g.real+=r.ventaP; if(f.getDate()<=c){ g.mesP+=r.ventaP; dias.add(f.getDate()); } } else { g.lyFull+=r.ventaP; if(f.getDate()<=c) g.lyMTD+=r.ventaP; } }
+      const gs=Object.values(G), crecTot=p.crecMTD;
+      REPARTOS.forEach(([rk])=>{ const nat=gs.map(g=>repartoNat(rk,g,dias.size||1,diasMes,crecTot)), sn=nat.reduce((a,b)=>a+b,0)||1;
+        rep[rk][c]+=gs.reduce((a,g,i)=>a+Math.abs(nat[i]/sn*tot-g.real),0); }); }); });
+  const acc=(e,c)=>real[c]>0?100-e[c]/real[c]*100:null, accAll=e=>{ const R=BT_CUTS.reduce((a,c)=>a+real[c],0); return R>0?100-BT_CUTS.reduce((a,c)=>a+e[c],0)/R*100:null; };
+  return { meses:ks.length,
+    metodos:METODOS.map(([k,l])=>({k,l,cuts:BT_CUTS.map(c=>acc(met[k].e,c)),total:accAll(met[k].e),sesgo:BT_CUTS.reduce((a,c)=>a+real[c],0)>0?BT_CUTS.reduce((a,c)=>a+met[k].b[c],0)/BT_CUTS.reduce((a,c)=>a+real[c],0)*100:null})),
+    repartos:REPARTOS.map(([k,l])=>({k,l,cuts:BT_CUTS.map(c=>acc(rep[k],c)),total:accAll(rep[k])})) };
+}
+
 export default function ModuleDaily(){
   const gState=useGlobal();
   const theme=gState?.theme||'light';
@@ -357,6 +421,8 @@ export default function ModuleDaily(){
   const [showInv,setShowInv]=useState(true);
   const [fcstOverridePct,setFcstOverridePct]=useState(0);
   const [scenarioSel,setScenarioSel]=useState('actual');
+  const [repartoMode,setRepartoMode]=useState('rr');
+  const [showBT,setShowBT]=useState(false);
   const [moneyK,setMoneyK]=useState(true); // columnas $ vienen en miles → PVP ×1000
   const [bonifMes,setBonifMes]=useState(0);   // bonificación $ mes corriente
   const [bonifAcum,setBonifAcum]=useState(0); // bonificación $ acumulado periodo
@@ -479,41 +545,16 @@ export default function ModuleDaily(){
     const o={}; for(let d=0;d<7;d++) o[d]=m[d]?m[d].sum/m[d].dates.size:0; return o; },[tyData,lastDateTY]);
 
   // ── FORECAST ──
+  const fcstRows=useMemo(()=>allData.filter(dimsOk),[allData,dimsOk]);
+  const promoFns=useMemo(()=>({isPromoDate,upliftFor}),[isPromoDate,upliftFor]);
   const forecastMes=useMemo(()=>{
     if(!tyData.length||!lastDateTY) return null;
-    const now=lastDateTY, month=now.getMonth(), year=now.getFullYear(), diaActual=now.getDate();
-    const diasMes=new Date(year,month+1,0).getDate();
-    const mesRows=tyData.filter(r=>r.fecha&&r.fecha.getMonth()===month&&r.fecha.getFullYear()===year);
-    const accMes=mesRows.reduce((s,r)=>s+r.ventaP,0), accMesU=mesRows.reduce((s,r)=>s+r.ventaU,0);
-    const diasConData=new Set(mesRows.filter(r=>r.fecha).map(r=>r.fecha.getDate())).size; // el rango puede no arrancar el día 1
-    const runRate=diasConData>0?accMes/diasConData:0;
-    let projNeutral=0, promoDaysAhead=0;
-    for(let n=diaActual+1;n<=diasMes;n++){
-      const date=new Date(year,month,n), dow=(date.getDay()+6)%7;
-      let base=avgByDow[dow]||runRate; const iso=isoOf(date);
-      const lyIso=`${lyYear}-${String(month+1).padStart(2,'0')}-${String(n).padStart(2,'0')}`;
-      let mult=1;
-      if(isPromoDate(iso)){ mult*=1+upliftFor(iso)/100; promoDaysAhead++; }
-      else if(isPromoDate(lyIso)) mult*=1-upliftFor(lyIso)/200; // LY tuvo promo, TY no → menos venta
-      projNeutral+=base*mult;
-    }
-    const lyMesRows=lyData.filter(r=>r.fecha&&r.fecha.getMonth()===month&&r.fecha.getFullYear()===lyYear);
-    const lyMesTotal=lyMesRows.reduce((s,r)=>s+r.ventaP,0);
-    const lyMesDias=new Set(lyMesRows.map(r=>r.fecha.toDateString())).size||diasMes;
-    const lyRunRate=lyMesDias>0?lyMesTotal/lyMesDias:0;
-    const crecLY=lyRunRate>0?runRate/lyRunRate-1:0;
-    // Arriesgado: forma del resto del mes LY × crecimiento real (antes multiplicaba la proyección TY por el crecimiento
-    // otra vez → contaba el crecimiento doble). Sin LY del resto del mes: neutral +5%.
-    const lyRest=allData.filter(r=>r.year===lyYear&&r.fecha&&dimsOk(r)&&r.fecha.getMonth()===month&&r.fecha.getDate()>diaActual).reduce((s,r)=>s+r.ventaP,0);
-    const projRisk=lyRest>0?Math.max(projNeutral,lyRest*(1+crecLY)):projNeutral*1.05;
-    const ov=1+fcstOverridePct/100;
-    const avgPrice=accMesU>0?accMes/accMesU:1;
-    const mk=v=>({ventaP:v,ventaU:avgPrice>0?Math.round(v/avgPrice):0,mg:v*kpiTY.mgPct/100});
-    return { diaActual,diasMes,runRate,accMes,lyMesTotal,crecLY,promoDaysAhead,
-      cons:mk(Math.max(0,accMes+runRate*(diasMes-diaActual)*0.85*ov)),
-      neut:mk(Math.max(0,accMes+projNeutral*ov)),
-      risk:mk(Math.max(0,accMes+projRisk*ov)) };
-  },[tyData,lyData,allData,dimsOk,lastDateTY,avgByDow,isPromoDate,upliftFor,lyYear,fcstOverridePct,kpiTY.mgPct]);
+    const p=projectMonth(fcstRows,lastDateTY.getFullYear(),lastDateTY.getMonth(),lastDateTY.getDate(),promoFns,1+fcstOverridePct/100);
+    const avgPrice=p.accU>0?p.acc/p.accU:1;
+    const mk=v=>{ const x=Math.max(0,v); return {ventaP:x,ventaU:avgPrice>0?Math.round(x/avgPrice):0,mg:x*kpiTY.mgPct/100, crec:p.lyFull>0?x/p.lyFull-1:null}; };
+    return { ...p, accMes:p.acc, lyMesTotal:p.lyFull, crecLY:p.crecRR, cons:mk(p.cons), neut:mk(p.neut), risk:mk(p.risk), tend:mk(p.tend) };
+  },[tyData.length,fcstRows,lastDateTY,promoFns,fcstOverridePct,kpiTY.mgPct]);
+  const backtest=useMemo(()=>(showBT&&lastDateTY?backtestFcst(fcstRows,promoFns,lastDateTY):null),[showBT,fcstRows,promoFns,lastDateTY]);
 
   // ── Serie diaria ──
   const serieDiaria=useMemo(()=>{ const map={};
@@ -573,24 +614,27 @@ export default function ModuleDaily(){
 
   // Agrupador para tablas dashboard: RESPETA el filtro (período = header). Tend período vs LY mismo período; Cierre vs LY mes completo.
   const byKeyDash=useCallback((key)=>{
-    const tyM={},lyP={},lyFull={}, mM=lastDateTY?lastDateTY.getMonth():-1, mY=lastDateTY?lastDateTY.getFullYear():-1, mDias=new Set();
+    const tyM={},lyP={},lyFull={},lyMTD={}, mM=lastDateTY?lastDateTY.getMonth():-1, mY=lastDateTY?lastDateTY.getFullYear():-1, mDias=new Set();
     tyData.forEach(r=>{ const k=r[key]||'N/D'; if(!tyM[k])tyM[k]={key:k,mesP:0,ventaP:0,ventaU:0,utilidad:0,markdown:0};
       if(r.fecha&&r.fecha.getMonth()===mM&&r.fecha.getFullYear()===mY){ tyM[k].mesP+=r.ventaP; mDias.add(r.fecha.getDate()); }
       tyM[k].ventaP+=r.ventaP; tyM[k].ventaU+=r.ventaU; tyM[k].utilidad+=r.utilidad; tyM[k].markdown+=r.markdown; });
-    lyData.forEach(r=>{ const k=r[key]||'N/D'; lyP[k]=(lyP[k]||0)+r.ventaP; });
+    lyData.forEach(r=>{ const k=r[key]||'N/D'; lyP[k]=(lyP[k]||0)+r.ventaP; if(r.fecha&&r.fecha.getMonth()===mM&&r.fecha.getFullYear()===mY-1&&r.fecha.getDate()<=lastDateTY.getDate()) lyMTD[k]=(lyMTD[k]||0)+r.ventaP; });
     if(lastDateTY){ const month=lastDateTY.getMonth(); allData.forEach(r=>{ if(r.year!==lyYear||!r.fecha||!dimsOk(r)||r.fecha.getMonth()!==month) return; const k=r[key]||'N/D'; lyFull[k]=(lyFull[k]||0)+r.ventaP; }); }
     const pDays=mDias.size||1; // run-rate del MES del cierre (días con venta en ese mes)
     const diasMes=lastDateTY?new Date(lastDateTY.getFullYear(),lastDateTY.getMonth()+1,0).getDate():30;
-    const base=Object.values(tyM).map(g=>({...g,fcstNat:g.mesP/pDays*diasMes}));
+    const crecTot=forecastMes?.crecMTD??0;
+    const base=Object.values(tyM).map(g=>({...g,fcstNat:repartoNat(repartoMode,{mesP:g.mesP,lyMTD:lyMTD[g.key]||0,lyFull:lyFull[g.key]||0},pDays,diasMes,crecTot)}));
     // Si hay escenario seleccionado, reparte ese total con la participación natural de cada grupo
     const sumNat=base.reduce((s,g)=>s+g.fcstNat,0);
-    const target=(scenarioSel!=='actual'&&forecastMes)?forecastMes[scenarioSel].ventaP:null;
+    // Sin escenario: el total es la suma natural del run-rate; con escenario: el total del escenario. Se reparte con el modo elegido.
+    const rrTot=Object.values(tyM).reduce((a,g)=>a+g.mesP/pDays*diasMes,0);
+    const target=(scenarioSel!=='actual'&&forecastMes)?forecastMes[scenarioSel].ventaP:(repartoMode!=='rr'?rrTot:null);
     const factor=(target!=null&&sumNat>0)?target/sumNat:1;
     return base.map(g=>{ const fcst=g.fcstNat*factor;
       return { ...g, fcst, mgPct:g.ventaP>0?g.utilidad/g.ventaP*100:0,
         tendPeriodo:delta(g.ventaP,lyP[g.key]), tendCierre:delta(fcst,lyFull[g.key]),
         lyP:lyP[g.key]||0, lyFull:lyFull[g.key]||0 }; }).sort((a,b)=>b.ventaP-a.ventaP);
-  },[tyData,lyData,allData,dimsOk,lastDateTY,lyYear,scenarioSel,forecastMes]);
+  },[tyData,lyData,allData,dimsOk,lastDateTY,lyYear,scenarioSel,forecastMes,repartoMode]);
 
   // ── Resumen ejecutivo: pivote División > Sección > GOA (Venta, MG, Rot) ──
   const pivot=useMemo(()=>{
@@ -710,7 +754,7 @@ export default function ModuleDaily(){
         const v=forecastMes[scenarioSel].ventaP,uBase=v*mg/100,u=uBase+bonifMes;
         mes={ venta:v,util:u,bonif:bonifMes,costo:v-uBase,markdown:diaActual>0?mkMTD/diaActual*diasMes:mkMTD,
           mgBase:mg, mgFinal:v>0?u/v*100:0,proj:true,
-          label:`Proyección cierre · ${{cons:'Conservador',neut:'Neutral',risk:'Arriesgado'}[scenarioSel]}` };
+          label:`Proyección cierre · ${{cons:'Conservador',neut:'Neutral',risk:'Arriesgado',tend:'Tendencia mes'}[scenarioSel]}` };
       }
     }
     return {acum,mes};
@@ -806,7 +850,7 @@ export default function ModuleDaily(){
     <div className={`p-4 rounded-xl border ${t.cardInner}`}>
       <div className="flex items-center justify-between mb-3">
         <h4 className={`text-sm font-bold ${t.textMain}`}>{title}</h4>
-        <span className={`text-[8px] px-2 py-0.5 rounded-full border font-black ${scenarioSel!=='actual'?t.badgeAmber:t.badge}`}>{data.length} ítems{scenarioSel!=='actual'?` · fcst ${{cons:'Conserv.',neut:'Neutral',risk:'Arriesg.'}[scenarioSel]}`:''}{onPick?' · click filtra':''}</span>
+        <span className={`text-[8px] px-2 py-0.5 rounded-full border font-black ${scenarioSel!=='actual'?t.badgeAmber:t.badge}`}>{data.length} ítems{scenarioSel!=='actual'?` · fcst ${{cons:'Conserv.',neut:'Neutral',risk:'Arriesg.',tend:'Tendencia'}[scenarioSel]}`:''}{onPick?' · click filtra':''}</span>
       </div>
       <div className="overflow-x-auto custom-scrollbar max-h-[260px]">
         <table className="w-full text-left text-xs min-w-max">
@@ -1214,7 +1258,7 @@ export default function ModuleDaily(){
               <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
                 <h4 className={`text-sm font-bold ${t.textMain}`}>🎯 Forecast Cierre de Mes</h4>
                 <div className="flex items-center gap-3 flex-wrap">
-                  <span className={`text-[9px] ${t.textMuted}`}>Día {forecastMes.diaActual}/{forecastMes.diasMes} · run rate {fmtM(forecastMes.runRate)}/d · {forecastMes.promoDaysAhead} días promo restantes{forecastMes.lyMesTotal>0&&` · crec LY ${fmtP(forecastMes.crecLY*100)}`}</span>
+                  <span className={`text-[9px] ${t.textMuted}`}>Día {forecastMes.diaActual}/{forecastMes.diasMes} · run rate {fmtM(forecastMes.runRate)}/d · {forecastMes.promoDaysAhead} días promo restantes{forecastMes.crecMTD!=null&&` · crec real a la fecha ${forecastMes.crecMTD>=0?'+':''}${fmtP(forecastMes.crecMTD*100)} vs LY (mismos días)`}</span>
                   <div className="flex items-center gap-2">
                     <span className={`text-[9px] font-black uppercase ${t.textMuted}`}>Override</span>
                     <input type="range" min={-30} max={30} value={fcstOverridePct} onChange={e=>setFcstOverridePct(Number(e.target.value))} className="w-20 accent-violet-500"/>
@@ -1222,10 +1266,11 @@ export default function ModuleDaily(){
                   </div>
                 </div>
               </div>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+              <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-3">
                 {[{key:'cons',label:'Conservador',icon:'🛡️',color:'text-blue-400',bar:'bg-blue-400'},
                   {key:'neut',label:'Neutral',icon:'⚖️',color:'text-violet-400',bar:'bg-violet-400'},
-                  {key:'risk',label:'Arriesgado',icon:'🚀',color:'text-amber-400',bar:'bg-amber-400'}].map(({key,label,icon,color,bar})=>{
+                  {key:'risk',label:'Arriesgado',icon:'🚀',color:'text-amber-400',bar:'bg-amber-400'},
+                  {key:'tend',label:'Tendencia mes',icon:'📈',color:'text-emerald-400',bar:'bg-emerald-400'}].map(({key,label,icon,color,bar})=>{
                   const s=forecastMes[key]; const sel=scenarioSel===key;
                   return (
                     <button key={key} onClick={()=>setScenarioSel(sel?'actual':key)}
@@ -1234,10 +1279,29 @@ export default function ModuleDaily(){
                       <div className={`text-2xl font-black ${color}`}>{fmtM(s.ventaP)}</div>
                       <div className={`text-[10px] ${t.textMuted} mt-0.5`}>{fmt(s.ventaU)} pzs · MG {fmtP(s.ventaP>0?s.mg/s.ventaP*100:0)}</div>
                       {forecastMes.lyMesTotal>0&&<div className={`text-[10px] mt-1 font-bold ${delta(s.ventaP,forecastMes.lyMesTotal)>=0?'text-violet-400':'text-red-400'}`}>{delta(s.ventaP,forecastMes.lyMesTotal)>=0?'▲':'▼'} {Math.abs(delta(s.ventaP,forecastMes.lyMesTotal)).toFixed(1)}% vs LY mes</div>}
-                      <div className="mt-3"><MiniBar value={s.ventaP} max={forecastMes.risk.ventaP*1.1} color={bar} isDark={isDark}/></div>
+                      {/* Validador de crecimiento: crec que implica el escenario vs el que llevas a la fecha */}
+                      {s.crec!=null&&forecastMes.crecMTD!=null&&(()=>{ const gap=(s.crec-forecastMes.crecMTD)*100, a=Math.abs(gap);
+                        return <div className={`text-[10px] mt-1 font-bold ${a<=3?'text-emerald-400':a<=8?'text-amber-400':'text-red-400'}`}>
+                          {a<=3?'✓':'⚠'} implica {s.crec>=0?'+':''}{fmtP(s.crec*100)} · llevas {forecastMes.crecMTD>=0?'+':''}{fmtP(forecastMes.crecMTD*100)} ({gap>=0?'+':''}{gap.toFixed(1)} pts)</div>; })()}
+                      <div className="mt-3"><MiniBar value={s.ventaP} max={Math.max(forecastMes.risk.ventaP,forecastMes.tend.ventaP)*1.1} color={bar} isDark={isDark}/></div>
                     </button>); })}
               </div>
-              <p className={`text-[9px] mt-3 ${t.textMuted}`}>Click en un escenario para proyectar el Resultado del Ejercicio con ese cierre. La proyección usa promedio por día de semana (cubre findes/días faltantes) + promos del calendario.</p>
+              <div className="flex items-center gap-2 flex-wrap mt-3">
+                <span className={`text-[9px] font-black uppercase ${t.textMuted}`}>Reparto a filas</span>
+                {REPARTOS.map(([k,l])=><button key={k} onClick={()=>setRepartoMode(k)} className={`text-[10px] px-2 py-1 rounded-lg border font-bold ${repartoMode===k?'bg-violet-600 border-violet-600 text-white':t.btnGhost||''}`}>{l}</button>)}
+                <button onClick={()=>setShowBT(v=>!v)} className={`ml-auto text-[10px] px-3 py-1 rounded-lg border font-black ${showBT?'bg-violet-600 border-violet-600 text-white':t.btnGhost||''}`}>📏 {showBT?'Ocultar':'Medir'} accuracy (backtest)</button>
+              </div>
+              {showBT&&backtest&&(backtest.meses===0?<p className={`text-[10px] mt-2 ${t.textMuted}`}>Para el backtest se necesitan meses cerrados con su LY en la data cargada.</p>:(()=>{
+                const best=arr=>arr.reduce((b,x)=>x.total!=null&&(b==null||x.total>b.total)?x:b,null);
+                const bM=best(backtest.metodos), bR=best(backtest.repartos);
+                const cell=v=>v==null?'—':fmtP(v);
+                const Tbl=({rows,b,sesgo})=>(<table className="w-full text-[11px] mt-1"><thead><tr className={t.textMuted}><th className="text-left p-1">Método</th>{BT_CUTS.map(c=><th key={c} className="text-right p-1">Día {c}</th>)}<th className="text-right p-1">Total</th>{sesgo&&<th className="text-right p-1">Sesgo</th>}</tr></thead>
+                  <tbody>{rows.map(r=><tr key={r.k} className={`border-t ${t.border||''} ${r===b?'font-black text-emerald-400':t.textMain}`}><td className="p-1">{r===b?'★ ':''}{r.l}</td>{r.cuts.map((v,i)=><td key={i} className="text-right p-1 tabular-nums">{cell(v)}</td>)}<td className="text-right p-1 tabular-nums">{cell(r.total)}</td>{sesgo&&<td className="text-right p-1 tabular-nums">{r.sesgo==null?'—':`${r.sesgo>=0?'+':''}${fmtP(r.sesgo)}`}</td>}</tr>)}</tbody></table>);
+                return <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 mt-3">
+                  <div><p className={`text-xs font-bold ${t.textMain}`}>Accuracy del cierre total · {backtest.meses} meses</p><p className={`text-[9px] ${t.textMuted}`}>Se proyecta cada mes cerrado al día 7, 14 y 21 y se compara con el cierre real. Accuracy = 100 − error % · sesgo + = se pasa.</p><Tbl rows={backtest.metodos} b={bM} sesgo/></div>
+                  <div><p className={`text-xs font-bold ${t.textMain}`}>Accuracy del reparto por sección</p><p className={`text-[9px] ${t.textMuted}`}>Qué tan bien reparte cada método el total entre secciones (con el total real, para medir solo el reparto).</p><Tbl rows={backtest.repartos} b={bR}/></div>
+                </div>; })())}
+              <p className={`text-[9px] mt-3 ${t.textMuted}`}>Click en un escenario para proyectar el Resultado del Ejercicio con ese cierre. Neutral usa promedio por día de semana + promos; Tendencia mes = venta a la fecha + resto del mes LY × (1 + crecimiento real a la fecha). El validador marca en ámbar/rojo cuando el crecimiento que implica el escenario se aleja más de 3/8 pts del que llevas.</p>
             </div>)}
 
           {/* RESULTADO DEL EJERCICIO */}

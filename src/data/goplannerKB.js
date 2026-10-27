@@ -35,12 +35,15 @@ El tab Detalle lista las combinaciones con acción sugerida y destinos, y baja C
     id: 'dayli', modulo: 'dayli', titulo: 'Daily',
     keywords: ['daily', 'dayli', 'venta diaria', 'fcst', 'forecast mes', 'cierre', 'escenario', 'conservador', 'neutral', 'arriesgado', 'tendencia'],
     texto: `Venta, margen e inventario diario TY vs LY (CSV o BigQuery), por división, sección, GOA, marca, canal y tipo de pago.
-Proyección de cierre del mes (3 escenarios), con acumulado del mes + días que faltan:
+Proyección de cierre del mes (4 escenarios), acumulado del mes + lo que falta:
 • Conservador = acumulado + run-rate × días restantes × 0.85.
-• Neutral = acumulado + Σ días restantes de (promedio de venta de ese día de la semana) × ajuste de promo (día con promo TY: +uplift; día que LY tuvo promo y TY no: −uplift/2).
-• Arriesgado = acumulado + máx(Neutral, venta LY del resto del mes × (1 + crecimiento run-rate TY vs LY)); sin LY, Neutral +5%.
-Run-rate = venta del mes ÷ días con venta en el mes. A todos se les aplica el ajuste manual % de Configuración.
-"Fcst Mes" por fila (sección, GOA, marca…) = venta del mes de esa fila ÷ días con venta × días del mes; si eliges un escenario, ese total se reparte entre las filas con su participación natural.
+• Neutral = acumulado + Σ días restantes de (promedio de ese día de la semana, últimas 6 semanas) × ajuste de promo (día con promo TY: +uplift; día que LY tuvo promo y TY no: −uplift/2).
+• Arriesgado = acumulado + máx(Neutral, resto del mes LY × (1 + crecimiento run-rate TY vs LY)); sin LY, Neutral +5%.
+• Tendencia mes = acumulado + resto del mes LY × (1 + crecimiento real a la fecha vs LY mismos días).
+El override % de Configuración aplica a lo que falta del mes. "vs LY mes" compara contra el mes LY completo.
+Validador de crecimiento: cada escenario muestra el crecimiento que implica vs el que llevas a la fecha; verde ≤3 pts, ámbar ≤8, rojo >8.
+"Fcst Mes" por fila: el total (escenario elegido o run-rate) se reparte con el modo elegido: Run-rate del mes (venta del mes ÷ días con venta × días del mes), Participación LY (peso de la fila en el mes LY completo) o Tendencia por fila (venta de la fila + su resto LY × (1 + su crecimiento)).
+Backtest ("Medir accuracy"): proyecta cada mes cerrado (últimos 12 con LY) al día 7, 14 y 21 y compara con el cierre real; accuracy = 100 − WMAPE y sesgo (+ = se pasa), para el total y para el reparto por sección.
 "Tend período" = venta vs LY del mismo filtro; "Tend cierre" = fcst vs LY del mes completo.`,
   },
   {
