@@ -634,7 +634,8 @@ export default function ModuleDaily(){
     return base.map(g=>{ const fcst=g.fcstNat*factor;
       return { ...g, fcst, mgPct:g.ventaP>0?g.utilidad/g.ventaP*100:0,
         tendPeriodo:delta(g.ventaP,lyP[g.key]), tendCierre:delta(fcst,lyFull[g.key]),
-        lyP:lyP[g.key]||0, lyFull:lyFull[g.key]||0, lyUtil:lyU[g.key]||0, crecMg:delta(g.utilidad,lyU[g.key]),
+        lyP:lyP[g.key]||0, lyFull:lyFull[g.key]||0, lyUtil:lyU[g.key]||0, mgLY:lyP[g.key]>0?(lyU[g.key]||0)/lyP[g.key]*100:null, // MG = % (utilidad ÷ venta); utilidad = $
+        crecMg:(g.ventaP>0&&lyP[g.key]>0&&lyU[g.key])?delta(g.utilidad/g.ventaP,lyU[g.key]/lyP[g.key]):null,
         oh:inv[g.key]?.oh||0, ohLY:inv[g.key]?.ohLY||0, dInv:inv[g.key]?.ohLY>0?delta(inv[g.key].oh,inv[g.key].ohLY):null }; }).sort((a,b)=>b.ventaP-a.ventaP);
   },[tyData,lyData,allData,dimsOk,lastDateTY,lyYear,scenarioSel,forecastMes,repartoMode,filtInv]);
 
@@ -858,7 +859,7 @@ export default function ModuleDaily(){
       <div className="overflow-x-auto custom-scrollbar max-h-[260px]">
         <table className="w-full text-left text-xs min-w-max">
           <thead><tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark?'bg-[#1c1720] text-gray-400 border-b border-white/10':'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
-            {['Nombre','Venta','PZS','MG%','Crec MG',per?'Tend período':'Tend cierre','Fcst Mes',...(hasInv?['Desv Inv AA']:[])].map(h=><th key={h} className="p-2 whitespace-nowrap" title={h==='Crec MG'?'Crecimiento de la utilidad ($) vs LY, mismo período':h==='Desv Inv AA'?'Inventario (OH) de la foto cargada vs OH_AA':undefined}>{h}</th>)}
+            {['Nombre','Venta','PZS','MG%','Crec MG',per?'Tend período':'Tend cierre','Fcst Mes',...(hasInv?['Desv Inv AA']:[])].map(h=><th key={h} className="p-2 whitespace-nowrap" title={h==='Crec MG'?'Crecimiento % del MG% vs LY (MG = utilidad ÷ venta), mismo período':h==='Desv Inv AA'?'Inventario (OH) de la foto cargada vs OH_AA':undefined}>{h}</th>)}
           </tr></thead>
           <tbody className={`divide-y ${isDark?'divide-zinc-800/50':'divide-gray-100'}`}>
             {data.slice(0,15).map((r,i)=>{ const sel=selected?.includes(r.key);
@@ -869,7 +870,7 @@ export default function ModuleDaily(){
                 <td className={`p-2 font-mono ${accent||'text-violet-400'}`}>{fmtM(r.ventaP)}</td>
                 <td className={`p-2 font-mono ${t.textMuted}`}>{fmt(r.ventaU)}</td>
                 <td className={`p-2 font-bold ${r.mgPct>=45?'text-violet-400':r.mgPct>=35?'text-amber-400':'text-rose-400'}`}>{fmtP(r.mgPct)}</td>
-                <td className="p-2"><DeltaBadge value={r.crecMg}/></td>
+                <td className="p-2" title={r.mgLY!=null?`MG ${fmtP(r.mgPct)} vs ${fmtP(r.mgLY)} LY (${(r.mgPct-r.mgLY>=0?'+':'')}${(r.mgPct-r.mgLY).toFixed(1)} pts)`:undefined}><DeltaBadge value={r.crecMg}/></td>
                 <td className="p-2"><DeltaBadge value={tendOf(r)}/></td>
                 <td className={`p-2 font-mono font-bold ${t.textAccent2}`}>{fmtM(r.fcst)}</td>
                 {hasInv&&<td className="p-2"><DeltaBadge value={r.dInv}/></td>}
@@ -880,7 +881,7 @@ export default function ModuleDaily(){
             <td className={`p-2 font-mono ${accent||'text-violet-400'}`}>{fmtM(tot.v)}</td>
             <td className={`p-2 font-mono ${t.textMain}`}>{fmt(tot.u)}</td>
             <td className={`p-2 ${tot.v>0&&tot.util/tot.v*100>=45?'text-violet-400':'text-amber-400'}`}>{fmtP(tot.v>0?tot.util/tot.v*100:0)}</td>
-            <td className="p-2"><DeltaBadge value={delta(tot.util,tot.lyU)}/></td>
+            <td className="p-2"><DeltaBadge value={tot.v>0&&tot.lyP>0&&tot.lyU?delta(tot.util/tot.v,tot.lyU/tot.lyP):null}/></td>
             <td className="p-2"><DeltaBadge value={totTend}/></td>
             <td className={`p-2 font-mono ${t.textAccent2}`}>{fmtM(tot.f)}</td>
             {hasInv&&<td className="p-2"><DeltaBadge value={delta(tot.oh,tot.ohLY)}/></td>}
