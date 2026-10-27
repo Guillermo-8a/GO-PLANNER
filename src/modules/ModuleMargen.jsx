@@ -15,7 +15,7 @@ import FilterMenu, { FilterSection } from '../components/FilterMenu';
 const LS_FILES = 'gop_margen_files', DB_NAME = 'gop_margen_db';
 const norm = (s) => String(s ?? '').trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[_.]+/g, ' ').replace(/\s+/g, ' ').trim();
 const num = (v) => { const n = typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(/[$,\s]/g, '')); return isFinite(n) ? n : 0; };
-const fmtM = (v) => (Math.abs(v) >= 1e6 ? `$${(v / 1e6).toFixed(1)} M` : `$${Math.round(v / 1e3).toLocaleString('es-MX')} K`);
+const fmtM = (v) => { const a = Math.abs(v), g = v < 0 ? '-' : ''; return a >= 1e6 ? `${g}$${(a / 1e6).toFixed(1)} M` : `${g}$${Math.round(a / 1e3).toLocaleString('es-MX')} K`; };
 const pts = (v) => (v == null || !isFinite(v) ? '—' : `${v > 0 ? '+' : ''}${(v * 100).toFixed(1)}`);
 const pc = (v, d = 1) => (v == null || !isFinite(v) ? '—' : `${(v * 100).toFixed(d)}%`);
 const POS = '#A78BFA', NEG = '#D63F8C', LYC = '#6B5B8E'; // violeta GO / magenta GO / violeta apagado (LY)
@@ -88,11 +88,82 @@ const DIMS = [['div', 'División'], ['sec', 'Sección'], ['marca', 'Marca'], ['o
 const DEG = ['MG inicial', 'Tras descto', 'Con bonif.', 'Tras merma', 'Tras financ.', 'UB final'];
 const NEXT = { div: 'sec', sec: 'marca', marca: 'orig' };
 
+// ─── Supuesto: "si arreglamos esto, pasa esto" ────────────────────────────────
+const SIM_DEF = 50; // % de recuperación por defecto de cada causa a la baja
+function simulate(R, sim) {
+  if (!R?.br) return null;
+  const rows = Object.keys(CAUSA).filter((k) => R.br[k] < -0.0005).sort((a, b) => R.br[a] - R.br[b])
+    .map((k) => { const p = sim[k] ?? SIM_DEF, x = -R.br[k] * p / 100; return { k, p, eff: R.br[k], pts: x, usd: x * R.VT }; });
+  const x = rows.reduce((a, r) => a + r.pts, 0);
+  return { rows, pts: x, usd: x * R.VT, mNew: R.MT + x };
+}
+const usd = (v) => `${v >= 0 ? '+' : '-'}${fmtM(Math.abs(v))}`;
+
+// ─── Resumen para dirección: dónde está, qué pasó, qué afecta, cómo lo solucionamos ───
+function summary(R, F, SM) {
+  if (!R || R.err || !R.br) return null;
+  const scope = DIMS.filter(([k]) => F[k]?.length).map(([k]) => F[k].join(', ')).join(' › ') || 'Total';
+  const d = R.MT - R.ML, rL = ratios(R.TL), rT = ratios(R.TT);
+  const head = `${scope}: margen ${pc(R.ML)} → ${pc(R.MT)} (${pts(d)} pts, ${usd(d * R.VT)} de UB) · venta ${pc(R.VT / R.VL - 1)}`;
+  const real = (a) => a.filter((x) => Math.abs(x.contrib) >= 0.0005 || x.T.vn >= 1e6);
+  const sec = real(R.by.sec), mar = real(R.by.marca).filter((x) => x.name !== '(sin dato)');
+  const up = sec.filter((x) => x.contrib >= 0.001).sort((a, b) => b.contrib - a.contrib), dn = sec.filter((x) => x.contrib <= -0.001).sort((a, b) => a.contrib - b.contrib);
+  const down = (a) => a.filter((x) => x.br && x.br.total < 0 && x.imp$ != null).sort((a, b) => a.imp$ - b.imp$).slice(0, 3);
+  const line = (x) => `${x.name}: ${pts(x.br.total)} pts de margen (${usd(x.imp$)} de UB)${x.causa ? ` · causa: ${CAUSA[x.causa][0].toLowerCase()}` : ''}`;
+  const lst = (a) => a.slice(0, 3).map((x) => `${x.name} (${pts(x.contrib)} pts)`).join(', ');
+
+  const donde = [];
+  if (up.length) donde.push(`Suben: ${lst(up)}.`);
+  if (up.length > 1 && d > 0) donde.push(`Las 2 principales explican ${pc((up[0].contrib + up[1].contrib) / d, 0)} del avance.`);
+  donde.push(dn.length ? `Restan: ${lst(dn)}.` : 'Ninguna sección resta margen.');
+  const mdn = mar.filter((x) => x.contrib <= -0.001).sort((a, b) => a.contrib - b.contrib);
+  if (mdn.length) donde.push(`Marcas que más restan: ${lst(mdn)}.`);
+
+  const pasoFn = {
+    desc: (e) => `Descuento ${pts(e)} pts: descuento promedio ${pc(rL.d)} → ${pc(rT.d)} del precio lleno.`,
+    compra: (e) => `Costo de compra ${pts(e)} pts: costo ÷ precio lleno ${pc(rL.k)} → ${pc(rT.k)}.`,
+    bonif: (e) => `Bonificación ${pts(e)} pts: ${pc(Math.abs(rL.b))} → ${pc(Math.abs(rT.b))} de la venta.`,
+    merma: (e) => `Merma ${pts(e)} pts: ${pc(rL.me)} → ${pc(rT.me)} de la venta.`,
+    financ: (e) => `Financiamiento ${pts(e)} pts: ${pc(rL.f)} → ${pc(rT.f)} de la venta.`,
+    otros: (e) => `Ajustes y saldos de costo ${pts(e)} pts.`,
+  };
+  const pasó = Object.keys(pasoFn).sort((a, b) => Math.abs(R.br[b]) - Math.abs(R.br[a])).filter((k) => Math.abs(R.br[k]) >= 0.0005).slice(0, 5).map((k) => pasoFn[k](R.br[k]));
+  if (R.sL && R.sT) pasó.unshift(`MG inicial ${pc(R.sL.ini)} → ${pc(R.sT.ini)}; la degradación hasta UB final (% de precio lleno) pasa de ${pts(R.sL.fin - R.sL.ini)} a ${pts(R.sT.fin - R.sT.ini)} pts.`);
+
+  const afecta = [];
+  const ds = down(sec); if (ds.length) afecta.push('Secciones con margen a la baja:', ...ds.map((x) => '  · ' + line(x)));
+  const dm = down(mar); if (dm.length) afecta.push('Marcas con margen a la baja:', ...dm.map((x) => '  · ' + line(x)));
+  const big = [...sec].sort((a, b) => b.T.vn - a.T.vn)[0], bd = big && ratios(big.T)?.d;
+  if (big && big.mT != null && big.mT < R.MT && big.T.vn / R.VT >= 0.15) afecta.push(`${big.name} pesa ${pc(big.T.vn / R.VT, 0)} de la venta con margen ${pc(big.mT)} (bajo el ${pc(R.MT)} del total) y descuento de ${pc(bd)}.`);
+  const imp = R.by.orig.find((x) => x.name === 'Importación'), nac = R.by.orig.find((x) => x.name === 'Nacional');
+  if (imp && nac && imp.mT != null && nac.mT != null) {
+    afecta.push(`Importación: venta ${pc(imp.varV)}, margen ${pc(imp.mL)} → ${pc(imp.mT)}. Nacional: venta ${pc(nac.varV)}, margen ${pc(nac.mL)} → ${pc(nac.mT)}.`);
+    if (imp.sT && nac.sT) afecta.push(`MG inicial importación ${pc(imp.sT.ini)} vs ${pc(nac.sT.ini)} nacional; se degrada ${pts(imp.sT.fin - imp.sT.ini)} vs ${pts(nac.sT.fin - nac.sT.ini)} pts.`);
+  }
+  const mp = R.by.tm.find((x) => x.name === 'Marca Propia'), mv = R.by.tm.find((x) => x.name === 'Marca del Proveedor');
+  if (mp && mv && mp.mT != null && mv.mT != null) afecta.push(`Marca propia: venta ${pc(mp.varV)}, margen ${pc(mp.mL)} → ${pc(mp.mT)}. Marca del proveedor: venta ${pc(mv.varV)}, margen ${pc(mv.mL)} → ${pc(mv.mT)}.`);
+  const sd = R.by.marca.find((x) => x.name === '(sin dato)');
+  if (sd && Math.abs(sd.contrib) >= 0.003) afecta.push(`Alerta de dato: renglones sin marca asignada (bonificación, merma, ajustes) pasan de ${fmtM(sd.L.ub)} a ${fmtM(sd.T.ub)} de UB (${pts(sd.contrib)} pts). Distorsiona el comparativo por marca; confirmar con Finanzas dónde quedó la bonificación.`);
+  if (R.br.financ >= 0.002) afecta.push(`El efecto de financiamiento (${pts(R.br.financ)} pts) puede venir de una base inflada del año anterior (cambio de nivel desde abr-2025); validar con Finanzas.`);
+
+  const como = [];
+  (SM?.rows || []).slice(0, 3).forEach((x) => como.push(`${CAUSA[x.k][0]} (${pts(x.eff)} pts): ${CAUSA[x.k][1]}.`));
+  ds.forEach((x) => { if (x.causa) como.push(`${x.name}: ${CAUSA[x.causa][1]}.`); });
+  if (big && big.mT != null && big.mT < R.MT && big.T.vn / R.VT >= 0.15 && bd < 0.08) como.push(`${big.name}: casi no usa descuento, la palanca es el costo de compra (IMU); negociar costo o mezclar hacia mayor margen.`);
+  if (imp && nac && imp.mT != null && nac.mT != null && imp.mT < nac.mT) como.push('Importación: nace con más MG inicial pero termina por debajo de nacional; revisar liquidación y financiamiento antes de comprometer más compra.');
+  if (SM?.rows.length) como.push(`Supuesto: recuperando ${SM.rows.map((x) => `${x.p}% de ${CAUSA[x.k][0].toLowerCase()}`).join(', ')} → ${pts(SM.pts)} pts: margen ${pc(R.MT)} → ${pc(SM.mNew)} (${usd(SM.usd)} de UB).`);
+  else como.push('Sin causas a la baja en este alcance: mantener y proteger lo que funciona.');
+
+  return { head, blocks: [['Dónde está el problema', donde], ['Qué pasó', pasó], ['Qué afecta', afecta], ['Cómo lo solucionaremos', como]] };
+}
+
 export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) {
   const [X, setX] = useState(null);
   const [F, setF] = useState({});
   const [dim, setDim] = useState('sec');
   const [soloBaja, setSoloBaja] = useState(false);
+  const [tab, setTab] = useState('detalle');
+  const [sim, setSim] = useState({});
   const [busy, setBusy] = useState(null);
   const [msg, setMsg] = useState(null);
   const fileRef = useRef(null);
@@ -140,24 +211,25 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
     const rows = X.rows.filter((r) => (r.a === ty || r.a === ly) && pass(r));
     const opt = {}; // opciones en cascada: valores que existen con los demás filtros
     for (const [k] of [...DIMS, ['mes']]) { const m = {}; X.rows.filter((r) => (r.a === ty || r.a === ly) && pass(r, k)).forEach((r) => { if (r[k] != null) m[r[k]] = (m[r[k]] || 0) + Math.abs(r.vn); }); opt[k] = Object.entries(m).sort((a, b) => b[1] - a[1]).map(([v, x]) => ({ value: v, label: v, hint: fmtM(x) })); }
-    const TL = zero(), TT = zero(), by = {};
-    for (const r of rows) {
-      const tgt = r.a === ty ? TT : TL; add(tgt, r);
-      const key = r[dim]; const o = (by[key] ||= { L: zero(), T: zero() });
-      add(r.a === ty ? o.T : o.L, r);
-    }
+    const TL = zero(), TT = zero();
+    for (const r of rows) add(r.a === ty ? TT : TL, r);
     const VL = TL.vn, VT = TT.vn, ML = TL.ub / VL;
-    const list = Object.entries(by).map(([name, { L, T }]) => {
-      const wL = L.vn / VL, wT = T.vn / VT, rl = ratios(L), rt = ratios(T);
-      const contrib = T.ub / VT - L.ub / VL;
-      const mix = rl ? (wT - wL) * (rl.m - ML) : 0;
-      const br = bridge(L, T);
-      let causa = null;
-      if (br) { const [k, v] = Object.entries(br).filter(([k]) => CAUSA[k]).sort((a, b) => a[1] - b[1])[0]; if (v < -0.002) causa = k; }
-      return { name, L, T, contrib, mix, tasa: contrib - mix, br, mL: rl?.m, mT: rt?.m, varV: L.vn > 0 ? T.vn / L.vn - 1 : null, imp$: br ? T.vn * br.total : null, causa,
-        sT: stages(T), tag: L.vn <= 0 && T.vn > 0 ? 'nuevo' : T.vn <= 0 && L.vn > 0 ? 'salida' : null };
-    });
-    return { ty, ly, TL, TT, VL, VT, ML, MT: TT.ub / VT, list, sL: stages(TL), sT: stages(TT), br: bridge(TL, TT), opt, n: rows.length };
+    const mk = (dm) => {
+      const by = {};
+      for (const r of rows) { const o = (by[r[dm]] ||= { L: zero(), T: zero() }); add(r.a === ty ? o.T : o.L, r); }
+      return Object.entries(by).map(([name, { L, T }]) => {
+        const wL = L.vn / VL, wT = T.vn / VT, rl = ratios(L), rt = ratios(T);
+        const contrib = T.ub / VT - L.ub / VL;
+        const mix = rl ? (wT - wL) * (rl.m - ML) : 0;
+        const br = bridge(L, T);
+        let causa = null;
+        if (br) { const [k, v] = Object.entries(br).filter(([k]) => CAUSA[k]).sort((a, b) => a[1] - b[1])[0]; if (v < -0.002) causa = k; }
+        return { name, L, T, contrib, mix, tasa: contrib - mix, br, mL: rl?.m, mT: rt?.m, varV: L.vn > 0 ? T.vn / L.vn - 1 : null, imp$: br ? T.vn * br.total : null, causa,
+          sT: stages(T), tag: L.vn <= 0 && T.vn > 0 ? 'nuevo' : T.vn <= 0 && L.vn > 0 ? 'salida' : null };
+      });
+    };
+    const list = mk(dim), by = { sec: mk('sec'), marca: mk('marca'), orig: mk('orig'), tm: mk('tm') };
+    return { ty, ly, TL, TT, VL, VT, ML, MT: TT.ub / VT, list, by, sL: stages(TL), sT: stages(TT), br: bridge(TL, TT), opt, n: rows.length };
   }, [X, F, dim]);
 
   const card = `rounded-2xl border p-4 ${t.card}`;
@@ -187,6 +259,9 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
   );
 
   const chart = R?.br ? [['Descuento', R.br.desc], ['Costo compra', R.br.compra], ['Bonificación', R.br.bonif], ['Merma', R.br.merma], ['Financ.', R.br.financ], ['Otros', R.br.otros]].map(([name, v]) => ({ name, v: +(v * 100).toFixed(2) })) : [];
+  const SM = simulate(R, sim);
+  const SUM = summary(R, F, SM);
+  const copiar = () => { if (!SUM) return; const tx = [SUM.head, '', ...SUM.blocks.flatMap(([h, it]) => [h.toUpperCase(), ...it.map((i) => (i.startsWith('  ·') ? i : `- ${i}`)), ''])].join('\n'); navigator.clipboard?.writeText(tx); setMsg({ ok: true, text: 'Resumen copiado' }); };
   const rows = R?.list ? R.list.filter((x) => Math.abs(x.contrib) >= 0.0005 || x.L.vn >= 1e6 || x.T.vn >= 1e6).filter((x) => !soloBaja || x.contrib < 0).sort((a, b) => a.contrib - b.contrib) : [];
 
   return (
@@ -223,6 +298,34 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
             ))}
           </div>
 
+          <div className={`inline-flex rounded-lg border p-0.5 ${t.toggle}`}>
+            {[['resumen', 'Resumen'], ['detalle', 'Detalle']].map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={`px-4 py-1 text-xs rounded-md font-bold ${tab === k ? t.toggleActive : t.textMuted}`}>{l}</button>)}
+          </div>
+          {tab === 'resumen' && SUM && (
+            <div className="space-y-3">
+              <div className={`${card} flex items-start justify-between gap-3`}>
+                <div>
+                  <div className={`text-[10px] font-bold uppercase ${t.textMuted}`}>Resumen ejecutivo · {R.ty} vs {R.ly}{X.hasMes ? '' : ' (acumulado)'}</div>
+                  <h2 className={`text-lg font-black mt-1 ${t.text}`}>{SUM.head}</h2>
+                </div>
+                <button onClick={copiar} className={`shrink-0 px-3 py-1.5 text-xs rounded-lg font-bold ${t.btnGhost}`}>Copiar</button>
+              </div>
+              <div className="grid md:grid-cols-2 gap-3">
+                {SUM.blocks.map(([h, items], i) => (
+                  <div key={h} className={card}>
+                    <h3 className="text-sm font-black mb-2" style={{ color: i === 3 ? POS : undefined }}><span className={i === 3 ? '' : t.text}>{h}</span></h3>
+                    <ul className="space-y-1.5">
+                      {items.map((x, j) => x.startsWith('  ·')
+                        ? <li key={j} className={`text-xs pl-5 ${t.textMuted}`}>{x.trim()}</li>
+                        : <li key={j} className={`text-xs list-disc ml-4 ${t.text}`}>{x}</li>)}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+              <p className={`text-[10px] ${t.textMuted}`}>Se arma solo con los filtros activos del header. El supuesto usa los % de recuperación de la pestaña Detalle.</p>
+            </div>
+          )}
+          {tab === 'detalle' && (<>
           <div className="grid md:grid-cols-2 gap-4">
           <div className={card}>
               <div className="flex items-baseline justify-between mb-2">
@@ -242,6 +345,32 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
                   </BarChart>
                 </ResponsiveContainer>
               </div>
+              {SM && (
+                <div className="mt-3">
+                  <h4 className={`text-xs font-black mb-1 ${t.text}`}>Supuesto: ¿y si lo arreglamos?</h4>
+                  {SM.rows.length === 0 ? <p className={`text-xs ${t.textMuted}`}>No hay causas a la baja en este alcance.</p> : (
+                    <table className="w-full">
+                      <thead><tr><th className={`${th} !text-left`}>Causa a la baja</th><th className={th}>Efecto</th><th className={th}>Recuperar %</th><th className={th}>Ganas pts</th><th className={th}>UB $</th></tr></thead>
+                      <tbody>
+                        {SM.rows.map((x) => (
+                          <tr key={x.k} className={`border-t ${isDark ? 'border-white/5' : 'border-gray-100'}`}>
+                            <td className={`${td} !text-left ${t.text}`} title={CAUSA[x.k][1]}>{CAUSA[x.k][0]}</td>
+                            <td className={td} style={{ color: NEG }}>{pts(x.eff)}</td>
+                            <td className={td}><input type="number" min="0" max="100" step="10" value={x.p} onChange={(e) => setSim((s) => ({ ...s, [x.k]: Math.min(100, Math.max(0, +e.target.value || 0)) }))} className={`w-16 text-center px-1 py-0.5 text-xs rounded-lg border focus:outline-none ${t.input}`} /></td>
+                            <td className={td} style={{ color: POS }}>{pts(x.pts)}</td>
+                            <td className={td} style={{ color: POS }}>{usd(x.usd)}</td>
+                          </tr>
+                        ))}
+                        <tr className={`border-t font-black ${isDark ? 'border-white/10' : 'border-gray-200'}`}>
+                          <td className={`${td} !text-left ${t.text}`} colSpan={3}>Margen {pc(R.MT)} → {pc(SM.mNew)}</td>
+                          <td className={td} style={{ color: POS }}>{pts(SM.pts)}</td><td className={td} style={{ color: POS }}>{usd(SM.usd)}</td>
+                        </tr>
+                      </tbody>
+                    </table>
+                  )}
+                  <p className={`text-[10px] mt-1 ${t.textMuted}`}>Recupera X% del efecto negativo de cada causa. Pts y UB sobre la venta {R.ty}; es un supuesto, no un pronóstico.</p>
+                </div>
+              )}
             </div>
             <div className={card}>
               <div className="flex items-baseline justify-between mb-2">
@@ -332,6 +461,7 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
               MG ini = 1 − costo ÷ precio lleno; Degrad. = UB ÷ precio lleno − MG ini (lo que se pierde en descuento, merma y financiamiento, neto de bonificación). La bonificación es mensual y se calcula sobre costo (crece con el descuento); una marca descontinuada ya no bonifica.
             </p>
           </div>
+          </>)}
         </>
       )}
     </div>
