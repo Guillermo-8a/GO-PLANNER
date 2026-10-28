@@ -15,8 +15,9 @@ body { margin: 0; font-family: system-ui, -apple-system, sans-serif; }
 /* ─── Scrollbar — modo oscuro (default) ──────────────────────────── */
 ::-webkit-scrollbar       { width: 6px; height: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #3f3f46; border-radius: 10px; }
-::-webkit-scrollbar-thumb:hover { background: #52525b; }
+/* Thumb tenue: el gris sólido (#3f3f46) se veía como una línea blanca junto al rail cuando sale el GO-Bot */
+::-webkit-scrollbar-thumb { background: rgba(255,255,255,0.07); border-radius: 10px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(255,255,255,0.22); }
 
 /* ─── Scrollbar — modo claro ─────────────────────────────────────── */
 :root:not(.dark) ::-webkit-scrollbar-thumb       { background: #d1d5db; }
