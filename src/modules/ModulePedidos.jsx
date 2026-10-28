@@ -9,7 +9,10 @@ import { lazy, Suspense } from 'react';
 import FilterMenu, { FilterSection } from '../components/FilterMenu';
 import MS from '../components/MultiSelect';
 import { siteOfKey } from './pedidos/layout';
-const Scene3D = lazy(() => import('./pedidos/Scene3D'));
+const Scene3D = lazy(() => import('./pedidos/Scene3D').then(m => { try { sessionStorage.removeItem('gop_chunk_r'); } catch {} return m; }).catch(e => {
+  try { if (!sessionStorage.getItem('gop_chunk_r')) { sessionStorage.setItem('gop_chunk_r', '1'); location.reload(); return new Promise(() => {}); } } catch {}
+  throw e;
+}));
 
 const LS_KEY = 'gop_pedidos';
 const LS_CFG = 'gop_pedidos_cfg';
