@@ -429,6 +429,7 @@ export default function ModuleDaily(){
   const [bonifMes,setBonifMes]=useState(0);   // bonificación $ mes corriente
   const [bonifAcum,setBonifAcum]=useState(0); // bonificación $ acumulado periodo
   const [cmpMode,setCmpMode]=useState(0);
+  const [showPromoList,setShowPromoList]=useState(false);
   const [tblBasis,setTblBasis]=useState('periodo'); // 'periodo' (vs LY mismo filtro) | 'cierre' (fcst vs LY mes completo)
   const [cmpDayMode,setCmpDayMode]=useState('detalle'); // 'detalle' (lun↔lun) | 'avg'
   const [scatterLevel,setScatterLevel]=useState(0);
@@ -655,7 +656,7 @@ export default function ModuleDaily(){
       return { ...g, fcst, mgPct:g.ventaP>0?g.utilidad/g.ventaP*100:0,
         tendPeriodo:delta(g.ventaP,lyP[g.key]), tendCierre:delta(fcst,lyFull[g.key]),
         lyP:lyP[g.key]||0, lyFull:lyFull[g.key]||0, lyUtil:lyU[g.key]||0, mgLY:lyP[g.key]>0?(lyU[g.key]||0)/lyP[g.key]*100:null, // MG = % (utilidad ÷ venta); utilidad = $
-        crecMg:(g.ventaP>0&&lyP[g.key]>0&&lyU[g.key])?delta(g.utilidad/g.ventaP,lyU[g.key]/lyP[g.key]):null,
+        crecMg:(g.ventaP>0&&lyP[g.key]>0&&lyU[g.key])?(g.utilidad/g.ventaP-lyU[g.key]/lyP[g.key])*100:null,
         oh:inv[g.key]?.oh||0, ohLY:inv[g.key]?.ohLY||0, // Inv inicial del mes vs AA (INV_INI / INV_INI_AA); si el CSV no los trae, foto OH vs OH_AA
         ini:inv[g.key]?.ini||0, iniLY:inv[g.key]?.iniLY||0,
         dInv:inv[g.key]?.iniLY>0?delta(inv[g.key].ini,inv[g.key].iniLY):inv[g.key]?.ohLY>0?delta(inv[g.key].oh,inv[g.key].ohLY):null }; }).sort((a,b)=>b.ventaP-a.ventaP);
@@ -881,7 +882,7 @@ export default function ModuleDaily(){
       <div className="overflow-x-auto custom-scrollbar max-h-[260px]">
         <table className="w-full text-left text-xs min-w-max">
           <thead><tr className={`text-[9px] uppercase font-black tracking-widest sticky top-0 ${isDark?'bg-[#1c1720] text-gray-400 border-b border-white/10':'bg-gray-50 text-gray-500 border-b border-gray-200'}`}>
-            {['Nombre','Venta','PZS','MG%','Crec MG',per?'Tend período':'Tend cierre','Fcst Mes',...(hasInv?[invH]:[])].map(h=><th key={h} className="p-2 whitespace-nowrap" title={h==='Crec MG'?'Crecimiento % del MG% vs LY (MG = utilidad ÷ venta), mismo período':h==='Desv Inv AA'?'Inventario (OH) de la foto cargada vs OH_AA':h==='Desv Inv ini AA'?'Inventario inicial del mes (INV_INI) vs mismo mes del año pasado (INV_INI_AA)':undefined}>{h}</th>)}
+            {['Nombre','Venta','PZS','MG%','Δ MG pts',per?'Tend período':'Tend cierre','Fcst Mes',...(hasInv?[invH]:[])].map(h=><th key={h} className="p-2 whitespace-nowrap" title={h==='Δ MG pts'?'Puntos de MG% vs LY (MG% TY − MG% LY; MG = utilidad ÷ venta), mismo período':h==='Desv Inv AA'?'Inventario (OH) de la foto cargada vs OH_AA':h==='Desv Inv ini AA'?'Inventario inicial del mes (INV_INI) vs mismo mes del año pasado (INV_INI_AA)':undefined}>{h}</th>)}
           </tr></thead>
           <tbody className={`divide-y ${isDark?'divide-zinc-800/50':'divide-gray-100'}`}>
             {data.slice(0,15).map((r,i)=>{ const sel=selected?.includes(r.key);
@@ -892,7 +893,7 @@ export default function ModuleDaily(){
                 <td className={`p-2 font-mono ${accent||'text-violet-400'}`}>{fmtM(r.ventaP)}</td>
                 <td className={`p-2 font-mono ${t.textMuted}`}>{fmt(r.ventaU)}</td>
                 <td className={`p-2 font-bold ${r.mgPct>=45?'text-violet-400':r.mgPct>=35?'text-amber-400':'text-rose-400'}`}>{fmtP(r.mgPct)}</td>
-                <td className="p-2" title={r.mgLY!=null?`MG ${fmtP(r.mgPct)} vs ${fmtP(r.mgLY)} LY (${(r.mgPct-r.mgLY>=0?'+':'')}${(r.mgPct-r.mgLY).toFixed(1)} pts)`:undefined}><DeltaBadge value={r.crecMg}/></td>
+                <td className="p-2" title={r.mgLY!=null?`MG ${fmtP(r.mgPct)} vs ${fmtP(r.mgLY)} LY (${(r.mgPct-r.mgLY>=0?'+':'')}${(r.mgPct-r.mgLY).toFixed(1)} pts)`:undefined}>{r.crecMg==null?<span className="text-gray-400 text-[10px]">N/D</span>:<span className={`text-[10px] font-black ${r.crecMg>=0?'text-violet-400':'text-red-400'}`}>{r.crecMg>=0?'▲':'▼'} {Math.abs(r.crecMg).toFixed(1)} pts</span>}</td>
                 <td className="p-2"><DeltaBadge value={tendOf(r)}/></td>
                 <td className={`p-2 font-mono font-bold ${t.textAccent2}`}>{fmtM(r.fcst)}</td>
                 {hasInv&&<td className="p-2"><DeltaBadge value={r.dInv}/></td>}
@@ -1037,7 +1038,7 @@ export default function ModuleDaily(){
             <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
               <h3 className={`text-sm font-bold ${t.textMain}`}>🔍 Comparativos TY vs LY</h3>
               <div className="flex gap-1 flex-wrap">
-                {['Día vs Día','Fecha vs Fecha','Promo vs Promo','Festivo vs Festivo'].map((m,i)=>(
+                {['Día vs Día','Fecha vs Fecha','Promo vs Promo','Festivo vs Festivo','Tendencia'].map((m,i)=>(
                   <button key={m} onClick={()=>setCmpMode(i)} className={`text-[10px] px-3 py-1.5 rounded-lg border font-black transition-all ${cmpMode===i?t.badge:t.btnGhost}`}>{m}</button>
                 ))}
               </div>
@@ -1139,13 +1140,8 @@ export default function ModuleDaily(){
                   </BarChart>
                 </ResponsiveContainer>)}
             </>)}
-          </div>
-
-          {/* TENDENCIA */}
-          {serieDiaria.length>1&&(
-            <div className={`p-4 rounded-2xl border ${t.card}`}>
-              <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-                <h4 className={`text-sm font-bold ${t.textMain}`}>📈 Tendencia Diaria TY vs LY</h4>
+            {cmpMode===4&&serieDiaria.length>1&&(<>
+              <div className="flex justify-end mb-3">
                 {trendStats&&(
                   <div className="flex gap-2 flex-wrap">
                     {[{l:'Últ. 3 meses',v:trendStats.tres,tip:'Del día 1 de hace 2 meses al último día con venta, vs mismas fechas LY'},{l:'Mes actual',v:trendStats.mes,tip:'MTD: del día 1 del mes al último día con venta, vs mismas fechas LY'},{l:'Acumulado año',v:trendStats.acum,tip:'YTD: del 1 de enero al último día con venta, vs mismas fechas LY'}].map(({l,v,tip})=>(
@@ -1171,7 +1167,8 @@ export default function ModuleDaily(){
                   <Line type="monotone" dataKey="ty" name={`TY ${tyYear}`} stroke="#8b5cf6" dot={false} strokeWidth={2.5} activeDot={{r:4}}/>
                 </LineChart>
               </ResponsiveContainer>
-            </div>)}
+            </>)}
+          </div>
 
           {/* DEVOLUCIONES */}
           {devol.devP>0&&(
@@ -1240,7 +1237,7 @@ export default function ModuleDaily(){
           {/* PAGO + NORMA */}
           <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
             {[...(byPago.some(p=>p.key!=='N/D')?[{title:'Tipo de Pago',data:byPago,colors:['bg-violet-500','bg-purple-500','bg-blue-500','bg-purple-500']}]:[]),
-              {title:'Norma de Compra',data:byNorma,colors:['bg-amber-500','bg-orange-500','bg-yellow-500']}].map(({title,data,colors})=>(
+              ...(byNorma.some(p=>p.key!=='N/D')?[{title:'Norma de Compra',data:byNorma,colors:['bg-amber-500','bg-orange-500','bg-yellow-500']}]:[])].map(({title,data,colors})=>(
               <div key={title} className={`p-4 rounded-2xl border ${t.card}`}>
                 <h4 className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} mb-3`}>{title}</h4>
                 <div className="space-y-2">
@@ -1313,15 +1310,15 @@ export default function ModuleDaily(){
             })()}
             {promoList.length>0&&(
               <div className="mt-4">
-                <h5 className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} mb-2`}>Promos cargadas</h5>
-                <div className="flex flex-wrap gap-2">
+                <button onClick={()=>setShowPromoList(v=>!v)} className={`text-[9px] font-black uppercase tracking-widest ${t.textMuted} mb-2 hover:text-violet-400`}>{showPromoList?'▾ Ocultar':'▸ Mostrar'} promos cargadas ({promoList.length})</button>
+                {showPromoList&&<div className="flex flex-wrap gap-2">
                   {promoList.map((p,i)=>(
                     <div key={i} className={`px-3 py-1.5 rounded-lg border ${t.cardInner}`}>
                       <span className={`text-[11px] font-black ${t.textMain}`}>{p.nombre}</span>
                       {p.fija&&<span className={`text-[8px] ml-1 px-1.5 py-0.5 rounded-full border font-black ${t.badgeAmber}`}>fija</span>}
                       <span className={`text-[9px] ml-2 ${t.textMuted}`}>{fmtDate(new Date(p.min+'T00:00:00'))}{p.max!==p.min?`→${fmtDate(new Date(p.max+'T00:00:00'))}`:''} · {p.nDias}d · +{p.uplift||defaultUplift}%{p.seccion?` · ${p.seccion}`:''}{p.marca?` · ${p.marca}`:''}</span>
                     </div>))}
-                </div>
+                </div>}
               </div>)}
             <p className={`text-[9px] mt-3 ${t.textMuted}`}>Click para marcar/desmarcar días con promo. 🎉 = festivo · días naranja = fin de semana. <strong>UPLIFT</strong> = % extra de venta esperado ese día vs base (ej. 20 = +20%). El forecast suma uplift en días promo TY y descuenta si LY tuvo promo que TY no tiene.<br/>CSV de promos: <code>NOMBRE, FECHA_INICIO, FECHA_FIN, SECCION, MARCA, UPLIFT</code> — usa FECHA_FIN o DIAS para rangos; sin SECCION/MARCA aplica a todo.</p>
           </div>
