@@ -31,7 +31,7 @@ const isoMonday = (w, y) => { const d = new Date(Date.UTC(y, 0, 4)); d.setUTCDat
 const isoWeekMi = (w, y) => { const d = isoMonday(w, y); return mi(d.getUTCFullYear(), d.getUTCMonth() + 1); };
 // Semana de 1a recepción: 'SS.AAAA' (Excel) o 'AAAASS' (BigQuery) → [semana, año]
 const wkParts = (v) => { const t = str(v); let m = t.match(/^(\d{1,2})\.(\d{4})$/); if (m) return [+m[1], +m[2]]; m = t.match(/^(20\d{2}|19\d{2})(\d{2})$/); return m && +m[2] >= 1 && +m[2] <= 53 ? [+m[2], +m[1]] : null; };
-const weekIdx = (v) => { const w = wkParts(v); return w ? Math.round(isoMonday(w[0], w[1]) / 6048e5) : null; }; // semana absoluta
+const weekIdx = (v) => { const t = str(v), md = t.match(/^(\d{4})-(\d{2})-(\d{2})/); if (md) { const d = new Date(Date.UTC(+md[1], +md[2] - 1, +md[3])); d.setUTCDate(d.getUTCDate() - ((d.getUTCDay() || 7) - 1)); return Math.round(d / 6048e5); } const w = wkParts(v); return w ? Math.round(isoMonday(w[0], w[1]) / 6048e5) : null; }; // semana absoluta
 function parseMes(v) {
   if (v instanceof Date) return mi(v.getFullYear(), v.getMonth() + 1);
   if (typeof v === 'number' && v > 20000 && v < 80000) { const d = new Date(Math.round((v - 25569) * 864e5)); return mi(d.getUTCFullYear(), d.getUTCMonth() + 1); }
@@ -74,7 +74,7 @@ const ALIAS = {
   anioRec: ['ANO RECEPCION', 'ANIO RECEPCION'],
   accion: ['ACCION', 'ACCION SUGERIDA'],
   destinos: ['DESTINOS', 'DESTINOS SUGERIDOS'],
-  fecRec: ['FECHA DE PRIMERA REC', 'FECHA PRIMERA RECEPCION', 'FECHA 1A RECEPCION', 'FECHA DE PRIMERA RECEPCION'],
+  fecRec: ['FECHA PRIMERA REC', 'FECHA 1A REC', 'FECHA DE PRIMERA REC', 'FECHA PRIMERA RECEPCION', 'FECHA 1A RECEPCION', 'FECHA DE PRIMERA RECEPCION'],
 };
 const mapHeader = (h) => { const n = h.map(norm), c = {}; Object.entries(ALIAS).forEach(([k, al]) => { const i = n.findIndex((x) => al.includes(x)); if (i >= 0) c[k] = i; }); return c; };
 const headerOk = (c) => c.centro != null && c.sku != null && (c.monto != null || c.pzs != null) && (c.meses != null || c.mesUlt != null || c.fecUlt != null);
