@@ -250,7 +250,7 @@ export const CSV_SCHEMAS = [
       {
         title: 'Utilidad comparativa TY vs LY (BigQuery VEIL_TAB_UTILIDAD_COMPARATIVO_S)',
         desc: 'Una fila por año × División × Sección × Marca × Tipo importación × Tipo marca (sin año anterior no compara; opcional MES para filtrar). Puente en pts de venta neta: Descuento + Costo de compra + Bonificación + Merma + Financiamiento + Otros. Contribución al total = tasa + mix, suma exacta. Fuente: /api/bq?source=margen&anio=AAAA&mes=M.',
-        columns: ['anio*', 'DIVISION', 'SECCION', 'MARCA', 'TIPO_IMPORTACION', 'TIPO_MARCA', 'precio_lleno*', 'mkd', 'venta_neta*', 'costo*', 'bonif', 'merma', 'financ', 'ub_merc*'],
+        columns: ['anio*', 'MES', 'DIVISION', 'SECCION', 'MARCA', 'TIPO_IMPORTACION', 'TIPO_MARCA', 'precio_lleno*', 'mkd', 'venta_neta*', 'costo*', 'bonif', 'merma', 'financ', 'ub_merc*'],
       },
     ],
   },

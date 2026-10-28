@@ -116,7 +116,7 @@ export const QUERIES = {
   margen: {
     params: ['anio', 'mes'],
     sql: () => `
-      SELECT EXTRACT(YEAR FROM MES_PERIODO) AS anio, DIVISION, SECCION, MARCA, TIPO_IMPORTACION, TIPO_MARCA,
+      SELECT EXTRACT(YEAR FROM MES_PERIODO) AS anio, EXTRACT(MONTH FROM MES_PERIODO) AS mes, DIVISION, SECCION, MARCA, TIPO_IMPORTACION, TIPO_MARCA,
              SUM(Ventas_a_Precio_Lleno) AS precio_lleno, SUM(TOTAL_MARKDOWNS) AS mkd, SUM(Venta_Neta) AS venta_neta,
              SUM(Costo_de_lo_Vendido) AS costo, SUM(Bonificaciones_Proveedor) AS bonif,
              SUM(Provision_de_Merma) AS merma, SUM(Costo_Financiamiento_Inventarios) AS financ,
@@ -124,6 +124,6 @@ export const QUERIES = {
       FROM \`crp-pro-dwh-semanticagold.mus_pro_dwh_views_sap.VEIL_TAB_UTILIDAD_COMPARATIVO_S\`
       WHERE EXTRACT(YEAR FROM MES_PERIODO) IN (CAST(@anio AS INT64) - 1, CAST(@anio AS INT64))
         AND EXTRACT(MONTH FROM MES_PERIODO) <= CAST(@mes AS INT64)
-      GROUP BY 1, 2, 3, 4, 5, 6`,
+      GROUP BY 1, 2, 3, 4, 5, 6, 7`,
   },
 };

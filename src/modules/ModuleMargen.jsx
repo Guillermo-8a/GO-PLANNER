@@ -207,7 +207,7 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
     const pass = (r, skip) => Object.keys(F).every((k) => k === skip || !F[k]?.length || F[k].includes(r[k]));
     const rows = X.rows.filter((r) => (r.a === ty || r.a === ly) && pass(r));
     const opt = {}; // opciones en cascada: valores que existen con los demás filtros
-    for (const [k] of [...DIMS, ['mes']]) { const m = {}; X.rows.filter((r) => (r.a === ty || r.a === ly) && pass(r, k)).forEach((r) => { if (r[k] != null) m[r[k]] = (m[r[k]] || 0) + Math.abs(r.vn); }); opt[k] = Object.entries(m).sort((a, b) => b[1] - a[1]).map(([v, x]) => ({ value: v, label: v, hint: fmtM(x) })); }
+    for (const [k] of [...DIMS, ['mes']]) { const m = {}; X.rows.filter((r) => (r.a === ty || r.a === ly) && pass(r, k)).forEach((r) => { if (r[k] != null) m[r[k]] = (m[r[k]] || 0) + Math.abs(r.vn); }); opt[k] = Object.entries(m).sort(k === 'mes' ? (a, b) => a[0] - b[0] : (a, b) => b[1] - a[1]).map(([v, x]) => ({ value: v, label: k === 'mes' ? (MES[+v - 1] || v) : v, hint: fmtM(x) })); }
     const TL = zero(), TT = zero();
     for (const r of rows) add(r.a === ty ? TT : TL, r);
     const VL = TL.vn, VT = TT.vn, ML = TL.ub / VL;
