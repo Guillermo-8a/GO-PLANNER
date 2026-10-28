@@ -156,6 +156,7 @@ function summary(R, F, SM) {
 
 export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) {
   const [X, setX] = useState(null);
+  const [CAT, setCAT] = useState(null);
   const [F, setF] = useState({});
   const [dim, setDim] = useState('sec');
   const [soloBaja, setSoloBaja] = useState(false);
@@ -165,7 +166,7 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
   const [msg, setMsg] = useState(null);
   const fileRef = useRef(null);
 
-  useEffect(() => { idbGet('data').then((d) => { if (d) { setX(d); setF(defFilter(d)); } }); }, []);
+  useEffect(() => { idbGet('data').then((d) => { if (d) { setX(d); setF(defFilter(d)); } }); idbGet('cat').then((c) => c && setCAT(c)); }, []);
   const defFilter = () => ({});
 
   const onFile = async (e) => {
@@ -194,10 +195,17 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
       const r = await fetch(`/api/bq?source=margen&anio=${m[1]}&mes=${+m[2]}`, { headers: { 'x-gop-token': tok } });
       const txt = await r.text(); if (r.status === 401) localStorage.removeItem('gop_api_token'); if (!r.ok) throw new Error(txt);
       await load(parse(txt, `BigQuery · ene-${MES[+m[2] - 1]} ${m[1]}`));
+      try {
+        const rc = await fetch(`/api/bq?source=margen_cat&anio=${m[1]}&mes=${+m[2]}`, { headers: { 'x-gop-token': tok } });
+        const tc = await rc.text(); if (!rc.ok) throw new Error(tc);
+        const wb = XLSX.read(tc, { type: 'string' });
+        const cat = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' }).map((r) => ({ a: +r.anio, mes: String(r.mes), div: r.DIVISION, sec: r.SECCION, marca: r.MARCA, pi: +r.pl_ini || 0, pa: +r.pl_act || 0, c: +r.costo || 0 }));
+        setCAT(cat); await idbSet('cat', cat);
+      } catch (e2) { setMsg({ ok: false, text: `Margen cargado; catálogo no disponible: ${e2.message}` }); }
     } catch (err) { setMsg({ ok: false, text: `Error: ${err.message}` }); }
     setBusy(null);
   };
-  const clearAll = async () => { if (!confirm('¿Borrar la base de Margen?')) return; setX(null); setF({}); await idbSet('data', null); try { localStorage.removeItem(LS_FILES); } catch {} };
+  const clearAll = async () => { if (!confirm('¿Borrar la base de Margen?')) return; setX(null); setCAT(null); setF({}); await idbSet('data', null); await idbSet('cat', null); try { localStorage.removeItem(LS_FILES); } catch {} };
 
   const R = useMemo(() => {
     if (!X) return null;
@@ -226,8 +234,15 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
       });
     };
     const list = mk(dim), by = { sec: mk('sec'), marca: mk('marca'), orig: mk('orig'), tm: mk('tm') };
-    return { ty, ly, TL, TT, VL, VT, ML, MT: TT.ub / VT, list, by, sL: stages(TL), sT: stages(TT), br: bridge(TL, TT), opt, n: rows.length };
-  }, [X, F, dim]);
+    let cat = null;
+    if (CAT?.length) {
+      const z = () => ({ pi: 0, pa: 0, c: 0 }), cl = z(), ct = z();
+      for (const r of CAT) if ((r.a === ty || r.a === ly) && ['div', 'sec', 'marca', 'mes'].every((k) => !F[k]?.length || F[k].includes(r[k]))) { const o = r.a === ty ? ct : cl; o.pi += r.pi; o.pa += r.pa; o.c += r.c; }
+      const f = (o) => (o.pi > 0 ? { mg: 1 - o.c / o.pi, lista: 1 - o.pa / o.pi } : null);
+      cat = { L: f(cl), T: f(ct) };
+    }
+    return { cat, ty, ly, TL, TT, VL, VT, ML, MT: TT.ub / VT, list, by, sL: stages(TL), sT: stages(TT), br: bridge(TL, TT), opt, n: rows.length };
+  }, [X, CAT, F, dim]);
 
   const card = `rounded-2xl border p-4 ${t.card}`;
   const th = `px-2 py-1.5 text-[10px] font-bold uppercase tracking-wide text-center whitespace-nowrap select-none ${t.tableHead}`;
@@ -400,6 +415,21 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
                   })}
                 </tbody>
               </table>
+              {R.cat?.L && R.cat?.T && (
+                <table className="w-full mt-3">
+                  <thead><tr><th className={`${th} !text-left`}>Vs catálogo (precio inicial de lista)</th><th className={th}>{R.ly}</th><th className={th}>{R.ty}</th><th className={th}>Δ</th></tr></thead>
+                  <tbody>
+                    {[['MG catálogo', R.cat.L.mg, R.cat.T.mg], ['MG inicial (utilidad)', R.sL?.ini, R.sT?.ini], ['Rebaja de lista', R.cat.L.lista, R.cat.T.lista]].map(([l, a, b]) => (
+                      <tr key={l} className={`border-t ${isDark ? 'border-white/5' : 'border-gray-100'}`}>
+                        <td className={`${td} !text-left ${t.text}`}>{l}</td>
+                        <td className={`${td} ${t.text}`}>{pc(a)}</td><td className={`${td} ${t.text}`}>{pc(b)}</td>
+                        <td className={td} style={{ color: l === 'Rebaja de lista' ? col(a != null && b != null ? a - b : null) : col(a != null && b != null ? b - a : null) }}>{a != null && b != null ? pts(b - a) : '–'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              )}
+              {R.cat?.L && <p className={`text-[10px] mt-1 ${t.textMuted}`}>Catálogo = 1 − costo ÷ (unidades × precio inicial sin IVA). Rebaja de lista = 1 − precio vigente ÷ inicial (cambios de precio / letras de rebaja; el vigente es el de hoy, así que el año anterior sale algo inflado). Filtra por división, sección, marca y mes; no por origen.</p>}
             </div>
           </div>
 

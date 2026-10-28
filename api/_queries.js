@@ -126,4 +126,24 @@ export const QUERIES = {
         AND EXTRACT(MONTH FROM MES_PERIODO) <= CAST(@mes AS INT64)
       GROUP BY 1, 2, 3, 4, 5, 6, 7`,
   },
+
+  // Catálogo: MG a precio inicial de lista y rebaja de lista (precio vigente vs inicial), para comparar con el MG inicial de utilidad
+  margen_cat: {
+    params: ['anio', 'mes'],
+    sql: () => `
+      WITH p AS (
+        SELECT CAST(ARTICULO_KEY AS STRING) art,
+               MAX(SAFE_CAST(PRECIO_VENTA_INIC AS FLOAT64)) / 1.16 p_ini, MAX(SAFE_CAST(PRECIO_VENTA_ACT AS FLOAT64)) / 1.16 p_act
+        FROM \`crp-pro-dwh-semanticagold.mus_pro_dwh_views_sap.VEIL_TAB_VENTAS_MENSUALES_U_S\`
+        WHERE SAFE_CAST(PRECIO_VENTA_INIC AS FLOAT64) > 0 GROUP BY 1)
+      SELECT EXTRACT(YEAR FROM SAFE_CAST(v.DIA_PERIODO AS DATE)) AS anio, EXTRACT(MONTH FROM SAFE_CAST(v.DIA_PERIODO AS DATE)) AS mes,
+             v.DIVISION, v.SECCION, v.MARCA,
+             SUM(SAFE_CAST(v.VTAS_U AS FLOAT64) * p.p_ini) AS pl_ini, SUM(SAFE_CAST(v.VTAS_U AS FLOAT64) * p.p_act) AS pl_act,
+             SUM(SAFE_CAST(v.TOTAL_COSTO_DE_VENTA_RK AS FLOAT64)) AS costo
+      FROM \`crp-pro-dwh-semanticagold.mus_pro_dwh_views_sap.VEIL_ANALISIS_VTAS_DIARIAS\` v
+      JOIN p ON p.art = CAST(v.ARTICULO_KEY AS STRING)
+      WHERE EXTRACT(YEAR FROM SAFE_CAST(v.DIA_PERIODO AS DATE)) IN (CAST(@anio AS INT64) - 1, CAST(@anio AS INT64))
+        AND EXTRACT(MONTH FROM SAFE_CAST(v.DIA_PERIODO AS DATE)) <= CAST(@mes AS INT64)
+      GROUP BY 1, 2, 3, 4, 5`,
+  },
 };
