@@ -1038,7 +1038,7 @@ export default function ModuleDaily(){
             <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
               <h3 className={`text-sm font-bold ${t.textMain}`}>🔍 Comparativos TY vs LY</h3>
               <div className="flex gap-1 flex-wrap">
-                {['Día vs Día','Fecha vs Fecha','Promo vs Promo','Festivo vs Festivo','Tendencia'].map((m,i)=>(
+                {['Día vs Día','Fecha vs Fecha','Promo vs Promo','Festivo vs Festivo'].map((m,i)=>(
                   <button key={m} onClick={()=>setCmpMode(i)} className={`text-[10px] px-3 py-1.5 rounded-lg border font-black transition-all ${cmpMode===i?t.badge:t.btnGhost}`}>{m}</button>
                 ))}
               </div>
@@ -1082,23 +1082,6 @@ export default function ModuleDaily(){
               </>)}
             </>)}
 
-            {cmpMode===1&&(<>
-              <p className={`text-[10px] mb-3 ${t.textMuted}`}>Mismo día del mes (10 vs 10) sin importar el día de semana. ⚠️ = comparas tipos de día distintos.</p>
-              <ResponsiveContainer width="100%" height={220}>
-                <LineChart data={cmpDayMonth.data}><CartesianGrid strokeDasharray="3 3" stroke={gridC}/>
-                  <XAxis dataKey="label" tick={{fontSize:9,fill:txtC}} stroke={axisC}/>
-                  <YAxis tick={{fontSize:9,fill:txtC}} stroke={axisC} tickFormatter={v=>'$'+(v/1000).toFixed(0)+'k'}/>
-                  <Tooltip cursor={{stroke:cursorFill,strokeWidth:2}} content={<TTip/>}/><Legend wrapperStyle={{fontSize:10}}/>
-                  <Line type="monotone" dataKey="ly" name={`LY ${lyYear}`} stroke={axisC} dot={false} strokeWidth={1.5} strokeDasharray="4 2"/>
-                  <Line type="monotone" dataKey="ty" name={`TY ${tyYear}`} stroke="#8b5cf6" dot={{r:2}} strokeWidth={2}/>
-                </LineChart>
-              </ResponsiveContainer>
-              {cmpDayMonth.warnings.length>0&&(
-                <div className={`mt-3 p-3 rounded-xl border ${t.badgeAmber}`}>
-                  <p className="text-[10px] font-black uppercase mb-1">⚠️ Advertencias de comparación</p>
-                  <ul className="space-y-0.5">{cmpDayMonth.warnings.slice(0,6).map((w,i)=><li key={i} className="text-[10px]">• {w}</li>)}</ul>
-                </div>)}
-            </>)}
 
             {cmpMode===2&&(<>
               <p className={`text-[10px] mb-3 ${t.textMuted}`}>Cada conjunto de barras es una promoción (Eventos + calendario fijo): TY vs LY en los mismos días. Respeta los filtros; una promo en curso se compara solo hasta el último día con data.</p>
@@ -1140,7 +1123,7 @@ export default function ModuleDaily(){
                   </BarChart>
                 </ResponsiveContainer>)}
             </>)}
-            {cmpMode===4&&serieDiaria.length>1&&(<>
+            {cmpMode===1&&serieDiaria.length>1&&(<>
               <div className="flex justify-end mb-3">
                 {trendStats&&(
                   <div className="flex gap-2 flex-wrap">
