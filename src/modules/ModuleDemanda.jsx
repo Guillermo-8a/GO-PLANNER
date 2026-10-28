@@ -25,7 +25,7 @@ const nrm = (s) => String(s ?? '').toUpperCase().normalize('NFD').replace(/[̀-�
 const csvCell = (v) => { const s = String(v ?? ''); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
 const downloadCSV = (name, lines) => { const blob = new Blob(['﻿' + lines.join('\n')], { type: 'text/csv;charset=utf-8' }); const a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = name; a.click(); URL.revokeObjectURL(a.href); };
 
-const FILTERS = [['sec', 'Sección'], ['goa', 'GOA'], ['marca', 'Marca'], ['temp', 'Temporada'], ['estado', 'Regular / liquidado'], ['tipo', 'Tipo de demanda'], ['accion', 'Accionable']];
+const FILTERS = [['sec', 'Sección'], ['goa', 'GOA'], ['marca', 'Marca'], ['temp', 'Temporada'], ['norma', 'Norma'], ['estado', 'Regular / liquidado'], ['tipo', 'Tipo de demanda'], ['accion', 'Accionable']];
 const val = (r, k) => (k === 'estado' ? (r.liq ? 'Liquidado (con letra)' : 'Regular') : k === 'tipo' ? (r.tipo || '—') : k === 'accion' ? r.accion : r.m[k]);
 
 function MultiSelect({ label, options, sel, onChange, t, isDark }) {
@@ -119,7 +119,7 @@ export default function ModuleDemanda({ t, isDark, navIcon, navLabel, navDesc })
   );
   const Pill = ({ txt, color }) => <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background: `${color}26`, color }}>{txt}</span>;
   const COLS_BASE = [
-    ['Modelo', (r) => r.m.k], ['GOA', (r) => r.m.goa], ['Marca', (r) => r.m.marca], ['Temporada', (r) => r.m.temp],
+    ['Modelo', (r) => r.m.k], ['GOA', (r) => r.m.goa], ['Marca', (r) => r.m.marca], ['Temporada', (r) => r.m.temp], ['Norma', (r) => r.m.norma],
     ['Letra', (r) => (r.liq ? r.m.letra : 'Regular')],
     ['Tipo', (r) => (r.tipo ? <Pill txt={r.tipo} color={TIPO_INFO[r.tipo].color} /> : '—')],
   ];
@@ -129,8 +129,8 @@ export default function ModuleDemanda({ t, isDark, navIcon, navLabel, navDesc })
   const exportBucket = () => {
     const list = rows.filter((r) => r.accion === bucket).sort((a, b) => b.totU - a.totU);
     downloadCSV(`Diagnostico_${bucket.replace(/[ /]+/g, '_')}.csv`, [
-      ['Modelo', 'Sección', 'GOA', 'Marca', 'Temporada', 'Letra', 'Tipo de demanda', 'ADI', 'CV2', 'Semanas con venta', 'Venta u', 'Venta $', 'Prom. semanal', 'x mediana GOA', '% u con desc', 'Semanas sin vender', 'Accionable', 'Acción', 'Por qué'].join(','),
-      ...list.map((r) => [r.m.k, r.m.sec, r.m.goa, r.m.marca, r.m.temp, r.m.letra, r.tipo || '', dec(r.adi), dec(r.cv2), r.nSale, r.totU, Math.round(r.totP), dec(r.vps, 1), dec(r.idx, 2), pct(r.desc), r.last ?? '', r.accion, ACCION_INFO[r.accion].accion, r.porque].map(csvCell).join(',')),
+      ['Modelo', 'Sección', 'GOA', 'Marca', 'Temporada', 'Norma', 'Letra', 'Tipo de demanda', 'ADI', 'CV2', 'Semanas con venta', 'Venta u', 'Venta $', 'Prom. semanal', 'x mediana GOA', '% u con desc', 'Semanas sin vender', 'Accionable', 'Acción', 'Por qué'].join(','),
+      ...list.map((r) => [r.m.k, r.m.sec, r.m.goa, r.m.marca, r.m.temp, r.m.norma, r.m.letra, r.tipo || '', dec(r.adi), dec(r.cv2), r.nSale, r.totU, Math.round(r.totP), dec(r.vps, 1), dec(r.idx, 2), pct(r.desc), r.last ?? '', r.accion, ACCION_INFO[r.accion].accion, r.porque].map(csvCell).join(',')),
     ]);
   };
 
@@ -161,7 +161,7 @@ export default function ModuleDemanda({ t, isDark, navIcon, navLabel, navDesc })
         <div className={`${card} text-center py-16`}>
           <Upload size={28} className={`mx-auto mb-3 ${t.textMuted}`} />
           <p className={`font-bold ${t.text}`}>Carga el CSV de BigQuery (modelo × semana)</p>
-          <p className={`text-xs mt-1 ${t.textMuted}`}>Columnas: SEMANA, SECCION, GOA, MARCA, MODELO, TEMPORADA, LETRA_ACTUAL, VTA_U, VTA_U_DESC, VTA_P, DESC_P, TIENDAS_CON_VTA, TIENDAS_ACTIVAS.</p>
+          <p className={`text-xs mt-1 ${t.textMuted}`}>Columnas: SEMANA, SECCION, GOA, MARCA, MODELO, TEMPORADA, NORMA, LETRA_ACTUAL, VTA_U, VTA_U_DESC, VTA_P, DESC_P, TIENDAS_CON_VTA, TIENDAS_ACTIVAS.</p>
           <p className={`text-[10px] mt-1 ${t.textMuted}`}>Mínimo {MIN_VIDA} semanas de historia para clasificar. Se guarda en IndexedDB.</p>
         </div>
       ) : tab === 'tipos' ? (
@@ -180,6 +180,7 @@ export default function ModuleDemanda({ t, isDark, navIcon, navLabel, navDesc })
           </div>
           <div className={card}>
             <p className={`text-xs font-bold mb-1 ${t.text}`}>ADI vs CV² por modelo <span className={`font-normal ${t.textMuted}`}>· tamaño = venta · clic abre su detalle · solo modelos con ≥ {MIN_VIDA} semanas</span></p>
+            <p className={`text-[11px] mb-2 ${t.textMuted}`}><b>Eje X (ADI)</b>: cada cuántas semanas vende en promedio (1 = todas las semanas, 3 = una de cada tres). <b>Eje Y (CV²)</b>: qué tan disparejas son las piezas cuando sí vende (0 = siempre parecido; arriba = picos). Las líneas punteadas (1.32 y 0.49) parten los 4 tipos: <b>abajo-izquierda</b> = Suave (candidato a básico), <b>arriba-izquierda</b> = Errático (picos, temporada/promo), <b>abajo-derecha</b> = Intermitente, <b>arriba-derecha</b> = Irregular. Entre más a la derecha y arriba, peor se pronostica.</p>
             <div className="h-[340px]">
               <ResponsiveContainer>
                 <ScatterChart margin={{ top: 10, right: 16, bottom: 18, left: 0 }}>
@@ -238,7 +239,7 @@ export default function ModuleDemanda({ t, isDark, navIcon, navLabel, navDesc })
           <div className={`${card} flex flex-wrap items-center gap-3`}>
             <input list="dem-modelos" value={sel || cur.m.k} onChange={(e) => setSel(e.target.value)} onFocus={(e) => e.target.select()} className={`w-60 ${inCls}`} placeholder="Busca un modelo…" />
             <datalist id="dem-modelos">{[...rows].sort((a, b) => b.totU - a.totU).slice(0, 800).map((r) => <option key={r.m.k} value={r.m.k}>{`${r.m.goa} · ${r.m.marca}`}</option>)}</datalist>
-            <span className={`text-xs ${t.textMuted}`}>{cur.m.sec} · {cur.m.goa} · {cur.m.marca} · {cur.m.temp}</span>
+            <span className={`text-xs ${t.textMuted}`}>{cur.m.sec} · {cur.m.goa} · {cur.m.marca} · {cur.m.temp} · {cur.m.norma}</span>
             <Pill txt={cur.liq ? `Liquidado · ${cur.m.letra}` : 'Regular'} color={cur.liq ? '#D63F8C' : '#34d399'} />
             {cur.tipo && <Pill txt={cur.tipo} color={TIPO_INFO[cur.tipo].color} />}
             <Pill txt={cur.accion} color={ACCION_INFO[cur.accion].color} />

@@ -1,6 +1,6 @@
 // src/utils/demandaEngine.js — Diagnóstico de demanda (lectura + clasificación). Sin React para poder probarlo en node.
 // Entrada: CSV de BigQuery, una fila por MODELO × SEMANA (lunes) a nivel cadena:
-//   SEMANA, SECCION, GOA, MARCA, MODELO, TEMPORADA, LETRA_ACTUAL, VTA_U, VTA_U_DESC, VTA_P, DESC_P, TIENDAS_CON_VTA, TIENDAS_ACTIVAS
+//   SEMANA, SECCION, GOA, MARCA, MODELO, TEMPORADA, NORMA, LETRA_ACTUAL, VTA_U, VTA_U_DESC, VTA_P, DESC_P, TIENDAS_CON_VTA, TIENDAS_ACTIVAS
 // Clasificación de demanda (Syntetos-Boylan) entre la 1a y la última semana con venta:
 //   ADI = semanas / semanas con venta · CV² = (desv. est. / promedio)² de las semanas con venta · cortes 1.32 y 0.49.
 // Disponibilidad sin OH histórico: cobertura = tiendas con venta / tiendas activas (proxy).
@@ -28,7 +28,7 @@ const num = (v) => { const n = parseFloat(String(v ?? '').replace(/[$,\s]/g, '')
 const str = (v) => String(v ?? '').trim();
 const ALIAS = {
   semana: ['SEMANA', 'LUNES', 'FECHA'], sec: ['SECCION'], goa: ['GOA', 'GRUPO ARTICULOS', 'N GOA'], marca: ['MARCA'],
-  modelo: ['MODELO', 'MODELO PROVEEDOR'], temp: ['TEMPORADA'], letra: ['LETRA ACTUAL', 'LETRA'],
+  modelo: ['MODELO', 'MODELO PROVEEDOR'], temp: ['TEMPORADA'], letra: ['LETRA ACTUAL', 'LETRA'], norma: ['NORMA', 'NORMA APROVISIONAMIENTO', 'NORMA DE APROVISIONAMIENTO'],
   u: ['VTA U', 'VTAS U', 'VENTA U'], ud: ['VTA U DESC'], p: ['VTA P', 'VTAS P', 'VENTA P'], dp: ['DESC P'],
   t: ['TIENDAS CON VTA'], act: ['TIENDAS ACTIVAS'],
 };
@@ -63,7 +63,7 @@ export function parseDemanda(text, name = '') {
   for (const [m, w, r] of rows) {
     const i = wi.get(w);
     let x = M.get(m);
-    if (!x) M.set(m, (x = { k: m, sec: str(g(r, 'sec')) || '—', goa: str(g(r, 'goa')) || '—', marca: str(g(r, 'marca')) || '—', temp: str(g(r, 'temp')) || '—', letra: str(g(r, 'letra')) || 'Sin Asignar', u: new Array(NW).fill(0), ud: new Array(NW).fill(0), p: new Array(NW).fill(0), dp: new Array(NW).fill(0), t: new Array(NW).fill(0) }));
+    if (!x) M.set(m, (x = { k: m, sec: str(g(r, 'sec')) || '—', goa: str(g(r, 'goa')) || '—', marca: str(g(r, 'marca')) || '—', temp: str(g(r, 'temp')) || '—', norma: str(g(r, 'norma')) || 'Sin norma', letra: str(g(r, 'letra')) || 'Sin Asignar', u: new Array(NW).fill(0), ud: new Array(NW).fill(0), p: new Array(NW).fill(0), dp: new Array(NW).fill(0), t: new Array(NW).fill(0) }));
     x.u[i] += num(g(r, 'u')); x.ud[i] += num(g(r, 'ud')); x.p[i] += num(g(r, 'p')); x.dp[i] += num(g(r, 'dp')); x.t[i] += num(g(r, 't'));
     act[i] = Math.max(act[i], num(g(r, 'act')));
   }
