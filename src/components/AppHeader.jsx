@@ -45,7 +45,7 @@ export default function AppHeader({
   return (
     <header className={sticky ? `sticky top-0 z-30 border-b ${t.header}` : `relative z-20 rounded-2xl border mb-4 ${t.header}`}>
       <div className="flex items-center justify-between px-4 py-3">
-        <Link to="/about" className="flex items-center gap-3">
+        <Link to="/" className="flex items-center gap-3">
           <div className="w-9 h-9 rounded-xl overflow-hidden shadow-lg shrink-0">
             <img src="/logo.png" alt="GO Planner" className="w-full h-full object-cover" />
           </div>

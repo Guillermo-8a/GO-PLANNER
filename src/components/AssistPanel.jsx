@@ -42,7 +42,7 @@ export default function AssistPanel({
       </div>
 
       <Link
-        to="/about"
+        to="/"
         onClick={onClose}
         className={`flex items-center justify-center gap-1.5 mx-3 mb-3 py-2.5 rounded-xl border text-[11px] font-bold tracking-wide transition ${
           isDark ? 'border-violet-500/25 bg-violet-500/10 text-violet-400 hover:bg-violet-500/20'

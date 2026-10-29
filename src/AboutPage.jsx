@@ -77,7 +77,7 @@ function NavBar({ navigate }) {
             <a key={id} href={`#${id}`} className="whitespace-nowrap text-[11px] sm:text-[12px] font-semibold text-zinc-400 hover:text-white transition-colors">{l}</a>
           ))}
         </div>
-        <button onClick={() => navigate('/')} className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-white text-black px-3 sm:px-4 py-2 text-[11px] sm:text-[12px] font-bold hover:bg-violet-200 transition-colors">
+        <button onClick={() => navigate('/app')} className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-white text-black px-3 sm:px-4 py-2 text-[11px] sm:text-[12px] font-bold hover:bg-violet-200 transition-colors">
           <span className="hidden sm:inline">Abrir app</span><span className="sm:hidden">App</span> <ArrowRight size={13} />
         </button>
       </nav>
@@ -123,7 +123,7 @@ function Hero({ navigate }) {
               Junta los 4 pilares de PAC, buscando qué mejorar, automatizar y dar seguimiento diario en una sola herramienta que corre en cualquier navegador.
             </p>
             <div className="mt-9 flex flex-wrap gap-3 pointer-events-auto">
-              <button onClick={() => navigate('/')} className="gp-cta">Abrir GO PLANNER <ArrowRight size={16} /></button>
+              <button onClick={() => navigate('/app')} className="gp-cta">Abrir GO PLANNER <ArrowRight size={16} /></button>
               <a href="#pilares" className="gp-ghost">Conoce los módulos</a>
             </div>
           </div>
@@ -485,7 +485,7 @@ function CTA({ navigate }) {
               <span className="flex items-center gap-1.5"><Database size={14} /> CSV, Excel o BigQuery</span>
               <span className="flex items-center gap-1.5"><Shield size={14} /> Tus archivos en tu equipo</span>
             </div>
-            <button onClick={() => navigate('/')} className="gp-cta mt-10 mx-auto">Abrir GO PLANNER <ArrowRight size={16} /></button>
+            <button onClick={() => navigate('/app')} className="gp-cta mt-10 mx-auto">Abrir GO PLANNER <ArrowRight size={16} /></button>
           </div>
         </div>
       </Reveal>
@@ -496,7 +496,7 @@ function Footer({ navigate }) {
   return (
     <footer className="border-t border-white/[0.06] px-6 sm:px-10 py-8 max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
       <div className="flex items-center gap-2.5 text-[12px] font-bold text-zinc-500"><Layers size={14} className="text-violet-400" /> GO PLANNER · Sbb · {new Date().getFullYear()}</div>
-      <button onClick={() => navigate('/')} className="text-[12px] font-bold text-zinc-400 hover:text-white flex items-center gap-1">Abrir app <ArrowRight size={12} /></button>
+      <button onClick={() => navigate('/app')} className="text-[12px] font-bold text-zinc-400 hover:text-white flex items-center gap-1">Abrir app <ArrowRight size={12} /></button>
     </footer>
   );
 }
