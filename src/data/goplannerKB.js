@@ -7,7 +7,7 @@ const BASE = [
   {
     id: 'general', titulo: 'Qué es GO PLANNER',
     keywords: ['go planner', 'que es', 'como funciona', 'pilares', 'modulos', 'datos', 'guarda', 'seguridad'],
-    texto: `Sistema de planeación comercial del equipo de PAC (El Yaqui) en 4 pilares: Financial (Planning, Suplementarios, Radar Competencia), Demand Planner (Assortment, Forecasting, Distribución, Resurtido, Diagnóstico de demanda), Inventory Control (Dispersión, Traslados, Chequera) y Check Coo (Daily, Eventos, Allocation, Pedidos, Nulo Movimiento, Validador).
+    texto: `Sistema de planeación comercial del equipo de PAC (Sbb) en 4 pilares: Financial (Planning, Suplementarios, Radar Competencia), Demand Planner (Assortment, Forecasting, Distribución, Resurtido, Diagnóstico de demanda), Inventory Control (Dispersión, Traslados, Chequera) y Check Coo (Daily, Eventos, Allocation, Pedidos, Nulo Movimiento, Validador).
 Cada módulo trabaja con un CSV/Excel que cargas (o con BigQuery en Eventos y el GO-Bot); los cálculos corren en tu navegador y se guardan en localStorage / IndexedDB de tu equipo.
 Pipeline: Forecasting → OTB (Assortment) → Distribución → Resurtido comparten datos; el header "Datos:" marca qué módulos tienen información.`,
   },

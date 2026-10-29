@@ -85,7 +85,7 @@ export const SOLVES = [
 ];
 
 export const FAQS = [
-  { q: '¿Qué es GO PLANNER?', a: 'Es la herramienta de planeación comercial del equipo de PAC de El Yaqui. Junta en un solo lugar el plan financiero, la planeación de la demanda, el control de inventarios y el seguimiento diario, para que no tengas que armar cada análisis en Excel.' },
+  { q: '¿Qué es GO PLANNER?', a: 'Es la herramienta de planeación comercial del equipo de PAC de Sbb. Junta en un solo lugar el plan financiero, la planeación de la demanda, el control de inventarios y el seguimiento diario, para que no tengas que armar cada análisis en Excel.' },
   { q: '¿Cómo empiezo a usarlo?', a: 'Abre el módulo que necesitas y carga su archivo (CSV o Excel con las columnas de la sección Formatos). Algunos módulos, como Eventos, también traen la información directo de BigQuery. Los cálculos y las gráficas salen al momento.' },
   { q: '¿Dónde se guarda mi información?', a: 'Los archivos que cargas se procesan y se guardan en tu navegador, en tu propio equipo. Solo salen de él cuando usas una función conectada: la lista compartida de eventos, las consultas a BigQuery o las preguntas al GO-Bot con IA.' },
   { q: '¿Pierdo mi trabajo si cierro la página?', a: 'No. Al volver encuentras todo como lo dejaste en ese navegador. Si cambias de computadora o borras los datos del navegador, tendrás que volver a cargar tus archivos.' },

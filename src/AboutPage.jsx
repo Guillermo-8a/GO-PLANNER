@@ -92,7 +92,7 @@ function Hero({ navigate }) {
   const [ready, setReady] = useState(false);
   useEffect(() => { const id = setTimeout(() => setReady(true), 60); return () => clearTimeout(id); }, []);
   const a = 1 - band(p, 0.08, 0.3);           // titular
-  const b = band(p, 0.32, 0.5) * (1 - band(p, 0.82, 0.95)); // tarjetas
+  const b = band(p, 0.3, 0.46) * (1 - band(p, 0.8, 0.92)); // tarjetas
   const stats = [
     { k: 'Pilares', v: '4', d: 'Financial, Demand Planner, Inventory Control y Check Coo.', pos: 'left-[4%] top-[18%]' },
     { k: 'Módulos', v: String(MODULE_COUNT), d: 'Del plan financiero al anaquel, conectados entre sí.', pos: 'right-[4%] top-[14%]' },
@@ -101,7 +101,7 @@ function Hero({ navigate }) {
   ];
   return (
     <section id="top" ref={wrap} className="relative" style={{ height: '260vh' }}>
-      <div className="sticky top-0 h-screen overflow-hidden">
+      <div className="sticky top-0 h-screen overflow-hidden" style={{ opacity: 1 - band(p, 0.82, 0.97) }}>
         <Suspense fallback={<div className="absolute inset-0 bg-[#05030a]" />}>
           <HelixScene progressRef={pRef} />
         </Suspense>
@@ -113,13 +113,14 @@ function Hero({ navigate }) {
         <div className="absolute inset-0 flex items-center px-6 sm:px-16 lg:px-24" style={{ opacity: a, transform: `translateY(${(1 - a) * -60}px)` }}>
           <div className="max-w-2xl" style={{ opacity: ready ? 1 : 0, transform: ready ? 'none' : 'translateY(30px)', transition: 'all 1.1s cubic-bezier(.2,.7,.2,1)' }}>
             <span className="inline-flex items-center gap-2 rounded-full border border-violet-400/30 bg-violet-500/10 px-3.5 py-1.5 text-[11px] font-bold tracking-[0.18em] uppercase text-violet-300">
-              <Sparkles size={12} /> Planeación comercial · El Yaqui
+              <Sparkles size={12} /> Planeación comercial · SBB
             </span>
-            <h1 className="mt-6 text-[clamp(44px,7.5vw,104px)] font-black leading-[0.92] tracking-[-0.045em] text-white">
-              Del plan<br />al anaquel,<br /><span className="gp-grad">sin Excel.</span>
+            <h1 className="mt-6 font-black uppercase leading-[0.85] tracking-[-0.05em] text-white">
+              <span className="block text-[clamp(72px,12vw,168px)]">GO</span>
+              <span className="block text-[clamp(56px,9.5vw,136px)] gp-grad" style={{ filter: 'drop-shadow(0 0 40px rgba(139,92,246,.35))' }}>PLANNER</span>
             </h1>
             <p className="mt-6 max-w-lg text-[clamp(15px,1.4vw,18px)] leading-relaxed text-zinc-400">
-              GO PLANNER junta el plan financiero, la compra, el inventario y el seguimiento diario en una sola herramienta que corre en tu navegador.
+              Junta los 4 pilares de PAC, buscando qué mejorar, automatizar y dar seguimiento diario en una sola herramienta que corre en cualquier navegador.
             </p>
             <div className="mt-9 flex flex-wrap gap-3 pointer-events-auto">
               <button onClick={() => navigate('/')} className="gp-cta">Abrir GO PLANNER <ArrowRight size={16} /></button>
@@ -128,30 +129,30 @@ function Hero({ navigate }) {
           </div>
         </div>
 
-        {/* Tarjetas flotantes */}
-        <div className="absolute inset-0 pointer-events-none hidden md:block">
-          {stats.map((s, i) => (
-            <div key={s.k} className={`absolute ${s.pos}`} style={{ opacity: b, transform: `translateY(${(1 - b) * 40 + Math.sin(p * 8 + i) * 6}px) scale(${0.94 + b * 0.06})`, transition: 'opacity .2s' }}>
-              <Glass className="w-64 p-5 rounded-2xl" accent={['#a78bfa', '#fbbf24', '#34d399', '#22d3ee'][i]}>
-                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">{s.k}</p>
-                <p className="mt-1 text-4xl font-black tracking-tight text-white">{s.v}</p>
-                <p className="mt-1.5 text-[12px] leading-snug text-zinc-400">{s.d}</p>
-              </Glass>
-            </div>
-          ))}
-        </div>
-        <div className="absolute inset-x-0 bottom-[38%] flex justify-center pointer-events-none" style={{ opacity: b }}>
-          <div className="absolute w-[min(720px,90vw)] h-56 rounded-full blur-3xl" style={{ background: 'radial-gradient(ellipse, rgba(5,3,10,.85), transparent 70%)' }} />
-          <p className="relative text-center text-[clamp(28px,4.5vw,60px)] font-black tracking-[-0.04em] text-white leading-[1.02] px-6" style={{ textShadow: '0 4px 30px rgba(0,0,0,.6)' }}>
-            Un sistema.<br /><span className="gp-grad">Cuatro pilares.</span>
+        {/* Un sistema · cuatro pilares: centrado, con tarjetas grandes y fondo sólido para leerse sobre la hélice */}
+        <div className="absolute inset-0 flex flex-col items-center justify-center px-6 pointer-events-none" style={{ opacity: b }}>
+          <div className="absolute inset-0" style={{ background: 'radial-gradient(ellipse 75% 65% at 50% 50%, rgba(5,3,10,.82), rgba(5,3,10,.35) 70%, transparent)' }} />
+          <p className="relative text-center text-[clamp(36px,5.5vw,76px)] font-black tracking-[-0.04em] text-white leading-[1] mb-10" style={{ textShadow: '0 4px 30px rgba(0,0,0,.7)', transform: `translateY(${(1 - b) * 30}px)` }}>
+            Un sistema. <span className="gp-grad">Cuatro pilares.</span>
           </p>
+          <div className="relative grid grid-cols-2 lg:grid-cols-4 gap-4 w-full max-w-6xl">
+            {stats.map((s, i) => (
+              <div key={s.k} style={{ transform: `translateY(${(1 - b) * (50 + i * 18)}px)` }}>
+                <Glass className="h-full p-6 lg:p-7 rounded-3xl !bg-[#0b0814]/80" accent={['#a78bfa', '#fbbf24', '#34d399', '#22d3ee'][i]}>
+                  <p className="text-[11px] font-black uppercase tracking-[0.2em]" style={{ color: ['#c4b5fd', '#fcd34d', '#6ee7b7', '#67e8f9'][i] }}>{s.k}</p>
+                  <p className="mt-2 text-5xl lg:text-6xl font-black tracking-tight text-white">{s.v}</p>
+                  <p className="mt-3 text-[14px] leading-snug text-zinc-300">{s.d}</p>
+                </Glass>
+              </div>
+            ))}
+          </div>
         </div>
 
         <div className="absolute bottom-7 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1 text-zinc-500" style={{ opacity: a }}>
           <span className="text-[10px] font-bold tracking-[0.3em] uppercase">Scroll</span>
           <ChevronDown size={18} className="animate-bounce" />
         </div>
-        <div className="absolute inset-x-0 bottom-0 h-40 pointer-events-none" style={{ background: 'linear-gradient(to bottom, transparent, #05030a)' }} />
+        <div className="absolute inset-x-0 bottom-0 h-72 pointer-events-none" style={{ background: 'linear-gradient(to bottom, transparent, #05030a)' }} />
       </div>
     </section>
   );
@@ -161,10 +162,17 @@ function Hero({ navigate }) {
 function Manifesto() {
   const ref = useRef(null);
   const p = useScrollProgress(ref);
+  // Entra encimada sobre la última pantalla del hero (margin -100vh) y aparece mientras el hero se disuelve: sin hueco ni brinco
+  const [enter, setEnter] = useState(0);
+  useEffect(() => {
+    const on = () => { const r = ref.current?.getBoundingClientRect(); if (r) setEnter(clamp01(1 - r.top / (window.innerHeight * 0.3))); };
+    on(); window.addEventListener('scroll', on, { passive: true }); window.addEventListener('resize', on);
+    return () => { window.removeEventListener('scroll', on); window.removeEventListener('resize', on); };
+  }, []);
   const words = 'Cada decisión de compra, cada traslado y cada promoción deja datos. GO PLANNER los convierte en la siguiente acción.'.split(' ');
   return (
-    <section ref={ref} className="relative" style={{ height: '170vh' }}>
-      <div className="sticky top-0 h-screen flex items-center justify-center px-6">
+    <section ref={ref} className="relative pointer-events-none" style={{ height: '170vh', marginTop: '-100vh' }}>
+      <div className="sticky top-0 h-screen flex items-center justify-center px-6" style={{ opacity: enter, transform: `scale(${0.96 + enter * 0.04})` }}>
         <p className="max-w-5xl text-center text-[clamp(30px,5vw,68px)] font-black leading-[1.08] tracking-[-0.035em]">
           {words.map((w, i) => {
             const on = band(p, i / words.length * 0.8, (i + 1.5) / words.length * 0.8);
@@ -440,7 +448,7 @@ function FAQ() {
     <section id="preguntas" className="px-6 sm:px-10 py-28 max-w-3xl mx-auto scroll-mt-20">
       <Reveal className="text-center mb-14">
         <p className="gp-eyebrow">Preguntas</p>
-        <h2 className="gp-h2">Lo que más<br /><span className="gp-grad">nos preguntan.</span></h2>
+        <h2 className="gp-h2">Preguntas<br /><span className="gp-grad">Frecuentes</span></h2>
       </Reveal>
       <div className="divide-y divide-white/[0.07] border-y border-white/[0.07]">
         {FAQS.map((f, i) => {
@@ -470,7 +478,7 @@ function CTA({ navigate }) {
         <div className="relative overflow-hidden rounded-[36px] border border-white/10 px-8 py-20 text-center" style={{ background: 'radial-gradient(ellipse 80% 120% at 50% 0%, rgba(124,58,237,.45), rgba(20,12,36,.9) 60%)' }}>
           <div className="absolute inset-0 gp-gridbg opacity-40 pointer-events-none" />
           <div className="relative">
-            <h2 className="text-[clamp(34px,5.5vw,72px)] font-black tracking-[-0.04em] text-white leading-[0.98]">Abre, carga<br />y planea.</h2>
+            <h2 className="text-[clamp(34px,5.5vw,72px)] font-black tracking-[-0.04em] text-white leading-[0.98]">Abre<br />y analiza.</h2>
             <p className="mt-5 text-zinc-300 text-[15px]">Todos los módulos disponibles desde el primer día.</p>
             <div className="mt-6 flex flex-wrap justify-center gap-5 text-[12px] text-zinc-400">
               <span className="flex items-center gap-1.5"><Cpu size={14} /> Corre en tu navegador</span>
@@ -487,7 +495,7 @@ function CTA({ navigate }) {
 function Footer({ navigate }) {
   return (
     <footer className="border-t border-white/[0.06] px-6 sm:px-10 py-8 max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
-      <div className="flex items-center gap-2.5 text-[12px] font-bold text-zinc-500"><Layers size={14} className="text-violet-400" /> GO PLANNER · PAC El Yaqui · {new Date().getFullYear()}</div>
+      <div className="flex items-center gap-2.5 text-[12px] font-bold text-zinc-500"><Layers size={14} className="text-violet-400" /> GO PLANNER · Sbb · {new Date().getFullYear()}</div>
       <button onClick={() => navigate('/')} className="text-[12px] font-bold text-zinc-400 hover:text-white flex items-center gap-1">Abrir app <ArrowRight size={12} /></button>
     </footer>
   );
