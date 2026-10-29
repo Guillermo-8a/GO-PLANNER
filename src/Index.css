@@ -62,3 +62,12 @@ input[type="range"] { accent-color: #8b5cf6; }
    El thumb pegado al rail derecho se veía como una línea al usar los botones del rail / GO-Bot. */
 main[data-gobot-screen] { scrollbar-width: thin; scrollbar-color: transparent transparent; }
 main[data-gobot-screen]:hover { scrollbar-color: rgba(156,163,175,0.35) transparent; }
+
+/* Vidrio sin backdrop-filter: en Chrome/Windows el blur de tarjetas y rail (con bordes redondeados,
+   overflow-hidden y transiciones de hover/sombra) pintaba líneas claras en sus orillas al pasar el cursor
+   o abrir menús/GO-Bot. El fondo detrás es un degradado liso, así que el blur no aportaba nada visible.
+   Se deja el blur chico (-sm/-md) de los overlays de modales. */
+.backdrop-blur-lg, .backdrop-blur-xl, .backdrop-blur-2xl, .backdrop-blur-3xl {
+  -webkit-backdrop-filter: none !important;
+  backdrop-filter: none !important;
+}
