@@ -57,3 +57,8 @@ input[type="range"] { accent-color: #8b5cf6; }
   todavía la referencia, pero no afecta nada si está o no.
 */
 .lucide { width: 1.2rem; height: 1.2rem; stroke-width: 2.5px; }
+
+/* Contenido principal: scrollbar invisible hasta pasar el cursor por el módulo.
+   El thumb pegado al rail derecho se veía como una línea al usar los botones del rail / GO-Bot. */
+main[data-gobot-screen] { scrollbar-width: thin; scrollbar-color: transparent transparent; }
+main[data-gobot-screen]:hover { scrollbar-color: rgba(156,163,175,0.35) transparent; }

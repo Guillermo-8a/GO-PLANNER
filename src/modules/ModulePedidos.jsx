@@ -135,6 +135,7 @@ const ALIAS = {
   marca: ['MARCA', 'BRAND'],
   seccion: ['SECCION', 'DEPARTAMENTO'],
   division: ['DIVISION', 'DIV'],
+  norma: ['NORMA', 'NORMA APROVISIONAMIENTO', 'NORMA DE APROVISIONAMIENTO', 'TIPO COMPRA'],
   goa: ['GOA', 'FAMILIA'],
   origen: ['TIPO PEDIDO', 'ORIGEN', 'IMP NAC', 'TIPO', 'IMPORTACION', 'TIPO OC'],
   pzsPed: ['PIEZAS PEDIDAS', 'PZS PEDIDAS', 'CANTIDAD PEDIDA', 'PEDIDAS', 'CANTIDAD OC'],
@@ -173,7 +174,7 @@ function parseEventos(text) {
       const comp = v(r, 'COMPROMISO');
       const okF = (x) => (x && !x.startsWith('1900') ? x : ''), fv0 = okF(v(r, 'FIN VIGENCIA')), fe0 = okF(v(r, 'FCH ENTREGA CDI'));
       const base = {
-        oc, pos: '', sku: v(r, 'GOA'), modelo: '', prov: v(r, 'PROVEEDOR') || 'Sin proveedor', marca: v(r, 'MARCA') || '—', seccion: v(r, 'SECCION'), division: v(r, 'DIV') || v(r, 'DIVISION'), goa: v(r, 'GOA'), origen,
+        oc, pos: '', sku: v(r, 'GOA'), modelo: '', prov: v(r, 'PROVEEDOR') || 'Sin proveedor', marca: v(r, 'MARCA') || '—', seccion: v(r, 'SECCION'), division: v(r, 'DIV') || v(r, 'DIVISION'), norma: v(r, 'NORMA') || v(r, 'NORMA APROVISIONAMIENTO') || v(r, 'NORMA DE APROVISIONAMIENTO'), goa: v(r, 'GOA'), origen,
         pzsPed: asig || numv(v(r, 'PZS PEDIDAS')), pzsEv: 0, valor: numv(v(r, 'COSTO ASIG')) || numv(v(r, 'COSTO PEDIDO')), ubic: '', centro: ctr(tienda), zona: norm(v(r, 'ZONA')), cont: '', mon: origen === 'IMP' ? 'USD' : '', // el costo de importación viene en dólares
         fechaOc: toDate(v(r, 'FCH OC')), fechaComp: fv0 ? toDate(fv0) : comp && !comp.startsWith('1900') ? toDate(comp) : null,
         // Cierre de la OC (SAP): entrega a CEDIS, piezas y montos pedidos vs entregados. Entregada con faltante = pedido incompleto
@@ -223,7 +224,7 @@ function parseEventos(text) {
   rows.slice(1).forEach((r) => {
     const base = {
       oc: g(r, 'oc'), pos: g(r, 'pos'), sku: g(r, 'sku') || g(r, 'modelo'), modelo: g(r, 'modelo'), prov: g(r, 'prov') || 'Sin proveedor',
-      marca: g(r, 'marca') || '—', seccion: g(r, 'seccion'), division: g(r, 'division'), goa: g(r, 'goa'), origen: tipoOf(g(r, 'origen')),
+      marca: g(r, 'marca') || '—', seccion: g(r, 'seccion'), division: g(r, 'division'), norma: g(r, 'norma'), goa: g(r, 'goa'), origen: tipoOf(g(r, 'origen')),
       pzsPed: numv(g(r, 'pzsPed')), pzsEv: numv(g(r, 'pzsEv')), valor: numv(g(r, 'valor')),
       ubic: g(r, 'ubic'), centro: ctr(g(r, 'centro')), zona: norm(g(r, 'zona')), cont: g(r, 'cont'),
       fechaOc: toDate(g(r, 'fechaOc')), fechaComp: toDate(g(r, 'fechaComp')),
@@ -333,7 +334,7 @@ function buildUnits(ev, umbral, hoy) {
     const inicio = list.find((e) => e.fechaOc)?.fechaOc || f.fecha;
     const llegada = at.RECIBIDO || (fin ? at[fin] : null);
     units.push({
-      key, oc: f.oc, sku: f.sku, modelo: f.modelo, prov: f.prov, marca: f.marca, seccion: f.seccion, division: f.division || '', goa: f.goa, centro: list.find((e) => e.centro)?.centro || '',
+      key, oc: f.oc, sku: f.sku, modelo: f.modelo, prov: f.prov, marca: f.marca, seccion: f.seccion, division: f.division || '', norma: list.find((e) => e.norma)?.norma || '', goa: f.goa, centro: list.find((e) => e.centro)?.centro || '',
       zona: list.find((e) => e.zona)?.zona || '', cont: list.find((e) => e.cont)?.cont || '', traslado: list.find((e) => e.traslado)?.traslado || '', fechaEntPlan: list.find((e) => e.fechaEntPlan)?.fechaEntPlan || null,
       // traslado vencido: sigue en cross dock y ya pasó la fecha comprometida de entrega del traslado
       trCerrado: list.some((e) => e.trCerrado), trVencido: etapa === 'CROSSDOCK' && !has('TRANSITO_TDA') && !list.some((e) => e.trCerrado) && list.some((e) => e.traslado) && enEtapa > (umbral.CROSSDOCK ?? 3), ciudad: norm(list.filter((e) => e.etapa === 'BODEGA_REG').pop()?.ubic || ''),
@@ -360,7 +361,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
   const [ev, setEv] = useState(() => { try { const s = JSON.parse(localStorage.getItem(LS_KEY) || 'null'); return s ? s.map((e) => ({ ...e, fecha: new Date(e.fecha), fechaOc: e.fechaOc ? new Date(e.fechaOc) : null, fechaComp: e.fechaComp ? new Date(e.fechaComp) : null })) : []; } catch { return []; } });
   const [cfg, setCfg] = useState(() => { try { const c = JSON.parse(localStorage.getItem(LS_CFG) || '{}'); return { ...c, v2: true, umbral: { ...DEF_UMBRAL, ...(c.umbral || {}), ...(c.v2 ? {} : { PROVEEDOR: 0 }) } }; } catch { return { umbral: DEF_UMBRAL }; } });
   const [aviso, setAviso] = useState('');
-  const [fProv, setFProv] = useState(() => new Set()); const [fMarca, setFMarca] = useState(() => new Set()); const [fTipo, setFTipo] = useState(() => new Set()); const [fZona, setFZona] = useState(() => new Set()); const [fDiv, setFDiv] = useState(() => new Set()); const [fGoa, setFGoa] = useState(() => new Set());
+  const [fProv, setFProv] = useState(() => new Set()); const [fMarca, setFMarca] = useState(() => new Set()); const [fTipo, setFTipo] = useState(() => new Set()); const [fZona, setFZona] = useState(() => new Set()); const [fDiv, setFDiv] = useState(() => new Set()); const [fGoa, setFGoa] = useState(() => new Set()); const [fNorma, setFNorma] = useState(() => new Set());
   const [fSolo, setFSolo] = useState(''); const [q, setQ] = useState(''); const [fSec, setFSec] = useState(() => new Set()); const [fMes, setFMes] = useState(() => new Set());
   const [hoverTipo, setHoverTipo] = useState(''); const [feedAge, setFeedAge] = useState(''); const [expOC, setExpOC] = useState('');
   const [sel, setSel] = useState(null); // { key, stages:[...], titulo, zona?, ciudad? }
@@ -459,13 +460,13 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
   }, [ev, cfg.umbral, cfg.tc, hoy, zonaTraslados, tcDe]);
   // Mes de recepción = mes de la fecha compromiso del proveedor (cuándo debe llegar a CEDIS)
   const mesDe = (u) => (u.fechaComp ? `${u.fechaComp.getFullYear()}-${String(u.fechaComp.getMonth() + 1).padStart(2, '0')}` : 'SIN');
-  const opts = useMemo(() => { const u = (k) => [...new Set(allUnits.map((x) => x[k]).filter(Boolean))].sort(); return { prov: u('prov'), marca: u('marca'), zona: u('zona'), seccion: u('seccion'), goa: u('goa'), division: u('division'), mes: [...new Set(allUnits.map(mesDe))].sort() }; }, [allUnits]);
+  const opts = useMemo(() => { const u = (k) => [...new Set(allUnits.map((x) => x[k]).filter(Boolean))].sort(); return { prov: u('prov'), marca: u('marca'), zona: u('zona'), seccion: u('seccion'), goa: u('goa'), norma: u('norma'), division: u('division'), mes: [...new Set(allUnits.map(mesDe))].sort() }; }, [allUnits]);
   const units = useMemo(() => {
     const qq = norm(q);
-    return allUnits.filter((u) => inS(fProv, u.prov) && inS(fMarca, u.marca) && inS(fTipo, u.tipo) && inS(fZona, u.zona) && inS(fSec, u.seccion) && inS(fDiv, u.division) && inS(fGoa, u.goa) && inS(fMes, mesDe(u))
+    return allUnits.filter((u) => inS(fProv, u.prov) && inS(fMarca, u.marca) && inS(fTipo, u.tipo) && inS(fZona, u.zona) && inS(fSec, u.seccion) && inS(fDiv, u.division) && inS(fGoa, u.goa) && inS(fNorma, u.norma) && inS(fMes, mesDe(u))
       && (fSolo === 'incompleto' ? u.incompleto : !u.incompleto) && (!fSolo || (fSolo === 'incompleto' ? true : fSolo === 'atorado' ? u.atorado : fSolo === 'vencido' ? u.vencido : fSolo === 'trvenc' ? u.trVencido : fSolo === 'activo' ? u.etapa !== 'RECIBIDO' : true))
       && (!qq || norm(`${u.oc} ${u.sku} ${u.modelo} ${u.centro} ${u.cont} ${u.traslado || ''}`).includes(qq)));
-  }, [allUnits, fProv, fMarca, fTipo, fZona, fSec, fDiv, fGoa, fMes, fSolo, q]);
+  }, [allUnits, fProv, fMarca, fTipo, fZona, fSec, fDiv, fGoa, fNorma, fMes, fSolo, q]);
 
   // Resumen ejecutivo: Budget / Plan (CSV de plan) vs Pedido / Entregado (OCs) por Mes › Sección › Tipo › Marca › GOA
   const resumen = useMemo(() => {
@@ -490,7 +491,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
     const tot = rows.reduce((a, n) => { ['bud$', 'budP', 'plan$', 'planP', 'ped$', 'pedP', 'ent$', 'entP'].forEach((k) => { a[k] += n[k]; }); return a; }, { bud$: 0, budP: 0, plan$: 0, planP: 0, ped$: 0, pedP: 0, ent$: 0, entP: 0 });
     tot.lim = rows.reduce((m, n) => (n.lim && (!m || n.lim > m) ? n.lim : m), null);
     return { rows, tot, depth: LV.length };
-  }, [plan, units, allUnits, rsPorMes, fSec, fMarca, fDiv, fGoa, fMes]);
+  }, [plan, units, allUnits, rsPorMes, fSec, fMarca, fDiv, fGoa, fNorma, fMes]);
 
   // Validador: OCs abiertas con fechas sospechosas (para revisar en SAP / pedir cierre o reprogramación)
   const VAL_REGLAS = {
@@ -542,9 +543,9 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
       if (u.etapa === 'PROVEEDOR') add(`PROVEEDOR|${u.tipo}`, u);
     });
     // faltante de OCs incompletas (para el letrero del cross dock en 3D)
-    if (fSolo !== 'incompleto') allUnits.filter((u) => u.incompleto && inS(fProv, u.prov) && inS(fMarca, u.marca) && inS(fTipo, u.tipo) && inS(fSec, u.seccion) && inS(fDiv, u.division) && inS(fGoa, u.goa)).forEach((u) => add('INC', u));
+    if (fSolo !== 'incompleto') allUnits.filter((u) => u.incompleto && inS(fProv, u.prov) && inS(fMarca, u.marca) && inS(fTipo, u.tipo) && inS(fSec, u.seccion) && inS(fDiv, u.division) && inS(fGoa, u.goa) && inS(fNorma, u.norma)).forEach((u) => add('INC', u));
     return m;
-  }, [units, zonas, ciudades, allUnits, fSolo, fProv, fMarca, fTipo, fSec, fDiv, fGoa]);
+  }, [units, zonas, ciudades, allUnits, fSolo, fProv, fMarca, fTipo, fSec, fDiv, fGoa, fNorma]);
   const cnt = (k) => agg[k] || { n: 0, pzs: 0, ator: 0, maxDias: 0, ocs: 0 };
 
   const tramoProm = useMemo(() => {
@@ -565,7 +566,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
     return Object.values(m).sort((a, b) => b.pzsTr - a.pzsTr);
   }, [units]);
   // Tránsito a tiendas como lo reportan SAP y el OTB (IT_Unidades); si el CSV no lo trae se usa el calculado por movimientos
-  const itBI = useMemo(() => { const xs = ev.filter((e) => e.itbi && inS(fProv, e.prov) && inS(fMarca, e.marca) && inS(fZona, e.zona) && inS(fSec, e.seccion) && inS(fDiv, e.division || '') && inS(fGoa, e.goa || '')); return ev.some((e) => e.itbi) ? { pzs: xs.reduce((a, e) => a + e.pzsPed, 0), val: xs.reduce((a, e) => a + e.valor, 0) } : null; }, [ev, fProv, fMarca, fZona, fSec, fDiv, fGoa]);
+  const itBI = useMemo(() => { const xs = ev.filter((e) => e.itbi && inS(fProv, e.prov) && inS(fMarca, e.marca) && inS(fZona, e.zona) && inS(fSec, e.seccion) && inS(fDiv, e.division || '') && inS(fGoa, e.goa || '') && inS(fNorma, e.norma || '')); return ev.some((e) => e.itbi) ? { pzs: xs.reduce((a, e) => a + e.pzsPed, 0), val: xs.reduce((a, e) => a + e.valor, 0) } : null; }, [ev, fProv, fMarca, fZona, fSec, fDiv, fGoa, fNorma]);
   const kpi = useMemo(() => {
     const rec = units.filter((u) => u.lead != null);
     const conComp = units.filter((u) => u.aTiempo != null);
@@ -581,10 +582,10 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
       pzsTransito: units.filter((u) => u.etapa === 'TRANSITO_TDA').reduce((a, u) => a + u.pzs, 0), valTransito: units.filter((u) => u.etapa === 'TRANSITO_TDA').reduce((a, u) => a + (u.valor || 0), 0),
       // fecha esperada entre hoy y hoy+7 (por día calendario) y aún sin llegar a CEDIS / destino
       vencen7: (() => { const h0 = new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate()), h7 = new Date(h0.getTime() + 8 * DAY); return new Set(units.filter((u) => u.fechaComp && u.fechaComp >= h0 && u.fechaComp < h7 && !(u.at.ALMACEN || u.at.CROSSDOCK || u.fin)).map((u) => u.oc)).size; })(),
-      inc: (() => { const xs = allUnits.filter((u) => u.incompleto && inS(fProv, u.prov) && inS(fMarca, u.marca) && inS(fTipo, u.tipo) && inS(fSec, u.seccion) && inS(fDiv, u.division) && inS(fGoa, u.goa)); const ocs = new Map(); xs.forEach((u) => ocs.set(u.oc, u.ocInc)); return { n: xs.length, pzs: xs.reduce((a, u) => a + u.pzs, 0), ocs: ocs.size, falt$: [...ocs.values()].reduce((a, o) => a + Math.max(0, (o.mPed || 0) - (o.mEnt || 0)), 0) }; })(),
+      inc: (() => { const xs = allUnits.filter((u) => u.incompleto && inS(fProv, u.prov) && inS(fMarca, u.marca) && inS(fTipo, u.tipo) && inS(fSec, u.seccion) && inS(fDiv, u.division) && inS(fGoa, u.goa) && inS(fNorma, u.norma)); const ocs = new Map(); xs.forEach((u) => ocs.set(u.oc, u.ocInc)); return { n: xs.length, pzs: xs.reduce((a, u) => a + u.pzs, 0), ocs: ocs.size, falt$: [...ocs.values()].reduce((a, o) => a + Math.max(0, (o.mPed || 0) - (o.mEnt || 0)), 0) }; })(),
       compFuturo: units.some((u) => u.fechaComp && u.fechaComp >= new Date(hoy.getFullYear(), hoy.getMonth(), hoy.getDate())),
     };
-  }, [units, allUnits, fProv, fMarca, fTipo, fSec, fDiv, fGoa]);
+  }, [units, allUnits, fProv, fMarca, fTipo, fSec, fDiv, fGoa, fNorma]);
   const leadTipo = useMemo(() => Object.keys(TIPOS).map((tp) => {
     const us = allUnits.filter((u) => u.tipo === tp);
     const tr = {}; us.forEach((u) => Object.entries(u.tramos).forEach(([k, v]) => { (tr[k] = tr[k] || []).push(v); }));
@@ -662,7 +663,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
   // Frescura de la base: último registro que trae vs hoy
   const baseAl = useMemo(() => ev.reduce((m, e) => (e.fecha && new Date(e.fecha) > m ? new Date(e.fecha) : m), null), [ev]);
   const baseDias = baseAl ? Math.round((new Date(hoy).setHours(0, 0, 0, 0) - new Date(baseAl).setHours(0, 0, 0, 0)) / DAY) : null;
-  const nFil = [q, fSolo].filter(Boolean).length + [fSec, fDiv, fGoa, fProv, fMarca, fZona, fMes, fTipo].filter((x) => x.size).length;
+  const nFil = [q, fSolo].filter(Boolean).length + [fSec, fDiv, fGoa, fNorma, fProv, fMarca, fZona, fMes, fTipo].filter((x) => x.size).length;
   const mesLbl = (m) => (m === 'SIN' ? 'Sin compromiso' : m === '—' ? '—' : new Date(`${m}-15`).toLocaleDateString('es-MX', { month: 'long', year: 'numeric' }));
   const Validador = () => {
     const rows = validador.filter((o) => !vRegla || o.r.includes(vRegla));
@@ -795,7 +796,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
         <FilterMenu isDark={isDark} count={nFil} width={860}>
           <FilterSection label="Buscar y filtrar" isDark={isDark}>
             <div className="relative"><Search size={13} className={`absolute left-2 top-2 ${t.textMuted}`} /><input value={q} onChange={(e) => setQ(e.target.value)} placeholder="OC, SKU, centro, contenedor…" className={`${inCls} pl-7 w-56`} /></div>
-            {[['División', fDiv, setFDiv, opts.division], ['Sección', fSec, setFSec, opts.seccion], ['GOA', fGoa, setFGoa, opts.goa], ['Proveedor', fProv, setFProv, opts.prov], ['Marca', fMarca, setFMarca, opts.marca], ['Zona', fZona, setFZona, opts.zona]].map(([l, v, s, o]) => (
+            {[['División', fDiv, setFDiv, opts.division], ['Sección', fSec, setFSec, opts.seccion], ['GOA', fGoa, setFGoa, opts.goa], ['Norma', fNorma, setFNorma, opts.norma], ['Proveedor', fProv, setFProv, opts.prov], ['Marca', fMarca, setFMarca, opts.marca], ['Zona', fZona, setFZona, opts.zona]].map(([l, v, s, o]) => (
               <MultiSel key={l} label={l} options={o} sel={v} onChange={s} t={t} isDark={isDark} inCls={inCls} />
             ))}
             <MultiSel label="Mes de recepción" options={opts.mes} sel={fMes} onChange={setFMes} t={t} isDark={isDark} inCls={inCls} fmtOpt={(m) => (m === 'SIN' ? 'Sin compromiso' : new Date(`${m}-15`).toLocaleDateString('es-MX', { month: 'long', year: 'numeric' }))} />
@@ -806,7 +807,7 @@ export default function ModulePedidos({ t, isDark, navIcon, navLabel, navDesc })
           </FilterSection>
           <FilterSection label="Estado" isDark={isDark}>
             {[['', 'Todos'], ['activo', 'En camino'], ['atorado', 'Atorados'], ['vencido', 'Vencidos'], ['incompleto', 'Incompletos']].map(([k, l]) => <button key={k} onClick={() => setFSolo(k)} className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border ${pill(fSolo === k)}`}>{l}</button>)}
-            {nFil > 0 && <button onClick={() => { setQ(''); setFSec(new Set()); setFDiv(new Set()); setFGoa(new Set()); setFProv(new Set()); setFMarca(new Set()); setFZona(new Set()); setFMes(new Set()); setFTipo(new Set()); setFSolo(''); }} className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border ${t.cardInner}`}>✕ Limpiar</button>}
+            {nFil > 0 && <button onClick={() => { setQ(''); setFSec(new Set()); setFDiv(new Set()); setFGoa(new Set()); setFNorma(new Set()); setFProv(new Set()); setFMarca(new Set()); setFZona(new Set()); setFMes(new Set()); setFTipo(new Set()); setFSolo(''); }} className={`px-2.5 py-1.5 rounded-lg text-[11px] font-bold border ${t.cardInner}`}>✕ Limpiar</button>}
             <button onClick={() => setShowCfg((v) => !v)} className={`ml-auto px-2.5 py-1.5 rounded-lg text-[11px] font-bold border flex items-center gap-1 ${showCfg ? pill(true) : t.cardInner}`}><Settings size={12} /> Días para atorado</button>
           </FilterSection>
           {showCfg && (
