@@ -69,16 +69,16 @@ function NavBar({ navigate }) {
   useEffect(() => { const h = () => setScrolled(window.scrollY > 40); h(); window.addEventListener('scroll', h, { passive: true }); return () => window.removeEventListener('scroll', h); }, []);
   return (
     <div className="fixed top-0 inset-x-0 z-50 flex justify-center px-4 pt-4 pointer-events-none">
-      <nav className={`pointer-events-auto flex items-center gap-2 sm:gap-6 pl-3 pr-2 py-2 rounded-full border transition-all duration-500 ${scrolled ? 'bg-[#0b0812]/70 border-white/10 shadow-2xl shadow-black/50' : 'bg-white/[0.03] border-white/[0.06]'}`}
+      <nav className={`pointer-events-auto flex items-center gap-2 sm:gap-6 pl-3 pr-1.5 sm:pr-2 py-2 rounded-full border transition-all duration-500 ${scrolled ? 'bg-[#0b0812]/70 border-white/10 shadow-2xl shadow-black/50' : 'bg-white/[0.03] border-white/[0.06]'}`}
         style={{ backdropFilter: 'blur(18px) saturate(160%)', WebkitBackdropFilter: 'blur(18px) saturate(160%)' }}>
-        <a href="#top" className="flex items-center"><img src="/logo.png" alt="GO PLANNER" className="h-7 w-auto" /></a>
-        <div className="hidden md:flex items-center gap-5">
-          {[['Pilares', 'pilares'], ['Qué resuelve', 'resuelve'], ['Formatos', 'formatos'], ['Preguntas', 'preguntas']].map(([l, id]) => (
-            <a key={id} href={`#${id}`} className="text-[12px] font-semibold text-zinc-400 hover:text-white transition-colors">{l}</a>
+        <a href="#top" className="flex shrink-0 items-center"><img src="/logo.png" alt="GO PLANNER" className="h-6 sm:h-7 w-auto" /></a>
+        <div className="flex items-center gap-2 sm:gap-5">
+          {[['Pilares', 'pilares'], [<><span className="sm:hidden">Casos</span><span className="hidden sm:inline">Qué resuelve</span></>, 'resuelve'], ['Formatos', 'formatos'], ['Preguntas', 'preguntas']].map(([l, id]) => (
+            <a key={id} href={`#${id}`} className="whitespace-nowrap text-[11px] sm:text-[12px] font-semibold text-zinc-400 hover:text-white transition-colors">{l}</a>
           ))}
         </div>
-        <button onClick={() => navigate('/')} className="flex items-center gap-1.5 rounded-full bg-white text-black px-4 py-2 text-[12px] font-bold hover:bg-violet-200 transition-colors">
-          Abrir app <ArrowRight size={13} />
+        <button onClick={() => navigate('/')} className="flex items-center gap-1.5 whitespace-nowrap rounded-full bg-white text-black px-3 sm:px-4 py-2 text-[11px] sm:text-[12px] font-bold hover:bg-violet-200 transition-colors">
+          <span className="hidden sm:inline">Abrir app</span><span className="sm:hidden">App</span> <ArrowRight size={13} />
         </button>
       </nav>
     </div>
