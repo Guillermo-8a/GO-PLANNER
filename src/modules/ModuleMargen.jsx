@@ -53,16 +53,37 @@ const idbSet = async (k, v) => { const db = await idb(); return new Promise((res
 // Por GOA: utilidad (VEIL_TAB_UTILIDAD_COMPARATIVO_S por GOA) + compras del BI (PV/PC). MG inicial = 1 − compras PC ÷ compras PV; Degradación = MG vendido − MG inicial.
 const readTxt = async (f) => { const b = await f.arrayBuffer(); try { return new TextDecoder('utf-8', { fatal: true }).decode(b); } catch { return new TextDecoder('windows-1252').decode(b); } };
 const sh1 = (txt) => { const wb = XLSX.read(txt, { type: 'string' }); return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' }); };
-const parseGoaU = (txt) => sh1(txt).map((r) => ({ a: +r.ANIO, mes: +r.MES, goa: String(r.GOA).trim(), vn: +r.VENTA_NETA || 0, uvv: +r.UTILIDAD_DE_LO_VENDIDO || 0, ubm: +r.UB_MERCANCIAS || 0 })).filter((r) => r.a && r.mes);
-const parseGoaC = (txt) => txt.split(/\r?\n/).slice(3).map((l) => l.split(',')).filter((f) => f.length >= 13 && f[6] && !isNaN(+f[6]) && f[8]).map((f) => ({ a: +f[6], mes: +f[8], goa: f[5].trim(), sec: f[3].trim(), pv: (+f[11] || 0) * 1000, pc: (+f[12] || 0) * 1000 }));
+const parseGoaU = (txt) => sh1(txt).map((r) => ({ a: +r.ANIO, mes: +r.MES, goa: String(r.GOA).trim(), vn: +r.VENTA_NETA || 0, uvv: +r.UTILIDAD_DE_LO_VENDIDO || 0, ubm: +r.UB_MERCANCIAS || 0, ubs: +r.UB_SIN_CFI || 0, bp: +r.BONIF_PROVEEDOR || 0, bm: +r.BONIF_MSI || 0, rg: +r.REGALIAS || 0, mr: +r.MERMA || 0, cf: +r.CFI || 0, ot: +r.OTROS_CAMBIOS || 0 })).filter((r) => r.a && r.mes);
+const parseGoaC = (txt) => txt.split(/\r?\n/).slice(3).map((l) => l.split(',')).filter((f) => f.length >= 13 && f[6] && !isNaN(+f[6]) && f[8]).map((f) => ({ a: +f[6], mes: +f[8], goa: f[5].trim(), sec: f[3].trim(), D: f[7].trim() === 'D', pv: (+f[11] || 0) * 1000, pc: (+f[12] || 0) * 1000 }));
 const GM = [['deg', 'Degradación'], ['mv', 'MG vendido'], ['mi', 'MG compra'], ['vn', 'Venta']];
 const gmet = (o) => { const mi = o.pv > 0 ? 1 - o.pc / o.pv : null, mv = o.vn > 0 ? o.uvv / o.vn : null; return { vn: o.vn, mi, mv, deg: mi != null && mv != null ? mv - mi : null }; };
-const gsum = (list, y, ms) => { const o = { vn: 0, uvv: 0, pv: 0, pc: 0 }; for (const g of list) for (const m of ms) { const c = g.m[y]?.[m]; if (c) { o.vn += c.vn; o.uvv += c.uvv; o.pv += c.pv; o.pc += c.pc; } } return o; };
+const FL = ['vn', 'uvv', 'ubm', 'ubs', 'bp', 'bm', 'rg', 'mr', 'cf', 'ot', 'pv', 'pc', 'pvD', 'pcD'];
+const gz = () => Object.fromEntries(FL.map((k) => [k, 0]));
+const gsum = (list, y, ms) => { const o = gz(); for (const g of list) for (const m of ms) { const c = g.m[y]?.[m]; if (c) for (const k of FL) o[k] += c[k]; } return o; };
+const gfull = (o) => { const vn = o.vn, r = (x) => (vn > 0 ? x / vn : null), pvN = o.pv - o.pvD, pcN = o.pc - o.pcD, mi = o.pv > 0 ? 1 - o.pc / o.pv : null, mv = r(o.uvv); return { vn, mi, miD: o.pvD > 0 ? 1 - o.pcD / o.pvD : null, miN: pvN > 0 ? 1 - pcN / pvN : null, partD: o.pv > 0 ? o.pvD / o.pv : null, mv, deg: mi != null && mv != null ? mv - mi : null, bp: r(o.bp), bm: r(o.bm), ro: r(o.rg + o.ot), mr: r(o.mr), mgs: r(o.ubs), cf: r(o.cf), mgc: r(o.ubm) }; };
+const cP = (v) => (v == null ? ['–'] : [pc(v)]), cG = (v) => (v == null ? ['–'] : [pts(v)]);
+const cD = (k) => (a, b) => { const d = a[k] != null && b[k] != null ? a[k] - b[k] : null; return [d == null ? '–' : pts(d), d == null || Math.abs(d) < 0.0005 ? undefined : d > 0 ? POS : NEG]; };
+const CT = [
+  ['VENTA', [['TY', (a) => [fmtM(a.vn)]], ['Var %', (a, b) => { const d = b.vn > 0 ? a.vn / b.vn - 1 : null; return [d == null ? '–' : pc(d), d == null ? undefined : d >= 0 ? POS : NEG]; }]]],
+  ['MI IMPORTACIÓN', [['TY', (a) => cP(a.miD)], ['Δ', cD('miD')]]],
+  ['% PART. IMPO', [['TY', (a) => cP(a.partD)], ['Δ', cD('partD')]]],
+  ['MI NACIONAL', [['TY', (a) => cP(a.miN)], ['Δ', cD('miN')]]],
+  ['MI PONDERADO', [['TY', (a) => cP(a.mi)], ['Δ', cD('mi')]]],
+  ['DEGRADACIÓN MG', [['TY', (a) => cG(a.deg)], ['LY', (a, b) => cG(b.deg)]]],
+  ['MG DE LO VENDIDO', [['TY', (a) => cP(a.mv)], ['Δ', cD('mv')]]],
+  ['BONIF. PROVEEDOR', [['LY', (a, b) => cP(b.bp)], ['TY', (a) => cP(a.bp)]]],
+  ['BONIF. MSI', [['LY', (a, b) => cP(b.bm)], ['TY', (a) => cP(a.bm)]]],
+  ['MERMA', [['LY', (a, b) => cP(b.mr)], ['TY', (a) => cP(a.mr)]]],
+  ['REGALÍAS Y OTROS', [['LY', (a, b) => cP(b.ro)], ['TY', (a) => cP(a.ro)]]],
+  ['MG ANTES DE CFI', [['TY', (a) => cP(a.mgs)], ['Δ', cD('mgs')]]],
+  ['CFI', [['LY', (a, b) => cP(b.cf)], ['TY', (a) => cP(a.cf)]]],
+  ['MG DESPUÉS DE CFI', [['TY', (a) => cP(a.mgc)], ['Δ', cD('mgc')]]],
+];
 const goaMonthly = (U, C, ty) => {
   const ly = ty - 1, corte = Math.max(...U.filter((r) => r.a === ty).map((r) => r.mes), 0), by = {};
-  const g = (k) => (by[k] ||= { goa: k, sec: 'Sin sección', m: { [ly]: Array.from({ length: 13 }, () => ({ vn: 0, uvv: 0, pv: 0, pc: 0 })), [ty]: Array.from({ length: 13 }, () => ({ vn: 0, uvv: 0, pv: 0, pc: 0 })) } });
-  for (const r of U) if ((r.a === ty || r.a === ly) && r.mes <= corte) { const o = g(r.goa).m[r.a][r.mes]; o.vn += r.vn; o.uvv += r.uvv; }
-  for (const r of C) if ((r.a === ty || r.a === ly) && r.mes <= corte) { const x = g(r.goa); if (r.sec) x.sec = r.sec; const o = x.m[r.a][r.mes]; o.pv += r.pv; o.pc += r.pc; }
+  const g = (k) => (by[k] ||= { goa: k, sec: 'Sin sección', m: { [ly]: Array.from({ length: 13 }, gz), [ty]: Array.from({ length: 13 }, gz) } });
+  for (const r of U) if ((r.a === ty || r.a === ly) && r.mes <= corte) { const o = g(r.goa).m[r.a][r.mes]; for (const k of ['vn', 'uvv', 'ubm', 'ubs', 'bp', 'bm', 'rg', 'mr', 'cf', 'ot']) o[k] += r[k]; }
+  for (const r of C) if ((r.a === ty || r.a === ly) && r.mes <= corte) { const x = g(r.goa); if (r.sec) x.sec = r.sec; const o = x.m[r.a][r.mes]; o.pv += r.pv; o.pc += r.pc; if (r.D) { o.pvD += r.pv; o.pcD += r.pc; } }
   const goas = Object.values(by), months = Array.from({ length: corte }, (_, i) => i + 1);
   const secs = {}; for (const x of goas) (secs[x.sec] ||= []).push(x);
   const sections = Object.entries(secs).map(([name, list]) => ({ name, list, vn: gsum(list, ty, months).vn })).sort((a, b) => b.vn - a.vn);
@@ -413,6 +434,39 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
                   </div>
                   <p className={`text-[10px] ${t.textMuted}`}>Violeta = se degrada menos que {ly}; magenta = más. Solo GOA con más de $20 M de venta.</p>
                 </div>
+              </div>
+              <div className={card}>
+                <div className="flex flex-wrap items-center gap-2 mb-2">
+                  <h3 className={`text-sm font-black ${t.text}`}>Cálculos para MG · acumulado ene-{MES[G.corte - 1]} {ty}</h3>
+                  <button onClick={() => setEx(Object.fromEntries(sections.map((x) => [x.name, !Object.values(ex).some(Boolean)])))} className={`px-3 py-1 text-xs rounded-lg ${t.btnGhost}`}>{Object.values(ex).some(Boolean) ? 'Contraer todo' : 'Expandir todo'}</button>
+                  <span className={`ml-auto text-[10px] ${t.textMuted}`}>Clic en una sección para ver sus GOA</span>
+                </div>
+                <div style={{ maxHeight: 560, overflow: 'auto' }}>
+                  <table className="w-full">
+                    <thead>
+                      <tr>
+                        <th className={th} />
+                        {CT.map(([g, cs]) => <th key={g} colSpan={cs.length} className={th} style={{ background: isDark ? 'rgba(167,139,250,0.22)' : 'rgba(167,139,250,0.28)', borderLeft: '2px solid rgba(167,139,250,0.5)' }}>{g}</th>)}
+                      </tr>
+                      <tr>
+                        <th className={`${th} !text-left`} style={{ position: 'sticky', left: 0, zIndex: 2 }}>Sección / GOA</th>
+                        {CT.flatMap(([g, cs]) => cs.map(([h], i) => <th key={g + h} className={th} style={i === 0 ? { borderLeft: '2px solid rgba(167,139,250,0.5)' } : undefined}>{h === 'TY' ? ty : h === 'LY' ? ly : h}</th>))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {[['TOTAL', goas, 'tot'], ...sections.flatMap((sc) => [[sc.name, sc.list, 'sec'], ...(ex[sc.name] ? sc.list.filter((g) => gsum([g], ty, months).vn >= 1e6 || gsum([g], ly, months).vn >= 1e6).sort((a, b) => gsum([b], ty, months).vn - gsum([a], ty, months).vn).map((g) => [g.goa, [g], 'goa']) : [])])].map(([label, list, kind]) => {
+                        const a = gfull(gsum(list, ty, months)), b = gfull(gsum(list, ly, months));
+                        return (
+                          <tr key={`c${kind}-${label}`} className={`border-t ${isDark ? 'border-white/5' : 'border-gray-100'} ${kind === 'tot' ? 'font-black' : kind === 'sec' ? 'font-bold cursor-pointer' : ''}`} onClick={kind === 'sec' ? () => setEx((e) => ({ ...e, [label]: !e[label] })) : undefined}>
+                            <td className={`${td} !text-left ${t.text}`} style={{ position: 'sticky', left: 0, background: isDark ? '#17131f' : '#ffffff', paddingLeft: kind === 'goa' ? 22 : undefined }}>{kind === 'sec' ? `${ex[label] ? '▾' : '▸'} ` : ''}{label}</td>
+                            {CT.flatMap(([g, cs]) => cs.map(([h, f], i) => { const r = f(a, b); return <td key={g + h} className={`${td} ${t.text}`} style={{ color: r[1], borderLeft: i === 0 ? '2px solid rgba(167,139,250,0.25)' : undefined }}>{r[0]}</td>; }))}
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <p className={`text-[10px] mt-2 ${t.textMuted}`}>MI = margen inicial de compra (1 − costo ÷ PVP de lo comprado); Impo = Directo, Nac = Nacional + Indirecto; % part = parte de la compra a PVP. Bonif., merma, regalías y otros, y CFI van como % de venta neta (signo como viene en BQ). Δ en pts, salvo Venta (var. %).</p>
               </div>
               <div className={card}>
                 <div className="flex flex-wrap items-center gap-2 mb-2">
