@@ -63,11 +63,37 @@ input[type="range"] { accent-color: #8b5cf6; }
 main[data-gobot-screen] { scrollbar-width: thin; scrollbar-color: transparent transparent; }
 main[data-gobot-screen]:hover { scrollbar-color: rgba(156,163,175,0.35) transparent; }
 
-/* Vidrio sin backdrop-filter: en Chrome/Windows el blur de tarjetas y rail (con bordes redondeados,
-   overflow-hidden y transiciones de hover/sombra) pintaba líneas claras en sus orillas al pasar el cursor
-   o abrir menús/GO-Bot. El fondo detrás es un degradado liso, así que el blur no aportaba nada visible.
-   Se deja el blur chico (-sm/-md) de los overlays de modales. */
-.backdrop-blur-lg, .backdrop-blur-xl, .backdrop-blur-2xl, .backdrop-blur-3xl {
+/* ─── Vidrio GO PLANNER ─────────────────────────────────────────────
+   Superficies fijas (tarjetas, rail, header): vidrio "esmerilado" pintado con capas
+   (brillo diagonal + reflejo superior + grano) SIN backdrop-filter. En Chrome/Windows el blur
+   real sobre tarjetas redondeadas con hover/sombra dejaba líneas claras en las orillas.
+   Detrás solo hay auras suaves, así que el resultado se ve igual de difuso.
+   Capas flotantes (menús, popovers, panel del GO-Bot: .absolute / .fixed) conservan el blur real,
+   que es donde sí se nota porque pasan encima del contenido. */
+.backdrop-blur-lg:not(.absolute):not(.fixed),
+.backdrop-blur-xl:not(.absolute):not(.fixed),
+.backdrop-blur-2xl:not(.absolute):not(.fixed),
+.backdrop-blur-3xl:not(.absolute):not(.fixed) {
   -webkit-backdrop-filter: none !important;
   backdrop-filter: none !important;
 }
+.dark .backdrop-blur-xl:not(.absolute):not(.fixed),
+.dark .backdrop-blur-2xl:not(.absolute):not(.fixed) {
+  background-image:
+    linear-gradient(180deg, rgba(255,255,255,0.075) 0px, rgba(255,255,255,0) 1.5px),
+    linear-gradient(135deg, rgba(255,255,255,0.075) 0%, rgba(255,255,255,0.015) 38%, rgba(255,255,255,0) 60%, rgba(167,139,250,0.035) 100%),
+    url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='140' height='140'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2' stitchTiles='stitch'/%3E%3CfeColorMatrix values='0 0 0 0 1 0 0 0 0 1 0 0 0 0 1 0 0 0 .035 0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+/* Flotantes: blur real, saturado, en su propia capa (evita repintados raros) */
+.absolute.backdrop-blur-xl, .fixed.backdrop-blur-xl, .absolute.backdrop-blur-2xl, .fixed.backdrop-blur-2xl {
+  -webkit-backdrop-filter: blur(22px) saturate(160%) !important;
+  backdrop-filter: blur(22px) saturate(160%) !important;
+  transform: translateZ(0);
+}
+
+/* Auras del fondo de la app: se mueven lento para que el vidrio tenga vida */
+@keyframes gop-drift-a { 0%,100% { transform: translate3d(0,0,0) scale(1); } 50% { transform: translate3d(6vw,4vh,0) scale(1.12); } }
+@keyframes gop-drift-b { 0%,100% { transform: translate3d(0,0,0) scale(1); } 50% { transform: translate3d(-5vw,-6vh,0) scale(1.08); } }
+@keyframes gop-drift-c { 0%,100% { transform: translate3d(0,0,0); opacity: .55; } 50% { transform: translate3d(-8vw,5vh,0); opacity: .9; } }
+.gop-aura { position: absolute; border-radius: 9999px; filter: blur(60px); will-change: transform; pointer-events: none; }
+@media (prefers-reduced-motion: reduce) { .gop-aura { animation: none !important; } }

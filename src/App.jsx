@@ -508,14 +508,18 @@ function Shell() {
 
       {isDark && (
         <div
-          className="fixed inset-0 -z-10 pointer-events-none"
+          className="fixed inset-0 -z-10 pointer-events-none overflow-hidden"
           style={{
             background:
               'radial-gradient(ellipse 60% 50% at 15% 10%, rgba(138,115,173,0.35), transparent 60%),' +
               'radial-gradient(ellipse 55% 45% at 90% 85%, rgba(224,187,62,0.22), transparent 60%),' +
               'linear-gradient(160deg, #16141a 0%, #1c1720 45%, #14121a 100%)',
           }}
-        />
+        >
+          <div className="gop-aura" style={{ width: '38vw', height: '38vw', left: '8%', top: '18%', background: 'rgba(124,58,237,0.20)', animation: 'gop-drift-a 26s ease-in-out infinite' }} />
+          <div className="gop-aura" style={{ width: '30vw', height: '30vw', right: '6%', top: '30%', background: 'rgba(224,187,62,0.10)', animation: 'gop-drift-b 32s ease-in-out infinite' }} />
+          <div className="gop-aura" style={{ width: '26vw', height: '26vw', left: '40%', bottom: '-6%', background: 'rgba(56,189,248,0.08)', animation: 'gop-drift-c 38s ease-in-out infinite' }} />
+        </div>
       )}
 
       {/* ══════════ TOPBAR ══════════ */}
