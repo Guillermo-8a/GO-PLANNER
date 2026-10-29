@@ -138,7 +138,7 @@ function Hero({ navigate }) {
           <div className="relative grid grid-cols-2 lg:grid-cols-4 gap-4 w-full max-w-6xl">
             {stats.map((s, i) => (
               <div key={s.k} style={{ transform: `translateY(${(1 - b) * (50 + i * 18)}px)` }}>
-                <Glass className="h-full p-6 lg:p-7 rounded-3xl !bg-[#0b0814]/80" accent={['#a78bfa', '#fbbf24', '#34d399', '#22d3ee'][i]}>
+                <Glass className="h-full p-6 lg:p-7 rounded-3xl text-center !bg-[#0b0814]/80" accent={['#a78bfa', '#fbbf24', '#34d399', '#22d3ee'][i]}>
                   <p className="text-[11px] font-black uppercase tracking-[0.2em]" style={{ color: ['#c4b5fd', '#fcd34d', '#6ee7b7', '#67e8f9'][i] }}>{s.k}</p>
                   <p className="mt-2 text-5xl lg:text-6xl font-black tracking-tight text-white">{s.v}</p>
                   <p className="mt-3 text-[14px] leading-snug text-zinc-300">{s.d}</p>
@@ -383,7 +383,7 @@ function Formats() {
           ))}
         </div>
         <div className="grid lg:grid-cols-[1fr_1.35fr] gap-10 items-center">
-          <div key={`${mi}-${fi}`} className="gp-fadein">
+          <div key={`${mi}-${fi}`} className="gp-fadein min-w-0">
             <div className="flex items-center gap-3 text-violet-300"><FileSpreadsheet size={22} /><span className="text-[12px] font-black uppercase tracking-[0.2em]">{mod.module}</span></div>
             {mod.formats.length > 1 && (
               <div className="mt-4 flex flex-wrap gap-1.5">
@@ -402,7 +402,7 @@ function Formats() {
             )}
           </div>
           {/* Hoja de cálculo 3D */}
-          <div className="relative" style={{ perspective: 1400 }}
+          <div className="relative min-w-0" style={{ perspective: 1400 }}
             onMouseMove={(e) => { const r = e.currentTarget.getBoundingClientRect(); setTilt({ x: ((e.clientY - r.top) / r.height - 0.5) * -10, y: ((e.clientX - r.left) / r.width - 0.5) * 14 }); }}
             onMouseLeave={() => setTilt({ x: 0, y: 0 })}>
             <div className="absolute -inset-10 rounded-full blur-3xl opacity-60 pointer-events-none" style={{ background: 'radial-gradient(circle, rgba(139,92,246,.35), transparent 65%)' }} />
@@ -544,7 +544,7 @@ export default function AboutPage() {
   const navigate = useNavigate();
   useEffect(() => { document.title = 'GO PLANNER · Planeación comercial'; }, []);
   return (
-    <div data-gobot-screen className="min-h-screen text-white antialiased" style={{ background: '#05030a', fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif' }}>
+    <div data-gobot-screen className="min-h-screen overflow-x-clip text-white antialiased" style={{ background: '#05030a', fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif' }}>
       <style>{CSS}</style>
       <div className="fixed inset-0 pointer-events-none overflow-hidden" style={{ zIndex: 0 }}>
         <div className="gop-aura" style={{ width: '45vw', height: '45vw', left: '-10%', top: '30%', background: 'rgba(124,58,237,.12)', animation: 'gop-drift-a 30s ease-in-out infinite' }} />

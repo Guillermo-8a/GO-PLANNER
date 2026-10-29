@@ -17,9 +17,9 @@ export default function AboutBot() {
   const send = (text) => { if (!text.trim()) return; ask(text); setQ(''); };
 
   return (
-    <div className="fixed bottom-5 right-5 z-[60] flex flex-col items-end gap-3">
+    <>
       {open && (
-        <div className="w-[min(360px,calc(100vw-40px))] rounded-3xl border border-white/10 p-4 shadow-2xl shadow-black/60 gp-fadein"
+        <div className="fixed bottom-[112px] right-5 z-[60] w-[min(360px,calc(100vw-40px))] rounded-3xl border border-white/10 p-4 shadow-2xl shadow-black/60 gp-fadein"
           style={{ background: 'rgba(16,12,24,.82)', backdropFilter: 'blur(22px) saturate(160%)', WebkitBackdropFilter: 'blur(22px) saturate(160%)' }}>
           <div className="flex items-center justify-between mb-3">
             <div>
@@ -44,10 +44,11 @@ export default function AboutBot() {
           </form>
         </div>
       )}
-      <button onClick={() => setOpen((o) => !o)} title="GO-Bot" className="group relative rounded-full">
+      {/* Capa propia en modo screen: el fondo negro del video se funde con la página */}
+      <button onClick={() => setOpen((o) => !o)} title="GO-Bot" className="group fixed bottom-5 right-5 z-[60] rounded-full" style={{ mixBlendMode: 'screen' }}>
         {!open && <span className="absolute right-full mr-3 top-1/2 -translate-y-1/2 whitespace-nowrap rounded-full bg-white text-black text-[11px] font-bold px-3 py-1.5 shadow-xl opacity-0 group-hover:opacity-100 transition-opacity">¿Dudas? Pregúntame</span>}
         <BotClip clip="peek" size={88} isDark />
       </button>
-    </div>
+    </>
   );
 }
