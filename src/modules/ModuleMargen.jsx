@@ -207,7 +207,7 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
   const [msg, setMsg] = useState(null);
   const fileRef = useRef(null);
 
-  useEffect(() => { idbGet('data').then((d) => { if (d) { setX(d); setF(defFilter(d)); } }); idbGet('cat').then((c) => c && setCAT(c)); idbGet('goa').then((g) => g && setGX(g)); }, []);
+  useEffect(() => { idbGet('data').then((d) => { if (d) { setX(d); setF(defFilter(d)); } }); idbGet('cat').then((c) => c && setCAT(c)); idbGet('goa').then((g) => { if (g?.v === 2) setGX(g); else if (g) { idbSet('goa', null); setMsg({ ok: false, text: 'Los archivos GOA guardados son de una versión anterior: vuelve a cargarlos con el botón GOA (utilidad por GOA + Compras del BI).' }); } }); }, []);
   const defFilter = () => ({});
 
   const onFile = async (e) => {
@@ -249,7 +249,7 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
   const onGoa = async (e) => {
     const fs = [...(e.target.files || [])]; e.target.value = ''; if (!fs.length) return;
     try {
-      const n = { ...(GX || {}) };
+      const n = { ...(GX || {}), v: 2 };
       for (const f of fs) { const tx = await readTxt(f); if (tx.includes('UTILIDAD_DE_LO_VENDIDO')) n.u = parseGoaU(tx); else if (tx.includes('COMPRAS NETAS')) n.c = parseGoaC(tx); else throw new Error(`${f.name}: no reconozco el formato (utilidad por GOA o Compras del BI)`); }
       setGX(n); await idbSet('goa', n); setTab('goa');
       setMsg({ ok: true, text: `GOA: utilidad ${n.u?.length ?? 0} filas · compras ${n.c?.length ?? 0} filas` });
@@ -302,6 +302,7 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
   const td = 'px-2 py-1 text-xs whitespace-nowrap text-center tabular-nums';
   const col = (v) => (v == null || Math.abs(v) < 0.0005 ? undefined : v > 0 ? POS : NEG);
   const ttStyle = { contentStyle: { background: isDark ? '#1c1720' : '#fff', border: `1px solid ${isDark ? 'rgba(255,255,255,0.1)' : '#e5e7eb'}`, borderRadius: 10, fontSize: 11 }, itemStyle: { color: isDark ? '#EDEBF2' : '#111' } };
+  const stk = (top) => ({ position: 'sticky', top, zIndex: 2, background: isDark ? '#1d1830' : '#f4f0fc' });
   const axisTick = { fontSize: 10, fill: isDark ? '#948FA0' : '#6b7280' };
 
   const nF = Object.values(F).filter((v) => v?.length).length;
@@ -445,12 +446,12 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
                   <table className="w-full">
                     <thead>
                       <tr>
-                        <th className={th} />
-                        {CT.map(([g, cs]) => <th key={g} colSpan={cs.length} className={th} style={{ background: isDark ? 'rgba(167,139,250,0.22)' : 'rgba(167,139,250,0.28)', borderLeft: '2px solid rgba(167,139,250,0.5)' }}>{g}</th>)}
+                        <th className={th} style={{ ...stk(0), height: 26 }} />
+                        {CT.map(([g, cs]) => <th key={g} colSpan={cs.length} className={th} style={{ ...stk(0), height: 26, background: isDark ? '#2c2347' : '#e3d9fb', borderLeft: '2px solid rgba(167,139,250,0.5)' }}>{g}</th>)}
                       </tr>
                       <tr>
-                        <th className={`${th} !text-left`} style={{ position: 'sticky', left: 0, zIndex: 2 }}>Sección / GOA</th>
-                        {CT.flatMap(([g, cs]) => cs.map(([h], i) => <th key={g + h} className={th} style={i === 0 ? { borderLeft: '2px solid rgba(167,139,250,0.5)' } : undefined}>{h === 'TY' ? ty : h === 'LY' ? ly : h}</th>))}
+                        <th className={`${th} !text-left`} style={{ ...stk(26), left: 0, zIndex: 3 }}>Sección / GOA</th>
+                        {CT.flatMap(([g, cs]) => cs.map(([h], i) => <th key={g + h} className={th} style={{ ...stk(26), ...(i === 0 ? { borderLeft: '2px solid rgba(167,139,250,0.5)' } : {}) }}>{h === 'TY' ? ty : h === 'LY' ? ly : h}</th>))}
                       </tr>
                     </thead>
                     <tbody>
@@ -479,7 +480,7 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
                 {!GX.c?.length && <p className={`text-[10px] mb-2 ${t.textMuted}`}>Falta el archivo de Compras: sin él no hay MG compra ni degradación.</p>}
                 <div style={{ maxHeight: 560, overflow: 'auto' }}>
                   <table className="w-full">
-                    <thead><tr><th className={`${th} !text-left`}>Sección / GOA</th>{months.map((m) => <th key={m} className={th}>{MES[m - 1]}</th>)}<th className={th}>Acum. {ly}</th><th className={th}>Acum. {ty}</th><th className={th}>Δ</th></tr></thead>
+                    <thead><tr><th className={`${th} !text-left`} style={stk(0)}>Sección / GOA</th>{months.map((m) => <th key={m} className={th} style={stk(0)}>{MES[m - 1]}</th>)}<th className={th} style={stk(0)}>Acum. {ly}</th><th className={th} style={stk(0)}>Acum. {ty}</th><th className={th} style={stk(0)}>Δ</th></tr></thead>
                     <tbody>
                       {renderRow('TOTAL', goas, 'tot')}
                       {sections.flatMap((sc) => [renderRow(sc.name, sc.list, 'sec'), ...(ex[sc.name] ? sc.list.filter((g) => gsum([g], ty, months).vn >= 1e6 || gsum([g], ly, months).vn >= 1e6).sort((a, b) => gsum([b], ty, months).vn - gsum([a], ty, months).vn).map((g) => renderRow(g.goa, [g], 'goa')) : [])])}
