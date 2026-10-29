@@ -50,6 +50,21 @@ const idb = () => new Promise((res, rej) => { const r = indexedDB.open(DB_NAME, 
 const idbGet = async (k) => { const db = await idb(); return new Promise((res) => { const q = db.transaction('data').objectStore('data').get(k); q.onsuccess = () => res(q.result); q.onerror = () => res(null); }); };
 const idbSet = async (k, v) => { const db = await idb(); return new Promise((res) => { const tx = db.transaction('data', 'readwrite'); tx.objectStore('data').put(v, k); tx.oncomplete = res; tx.onerror = res; }); };
 
+// Por GOA: utilidad (VEIL_TAB_UTILIDAD_COMPARATIVO_S por GOA) + compras del BI (PV/PC). MG inicial = 1 − compras PC ÷ compras PV; Degradación = MG vendido − MG inicial.
+const readTxt = async (f) => { const b = await f.arrayBuffer(); try { return new TextDecoder('utf-8', { fatal: true }).decode(b); } catch { return new TextDecoder('windows-1252').decode(b); } };
+const sh1 = (txt) => { const wb = XLSX.read(txt, { type: 'string' }); return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' }); };
+const parseGoaU = (txt) => sh1(txt).map((r) => ({ a: +r.ANIO, mes: +r.MES, goa: String(r.GOA).trim(), vn: +r.VENTA_NETA || 0, uvv: +r.UTILIDAD_DE_LO_VENDIDO || 0, ubm: +r.UB_MERCANCIAS || 0 })).filter((r) => r.a && r.mes);
+const parseGoaC = (txt) => txt.split(/\r?\n/).slice(3).map((l) => l.split(',')).filter((f) => f.length >= 13 && f[6] && !isNaN(+f[6]) && f[8]).map((f) => ({ a: +f[6], mes: +f[8], goa: f[5].trim(), pv: (+f[11] || 0) * 1000, pc: (+f[12] || 0) * 1000 }));
+const goaAgg = (U, C, ty) => {
+  const ly = ty - 1, corte = Math.max(...U.filter((r) => r.a === ty).map((r) => r.mes), 0), m = {};
+  const g = (k) => (m[k] ||= { [ly]: { vn: 0, uvv: 0, pv: 0, pc: 0 }, [ty]: { vn: 0, uvv: 0, pv: 0, pc: 0 } });
+  for (const r of U) if ((r.a === ty || r.a === ly) && r.mes <= corte) { const o = g(r.goa)[r.a]; o.vn += r.vn; o.uvv += r.uvv; }
+  for (const r of C) if ((r.a === ty || r.a === ly) && r.mes <= corte) { const o = g(r.goa)[r.a]; o.pv += r.pv; o.pc += r.pc; }
+  const k = (o) => { const mi = o.pv > 0 ? 1 - o.pc / o.pv : null, mv = o.vn > 0 ? o.uvv / o.vn : null; return { vn: o.vn, mi, mv, dg: mi != null && mv != null ? mv - mi : null }; };
+  const tot = { [ly]: { vn: 0, uvv: 0, pv: 0, pc: 0 }, [ty]: { vn: 0, uvv: 0, pv: 0, pc: 0 } };
+  const rows = Object.entries(m).map(([goa, o]) => { for (const y of [ly, ty]) for (const q of ['vn', 'uvv', 'pv', 'pc']) tot[y][q] += o[y][q]; return { goa, L: k(o[ly]), T: k(o[ty]) }; });
+  return { ly, ty, corte, rows, tot: { goa: 'TOTAL', L: k(tot[ly]), T: k(tot[ty]) } };
+};
 const zero = () => ({ pl: 0, vn: 0, c: 0, b: 0, me: 0, f: 0, ub: 0 });
 const add = (s, r) => { for (const k in s) s[k] += r[k]; };
 
@@ -157,6 +172,8 @@ function summary(R, F, SM) {
 export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) {
   const [X, setX] = useState(null);
   const [CAT, setCAT] = useState(null);
+  const [GX, setGX] = useState(null);
+  const goaRef = useRef(null);
   const [F, setF] = useState({});
   const [dim, setDim] = useState('sec');
   const [soloBaja, setSoloBaja] = useState(false);
@@ -166,7 +183,7 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
   const [msg, setMsg] = useState(null);
   const fileRef = useRef(null);
 
-  useEffect(() => { idbGet('data').then((d) => { if (d) { setX(d); setF(defFilter(d)); } }); idbGet('cat').then((c) => c && setCAT(c)); }, []);
+  useEffect(() => { idbGet('data').then((d) => { if (d) { setX(d); setF(defFilter(d)); } }); idbGet('cat').then((c) => c && setCAT(c)); idbGet('goa').then((g) => g && setGX(g)); }, []);
   const defFilter = () => ({});
 
   const onFile = async (e) => {
@@ -205,7 +222,17 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
     } catch (err) { setMsg({ ok: false, text: `Error: ${err.message}` }); }
     setBusy(null);
   };
-  const clearAll = async () => { if (!confirm('¿Borrar la base de Margen?')) return; setX(null); setCAT(null); setF({}); await idbSet('data', null); await idbSet('cat', null); try { localStorage.removeItem(LS_FILES); } catch {} };
+  const onGoa = async (e) => {
+    const fs = [...(e.target.files || [])]; e.target.value = ''; if (!fs.length) return;
+    try {
+      const n = { ...(GX || {}) };
+      for (const f of fs) { const tx = await readTxt(f); if (tx.includes('UTILIDAD_DE_LO_VENDIDO')) n.u = parseGoaU(tx); else if (tx.includes('COMPRAS NETAS')) n.c = parseGoaC(tx); else throw new Error(`${f.name}: no reconozco el formato (utilidad por GOA o Compras del BI)`); }
+      setGX(n); await idbSet('goa', n); setTab('goa');
+      setMsg({ ok: true, text: `GOA: utilidad ${n.u?.length ?? 0} filas · compras ${n.c?.length ?? 0} filas` });
+    } catch (err) { setMsg({ ok: false, text: `Error: ${err.message}` }); }
+  };
+  const G = useMemo(() => { if (!GX?.u?.length) return null; const ty = Math.max(...GX.u.map((r) => r.a)); return goaAgg(GX.u, GX.c || [], ty); }, [GX]);
+  const clearAll = async () => { if (!confirm('¿Borrar la base de Margen?')) return; setX(null); setCAT(null); setGX(null); setF({}); await idbSet('data', null); await idbSet('cat', null); await idbSet('goa', null); try { localStorage.removeItem(LS_FILES); } catch {} };
 
   const R = useMemo(() => {
     if (!X) return null;
@@ -266,6 +293,8 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
       <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden" onChange={onFile} />
       <button onClick={traerBQ} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg font-bold ${t.btnGhost}`}><Database size={14} /> BigQuery</button>
       <button onClick={() => fileRef.current?.click()} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg font-bold ${t.btnGhost}`}><Upload size={14} /> CSV</button>
+      <input ref={goaRef} type="file" accept=".csv,.txt" multiple className="hidden" onChange={onGoa} />
+      <button onClick={() => goaRef.current?.click()} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg font-bold ${t.btnGhost}`}><Upload size={14} /> GOA</button>
       {X && <button onClick={clearAll} className={`p-1.5 rounded-lg ${t.btnGhost}`} title="Borrar base"><Trash2 size={14} /></button>}
     </>
   );
@@ -311,8 +340,39 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
           </div>
 
           <div className={`inline-flex rounded-lg border p-0.5 ${t.toggle}`}>
-            {[['resumen', 'Resumen'], ['detalle', 'Detalle']].map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={`px-4 py-1 text-xs rounded-md font-bold ${tab === k ? t.toggleActive : t.textMuted}`}>{l}</button>)}
+            {[['resumen', 'Resumen'], ['detalle', 'Detalle'], ['goa', 'Por GOA']].map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={`px-4 py-1 text-xs rounded-md font-bold ${tab === k ? t.toggleActive : t.textMuted}`}>{l}</button>)}
           </div>
+          {tab === 'goa' && (
+            <div className={card}>
+              {!G ? <p className={`text-xs text-center py-8 ${t.textMuted}`}>Carga con el botón GOA los dos archivos: utilidad por GOA (CSV de BQ) y Compras del BI (PV y PC).</p> : (<>
+                <div className="flex items-baseline justify-between mb-2">
+                  <h3 className={`text-sm font-black ${t.text}`}>MG de compra vs MG vendido por GOA · ene-{MES[G.corte - 1]} {G.ty} vs {G.ly}</h3>
+                  <label className={`flex items-center gap-1 text-xs ${t.textMuted}`}><input type="checkbox" checked={soloBaja} onChange={(e) => setSoloBaja(e.target.checked)} /> Solo degradación a la baja</label>
+                </div>
+                {!GX.c?.length && <p className={`text-[10px] mb-2 ${t.warnText || t.textMuted}`}>Falta el archivo de Compras: sin él no hay MG inicial ni degradación.</p>}
+                <div style={{ maxHeight: 520, overflow: 'auto' }}>
+                  <table className="w-full">
+                    <thead><tr><th className={`${th} !text-left`}>GOA</th><th className={th}>Venta {G.ty}</th><th className={th}>MG ini {G.ly}</th><th className={th}>MG ini {G.ty}</th><th className={th}>MG vend. {G.ly}</th><th className={th}>MG vend. {G.ty}</th><th className={th}>Degrad. {G.ly}</th><th className={th}>Degrad. {G.ty}</th><th className={th}>Δ degrad.</th></tr></thead>
+                    <tbody>
+                      {[G.tot, ...G.rows.filter((r) => r.T.vn >= 2e6 || r.L.vn >= 2e6).filter((r) => !soloBaja || (r.T.dg != null && r.L.dg != null && r.T.dg - r.L.dg < -0.001)).sort((a, b) => b.T.vn - a.T.vn)].map((r, i) => {
+                        const dd = r.T.dg != null && r.L.dg != null ? r.T.dg - r.L.dg : null;
+                        return (
+                          <tr key={r.goa} className={`border-t ${isDark ? 'border-white/5' : 'border-gray-100'} ${i === 0 ? 'font-black' : ''}`}>
+                            <td className={`${td} !text-left ${t.text}`}>{r.goa}</td><td className={`${td} ${t.text}`}>{fmtM(r.T.vn)}</td>
+                            <td className={`${td} ${t.text}`}>{pc(r.L.mi)}</td><td className={`${td} ${t.text}`}>{pc(r.T.mi)}</td>
+                            <td className={`${td} ${t.text}`}>{pc(r.L.mv)}</td><td className={`${td} ${t.text}`}>{pc(r.T.mv)}</td>
+                            <td className={`${td} ${t.text}`}>{pts(r.L.dg)}</td><td className={`${td} ${t.text}`}>{pts(r.T.dg)}</td>
+                            <td className={td} style={{ color: col(dd) }}>{pts(dd)}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+                <p className={`text-[10px] mt-2 ${t.textMuted}`}>MG ini = 1 − compras a costo ÷ compras a precio de venta (cómo se compra). MG vend. = utilidad de lo vendido ÷ venta neta. Degrad. = MG vend. − MG ini (descuento, liquidación y mezcla entre lo comprado y lo vendido). Δ degrad. positivo = se degrada menos que el año anterior. Solo GOA con más de $2 M de venta.</p>
+              </>)}
+            </div>
+          )}
           {tab === 'resumen' && SUM && (
             <div className="space-y-3">
               <div className={`${card} flex items-start justify-between gap-3`}>
