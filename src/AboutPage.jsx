@@ -1,424 +1,340 @@
-// AboutPage.jsx — GO PLANNER landing con animaciones full
-import { useState, useEffect, useRef } from 'react';
+// AboutPage.jsx — página de presentación de GO PLANNER.
+// Hero 3D con scroll (HelixScene), pilares con todos los módulos, "qué resuelve" con gráficas animadas,
+// formatos de archivo interactivos, preguntas frecuentes y GO-Bot.
+import { useState, useEffect, useRef, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
-import {
-  TrendingUp, ShoppingCart, Map, RefreshCw,
-  ArrowLeftRight, ChevronDown, Zap, BarChart3,
-  Calendar, ArrowRight, Layers, FileSpreadsheet, Tag, Download, ListChecks, PieChart, Truck, Hourglass, ShieldCheck
-} from 'lucide-react';
+import { ArrowRight, ChevronDown, Download, FileSpreadsheet, Sparkles, Database, Layers, Cpu, ShieldCheck as Shield } from 'lucide-react';
+import { ResponsiveContainer, BarChart, Bar, XAxis, YAxis, Cell, LineChart, Line, CartesianGrid, Tooltip } from 'recharts';
 import { CSV_SCHEMAS } from './csvSchemas';
+import { PILLARS, MODULE_COUNT, SOLVES, FAQS } from './about/aboutData';
+import AboutBot from './about/AboutBot';
 
-// ── Hook: detecta si el elemento es visible ───────────────────────────────────
+const HelixScene = lazy(() => import('./about/HelixScene'));
+
+// ── Hooks ─────────────────────────────────────────────────────────────────────
 function useInView(threshold = 0.15) {
   const ref = useRef(null);
-  const [visible, setVisible] = useState(false);
+  const [v, setV] = useState(false);
   useEffect(() => {
-    const obs = new IntersectionObserver(
-      ([e]) => { if (e.isIntersecting) { setVisible(true); obs.disconnect(); } },
-      { threshold }
-    );
-    if (ref.current) obs.observe(ref.current);
-    return () => obs.disconnect();
+    const el = ref.current; if (!el) return;
+    const io = new IntersectionObserver(([e]) => { if (e.isIntersecting) { setV(true); io.disconnect(); } }, { threshold });
+    io.observe(el); return () => io.disconnect();
   }, [threshold]);
-  return [ref, visible];
+  return [ref, v];
 }
-
-// ── Hook: parallax con scroll ─────────────────────────────────────────────────
-function useParallax(speed = 0.3) {
-  const [offset, setOffset] = useState(0);
+// Progreso 0→1 del scroll a través de un elemento alto (para escenas "sticky")
+function useScrollProgress(ref, intoRef) {
+  const [p, setP] = useState(0);
   useEffect(() => {
-    const h = () => setOffset(window.scrollY * speed);
-    window.addEventListener('scroll', h, { passive: true });
-    return () => window.removeEventListener('scroll', h);
-  }, [speed]);
-  return offset;
+    let raf;
+    const calc = () => {
+      raf = null; const el = ref.current; if (!el) return;
+      const r = el.getBoundingClientRect(), total = r.height - window.innerHeight;
+      const v = total > 0 ? Math.min(1, Math.max(0, -r.top / total)) : 0;
+      if (intoRef) intoRef.current = v;
+      setP(v);
+    };
+    const on = () => { if (!raf) raf = requestAnimationFrame(calc); };
+    calc(); window.addEventListener('scroll', on, { passive: true }); window.addEventListener('resize', on);
+    return () => { window.removeEventListener('scroll', on); window.removeEventListener('resize', on); if (raf) cancelAnimationFrame(raf); };
+  }, [ref, intoRef]);
+  return p;
 }
+const clamp01 = (x) => Math.min(1, Math.max(0, x));
+const band = (p, a, b) => clamp01((p - a) / (b - a)); // 0→1 entre a y b
 
-// ── Datos ─────────────────────────────────────────────────────────────────────
-const WORLDS = [
-  {
-    id: 'plan', tag: 'PLANES FINANCIEROS',
-    name: 'Planning · Suplementarios',
-    desc: 'El núcleo de la planeación, planes a nivel canal de venta | tienda | goa. ',
-    accent: '#8b5cf6', glow: 'rgba(139,92,246,0.18)',
-    modules: [
-      { label: 'Planning', Icon: BarChart3, desc: 'Construye Mejor Estimado, Ajusta tu OTB, Alinea tu canales, y baja a nivel tienda.' },
-      { label: 'Suplementarios', Icon: PieChart, desc: 'Baja el OTB mensual (venta, mkds, CMSI, compra, utilidad, inventario) a marca o proveedor con histórico o IS, siempre cuadrando al OTB general.' },
-    ],
-  },
-  {
-    id: 'demanda', tag: 'PLANEACIÓN DE LA DEMANDA',
-    name: 'Assortment · Forecasting · Distribución · Resurtido',
-    desc: 'Conecta la estrategia con la ejecución diaria. Vista unificada que une forecast, OTB y distribución. Proyecta demanda, define el surtido óptimo. |y mantiene el inventario saludable.',
-    accent: '#f59e0b', glow: 'rgba(245,158,11,0.15)',
-    modules: [
-      { label: 'Forecasting',    Icon: TrendingUp,   desc: 'Regresión lineal con ajuste estacional y 4 escenarios IS.' },
-      { label: 'Assortment', Icon: ShoppingCart, desc: 'Presupuesto de compra y OTB mensual. La resultante da piezas y modelos por mes por combinación GOA × Bucket × Regla (varias reglas por bucket, ej. OPP/MID/MAX con su PVP y %, sugeridas por los escalones de precio del histórico LY/LLY); la curva solo reparte tallas por centro. Estrategia Venta × Capacidad: clústeres por venta y m²/espacio, corridas sugeridas desde la venta, reparto por venta de cada tienda con afinidad de precio por clúster, piezas al precio neto (OTB a venta neta) y prueba de espacio con o sin centralización por GOA. Basta la base de venta por tienda × PVP (CENTRO_KEY, GOA, PVP, VENTA_U, VENTA_P) más el archivo de capacidad o m².' },
-      { label: 'Resurtido',      Icon: RefreshCw,    desc: 'Reposición por días de inventario: pedido = demanda/día × (lead time + WOS + seguridad) − (OH+OO), con ajustes editables por cluster de tienda (CSV o A/B/C automático) y forecast TDM por GOA.' },
-      { label: 'Distribución', Icon: Map,            desc: 'Surtido inicial por cluster, curva de tallas y chequera.' },
-    ],
-   }, 
-  {
-    id: 'inventario', tag: 'CONTROL DE INVENTARIOS',
-    name: 'Disperción · Traslados · Chequera',
-    desc: 'Movimiento de mercancía entre tiendas. Detecta excedentes y cubre necesidades por presupuesto con ayuda y como base la famosa Chequera.',
-    accent: '#10b981', glow: 'rgba(16,185,129,0.15)',
-    modules: [
-      { label: 'Traslados',    Icon: ArrowLeftRight, desc: 'Excedente de temporada por clima, aperturas por corrida completa y nivelación por MOS (misma zona, metro, todas u óptimo en cascada), con exclusión de bodegas y desglose a SKU.' },
-      { label: 'Dispersión',    Icon: ArrowLeftRight, desc: 'Dispersión entre ventas e inventario por centro, goa, o el filtro que necesites.' },
-      { label: 'Chequera',    Icon: ArrowLeftRight, desc: 'Información de modelos a nivel SKU, para organizar y administrar la compra.' },
-    ],
-  },
- {
-    id: 'check', tag: 'CHECK DE COORDINADORES',
-    name: 'Daily · Eventos · Allocation · Pedidos · Nulo Movimiento · Validador de parametrizaciones',
-    desc: 'Detalle de ventas e inventarios diarios y por evento promocional, con proyección de venta y utilidades. Revisión de parametrizaciones y OC antes de que salga la mercancía.',
-    accent: '#06b6d4', glow: 'rgba(6, 182, 212, 0.15)',
-    modules: [
-       { label: 'Daily',    Icon: Calendar,  desc: 'Ajustes diarios de inventario, ventas y margen.' },
-       { label: 'Eventos',  Icon: Tag,       desc: 'Venta, margen, sell-through e inventario inicial de eventos promocionales (BTS, Navidad, etc.), comparado automáticamente contra el año anterior.' },
-       { label: 'Allocation', Icon: ListChecks, desc: 'Reportero de parametrizaciones ZO9_DM (matriz de marca, clima, AP8, WOS, compra vs mínimos, curvas, clusters) y de OC (mínimos, destalle, picos, concentración). Dice qué está mal, dónde y a qué cambiarlo, y baja el CSV corregido para volver a parametrizar.' },
-       { label: 'Pedidos', Icon: Truck, desc: 'Rastreador de OCs en un mapa 3D (Three.js: luces, sombras, órbita de cámara) con 3 rutas (importación, nacional, directo a tienda): proveedor, barcos en tránsito, aduana, PLAN (almacén y cross dock), bodegas regionales, fulfillment, foro fotográfico y zonas de tiendas. Piezas en on order, in process, in transit, bodegas, foro, fulfillment y tienda sin entrada; atorados por umbral editable, costo atorado y en tránsito (COSTO_ASIG; importación en USD convertida al tipo de cambio del día de la OC), proveedores nacionales e importación por separado, hasta 14 zonas, filtro por mes de recepción (compromiso), aviso de antigüedad de la base, mapa de tiendas por zona, lead time por tipo y tramo, antigüedad y línea de tiempo por OC' },
-       { label: 'Nulo Movimiento', Icon: Hourglass, desc: 'Inventario sin venta en cada combinación SKU × centro (tiendas y bodegas) desde el CSV de BigQuery: nulo = más de 3 meses desde la última venta (umbral editable por sección; si no vendió en la ventana cuenta la antigüedad desde la 1a recepción). Monto, piezas, meses promedio, proveedor top, % estatus, % marca, % nulo por zona y por tienda, top artículos, GOA y tabla por sección; filtros de sección, GOA, marca, norma, estatus, meses, zona y tipo de centro, tab Bodegas (NM parado en bodegas/PLAN y si el SKU vende en tiendas → distribuir o liquidar) y tab Detalle con las combinaciones y CSV.' },
-       { label: 'Validador de parametrizaciones', Icon: ShieldCheck, desc: 'Revisa la parametrización que viaja de O9 (ZO9_DM): tabla de combinaciones artículo × centro con filtro de forecast sí/no, resumen por tipo de afectación y CSV corregido listo para volver a cargar en O9.' }
-     ],
-   },
- ];
-
-const FAQS = [
-  { q: '¿Qué es GO PLANNER?', a: 'Sistema integrado de planeación comercial desarrollado por el propio equipo de PAC. Cubre el ciclo completo de los 3 pilares del negocio: Planeación financiera → Planeación de la demanda → Control de inventarios.' },
-  { q: '¿Los módulos comparten datos?', a: 'Sí. El pipeline conecta Forecasting → OTB → Distribución → Resurtido automáticamente. El sidebar muestra qué módulos tienen información activa.' },
-  { q: '¿Cómo funciona GO PLANNER?', a: 'Funciona con información dentro de un csv, una vez cargada en cada módulo el app hace los calculos con esa información.' },
-  { q: '¿Se guarda mi trabajo?', a: 'Sí. Cada módulo persiste en localStorage (gop_forecast, gop_assortment, etc.). Al volver encontrarás todo como lo dejaste.' },
-  { q: '¿Mi información corre peligro?', a: 'No. Toda la información cargada en los csv, vive en los csv y en la memoria RAM de tu equipo, GO PLANNER no tiene la facultad ni la memoria para almacenar tu información, todos los procesos trabajan en tu equipo, no en un servidor.' },
-];
-
-// ── Cursor glow ───────────────────────────────────────────────────────────────
-function CursorGlow() {
-  const [pos, setPos] = useState({ x: -200, y: -200 });
-  useEffect(() => {
-    const h = (e) => setPos({ x: e.clientX, y: e.clientY });
-    window.addEventListener('mousemove', h);
-    return () => window.removeEventListener('mousemove', h);
-  }, []);
+function Reveal({ children, delay = 0, y = 28, className = '', as: Tag = 'div' }) {
+  const [ref, v] = useInView(0.12);
   return (
-    <div style={{
-      position: 'fixed', pointerEvents: 'none', zIndex: 1,
-      left: pos.x - 200, top: pos.y - 200,
-      width: 400, height: 400, borderRadius: '60%',
-      background: 'radial-gradient(circle, rgba(139,92,246,0.06) 0%, transparent 70%)',
-      transition: 'left 0.1s ease, top 0.1s ease',
-    }} />
+    <Tag ref={ref} className={className}
+      style={{ opacity: v ? 1 : 0, transform: v ? 'none' : `translateY(${y}px)`, transition: `opacity .9s cubic-bezier(.2,.7,.2,1) ${delay}s, transform .9s cubic-bezier(.2,.7,.2,1) ${delay}s` }}>
+      {children}
+    </Tag>
   );
 }
 
-// ── Grid de fondo animado ─────────────────────────────────────────────────────
-function GridBg() {
+// Tarjeta de vidrio con brillo que sigue al cursor
+function Glass({ children, className = '', style, accent = '#a78bfa' }) {
+  const onMove = (e) => { const r = e.currentTarget.getBoundingClientRect(); e.currentTarget.style.setProperty('--mx', `${e.clientX - r.left}px`); e.currentTarget.style.setProperty('--my', `${e.clientY - r.top}px`); };
   return (
-    <div style={{
-      position: 'fixed', inset: 0, zIndex: 0, pointerEvents: 'none',
-      backgroundImage: `
-        linear-gradient(rgba(139,92,246,0.03) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(139,92,246,0.03) 1px, transparent 1px)
-      `,
-      backgroundSize: '60px 60px',
-    }} />
+    <div onMouseMove={onMove} className={`gp-glass ${className}`} style={{ '--acc': accent, ...style }}>
+      {children}
+    </div>
   );
 }
 
 // ── Navbar ────────────────────────────────────────────────────────────────────
 function NavBar({ navigate }) {
   const [scrolled, setScrolled] = useState(false);
-  useEffect(() => {
-    const h = () => setScrolled(window.scrollY > 30);
-    window.addEventListener('scroll', h);
-    return () => window.removeEventListener('scroll', h);
-  }, []);
+  useEffect(() => { const h = () => setScrolled(window.scrollY > 40); h(); window.addEventListener('scroll', h, { passive: true }); return () => window.removeEventListener('scroll', h); }, []);
   return (
-    <nav style={{
-      position: 'fixed', top: 0, left: 0, right: 0, zIndex: 100,
-      padding: '0 2.5rem', height: '64px',
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      background: scrolled ? 'rgba(0,0,0,0.8)' : 'transparent',
-      backdropFilter: scrolled ? 'blur(20px)' : 'none',
-      borderBottom: scrolled ? '1px solid rgba(139,92,246,0.15)' : 'none',
-      transition: 'all 0.4s ease',
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-        <img src="/logo.png" alt="GO PLANNER" style={{ width: 'clamp(90px, 10vw, 130px)', height: 'auto', margin: '0 0 -36px -18px', filter: 'drop-shadow(0 0 30px rgba(139,92,246,0.35))' }} />
-      </div>
-      <div style={{ display: 'flex', gap: '12px', alignItems: 'center' }}>
-        {['PILARES', 'FORMATOS', 'PREGUNTAS'].map(w => (
-          <a key={w} href={`#${w.toLowerCase()}`} style={{
-            fontSize: '12px', fontWeight: 600, color: '#71717a',
-            textDecoration: 'none', transition: 'color 0.2s',
-          }}
-          onMouseEnter={e => e.target.style.color = '#8b5cf6'}
-          onMouseLeave={e => e.target.style.color = '#71717a'}
-          >{w}</a>
-        ))}
-        <button onClick={() => navigate('/')} style={{
-          display: 'flex', alignItems: 'center', gap: '6px',
-          background: 'linear-gradient(135deg, #7c3aed, #5b21b6)',
-          color: 'white', border: 'none', borderRadius: '12px',
-          padding: '9px 20px', fontSize: '13px', fontWeight: 700,
-          cursor: 'pointer', boxShadow: '0 0 24px rgba(124,58,237,0.4)',
-          transition: 'transform 0.2s, box-shadow 0.2s',
-        }}
-        onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.04)'; e.currentTarget.style.boxShadow = '0 0 32px rgba(124,58,237,0.6)'; }}
-        onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1)'; e.currentTarget.style.boxShadow = '0 0 24px rgba(124,58,237,0.4)'; }}
-        >
+    <div className="fixed top-0 inset-x-0 z-50 flex justify-center px-4 pt-4 pointer-events-none">
+      <nav className={`pointer-events-auto flex items-center gap-2 sm:gap-6 pl-3 pr-2 py-2 rounded-full border transition-all duration-500 ${scrolled ? 'bg-[#0b0812]/70 border-white/10 shadow-2xl shadow-black/50' : 'bg-white/[0.03] border-white/[0.06]'}`}
+        style={{ backdropFilter: 'blur(18px) saturate(160%)', WebkitBackdropFilter: 'blur(18px) saturate(160%)' }}>
+        <a href="#top" className="flex items-center"><img src="/logo.png" alt="GO PLANNER" className="h-7 w-auto" /></a>
+        <div className="hidden md:flex items-center gap-5">
+          {[['Pilares', 'pilares'], ['Qué resuelve', 'resuelve'], ['Formatos', 'formatos'], ['Preguntas', 'preguntas']].map(([l, id]) => (
+            <a key={id} href={`#${id}`} className="text-[12px] font-semibold text-zinc-400 hover:text-white transition-colors">{l}</a>
+          ))}
+        </div>
+        <button onClick={() => navigate('/')} className="flex items-center gap-1.5 rounded-full bg-white text-black px-4 py-2 text-[12px] font-bold hover:bg-violet-200 transition-colors">
           Abrir app <ArrowRight size={13} />
         </button>
-      </div>
-    </nav>
-  );
-}
-
-// ── Hero ──────────────────────────────────────────────────────────────────────
-function Hero({ navigate }) {
-  const parallax = useParallax(0.2);
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => { setTimeout(() => setMounted(true), 100); }, []);
-
-  return (
-    <section style={{
-      minHeight: '100vh', display: 'flex', flexDirection: 'column',
-      alignItems: 'center', justifyContent: 'center',
-      padding: '0 2rem', textAlign: 'center', position: 'relative',
-      overflow: 'hidden',
-    }}>
-      {/* Orbs de fondo */}
-      <div style={{
-        position: 'absolute', top: '10%', left: '20%',
-        width: '500px', height: '500px', borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(124,58,237,0.12) 0%, transparent 70%)',
-        transform: `translateY(${parallax * 0.5}px)`,
-        transition: 'transform 0.1s linear',
-        pointerEvents: 'none',
-      }} />
-      <div style={{
-        position: 'absolute', bottom: '10%', right: '15%',
-        width: '400px', height: '400px', borderRadius: '50%',
-        background: 'radial-gradient(circle, rgba(16,185,129,0.08) 0%, transparent 70%)',
-        transform: `translateY(${-parallax * 0.3}px)`,
-        transition: 'transform 0.1s linear',
-        pointerEvents: 'none',
-      }} />
-
-      {/* Badge */}
-      <div style={{
-        display: 'inline-flex', alignItems: 'center', gap: '8px',
-        padding: '7px 16px', borderRadius: '100px',
-        border: '1px solid rgba(139,92,246,0.35)',
-        background: 'rgba(139,92,246,0.08)',
-        marginBottom: '36px',
-        opacity: mounted ? 1 : 0,
-        transform: mounted ? 'translateY(0)' : 'translateY(20px)',
-        transition: 'all 0.7s ease',
-      }}>
-        <Zap size={11} color="#8b5cf6" />
-        <span style={{ fontSize: '11px', fontWeight: 700, color: '#8b5cf6', letterSpacing: '1.5px', textTransform: 'uppercase' }}>
-          Sistema de planeación comercial · SBB
-        </span>
-      </div>
-
-      {/* Título */}
-      <div style={{
-        opacity: mounted ? 1 : 0,
-        transform: mounted ? 'translateY(0)' : 'translateY(30px)',
-        transition: 'all 0.8s ease 0.1s',
-      }}>
-        <h1 style={{
-          fontSize: 'clamp(72px, 14vw, 160px)',
-          fontWeight: 900, lineHeight: 0.85,
-          letterSpacing: '-6px', textTransform: 'uppercase',
-          color: 'white', margin: '0 0 8px',
-        }}>GO</h1>
-        <h1 style={{
-          fontSize: 'clamp(60px, 12vw, 140px)',
-          fontWeight: 900, lineHeight: 0.85,
-          letterSpacing: '-5px', textTransform: 'uppercase',
-          margin: '0 0 32px',
-          background: 'linear-gradient(135deg, #8b5cf6 0%, #a78bfa 50%, #7c3aed 100%)',
-          WebkitBackgroundClip: 'text', WebkitTextFillColor: 'transparent',
-          filter: 'drop-shadow(0 0 40px rgba(139,92,246,0.4))',
-        }}>PLANNER</h1>
-      </div>
-
-      {/* Desc */}
-      <p style={{
-        fontSize: '17px', color: '#71717a', maxWidth: '560px',
-        lineHeight: 1.7, margin: '0 0 44px',
-        opacity: mounted ? 1 : 0,
-        transform: mounted ? 'translateY(0)' : 'translateY(20px)',
-        transition: 'all 0.8s ease 0.2s',
-      }}>
-        Aplicación integrada de planeación comercial para cubrir los tres pilares de PAC. Desde el plan hasta los traslados, todo en un sistema que funciona en tu equipo.
-      </p>
-
-      {/* CTAs */}
-      <div style={{
-        display: 'flex', gap: '14px', flexWrap: 'wrap', justifyContent: 'center',
-        marginBottom: '72px',
-        opacity: mounted ? 1 : 0,
-        transform: mounted ? 'translateY(0)' : 'translateY(20px)',
-        transition: 'all 0.8s ease 0.3s',
-      }}>
-        <button onClick={() => navigate('/')} style={{
-          display: 'flex', alignItems: 'center', gap: '8px',
-          background: 'linear-gradient(135deg, #7c3aed, #5b21b6)',
-          color: 'white', border: 'none', borderRadius: '16px',
-          padding: '16px 32px', fontSize: '15px', fontWeight: 700,
-          cursor: 'pointer', boxShadow: '0 0 40px rgba(124,58,237,0.5)',
-          transition: 'all 0.25s ease',
-        }}
-        onMouseEnter={e => { e.currentTarget.style.transform = 'scale(1.05) translateY(-2px)'; e.currentTarget.style.boxShadow = '0 0 60px rgba(124,58,237,0.7)'; }}
-        onMouseLeave={e => { e.currentTarget.style.transform = 'scale(1) translateY(0)'; e.currentTarget.style.boxShadow = '0 0 40px rgba(124,58,237,0.5)'; }}
-        >
-          Abrir GO PLANNER <ArrowRight size={16} />
-        </button>
-        <a href="#pilares" style={{
-          display: 'flex', alignItems: 'center', gap: '8px',
-          background: 'rgba(255,255,255,0.04)', color: '#a1a1aa',
-          border: '1px solid rgba(255,255,255,0.1)',
-          borderRadius: '16px', padding: '16px 32px',
-          fontSize: '15px', fontWeight: 700, textDecoration: 'none',
-          transition: 'all 0.25s ease',
-        }}
-        onMouseEnter={e => { e.currentTarget.style.borderColor = 'rgba(139,92,246,0.4)'; e.currentTarget.style.color = 'white'; }}
-        onMouseLeave={e => { e.currentTarget.style.borderColor = 'rgba(255,255,255,0.1)'; e.currentTarget.style.color = '#a1a1aa'; }}
-        >
-          Ver pilares
-        </a>
-      </div>
-
-      {/* Stats */}
-      <div style={{
-        display: 'flex', gap: '60px', flexWrap: 'wrap', justifyContent: 'center',
-        opacity: mounted ? 1 : 0,
-        transition: 'all 0.8s ease 0.4s',
-      }}>
-        {[{ val: '10', label: 'Módulos' }, { val: '3', label: 'Pilares' }, { val: '∞', label: 'Tiendas' }].map(s => (
-          <div key={s.label} style={{ textAlign: 'center' }}>
-            <p style={{ fontSize: '48px', fontWeight: 900, color: 'white', lineHeight: 1, letterSpacing: '-2px', margin: 0 }}>{s.val}</p>
-            <p style={{ fontSize: '11px', color: '#52525b', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1.5px', marginTop: '6px' }}>{s.label}</p>
-          </div>
-        ))}
-      </div>
-
-      {/* Scroll hint */}
-      <div style={{ position: 'absolute', bottom: '36px', left: '50%', transform: 'translateX(-50%)', opacity: 0.35 }}>
-        <ChevronDown size={22} color="white" />
-      </div>
-    </section>
-  );
-}
-
-// ── World card ────────────────────────────────────────────────────────────────
-function WorldCard({ world, index, total }) {
-  const [ref, visible] = useInView(0.1);
-  const [hovered, setHovered] = useState(false);
-  const esUltimoSolitario = index === total - 1 && total % 3 === 1;
-
-  return (
-    <div
-      id={world.id}
-      ref={ref}
-      onMouseEnter={() => setHovered(true)}
-      onMouseLeave={() => setHovered(false)}
-      style={{
-        gridColumn: esUltimoSolitario ? '1 / -1' : 'auto', // 👈 ESTA LÍNEA HACE LA MAGIA
-        background: hovered ? `rgba(255,255,255,0.035)` : 'rgba(255,255,255,0.02)',
-        border: `1px solid ${hovered ? world.accent + '50' : 'rgba(255,255,255,0.07)'}`,
-        borderRadius: '28px', padding: '36px',
-        position: 'relative', overflow: 'hidden',
-        opacity: visible ? 1 : 0,
-        transform: visible ? 'translateY(0)' : 'translateY(40px)',
-        transition: `opacity 0.7s ease ${index * 0.15}s, transform 0.7s ease ${index * 0.15}s, border-color 0.3s, background 0.3s`,
-        cursor: 'default',
-      }}
-    >
-      {/* Glow en hover */}
-      <div style={{
-        position: 'absolute', top: 0, right: 0,
-        width: '250px', height: '250px', borderRadius: '50%',
-        background: `radial-gradient(ellipse at top right, ${world.glow} 0%, transparent 65%)`,
-        opacity: hovered ? 1 : 0.4,
-        transition: 'opacity 0.4s ease',
-        pointerEvents: 'none',
-      }} />
-
-      <span style={{
-        display: 'inline-block', fontSize: '10px', fontWeight: 900,
-        letterSpacing: '2px', textTransform: 'uppercase',
-        color: world.accent, background: `${world.accent}15`,
-        border: `1px solid ${world.accent}35`,
-        padding: '5px 14px', borderRadius: '100px', marginBottom: '20px',
-      }}>{world.tag}</span>
-
-      <h3 style={{ fontSize: '15px', fontWeight: 800, color: 'white', margin: '0 0 14px', lineHeight: 1.4 }}>
-        {world.name}
-      </h3>
-      <p style={{ fontSize: '13px', color: '#71717a', lineHeight: 1.75, margin: '0 0 28px' }}>
-        {world.desc}
-      </p>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '10px' }}>
-        {world.modules.map(({ label, Icon, desc }) => (
-          <div key={label} style={{
-            display: 'flex', alignItems: 'flex-start', gap: '14px',
-            background: 'rgba(255,255,255,0.03)',
-            border: '1px solid rgba(255,255,255,0.06)',
-            borderRadius: '16px', padding: '14px',
-            transition: 'background 0.2s',
-          }}>
-            <div style={{ padding: '9px', borderRadius: '12px', background: `${world.accent}15`, flexShrink: 0 }}>
-              <Icon size={14} color={world.accent} />
-            </div>
-            <div>
-              <p style={{ fontSize: '12px', fontWeight: 800, color: 'white', margin: '0 0 4px' }}>{label}</p>
-              <p style={{ fontSize: '11px', color: '#52525b', margin: 0, lineHeight: 1.6 }}>{desc}</p>
-            </div>
-          </div>
-        ))}
-      </div>
+      </nav>
     </div>
   );
 }
 
-// ── Pilares ────────────────────────────────────────────────────────────────────
-function WorldsSection() {
-  const [ref, visible] = useInView(0.1);
+// ── Hero (escena 3D con scroll) ───────────────────────────────────────────────
+function Hero({ navigate }) {
+  const wrap = useRef(null), pRef = useRef(0);
+  const p = useScrollProgress(wrap, pRef);
+  const [ready, setReady] = useState(false);
+  useEffect(() => { const id = setTimeout(() => setReady(true), 60); return () => clearTimeout(id); }, []);
+  const a = 1 - band(p, 0.08, 0.3);           // titular
+  const b = band(p, 0.32, 0.5) * (1 - band(p, 0.82, 0.95)); // tarjetas
+  const stats = [
+    { k: 'Pilares', v: '4', d: 'Financial, Demand Planner, Inventory Control y Check Coo.', pos: 'left-[4%] top-[18%]' },
+    { k: 'Módulos', v: String(MODULE_COUNT), d: 'Del plan financiero al anaquel, conectados entre sí.', pos: 'right-[4%] top-[14%]' },
+    { k: 'En tu equipo', v: '100%', d: 'Tus archivos se procesan en tu navegador.', pos: 'left-[6%] bottom-[12%]' },
+    { k: 'BigQuery', v: 'Live', d: 'Eventos y GO-Bot leen la venta directo de la fuente.', pos: 'right-[6%] bottom-[16%]' },
+  ];
   return (
-    <section id="pilares" style={{ padding: '120px 2rem', maxWidth: '1140px', margin: '0 auto' }}>
-      <div ref={ref} style={{
-        textAlign: 'center', marginBottom: '72px',
-        opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(30px)',
-        transition: 'all 0.7s ease',
-      }}>
-        <p style={{ fontSize: '11px', fontWeight: 700, color: '#52525b', letterSpacing: '2.5px', textTransform: 'uppercase', marginBottom: '16px' }}>
-          Arquitectura modular
-        </p>
-        <h2 style={{ fontSize: 'clamp(36px, 6vw, 64px)', fontWeight: 900, color: 'white', letterSpacing: '-3px', margin: 0 }}>
-          Los 3 pilares
-        </h2>
-        <p style={{ color: '#52525b', marginTop: '16px', fontSize: '15px', maxWidth: '480px', margin: '16px auto 0' }}>
-          Módulos agrupados por función y flujo de trabajo. Cada pilar opera de forma independiente pero comparte datos con los demás.
-        </p>
+    <section id="top" ref={wrap} className="relative" style={{ height: '260vh' }}>
+      <div className="sticky top-0 h-screen overflow-hidden">
+        <Suspense fallback={<div className="absolute inset-0 bg-[#05030a]" />}>
+          <HelixScene progressRef={pRef} />
+        </Suspense>
+        <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(ellipse 70% 60% at 30% 50%, transparent 30%, rgba(5,3,10,0.85) 100%)' }} />
+        {/* Legibilidad del titular: sombra a la izquierda (en móvil cubre más) */}
+        <div className="absolute inset-0 pointer-events-none bg-gradient-to-b md:bg-gradient-to-r from-[#05030a]/90 via-[#05030a]/50 md:via-[#05030a]/20 to-transparent" style={{ opacity: a }} />
+
+        {/* Titular */}
+        <div className="absolute inset-0 flex items-center px-6 sm:px-16 lg:px-24" style={{ opacity: a, transform: `translateY(${(1 - a) * -60}px)` }}>
+          <div className="max-w-2xl" style={{ opacity: ready ? 1 : 0, transform: ready ? 'none' : 'translateY(30px)', transition: 'all 1.1s cubic-bezier(.2,.7,.2,1)' }}>
+            <span className="inline-flex items-center gap-2 rounded-full border border-violet-400/30 bg-violet-500/10 px-3.5 py-1.5 text-[11px] font-bold tracking-[0.18em] uppercase text-violet-300">
+              <Sparkles size={12} /> Planeación comercial · El Yaqui
+            </span>
+            <h1 className="mt-6 text-[clamp(44px,7.5vw,104px)] font-black leading-[0.92] tracking-[-0.045em] text-white">
+              Del plan<br />al anaquel,<br /><span className="gp-grad">sin Excel.</span>
+            </h1>
+            <p className="mt-6 max-w-lg text-[clamp(15px,1.4vw,18px)] leading-relaxed text-zinc-400">
+              GO PLANNER junta el plan financiero, la compra, el inventario y el seguimiento diario en una sola herramienta que corre en tu navegador.
+            </p>
+            <div className="mt-9 flex flex-wrap gap-3 pointer-events-auto">
+              <button onClick={() => navigate('/')} className="gp-cta">Abrir GO PLANNER <ArrowRight size={16} /></button>
+              <a href="#pilares" className="gp-ghost">Conoce los módulos</a>
+            </div>
+          </div>
+        </div>
+
+        {/* Tarjetas flotantes */}
+        <div className="absolute inset-0 pointer-events-none hidden md:block">
+          {stats.map((s, i) => (
+            <div key={s.k} className={`absolute ${s.pos}`} style={{ opacity: b, transform: `translateY(${(1 - b) * 40 + Math.sin(p * 8 + i) * 6}px) scale(${0.94 + b * 0.06})`, transition: 'opacity .2s' }}>
+              <Glass className="w-64 p-5 rounded-2xl" accent={['#a78bfa', '#fbbf24', '#34d399', '#22d3ee'][i]}>
+                <p className="text-[10px] font-black uppercase tracking-[0.2em] text-zinc-400">{s.k}</p>
+                <p className="mt-1 text-4xl font-black tracking-tight text-white">{s.v}</p>
+                <p className="mt-1.5 text-[12px] leading-snug text-zinc-400">{s.d}</p>
+              </Glass>
+            </div>
+          ))}
+        </div>
+        <div className="absolute inset-x-0 bottom-[38%] flex justify-center pointer-events-none" style={{ opacity: b }}>
+          <div className="absolute w-[min(720px,90vw)] h-56 rounded-full blur-3xl" style={{ background: 'radial-gradient(ellipse, rgba(5,3,10,.85), transparent 70%)' }} />
+          <p className="relative text-center text-[clamp(28px,4.5vw,60px)] font-black tracking-[-0.04em] text-white leading-[1.02] px-6" style={{ textShadow: '0 4px 30px rgba(0,0,0,.6)' }}>
+            Un sistema.<br /><span className="gp-grad">Cuatro pilares.</span>
+          </p>
+        </div>
+
+        <div className="absolute bottom-7 left-1/2 -translate-x-1/2 flex flex-col items-center gap-1 text-zinc-500" style={{ opacity: a }}>
+          <span className="text-[10px] font-bold tracking-[0.3em] uppercase">Scroll</span>
+          <ChevronDown size={18} className="animate-bounce" />
+        </div>
+        <div className="absolute inset-x-0 bottom-0 h-40 pointer-events-none" style={{ background: 'linear-gradient(to bottom, transparent, #05030a)' }} />
       </div>
-<div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, 1fr)', gap: '20px' }}>
-  {WORLDS.map((w, i) => (
-    <WorldCard key={w.id} world={w} index={i} total={WORLDS.length} />
-  ))}
-</div>
     </section>
   );
 }
 
-// ── Formatos CSV ──────────────────────────────────────────────────────────────
-// Encabezados de plantilla a partir de las columnas descritas: quita "*" y "(…)";
-// "A / B / C (opcionales)" → varias columnas, "A / B" → la primera; descripciones entre paréntesis se omiten.
+// ── Manifiesto: palabras que se encienden con el scroll ───────────────────────
+function Manifesto() {
+  const ref = useRef(null);
+  const p = useScrollProgress(ref);
+  const words = 'Cada decisión de compra, cada traslado y cada promoción deja datos. GO PLANNER los convierte en la siguiente acción.'.split(' ');
+  return (
+    <section ref={ref} className="relative" style={{ height: '170vh' }}>
+      <div className="sticky top-0 h-screen flex items-center justify-center px-6">
+        <p className="max-w-5xl text-center text-[clamp(30px,5vw,68px)] font-black leading-[1.08] tracking-[-0.035em]">
+          {words.map((w, i) => {
+            const on = band(p, i / words.length * 0.8, (i + 1.5) / words.length * 0.8);
+            const hot = /GO|PLANNER|acción\./.test(w);
+            return <span key={i} style={{ color: hot ? undefined : `rgba(255,255,255,${0.12 + on * 0.88})`, opacity: hot ? 0.15 + on * 0.85 : 1 }} className={hot ? 'gp-grad' : ''}>{w} </span>;
+          })}
+        </p>
+      </div>
+    </section>
+  );
+}
+
+// ── Pilares ───────────────────────────────────────────────────────────────────
+function Pillars() {
+  return (
+    <section id="pilares" className="relative px-6 sm:px-10 py-28 max-w-7xl mx-auto scroll-mt-20">
+      <Reveal className="text-center max-w-2xl mx-auto mb-20">
+        <p className="gp-eyebrow">Arquitectura</p>
+        <h2 className="gp-h2">{MODULE_COUNT} módulos.<br />4 pilares.</h2>
+        <p className="mt-5 text-zinc-400 text-[15px] leading-relaxed">Cada pilar resuelve una parte del ciclo comercial. Funcionan por separado y comparten datos cuando hace falta.</p>
+      </Reveal>
+      <div className="space-y-28">
+        {PILLARS.map((pl, pi) => (
+          <div key={pl.id} id={pl.id} className="grid lg:grid-cols-[320px_1fr] gap-10 lg:gap-14 scroll-mt-24">
+            <div className="lg:sticky lg:top-28 self-start">
+              <Reveal>
+                <span className="text-[64px] font-black leading-none tracking-tighter" style={{ color: pl.color, opacity: 0.25 }}>0{pi + 1}</span>
+                <span className="mt-2 block w-fit rounded-full border px-3 py-1 text-[10px] font-black uppercase tracking-[0.2em]" style={{ color: pl.color, borderColor: `${pl.color}55`, background: `${pl.color}14` }}>{pl.tag}</span>
+                <h3 className="mt-4 text-3xl font-black tracking-tight text-white">{pl.title}</h3>
+                <p className="mt-3 text-[14px] leading-relaxed text-zinc-400">{pl.desc}</p>
+                <p className="mt-5 text-[11px] font-bold uppercase tracking-[0.2em] text-zinc-500">{pl.modules.length} módulos</p>
+              </Reveal>
+            </div>
+            <div className="grid sm:grid-cols-2 gap-4 auto-rows-fr">
+              {pl.modules.map((m, i) => (
+                <Reveal key={m.name} delay={(i % 2) * 0.08 + Math.floor(i / 2) * 0.05} className="h-full">
+                  <Glass accent={pl.color} className="h-full rounded-3xl p-6 flex flex-col">
+                    <div className="flex items-center gap-3">
+                      <div className="rounded-2xl p-2.5" style={{ background: `${pl.color}1f`, color: pl.color, boxShadow: `0 0 24px ${pl.glow}` }}><m.Icon size={20} /></div>
+                      <h4 className="text-[17px] font-black text-white tracking-tight">{m.name}</h4>
+                    </div>
+                    <p className="mt-4 text-[13.5px] leading-relaxed text-zinc-400 flex-1">{m.desc}</p>
+                    <div className="mt-5 flex flex-wrap gap-1.5">
+                      {m.chips.map((c) => <span key={c} className="rounded-full border border-white/10 bg-white/[0.04] px-2.5 py-1 text-[10.5px] font-semibold text-zinc-300">{c}</span>)}
+                    </div>
+                  </Glass>
+                </Reveal>
+              ))}
+            </div>
+          </div>
+        ))}
+      </div>
+    </section>
+  );
+}
+
+// ── Flujo: los módulos se pasan los datos ─────────────────────────────────────
+function Flow() {
+  const steps = [['Forecasting', 'Cuánto se va a vender'], ['Assortment', 'Cuánto y qué comprar (OTB)'], ['Distribución', 'A qué tienda va'], ['Resurtido', 'Cuándo reponer']];
+  return (
+    <section className="px-6 sm:px-10 py-24 max-w-6xl mx-auto">
+      <Reveal className="text-center mb-14">
+        <p className="gp-eyebrow">Flujo conectado</p>
+        <h2 className="gp-h2 !text-[clamp(30px,4.5vw,56px)]">Un dato entra.<br /><span className="gp-grad">Cuatro módulos lo usan.</span></h2>
+      </Reveal>
+      <Reveal>
+        <div className="relative grid grid-cols-1 md:grid-cols-4 gap-4">
+          <svg className="hidden md:block absolute left-0 right-0 top-1/2 -translate-y-1/2 w-full h-6 pointer-events-none" preserveAspectRatio="none" viewBox="0 0 100 6">
+            <line x1="6" y1="3" x2="94" y2="3" stroke="url(#gpflow)" strokeWidth="0.5" className="gp-dash" />
+            <defs><linearGradient id="gpflow" x1="0" x2="1"><stop offset="0" stopColor="#a78bfa" /><stop offset="1" stopColor="#fbbf24" /></linearGradient></defs>
+          </svg>
+          {steps.map(([n, d], i) => (
+            <Glass key={n} accent={i < 2 ? '#a78bfa' : '#fbbf24'} className="relative rounded-3xl p-6 text-center">
+              <span className="mx-auto flex h-10 w-10 items-center justify-center rounded-full bg-white/10 text-sm font-black text-white gp-pulse" style={{ animationDelay: `${i * 0.6}s` }}>{i + 1}</span>
+              <p className="mt-4 text-lg font-black text-white">{n}</p>
+              <p className="mt-1 text-[13px] text-zinc-400">{d}</p>
+            </Glass>
+          ))}
+        </div>
+      </Reveal>
+    </section>
+  );
+}
+
+// ── Qué resuelve (gráficas ilustrativas) ──────────────────────────────────────
+const TT = { contentStyle: { background: '#120e1a', border: '1px solid rgba(255,255,255,.1)', borderRadius: 12, fontSize: 11 }, itemStyle: { color: '#e4e4e7' }, cursor: { fill: 'rgba(255,255,255,.04)' } };
+function SolveChart({ kind }) {
+  if (kind === 'waterfall') {
+    const d = [{ n: 'LY', b: 0, v: 1.43, c: '#bae6fd' }, { n: 'Crecimiento', b: 1.43, v: 0.29, c: '#c4b5fd' }, { n: 'Meta', b: 0, v: 1.82, c: '#86efac' }, { n: 'Gap', b: 1.75, v: 0.07, c: '#fdba74' }, { n: 'Mejor Est.', b: 0, v: 1.75, c: '#818cf8' }];
+    return (
+      <ResponsiveContainer width="100%" height={260}><BarChart data={d} barCategoryGap="28%">
+        <CartesianGrid stroke="rgba(255,255,255,.06)" vertical={false} /><XAxis dataKey="n" tick={{ fill: '#a1a1aa', fontSize: 11 }} axisLine={false} tickLine={false} />
+        <YAxis domain={[1.2, 1.9]} tick={{ fill: '#71717a', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => `${v.toFixed(1)}B`} allowDataOverflow />
+        <Tooltip {...TT} formatter={(v, k) => (k === 'v' ? [`${v.toFixed(2)}B`, 'Monto'] : null)} />
+        <Bar dataKey="b" stackId="a" fill="transparent" isAnimationActive={false} />
+        <Bar dataKey="v" stackId="a" radius={[6, 6, 0, 0]} animationDuration={1200}>{d.map((x) => <Cell key={x.n} fill={x.c} />)}</Bar>
+      </BarChart></ResponsiveContainer>
+    );
+  }
+  if (kind === 'mos') {
+    const d = ['Norte', 'Bajío', 'Metro', 'Occidente', 'Sur', 'Golfo'].map((z, i) => ({ z, antes: [7.2, 6.1, 4.2, 6.8, 5.4, 5.1][i], despues: [3.9, 3.7, 3.4, 3.8, 3.5, 3.3][i] }));
+    return (
+      <ResponsiveContainer width="100%" height={260}><BarChart data={d} barGap={4}>
+        <CartesianGrid stroke="rgba(255,255,255,.06)" vertical={false} /><XAxis dataKey="z" tick={{ fill: '#a1a1aa', fontSize: 11 }} axisLine={false} tickLine={false} /><YAxis tick={{ fill: '#71717a', fontSize: 10 }} axisLine={false} tickLine={false} />
+        <Tooltip {...TT} /><Bar dataKey="antes" name="MOS antes" fill="#52525b" radius={[6, 6, 0, 0]} animationDuration={1000} /><Bar dataKey="despues" name="MOS después" fill="#34d399" radius={[6, 6, 0, 0]} animationDuration={1400} />
+      </BarChart></ResponsiveContainer>
+    );
+  }
+  if (kind === 'event') {
+    const d = Array.from({ length: 10 }, (_, i) => ({ d: `Día ${i + 1}`, ty: [62, 70, 95, 140, 168, 150, 110, 88, 76, 70][i], ly: [60, 64, 80, 118, 150, 132, 101, 84, 72, 66][i] }));
+    return (
+      <ResponsiveContainer width="100%" height={260}><LineChart data={d}>
+        <CartesianGrid stroke="rgba(255,255,255,.06)" vertical={false} /><XAxis dataKey="d" tick={{ fill: '#a1a1aa', fontSize: 10 }} axisLine={false} tickLine={false} /><YAxis tick={{ fill: '#71717a', fontSize: 10 }} axisLine={false} tickLine={false} />
+        <Tooltip {...TT} /><Line dataKey="ly" name="Año pasado" stroke="#71717a" strokeDasharray="5 4" dot={false} strokeWidth={2} animationDuration={1200} />
+        <Line dataKey="ty" name="Este año" stroke="#22d3ee" dot={false} strokeWidth={3} animationDuration={1600} />
+      </LineChart></ResponsiveContainer>
+    );
+  }
+  const d = [['Proveedor', 52], ['Tránsito', 38], ['Aduana', 14], ['CEDIS', 46], ['Ruta a tienda', 22], ['Tienda', 12]].map(([e, v]) => ({ e, v, at: Math.round(v * [0.04, 0.06, 0.3, 0.08, 0.1, 0.25][['Proveedor', 'Tránsito', 'Aduana', 'CEDIS', 'Ruta a tienda', 'Tienda'].indexOf(e)]) }));
+  return (
+    <ResponsiveContainer width="100%" height={260}><BarChart data={d} layout="vertical" barCategoryGap="24%">
+      <CartesianGrid stroke="rgba(255,255,255,.06)" horizontal={false} /><XAxis type="number" tick={{ fill: '#71717a', fontSize: 10 }} axisLine={false} tickLine={false} tickFormatter={(v) => `${v}k`} />
+      <YAxis type="category" dataKey="e" width={90} tick={{ fill: '#a1a1aa', fontSize: 11 }} axisLine={false} tickLine={false} />
+      <Tooltip {...TT} /><Bar dataKey="v" name="Piezas (k)" stackId="s" fill="#8b5cf6" animationDuration={1200} /><Bar dataKey="at" name="Atorado (k)" stackId="s" fill="#f43f5e" radius={[0, 6, 6, 0]} animationDuration={1500} />
+    </BarChart></ResponsiveContainer>
+  );
+}
+function Solves() {
+  const [sel, setSel] = useState(0);
+  const s = SOLVES[sel];
+  return (
+    <section id="resuelve" className="px-6 sm:px-10 py-28 max-w-7xl mx-auto scroll-mt-20">
+      <Reveal className="mb-14 max-w-3xl">
+        <p className="gp-eyebrow !text-left">Qué resuelve</p>
+        <h2 className="gp-h2 !text-left">Menos armar reportes.<br /><span className="gp-grad">Más decidir.</span></h2>
+      </Reveal>
+      <Reveal>
+        <div className="grid lg:grid-cols-[260px_1fr] gap-6">
+          <div className="flex lg:flex-col gap-1 overflow-x-auto">
+            {SOLVES.map((x, i) => (
+              <button key={x.id} onClick={() => setSel(i)}
+                className={`text-left shrink-0 px-5 py-4 border-l-2 lg:border-l-2 transition-all ${i === sel ? 'border-violet-400 bg-white text-black' : 'border-white/10 text-zinc-300 hover:bg-white/5'}`}>
+                <span className="block text-[14px] font-black">{x.title}</span>
+                <span className={`block text-[11px] mt-0.5 ${i === sel ? 'text-zinc-600' : 'text-zinc-500'}`}>{x.module}</span>
+              </button>
+            ))}
+          </div>
+          <Glass key={s.id} accent="#a78bfa" className="rounded-3xl p-6 sm:p-8 gp-fadein">
+            <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-4">
+              <h3 className="text-2xl sm:text-3xl font-black tracking-tight text-white max-w-md">{s.head}</h3>
+              <p className="text-[14px] text-zinc-400 max-w-sm leading-relaxed">{s.sub}</p>
+            </div>
+            <div className="mt-7 grid grid-cols-2 lg:grid-cols-4 gap-2">
+              {s.kpis.map(([k, v]) => (
+                <div key={k} className="rounded-2xl bg-black/30 border border-white/[0.06] p-4">
+                  <p className="text-[11px] text-zinc-400">{k}</p>
+                  <p className="mt-3 text-3xl font-light tracking-tight text-white">{v}</p>
+                </div>
+              ))}
+            </div>
+            <div className="mt-4 rounded-2xl bg-black/30 border border-white/[0.06] p-4"><SolveChart kind={s.chart} /></div>
+            <p className="mt-3 text-[10.5px] text-zinc-500">Ejemplo ilustrativo con datos de muestra.</p>
+          </Glass>
+        </div>
+      </Reveal>
+    </section>
+  );
+}
+
+// ── Formatos de archivo ───────────────────────────────────────────────────────
 const templateRows = (f) => {
   if (f.template) return f.template;
   const head = f.columns.flatMap((c) => {
@@ -431,95 +347,114 @@ const templateRows = (f) => {
 };
 const downloadTemplate = (mod, f) => {
   const rows = templateRows(f);
-  const csv = '\uFEFF' + rows.map((r) => r.map((v) => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : v)).join(',')).join('\n');
+  const csv = '﻿' + rows.map((r) => r.map((v) => (/[",\n]/.test(String(v)) ? `"${String(v).replace(/"/g, '""')}"` : v)).join(',')).join('\n');
   const a = document.createElement('a');
   a.href = URL.createObjectURL(new Blob([csv], { type: 'text/csv;charset=utf-8' }));
   a.download = `Plantilla_${mod}_${f.title}.csv`.replace(/[^\w.\-áéíóúñÁÉÍÓÚÑ]+/g, '_');
   a.click();
 };
-
-function CSVFormatsSection() {
-  const [openModule, setOpenModule] = useState(null);
-  const [ref, visible] = useInView(0.1);
-
+const colLetter = (i) => String.fromCharCode(65 + (i % 26));
+function Formats() {
+  const [mi, setMi] = useState(0), [fi, setFi] = useState(0);
+  const [tilt, setTilt] = useState({ x: 0, y: 0 });
+  const mod = CSV_SCHEMAS[mi], f = mod.formats[Math.min(fi, mod.formats.length - 1)];
+  const head = templateRows(f)?.[0] || f.columns;
+  const cols = (head && head.length ? head : f.columns).slice(0, 12);
   return (
-    <section id="formatos" style={{ padding: '80px 2rem', maxWidth: '900px', margin: '0 auto', scrollMarginTop: '70px' }}>
-      <div ref={ref} style={{
-        textAlign: 'center', marginBottom: '50px',
-        opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(30px)',
-        transition: 'all 0.7s ease',
-      }}>
-        <p style={{ fontSize: '11px', fontWeight: 700, color: '#52525b', letterSpacing: '2.5px', textTransform: 'uppercase', marginBottom: '16px' }}>
-          Referencia
-        </p>
-        <h2 style={{ fontSize: 'clamp(32px, 5vw, 52px)', fontWeight: 900, color: 'white', letterSpacing: '-2px', margin: 0 }}>
-          Formatos de CSV
-        </h2>
-        <p style={{ color: '#71717a', fontSize: '14px', margin: '14px auto 0', maxWidth: '520px', lineHeight: 1.6 }}>
-          Qué columnas espera cada módulo. Qué titulos necesita el csv y que datos debe contener. <code style={{ background: 'rgba(255,255,255,0.06)', padding: '2px 6px', borderRadius: '5px' }}>csvSchemas.js</code>.
-        </p>
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {CSV_SCHEMAS.map((mod, i) => {
-          const isOpen = openModule === i;
-          return (
-            <div key={mod.module} style={{
-              background: isOpen ? 'rgba(139,92,246,0.06)' : 'rgba(255,255,255,0.02)',
-              border: `1px solid ${isOpen ? 'rgba(139,92,246,0.3)' : 'rgba(255,255,255,0.07)'}`,
-              borderRadius: '18px', overflow: 'hidden',
-              transition: 'all 0.25s ease',
-              opacity: visible ? 1 : 0,
-              transform: visible ? 'translateY(0)' : 'translateY(20px)',
-              transitionDelay: `${i * 0.05}s`,
-            }}>
-              <button onClick={() => setOpenModule(isOpen ? null : i)} style={{
-                width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '20px 26px', background: 'none', border: 'none',
-                cursor: 'pointer', textAlign: 'left',
-              }}>
-                <span style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '14px', fontWeight: 700, color: 'white' }}>
-                  <FileSpreadsheet size={15} color="#8b5cf6" /> {mod.module}
-                </span>
-                <ChevronDown size={16} color={isOpen ? '#8b5cf6' : '#52525b'}
-                  style={{ flexShrink: 0, marginLeft: '12px', transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.25s' }} />
-              </button>
-              {isOpen && (
-                <div style={{
-                  padding: '0 26px 24px', borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '18px',
-                  display: 'flex', flexDirection: 'column', gap: '18px',
-                }}>
-                  {mod.formats.map((f, fi) => (
-                    <div key={fi}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: '12px', margin: '0 0 6px' }}>
-                        <p style={{ fontSize: '13px', fontWeight: 700, color: '#c4b5fd', margin: 0 }}>{f.title}</p>
-                        {templateRows(f) && (
-                          <button onClick={() => downloadTemplate(mod.module, f)} style={{
-                            display: 'flex', alignItems: 'center', gap: '6px', flexShrink: 0,
-                            background: 'rgba(139,92,246,0.12)', border: '1px solid rgba(139,92,246,0.35)', color: '#c4b5fd',
-                            borderRadius: '8px', padding: '5px 10px', fontSize: '11px', fontWeight: 700, cursor: 'pointer',
-                          }}>
-                            <Download size={12} /> Plantilla
-                          </button>
-                        )}
-                      </div>
-                      <p style={{ fontSize: '12.5px', color: '#a1a1aa', lineHeight: 1.6, margin: '0 0 10px' }}>{f.desc}</p>
-                      {f.columns.length > 0 && (
-                        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '6px' }}>
-                          {f.columns.map(c => (
-                            <span key={c} style={{
-                              fontFamily: 'monospace', fontSize: '11px', color: '#e4e4e7',
-                              background: 'rgba(255,255,255,0.06)', border: '1px solid rgba(255,255,255,0.1)',
-                              borderRadius: '6px', padding: '3px 8px',
-                            }}>{c}</span>
-                          ))}
-                        </div>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              )}
+    <section id="formatos" className="relative px-6 sm:px-10 py-28 max-w-7xl mx-auto scroll-mt-20">
+      <Reveal className="text-center max-w-2xl mx-auto mb-14">
+        <p className="gp-eyebrow">Formatos</p>
+        <h2 className="gp-h2">Tu archivo,<br /><span className="gp-grad">listo a la primera.</span></h2>
+        <p className="mt-5 text-zinc-400 text-[15px] leading-relaxed">Elige un módulo para ver qué columnas espera y descarga su plantilla con los encabezados exactos.</p>
+      </Reveal>
+      <Reveal>
+        <div className="flex flex-wrap gap-2 pb-3 mb-8 justify-center">
+          {CSV_SCHEMAS.map((m, i) => (
+            <button key={m.module} onClick={() => { setMi(i); setFi(0); }}
+              className={`shrink-0 rounded-full px-4 py-2 text-[12px] font-bold border transition-all ${i === mi ? 'bg-white text-black border-white' : 'border-white/10 text-zinc-400 hover:text-white hover:border-white/30'}`}>{m.module}</button>
+          ))}
+        </div>
+        <div className="grid lg:grid-cols-[1fr_1.35fr] gap-10 items-center">
+          <div key={`${mi}-${fi}`} className="gp-fadein">
+            <div className="flex items-center gap-3 text-violet-300"><FileSpreadsheet size={22} /><span className="text-[12px] font-black uppercase tracking-[0.2em]">{mod.module}</span></div>
+            {mod.formats.length > 1 && (
+              <div className="mt-4 flex flex-wrap gap-1.5">
+                {mod.formats.map((x, i) => <button key={x.title} onClick={() => setFi(i)} className={`rounded-lg px-2.5 py-1 text-[11px] font-bold border ${i === fi ? 'border-violet-400/60 bg-violet-500/15 text-violet-200' : 'border-white/10 text-zinc-400 hover:text-white'}`}>{x.title}</button>)}
+              </div>
+            )}
+            <h3 className="mt-4 text-3xl font-black tracking-tight text-white">{f.title}</h3>
+            <p className="mt-4 text-[14px] leading-relaxed text-zinc-400">{f.desc}</p>
+            {f.columns.length > 0 && (
+              <div className="mt-6 flex flex-wrap gap-1.5">
+                {f.columns.map((c, i) => <span key={c} className="gp-chip" style={{ animationDelay: `${i * 0.035}s` }}>{c}</span>)}
+              </div>
+            )}
+            {templateRows(f) && (
+              <button onClick={() => downloadTemplate(mod.module, f)} className="gp-cta mt-8"><Download size={15} /> Descargar plantilla</button>
+            )}
+          </div>
+          {/* Hoja de cálculo 3D */}
+          <div className="relative" style={{ perspective: 1400 }}
+            onMouseMove={(e) => { const r = e.currentTarget.getBoundingClientRect(); setTilt({ x: ((e.clientY - r.top) / r.height - 0.5) * -10, y: ((e.clientX - r.left) / r.width - 0.5) * 14 }); }}
+            onMouseLeave={() => setTilt({ x: 0, y: 0 })}>
+            <div className="absolute -inset-10 rounded-full blur-3xl opacity-60 pointer-events-none" style={{ background: 'radial-gradient(circle, rgba(139,92,246,.35), transparent 65%)' }} />
+            <div key={`${mi}-${fi}`} className="relative rounded-2xl border border-white/10 bg-[#0d0a14]/90 shadow-2xl shadow-violet-900/30 overflow-hidden gp-sheet"
+              style={{ transform: `rotateX(${8 + tilt.x}deg) rotateY(${-14 + tilt.y}deg)`, transition: 'transform .25s ease-out' }}>
+              <div className="flex items-center gap-1.5 px-4 py-2.5 border-b border-white/10 bg-white/[0.03]">
+                <span className="h-2.5 w-2.5 rounded-full bg-rose-400/80" /><span className="h-2.5 w-2.5 rounded-full bg-amber-300/80" /><span className="h-2.5 w-2.5 rounded-full bg-emerald-400/80" />
+                <span className="ml-3 text-[11px] font-mono text-zinc-400 truncate">Plantilla_{mod.module.replace(/\s+/g, '_')}.csv</span>
+              </div>
+              <div className="overflow-hidden">
+                <table className="w-full text-[11px] font-mono">
+                  <thead><tr className="text-zinc-500">
+                    <th className="w-8 border-r border-b border-white/5 py-1" />
+                    {cols.map((_, i) => <th key={i} className="border-r border-b border-white/5 py-1 font-normal">{colLetter(i)}</th>)}
+                  </tr></thead>
+                  <tbody>
+                    {Array.from({ length: 9 }).map((_, r) => (
+                      <tr key={r}>
+                        <td className="text-center text-zinc-600 border-r border-b border-white/5 py-1.5">{r + 1}</td>
+                        {cols.map((c, i) => (
+                          <td key={i} className="border-r border-b border-white/5 px-2 py-1.5 whitespace-nowrap max-w-[120px] truncate">
+                            {r === 0 ? <span className="gp-cell text-violet-200 font-bold" style={{ animationDelay: `${0.15 + i * 0.07}s` }}>{String(c).replace(/\(.*?\)|\*/g, '').trim()}</span>
+                              : <span className="block h-2 rounded bg-white/[0.06] gp-shimmer" style={{ width: `${40 + ((r * 7 + i * 13) % 50)}%`, animationDelay: `${(r + i) * 0.08}s` }} />}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
             </div>
+          </div>
+        </div>
+      </Reveal>
+    </section>
+  );
+}
+
+// ── Preguntas ─────────────────────────────────────────────────────────────────
+function FAQ() {
+  const [open, setOpen] = useState(0);
+  return (
+    <section id="preguntas" className="px-6 sm:px-10 py-28 max-w-3xl mx-auto scroll-mt-20">
+      <Reveal className="text-center mb-14">
+        <p className="gp-eyebrow">Preguntas</p>
+        <h2 className="gp-h2">Lo que más<br /><span className="gp-grad">nos preguntan.</span></h2>
+      </Reveal>
+      <div className="divide-y divide-white/[0.07] border-y border-white/[0.07]">
+        {FAQS.map((f, i) => {
+          const on = open === i;
+          return (
+            <Reveal key={f.q} delay={i * 0.04}>
+              <button onClick={() => setOpen(on ? -1 : i)} className="w-full flex items-center justify-between gap-6 py-6 text-left group">
+                <span className={`text-[17px] font-bold transition-colors ${on ? 'text-white' : 'text-zinc-300 group-hover:text-white'}`}>{f.q}</span>
+                <span className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-full border transition-all duration-300 ${on ? 'rotate-45 border-violet-400 bg-violet-500/20 text-violet-200' : 'border-white/15 text-zinc-400'}`}>+</span>
+              </button>
+              <div className="grid transition-all duration-500 ease-out" style={{ gridTemplateRows: on ? '1fr' : '0fr', opacity: on ? 1 : 0 }}>
+                <p className="overflow-hidden text-[15px] leading-relaxed text-zinc-400 pr-12">{f.a}<span className="block h-6" /></p>
+              </div>
+            </Reveal>
           );
         })}
       </div>
@@ -527,171 +462,99 @@ function CSVFormatsSection() {
   );
 }
 
-// ── FAQ ───────────────────────────────────────────────────────────────────────
-function FAQSection() {
-  const [open, setOpen] = useState(null);
-  const [ref, visible] = useInView(0.1);
-
+// ── CTA + footer ──────────────────────────────────────────────────────────────
+function CTA({ navigate }) {
   return (
-    <section id="preguntas" style={{ padding: '80px 2rem 140px', maxWidth: '740px', margin: '0 auto', scrollMarginTop: '70px' }}>
-      <div ref={ref} style={{
-        textAlign: 'center', marginBottom: '60px',
-        opacity: visible ? 1 : 0, transform: visible ? 'translateY(0)' : 'translateY(30px)',
-        transition: 'all 0.7s ease',
-      }}>
-        <p style={{ fontSize: '11px', fontWeight: 700, color: '#52525b', letterSpacing: '2.5px', textTransform: 'uppercase', marginBottom: '16px' }}>
-          Soporte
-        </p>
-        <h2 style={{ fontSize: 'clamp(32px, 5vw, 52px)', fontWeight: 900, color: 'white', letterSpacing: '-2px', margin: 0 }}>
-          Preguntas frecuentes
-        </h2>
-      </div>
-
-      <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-        {FAQS.map((faq, i) => {
-          const isOpen = open === i;
-          return (
-            <div key={i} style={{
-              background: isOpen ? 'rgba(139,92,246,0.06)' : 'rgba(255,255,255,0.02)',
-              border: `1px solid ${isOpen ? 'rgba(139,92,246,0.3)' : 'rgba(255,255,255,0.07)'}`,
-              borderRadius: '18px', overflow: 'hidden',
-              transition: 'all 0.25s ease',
-              opacity: visible ? 1 : 0,
-              transform: visible ? 'translateY(0)' : 'translateY(20px)',
-              transitionDelay: `${i * 0.08}s`,
-            }}>
-              <button onClick={() => setOpen(isOpen ? null : i)} style={{
-                width: '100%', display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-                padding: '22px 26px', background: 'none', border: 'none',
-                cursor: 'pointer', textAlign: 'left',
-              }}>
-                <span style={{ fontSize: '14px', fontWeight: 700, color: 'white' }}>{faq.q}</span>
-                <ChevronDown size={16} color={isOpen ? '#8b5cf6' : '#52525b'}
-                  style={{ flexShrink: 0, marginLeft: '12px', transform: isOpen ? 'rotate(180deg)' : 'none', transition: 'transform 0.25s' }} />
-              </button>
-              {isOpen && (
-                <p style={{
-                  fontSize: '13px', color: '#71717a', lineHeight: 1.75,
-                  padding: '0 26px 22px', margin: 0,
-                  borderTop: '1px solid rgba(255,255,255,0.05)', paddingTop: '18px',
-                }}>{faq.a}</p>
-              )}
+    <section className="px-6 sm:px-10 pb-28 max-w-6xl mx-auto">
+      <Reveal>
+        <div className="relative overflow-hidden rounded-[36px] border border-white/10 px-8 py-20 text-center" style={{ background: 'radial-gradient(ellipse 80% 120% at 50% 0%, rgba(124,58,237,.45), rgba(20,12,36,.9) 60%)' }}>
+          <div className="absolute inset-0 gp-gridbg opacity-40 pointer-events-none" />
+          <div className="relative">
+            <h2 className="text-[clamp(34px,5.5vw,72px)] font-black tracking-[-0.04em] text-white leading-[0.98]">Abre, carga<br />y planea.</h2>
+            <p className="mt-5 text-zinc-300 text-[15px]">Todos los módulos disponibles desde el primer día.</p>
+            <div className="mt-6 flex flex-wrap justify-center gap-5 text-[12px] text-zinc-400">
+              <span className="flex items-center gap-1.5"><Cpu size={14} /> Corre en tu navegador</span>
+              <span className="flex items-center gap-1.5"><Database size={14} /> CSV, Excel o BigQuery</span>
+              <span className="flex items-center gap-1.5"><Shield size={14} /> Tus archivos en tu equipo</span>
             </div>
-          );
-        })}
-      </div>
+            <button onClick={() => navigate('/')} className="gp-cta mt-10 mx-auto">Abrir GO PLANNER <ArrowRight size={16} /></button>
+          </div>
+        </div>
+      </Reveal>
     </section>
   );
 }
-
-// ── CTA final ─────────────────────────────────────────────────────────────────
-function CTASection({ navigate }) {
-  const [ref, visible] = useInView(0.2);
-  const [hovered, setHovered] = useState(false);
-  return (
-    <section style={{ padding: '0 2rem 120px', maxWidth: '900px', margin: '0 auto' }}>
-      <div ref={ref} style={{
-        background: 'linear-gradient(135deg, rgba(124,58,237,0.15) 0%, rgba(91,33,182,0.08) 100%)',
-        border: '1px solid rgba(139,92,246,0.25)',
-        borderRadius: '32px', padding: '64px 48px', textAlign: 'center',
-        opacity: visible ? 1 : 0, transform: visible ? 'scale(1)' : 'scale(0.96)',
-        transition: 'all 0.8s ease',
-        position: 'relative', overflow: 'hidden',
-      }}>
-        <div style={{
-          position: 'absolute', top: '-60px', left: '50%', transform: 'translateX(-50%)',
-          width: '400px', height: '300px', borderRadius: '50%',
-          background: 'radial-gradient(ellipse, rgba(139,92,246,0.15) 0%, transparent 70%)',
-          pointerEvents: 'none',
-        }} />
-        <p style={{ fontSize: '11px', fontWeight: 700, color: '#8b5cf6', letterSpacing: '2px', textTransform: 'uppercase', marginBottom: '20px' }}>
-          Listo para planear
-        </p>
-        <h2 style={{ fontSize: 'clamp(28px, 4vw, 48px)', fontWeight: 900, color: 'white', letterSpacing: '-2px', margin: '0 0 16px' }}>
-          Empieza a usar GO PLANNER
-        </h2>
-        <p style={{ color: '#71717a', fontSize: '15px', margin: '0 0 40px', lineHeight: 1.6 }}>
-          Todos los módulos disponibles. Sin configuración. Solo abre y planea.
-        </p>
-        <button
-          onClick={() => navigate('/')}
-          onMouseEnter={() => setHovered(true)}
-          onMouseLeave={() => setHovered(false)}
-          style={{
-            display: 'inline-flex', alignItems: 'center', gap: '10px',
-            background: 'linear-gradient(135deg, #7c3aed, #5b21b6)',
-            color: 'white', border: 'none', borderRadius: '16px',
-            padding: '18px 40px', fontSize: '16px', fontWeight: 700,
-            cursor: 'pointer',
-            boxShadow: hovered ? '0 0 60px rgba(124,58,237,0.7)' : '0 0 30px rgba(124,58,237,0.4)',
-            transform: hovered ? 'scale(1.05) translateY(-2px)' : 'scale(1)',
-            transition: 'all 0.25s ease',
-          }}
-        >
-          Abrir GO PLANNER <ArrowRight size={18} />
-        </button>
-      </div>
-    </section>
-  );
-}
-
-// ── Footer ────────────────────────────────────────────────────────────────────
 function Footer({ navigate }) {
   return (
-    <footer style={{
-      borderTop: '1px solid rgba(255,255,255,0.05)',
-      padding: '32px 2.5rem',
-      display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-      flexWrap: 'wrap', gap: '16px',
-      maxWidth: '1140px', margin: '0 auto',
-    }}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-        <div style={{ background: '#7c3aed', padding: '6px', borderRadius: '10px', display: 'flex' }}>
-          <Layers size={14} color="white" />
-        </div>
-        <span style={{ fontSize: '13px', fontWeight: 700, color: '#3f3f46' }}>
-          GO PLANNER · SBB · {new Date().getFullYear()}
-        </span>
-      </div>
-      <button onClick={() => navigate('/')} style={{
-        display: 'flex', alignItems: 'center', gap: '6px',
-        background: 'none', border: '1px solid rgba(255,255,255,0.07)',
-        borderRadius: '10px', padding: '8px 16px',
-        color: '#52525b', fontSize: '12px', fontWeight: 700, cursor: 'pointer',
-        transition: 'color 0.2s, border-color 0.2s',
-      }}
-      onMouseEnter={e => { e.currentTarget.style.color = 'white'; e.currentTarget.style.borderColor = 'rgba(139,92,246,0.4)'; }}
-      onMouseLeave={e => { e.currentTarget.style.color = '#52525b'; e.currentTarget.style.borderColor = 'rgba(255,255,255,0.07)'; }}
-      >
-        Abrir app <ArrowRight size={12} />
-      </button>
+    <footer className="border-t border-white/[0.06] px-6 sm:px-10 py-8 max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-4">
+      <div className="flex items-center gap-2.5 text-[12px] font-bold text-zinc-500"><Layers size={14} className="text-violet-400" /> GO PLANNER · PAC El Yaqui · {new Date().getFullYear()}</div>
+      <button onClick={() => navigate('/')} className="text-[12px] font-bold text-zinc-400 hover:text-white flex items-center gap-1">Abrir app <ArrowRight size={12} /></button>
     </footer>
   );
 }
 
-// ── Page ──────────────────────────────────────────────────────────────────────
+const CSS = `
+html { scroll-behavior: smooth; }
+.gp-grad { background: linear-gradient(110deg,#c4b5fd 0%,#8b5cf6 35%,#f0abfc 60%,#fbbf24 100%); -webkit-background-clip: text; background-clip: text; color: transparent; background-size: 200% 100%; animation: gp-shine 8s ease-in-out infinite; }
+@keyframes gp-shine { 0%,100% { background-position: 0% 50%; } 50% { background-position: 100% 50%; } }
+.gp-eyebrow { font-size: 11px; font-weight: 800; letter-spacing: .3em; text-transform: uppercase; color: #a78bfa; text-align: center; margin-bottom: 18px; }
+.gp-h2 { font-size: clamp(36px,6vw,80px); font-weight: 900; letter-spacing: -.045em; line-height: .96; color: #fff; text-align: center; }
+.gp-cta { display: inline-flex; align-items: center; gap: 8px; border-radius: 9999px; padding: 14px 26px; font-size: 14px; font-weight: 800; color: #fff;
+  background: linear-gradient(135deg,#8b5cf6,#6d28d9); box-shadow: 0 10px 40px -10px rgba(139,92,246,.8), inset 0 1px 0 rgba(255,255,255,.25); transition: transform .25s, box-shadow .25s; }
+.gp-cta:hover { transform: translateY(-2px) scale(1.03); box-shadow: 0 18px 50px -12px rgba(139,92,246,.95), inset 0 1px 0 rgba(255,255,255,.3); }
+.gp-ghost { display: inline-flex; align-items: center; border-radius: 9999px; padding: 14px 26px; font-size: 14px; font-weight: 700; color: #e4e4e7; border: 1px solid rgba(255,255,255,.14);
+  background: rgba(255,255,255,.04); backdrop-filter: blur(12px); -webkit-backdrop-filter: blur(12px); transition: all .25s; }
+.gp-ghost:hover { border-color: rgba(167,139,250,.6); color: #fff; }
+.gp-glass { position: relative; border: 1px solid rgba(255,255,255,.09); overflow: hidden;
+  background: linear-gradient(145deg, rgba(255,255,255,.075), rgba(255,255,255,.015) 45%, rgba(255,255,255,.03));
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.08), 0 20px 50px -30px rgba(0,0,0,.8);
+  backdrop-filter: blur(20px) saturate(150%); -webkit-backdrop-filter: blur(20px) saturate(150%); transition: border-color .35s, transform .35s; }
+.gp-glass::before { content: ''; position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .35s;
+  background: radial-gradient(420px circle at var(--mx,50%) var(--my,50%), color-mix(in srgb, var(--acc) 22%, transparent), transparent 60%); }
+.gp-glass:hover { border-color: color-mix(in srgb, var(--acc) 45%, transparent); transform: translateY(-3px); }
+.gp-glass:hover::before { opacity: 1; }
+.gp-glass > * { position: relative; }
+.gp-dash { stroke-dasharray: 1.5 1.5; animation: gp-dash 2.4s linear infinite; }
+@keyframes gp-dash { to { stroke-dashoffset: -6; } }
+.gp-pulse { animation: gp-pulse 2.4s ease-in-out infinite; }
+@keyframes gp-pulse { 0%,100% { box-shadow: 0 0 0 0 rgba(167,139,250,.0); } 50% { box-shadow: 0 0 0 8px rgba(167,139,250,.18); } }
+.gp-fadein { animation: gp-fadein .7s cubic-bezier(.2,.7,.2,1) both; }
+@keyframes gp-fadein { from { opacity: 0; transform: translateY(14px); } to { opacity: 1; transform: none; } }
+.gp-chip { font-family: ui-monospace, monospace; font-size: 11px; color: #e4e4e7; background: rgba(255,255,255,.05); border: 1px solid rgba(255,255,255,.1); border-radius: 8px; padding: 4px 9px; animation: gp-pop .5s cubic-bezier(.2,.9,.3,1.3) both; }
+@keyframes gp-pop { from { opacity: 0; transform: translateY(8px) scale(.9); } to { opacity: 1; transform: none; } }
+.gp-cell { display: inline-block; animation: gp-drop .55s cubic-bezier(.2,.9,.3,1.2) both; }
+@keyframes gp-drop { from { opacity: 0; transform: translateY(-18px); } to { opacity: 1; transform: none; } }
+.gp-shimmer { background: linear-gradient(90deg, rgba(255,255,255,.04), rgba(255,255,255,.12), rgba(255,255,255,.04)); background-size: 200% 100%; animation: gp-shim 2.2s linear infinite; }
+@keyframes gp-shim { to { background-position: -200% 0; } }
+.gp-sheet { animation: gp-fadein .8s cubic-bezier(.2,.7,.2,1) both; }
+.gp-gridbg { background-image: linear-gradient(rgba(255,255,255,.06) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.06) 1px, transparent 1px); background-size: 48px 48px; mask-image: radial-gradient(ellipse at center, #000 30%, transparent 75%); }
+.gp-noscroll::-webkit-scrollbar { display: none; }
+@media (prefers-reduced-motion: reduce) { .gp-grad, .gp-dash, .gp-pulse, .gp-shimmer { animation: none !important; } }
+`;
+
 export default function AboutPage() {
   const navigate = useNavigate();
+  useEffect(() => { document.title = 'GO PLANNER · Planeación comercial'; }, []);
   return (
-    <div className="animate-fade-in" style={{ background: '#000', minHeight: '100vh', fontFamily: 'system-ui, -apple-system, sans-serif', position: 'relative' }}>
-      <style>{`
-        * { box-sizing: border-box; margin: 0; }
-        html { scroll-behavior: smooth; }
-        ::-webkit-scrollbar { width: 6px; }
-        ::-webkit-scrollbar-track { background: #000; }
-        ::-webkit-scrollbar-thumb { background: #27272a; border-radius: 3px; }
-      `}</style>
-      <GridBg />
-      <CursorGlow />
-      <div style={{ position: 'relative', zIndex: 2 }}>
+    <div data-gobot-screen className="min-h-screen text-white antialiased" style={{ background: '#05030a', fontFamily: 'system-ui, -apple-system, "Segoe UI", sans-serif' }}>
+      <style>{CSS}</style>
+      <div className="fixed inset-0 pointer-events-none overflow-hidden" style={{ zIndex: 0 }}>
+        <div className="gop-aura" style={{ width: '45vw', height: '45vw', left: '-10%', top: '30%', background: 'rgba(124,58,237,.12)', animation: 'gop-drift-a 30s ease-in-out infinite' }} />
+        <div className="gop-aura" style={{ width: '35vw', height: '35vw', right: '-8%', top: '60%', background: 'rgba(245,158,11,.06)', animation: 'gop-drift-b 36s ease-in-out infinite' }} />
+      </div>
+      <div className="relative" style={{ zIndex: 1 }}>
         <NavBar navigate={navigate} />
         <Hero navigate={navigate} />
-        <WorldsSection />
-        <CSVFormatsSection />
-        <FAQSection />
-        <CTASection navigate={navigate} />
+        <Manifesto />
+        <Pillars />
+        <Flow />
+        <Solves />
+        <Formats />
+        <FAQ />
+        <CTA navigate={navigate} />
         <Footer navigate={navigate} />
       </div>
+      <AboutBot />
     </div>
   );
 }

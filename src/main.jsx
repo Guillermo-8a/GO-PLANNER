@@ -4,6 +4,8 @@ import { BrowserRouter, Routes, Route } from 'react-router-dom'
 import App from './App.jsx'
 import TeamTrackerPage from './TeamTrackerPage.jsx'
 import AboutPage from './AboutPage.jsx'
+import { GlobalProvider } from './context/GlobalContext'
+import { GoBotProvider } from './context/GoBotContext'
 import './Index.css'
 import './utils/loadBar.js'
 
@@ -12,7 +14,7 @@ ReactDOM.createRoot(document.getElementById('root')).render(
     <BrowserRouter>
       <Routes>
         <Route path="/team-tracker" element={<TeamTrackerPage />} />
-        <Route path="/about" element={<AboutPage />} />
+        <Route path="/about" element={<GlobalProvider><GoBotProvider><AboutPage /></GoBotProvider></GlobalProvider>} />
         <Route path="/*" element={<App />} />
       </Routes>
     </BrowserRouter>
