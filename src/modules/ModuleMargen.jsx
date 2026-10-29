@@ -6,7 +6,7 @@
 // Contribución al total = tasa (cambio de margen del segmento) + mix (cambio de peso); suma exacta al Δ del total.
 import { useState, useEffect, useMemo, useRef } from 'react';
 import * as XLSX from 'xlsx';
-import { BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine } from 'recharts';
+import { BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, LineChart, Line, Legend } from 'recharts';
 import { Upload, Trash2, Database } from 'lucide-react';
 import ModuleHeader from '../components/ModuleHeader';
 import MS from '../components/MultiSelect';
@@ -54,16 +54,19 @@ const idbSet = async (k, v) => { const db = await idb(); return new Promise((res
 const readTxt = async (f) => { const b = await f.arrayBuffer(); try { return new TextDecoder('utf-8', { fatal: true }).decode(b); } catch { return new TextDecoder('windows-1252').decode(b); } };
 const sh1 = (txt) => { const wb = XLSX.read(txt, { type: 'string' }); return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' }); };
 const parseGoaU = (txt) => sh1(txt).map((r) => ({ a: +r.ANIO, mes: +r.MES, goa: String(r.GOA).trim(), vn: +r.VENTA_NETA || 0, uvv: +r.UTILIDAD_DE_LO_VENDIDO || 0, ubm: +r.UB_MERCANCIAS || 0 })).filter((r) => r.a && r.mes);
-const parseGoaC = (txt) => txt.split(/\r?\n/).slice(3).map((l) => l.split(',')).filter((f) => f.length >= 13 && f[6] && !isNaN(+f[6]) && f[8]).map((f) => ({ a: +f[6], mes: +f[8], goa: f[5].trim(), pv: (+f[11] || 0) * 1000, pc: (+f[12] || 0) * 1000 }));
-const goaAgg = (U, C, ty) => {
-  const ly = ty - 1, corte = Math.max(...U.filter((r) => r.a === ty).map((r) => r.mes), 0), m = {};
-  const g = (k) => (m[k] ||= { [ly]: { vn: 0, uvv: 0, pv: 0, pc: 0 }, [ty]: { vn: 0, uvv: 0, pv: 0, pc: 0 } });
-  for (const r of U) if ((r.a === ty || r.a === ly) && r.mes <= corte) { const o = g(r.goa)[r.a]; o.vn += r.vn; o.uvv += r.uvv; }
-  for (const r of C) if ((r.a === ty || r.a === ly) && r.mes <= corte) { const o = g(r.goa)[r.a]; o.pv += r.pv; o.pc += r.pc; }
-  const k = (o) => { const mi = o.pv > 0 ? 1 - o.pc / o.pv : null, mv = o.vn > 0 ? o.uvv / o.vn : null; return { vn: o.vn, mi, mv, dg: mi != null && mv != null ? mv - mi : null }; };
-  const tot = { [ly]: { vn: 0, uvv: 0, pv: 0, pc: 0 }, [ty]: { vn: 0, uvv: 0, pv: 0, pc: 0 } };
-  const rows = Object.entries(m).map(([goa, o]) => { for (const y of [ly, ty]) for (const q of ['vn', 'uvv', 'pv', 'pc']) tot[y][q] += o[y][q]; return { goa, L: k(o[ly]), T: k(o[ty]) }; });
-  return { ly, ty, corte, rows, tot: { goa: 'TOTAL', L: k(tot[ly]), T: k(tot[ty]) } };
+const parseGoaC = (txt) => txt.split(/\r?\n/).slice(3).map((l) => l.split(',')).filter((f) => f.length >= 13 && f[6] && !isNaN(+f[6]) && f[8]).map((f) => ({ a: +f[6], mes: +f[8], goa: f[5].trim(), sec: f[3].trim(), pv: (+f[11] || 0) * 1000, pc: (+f[12] || 0) * 1000 }));
+const GM = [['deg', 'Degradación'], ['mv', 'MG vendido'], ['mi', 'MG compra'], ['vn', 'Venta']];
+const gmet = (o) => { const mi = o.pv > 0 ? 1 - o.pc / o.pv : null, mv = o.vn > 0 ? o.uvv / o.vn : null; return { vn: o.vn, mi, mv, deg: mi != null && mv != null ? mv - mi : null }; };
+const gsum = (list, y, ms) => { const o = { vn: 0, uvv: 0, pv: 0, pc: 0 }; for (const g of list) for (const m of ms) { const c = g.m[y]?.[m]; if (c) { o.vn += c.vn; o.uvv += c.uvv; o.pv += c.pv; o.pc += c.pc; } } return o; };
+const goaMonthly = (U, C, ty) => {
+  const ly = ty - 1, corte = Math.max(...U.filter((r) => r.a === ty).map((r) => r.mes), 0), by = {};
+  const g = (k) => (by[k] ||= { goa: k, sec: 'Sin sección', m: { [ly]: Array.from({ length: 13 }, () => ({ vn: 0, uvv: 0, pv: 0, pc: 0 })), [ty]: Array.from({ length: 13 }, () => ({ vn: 0, uvv: 0, pv: 0, pc: 0 })) } });
+  for (const r of U) if ((r.a === ty || r.a === ly) && r.mes <= corte) { const o = g(r.goa).m[r.a][r.mes]; o.vn += r.vn; o.uvv += r.uvv; }
+  for (const r of C) if ((r.a === ty || r.a === ly) && r.mes <= corte) { const x = g(r.goa); if (r.sec) x.sec = r.sec; const o = x.m[r.a][r.mes]; o.pv += r.pv; o.pc += r.pc; }
+  const goas = Object.values(by), months = Array.from({ length: corte }, (_, i) => i + 1);
+  const secs = {}; for (const x of goas) (secs[x.sec] ||= []).push(x);
+  const sections = Object.entries(secs).map(([name, list]) => ({ name, list, vn: gsum(list, ty, months).vn })).sort((a, b) => b.vn - a.vn);
+  return { ty, ly, corte, months, goas, sections };
 };
 const zero = () => ({ pl: 0, vn: 0, c: 0, b: 0, me: 0, f: 0, ub: 0 });
 const add = (s, r) => { for (const k in s) s[k] += r[k]; };
@@ -231,7 +234,9 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
       setMsg({ ok: true, text: `GOA: utilidad ${n.u?.length ?? 0} filas · compras ${n.c?.length ?? 0} filas` });
     } catch (err) { setMsg({ ok: false, text: `Error: ${err.message}` }); }
   };
-  const G = useMemo(() => { if (!GX?.u?.length) return null; const ty = Math.max(...GX.u.map((r) => r.a)); return goaAgg(GX.u, GX.c || [], ty); }, [GX]);
+  const G = useMemo(() => { if (!GX?.u?.length) return null; const ty = Math.max(...GX.u.map((r) => r.a)); return goaMonthly(GX.u, GX.c || [], ty); }, [GX]);
+  const [gm, setGm] = useState('deg');
+  const [ex, setEx] = useState({});
   const clearAll = async () => { if (!confirm('¿Borrar la base de Margen?')) return; setX(null); setCAT(null); setGX(null); setF({}); await idbSet('data', null); await idbSet('cat', null); await idbSet('goa', null); try { localStorage.removeItem(LS_FILES); } catch {} };
 
   const R = useMemo(() => {
@@ -342,37 +347,95 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
           <div className={`inline-flex rounded-lg border p-0.5 ${t.toggle}`}>
             {[['resumen', 'Resumen'], ['detalle', 'Detalle'], ['goa', 'Por GOA']].map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={`px-4 py-1 text-xs rounded-md font-bold ${tab === k ? t.toggleActive : t.textMuted}`}>{l}</button>)}
           </div>
-          {tab === 'goa' && (
-            <div className={card}>
-              {!G ? <p className={`text-xs text-center py-8 ${t.textMuted}`}>Carga con el botón GOA los dos archivos: utilidad por GOA (CSV de BQ) y Compras del BI (PV y PC).</p> : (<>
-                <div className="flex items-baseline justify-between mb-2">
-                  <h3 className={`text-sm font-black ${t.text}`}>MG de compra vs MG vendido por GOA · ene-{MES[G.corte - 1]} {G.ty} vs {G.ly}</h3>
-                  <label className={`flex items-center gap-1 text-xs ${t.textMuted}`}><input type="checkbox" checked={soloBaja} onChange={(e) => setSoloBaja(e.target.checked)} /> Solo degradación a la baja</label>
+          {tab === 'goa' && (!G ? (
+            <div className={card}><p className={`text-xs text-center py-8 ${t.textMuted}`}>Carga con el botón GOA los dos archivos: utilidad por GOA (CSV de BQ) y Compras del BI (PV y PC).</p></div>
+          ) : (() => {
+            const { ty, ly, months, goas, sections } = G, all = (y, ms = months) => gmet(gsum(goas, y, ms)), A = all(ty), B = all(ly);
+            const fm = (k, v) => (k === 'vn' ? fmtM(v) : k === 'deg' ? pts(v) : pc(v));
+            const tile = (l, k, sub) => { const d = A[k] != null && B[k] != null ? A[k] - B[k] : null; return (
+              <div key={l} className={`${card} text-center`}>
+                <div className={`text-[10px] font-bold uppercase ${t.textMuted}`}>{l}</div>
+                <div className="text-2xl font-black tabular-nums" >{k === 'deg' ? `${(A[k] * 100).toFixed(1)} pts` : pc(A[k])}</div>
+                <div className={`text-[10px] ${t.textMuted}`}>{sub}</div>
+                <div className="text-xs font-bold tabular-nums" style={{ color: col(d) }}>{pts(d)} pts vs {ly} ({k === 'deg' ? `${(B[k] * 100).toFixed(1)} pts` : pc(B[k])})</div>
+              </div>); };
+            const lineData = months.map((m) => { const a = gmet(gsum(goas, ty, [m])), b = gmet(gsum(goas, ly, [m])); return { name: MES[m - 1], [`Compra ${ty}`]: a.mi != null ? +(a.mi * 100).toFixed(1) : null, [`Venta ${ty}`]: a.mv != null ? +(a.mv * 100).toFixed(1) : null, [`Compra ${ly}`]: b.mi != null ? +(b.mi * 100).toFixed(1) : null, [`Venta ${ly}`]: b.mv != null ? +(b.mv * 100).toFixed(1) : null }; });
+            const dl = goas.map((g) => { const a = gmet(gsum([g], ty, months)), b = gmet(gsum([g], ly, months)); return { name: g.goa, vn: a.vn, d: a.deg != null && b.deg != null ? (a.deg - b.deg) * 100 : null }; }).filter((x) => x.d != null && x.vn >= 2e7).sort((a, b) => b.d - a.d);
+            const bars = [...dl.filter((x) => x.d > 0).slice(0, 6), ...dl.filter((x) => x.d <= 0).slice(-6)].map((x) => ({ name: x.name, v: +x.d.toFixed(1) }));
+            const heat = (v, ref) => { if (v == null || ref == null) return undefined; const d = v - ref, a = Math.min(Math.abs(d) / (gm === 'vn' ? Math.max(Math.abs(ref), 1) : 0.1), 1) * 0.35; return d === 0 ? undefined : `${d > 0 ? 'rgba(167,139,250,' : 'rgba(214,63,140,'}${a.toFixed(2)})`; };
+            const cells = (list) => { const mv = (y, ms) => gmet(gsum(list, y, ms))[gm]; return [...months.map((m) => { const v = mv(ty, [m]), r = mv(ly, [m]); return { v, bg: gm === 'vn' ? heat(v, r) : heat(v, r) }; }), { v: mv(ly, months), muted: true }, { v: mv(ty, months), bold: true }, { d: (mv(ty, months) ?? 0) - (mv(ly, months) ?? 0), v2: mv(ty, months), v1: mv(ly, months) }]; };
+            const renderRow = (label, list, kind) => { const cs = cells(list); const last = cs[cs.length - 1]; const dv = last.v1 != null && last.v2 != null ? (gm === 'vn' ? (last.v1 > 0 ? last.v2 / last.v1 - 1 : null) : last.v2 - last.v1) : null; return (
+              <tr key={`${kind}-${label}`} className={`border-t ${isDark ? 'border-white/5' : 'border-gray-100'} ${kind === 'tot' ? 'font-black' : kind === 'sec' ? 'font-bold cursor-pointer' : ''}`} onClick={kind === 'sec' ? () => setEx((e) => ({ ...e, [label]: !e[label] })) : undefined}>
+                <td className={`${td} !text-left ${t.text}`} style={{ paddingLeft: kind === 'goa' ? 22 : undefined }}>{kind === 'sec' ? `${ex[label] ? '▾' : '▸'} ` : ''}{label}</td>
+                {cs.slice(0, months.length).map((c, i) => <td key={i} className={`${td} ${t.text}`} style={{ background: c.bg }}>{c.v == null ? '–' : fm(gm, c.v)}</td>)}
+                <td className={`${td} ${t.textMuted}`}>{cs[months.length].v == null ? '–' : fm(gm, cs[months.length].v)}</td>
+                <td className={`${td} font-black ${t.text}`}>{cs[months.length + 1].v == null ? '–' : fm(gm, cs[months.length + 1].v)}</td>
+                <td className={td} style={{ color: col(dv) }}>{dv == null ? '–' : gm === 'vn' ? pc(dv) : pts(dv)}</td>
+              </tr>); };
+            return (<>
+              <div className={`${card} !py-3`}>
+                <p className={`text-xs ${t.text}`}><b>Cómo leerlo:</b> compras con un margen (<b>MG compra</b>) → vendes con otro (<b>MG vendido</b>). Lo que se pierde en medio, por descuento, liquidación y mezcla, es la <b>degradación</b>. Ene-{MES[G.corte - 1]} {ty} vs {ly}, división 17.</p>
+              </div>
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                {tile('MG compra', 'mi', 'con qué margen compras')}{tile('MG vendido', 'mv', 'con qué margen vendes')}{tile('Degradación', 'deg', 'lo que se pierde entre compra y venta')}
+              </div>
+              <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+                <div className={card}>
+                  <h3 className={`text-sm font-black mb-2 ${t.text}`}>Compras vs ventas, mes a mes (MG %)</h3>
+                  <div style={{ height: 220 }}>
+                    <ResponsiveContainer>
+                      <LineChart data={lineData} margin={{ top: 8, right: 8, left: 0, bottom: 0 }}>
+                        <XAxis dataKey="name" tick={axisTick} axisLine={false} tickLine={false} />
+                        <YAxis tick={axisTick} axisLine={false} tickLine={false} width={34} unit="%" domain={['dataMin - 2', 'dataMax + 2']} />
+                        <Tooltip {...ttStyle} formatter={(v) => `${v}%`} />
+                        <Legend wrapperStyle={{ fontSize: 10 }} />
+                        <Line isAnimationActive={false} type="monotone" dataKey={`Compra ${ty}`} stroke={POS} strokeWidth={2.5} dot={{ r: 2 }} />
+                        <Line isAnimationActive={false} type="monotone" dataKey={`Venta ${ty}`} stroke={NEG} strokeWidth={2.5} dot={{ r: 2 }} />
+                        <Line isAnimationActive={false} type="monotone" dataKey={`Compra ${ly}`} stroke={POS} strokeWidth={1.5} strokeDasharray="4 3" dot={false} opacity={0.5} />
+                        <Line isAnimationActive={false} type="monotone" dataKey={`Venta ${ly}`} stroke={NEG} strokeWidth={1.5} strokeDasharray="4 3" dot={false} opacity={0.5} />
+                      </LineChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <p className={`text-[10px] ${t.textMuted}`}>La distancia entre las dos líneas es la degradación. Si se cierra vs {ly} (punteadas), se degrada menos.</p>
                 </div>
-                {!GX.c?.length && <p className={`text-[10px] mb-2 ${t.warnText || t.textMuted}`}>Falta el archivo de Compras: sin él no hay MG inicial ni degradación.</p>}
-                <div style={{ maxHeight: 520, overflow: 'auto' }}>
+                <div className={card}>
+                  <h3 className={`text-sm font-black mb-2 ${t.text}`}>GOA que más mejoran y más empeoran (Δ degradación, pts)</h3>
+                  <div style={{ height: 220 }}>
+                    <ResponsiveContainer>
+                      <BarChart data={bars} layout="vertical" margin={{ top: 4, right: 24, left: 0, bottom: 0 }}>
+                        <XAxis type="number" tick={axisTick} axisLine={false} tickLine={false} />
+                        <YAxis type="category" dataKey="name" tick={axisTick} axisLine={false} tickLine={false} width={96} />
+                        <Tooltip {...ttStyle} formatter={(v) => `${v > 0 ? '+' : ''}${v} pts`} />
+                        <ReferenceLine x={0} stroke={isDark ? '#948FA0' : '#9ca3af'} />
+                        <Bar isAnimationActive={false} dataKey="v" radius={[0, 4, 4, 0]} label={{ position: 'right', fontSize: 9, fill: isDark ? '#cbd5e1' : '#475569' }}>{bars.map((x, i) => <Cell key={i} fill={x.v > 0 ? POS : NEG} />)}</Bar>
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                  <p className={`text-[10px] ${t.textMuted}`}>Violeta = se degrada menos que {ly}; magenta = más. Solo GOA con más de $20 M de venta.</p>
+                </div>
+              </div>
+              <div className={card}>
+                <div className="flex flex-wrap items-center gap-2 mb-2">
+                  <div className={`flex rounded-lg border p-0.5 ${t.toggle}`}>
+                    {GM.map(([k, l]) => <button key={k} onClick={() => setGm(k)} className={`px-3 py-1 text-xs rounded-md ${gm === k ? t.toggleActive : t.textMuted}`}>{l}</button>)}
+                  </div>
+                  <button onClick={() => setEx(Object.fromEntries(sections.map((x) => [x.name, !Object.values(ex).some(Boolean)])))} className={`px-3 py-1 text-xs rounded-lg ${t.btnGhost}`}>{Object.values(ex).some(Boolean) ? 'Contraer todo' : 'Expandir todo'}</button>
+                  <span className={`ml-auto text-[10px] ${t.textMuted}`}>Clic en una sección para ver sus GOA · el color de cada mes compara contra el mismo mes de {ly}</span>
+                </div>
+                {!GX.c?.length && <p className={`text-[10px] mb-2 ${t.textMuted}`}>Falta el archivo de Compras: sin él no hay MG compra ni degradación.</p>}
+                <div style={{ maxHeight: 560, overflow: 'auto' }}>
                   <table className="w-full">
-                    <thead><tr><th className={`${th} !text-left`}>GOA</th><th className={th}>Venta {G.ty}</th><th className={th}>MG ini {G.ly}</th><th className={th}>MG ini {G.ty}</th><th className={th}>MG vend. {G.ly}</th><th className={th}>MG vend. {G.ty}</th><th className={th}>Degrad. {G.ly}</th><th className={th}>Degrad. {G.ty}</th><th className={th}>Δ degrad.</th></tr></thead>
+                    <thead><tr><th className={`${th} !text-left`}>Sección / GOA</th>{months.map((m) => <th key={m} className={th}>{MES[m - 1]}</th>)}<th className={th}>Acum. {ly}</th><th className={th}>Acum. {ty}</th><th className={th}>Δ</th></tr></thead>
                     <tbody>
-                      {[G.tot, ...G.rows.filter((r) => r.T.vn >= 2e6 || r.L.vn >= 2e6).filter((r) => !soloBaja || (r.T.dg != null && r.L.dg != null && r.T.dg - r.L.dg < -0.001)).sort((a, b) => b.T.vn - a.T.vn)].map((r, i) => {
-                        const dd = r.T.dg != null && r.L.dg != null ? r.T.dg - r.L.dg : null;
-                        return (
-                          <tr key={r.goa} className={`border-t ${isDark ? 'border-white/5' : 'border-gray-100'} ${i === 0 ? 'font-black' : ''}`}>
-                            <td className={`${td} !text-left ${t.text}`}>{r.goa}</td><td className={`${td} ${t.text}`}>{fmtM(r.T.vn)}</td>
-                            <td className={`${td} ${t.text}`}>{pc(r.L.mi)}</td><td className={`${td} ${t.text}`}>{pc(r.T.mi)}</td>
-                            <td className={`${td} ${t.text}`}>{pc(r.L.mv)}</td><td className={`${td} ${t.text}`}>{pc(r.T.mv)}</td>
-                            <td className={`${td} ${t.text}`}>{pts(r.L.dg)}</td><td className={`${td} ${t.text}`}>{pts(r.T.dg)}</td>
-                            <td className={td} style={{ color: col(dd) }}>{pts(dd)}</td>
-                          </tr>
-                        );
-                      })}
+                      {renderRow('TOTAL', goas, 'tot')}
+                      {sections.flatMap((sc) => [renderRow(sc.name, sc.list, 'sec'), ...(ex[sc.name] ? sc.list.filter((g) => gsum([g], ty, months).vn >= 1e6 || gsum([g], ly, months).vn >= 1e6).sort((a, b) => gsum([b], ty, months).vn - gsum([a], ty, months).vn).map((g) => renderRow(g.goa, [g], 'goa')) : [])])}
                     </tbody>
                   </table>
                 </div>
-                <p className={`text-[10px] mt-2 ${t.textMuted}`}>MG ini = 1 − compras a costo ÷ compras a precio de venta (cómo se compra). MG vend. = utilidad de lo vendido ÷ venta neta. Degrad. = MG vend. − MG ini (descuento, liquidación y mezcla entre lo comprado y lo vendido). Δ degrad. positivo = se degrada menos que el año anterior. Solo GOA con más de $2 M de venta.</p>
-              </>)}
-            </div>
-          )}
+                <p className={`text-[10px] mt-2 ${t.textMuted}`}>MG compra = 1 − compras a costo ÷ compras a precio de venta. MG vendido = utilidad de lo vendido ÷ venta neta. Degradación = MG vendido − MG compra (negativa; entre menos negativa, mejor). En Δ, positivo = mejor que {ly}. GOA con menos de $1 M de venta no se listan, pero sí suman en su sección.</p>
+              </div>
+            </>);
+          })())}
           {tab === 'resumen' && SUM && (
             <div className="space-y-3">
               <div className={`${card} flex items-start justify-between gap-3`}>
