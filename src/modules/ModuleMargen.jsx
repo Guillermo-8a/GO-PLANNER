@@ -53,8 +53,8 @@ const idbSet = async (k, v) => { const db = await idb(); return new Promise((res
 // Por GOA: utilidad (VEIL_TAB_UTILIDAD_COMPARATIVO_S por GOA) + compras del BI (PV/PC). MG inicial = 1 − compras PC ÷ compras PV; Degradación = MG vendido − MG inicial.
 const readTxt = async (f) => { const b = await f.arrayBuffer(); try { return new TextDecoder('utf-8', { fatal: true }).decode(b); } catch { return new TextDecoder('windows-1252').decode(b); } };
 const sh1 = (txt) => { const wb = XLSX.read(txt, { type: 'string' }); return XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' }); };
-const parseGoaU = (txt) => sh1(txt).map((r) => ({ a: +r.ANIO, mes: +r.MES, goa: String(r.GOA).trim(), vn: +r.VENTA_NETA || 0, uvv: +r.UTILIDAD_DE_LO_VENDIDO || 0, ubm: +r.UB_MERCANCIAS || 0, ubs: +r.UB_SIN_CFI || 0, bp: +r.BONIF_PROVEEDOR || 0, bm: +r.BONIF_MSI || 0, rg: +r.REGALIAS || 0, mr: +r.MERMA || 0, cf: +r.CFI || 0, ot: +r.OTROS_CAMBIOS || 0 })).filter((r) => r.a && r.mes);
-const parseGoaC = (txt) => txt.split(/\r?\n/).slice(3).map((l) => l.split(',')).filter((f) => f.length >= 13 && f[6] && !isNaN(+f[6]) && f[8]).map((f) => ({ a: +f[6], mes: +f[8], goa: f[5].trim(), sec: f[3].trim(), D: f[7].trim() === 'D', pv: (+f[11] || 0) * 1000, pc: (+f[12] || 0) * 1000 }));
+const parseGoaU = (txt) => sh1(txt).map((r) => ({ a: +r.ANIO, mes: +r.MES, goa: String(r.GOA).trim(), o: (r.TIPO_IMPORTACION || '').trim() === 'Directo' ? 'Importación' : (r.TIPO_IMPORTACION || '').trim(), vn: +r.VENTA_NETA || 0, uvv: +r.UTILIDAD_DE_LO_VENDIDO || 0, ubm: +r.UB_MERCANCIAS || 0, ubs: +r.UB_SIN_CFI || 0, bp: +r.BONIF_PROVEEDOR || 0, bm: +r.BONIF_MSI || 0, rg: +r.REGALIAS || 0, mr: +r.MERMA || 0, cf: +r.CFI || 0, ot: +r.OTROS_CAMBIOS || 0 })).filter((r) => r.a && r.mes);
+const parseGoaC = (txt) => txt.split(/\r?\n/).slice(3).map((l) => l.split(',')).filter((f) => f.length >= 13 && f[6] && !isNaN(+f[6]) && f[8]).map((f) => ({ a: +f[6], mes: +f[8], goa: f[5].trim(), sec: f[3].trim(), D: f[7].trim() === 'D', o: { D: 'Importación', N: 'Nacional', I: 'Indirecto' }[f[7].trim()] || f[7].trim(), pv: (+f[11] || 0) * 1000, pc: (+f[12] || 0) * 1000 }));
 const GM = [['deg', 'Degradación'], ['mv', 'MG vendido'], ['mi', 'MG compra'], ['vn', 'Venta']];
 const gmet = (o) => { const mi = o.pv > 0 ? 1 - o.pc / o.pv : null, mv = o.vn > 0 ? o.uvv / o.vn : null; return { vn: o.vn, mi, mv, deg: mi != null && mv != null ? mv - mi : null }; };
 const FL = ['vn', 'uvv', 'ubm', 'ubs', 'bp', 'bm', 'rg', 'mr', 'cf', 'ot', 'pv', 'pc', 'pvD', 'pcD'];
@@ -79,15 +79,23 @@ const CT = [
   ['CFI', [['LY', (a, b) => cP(b.cf)], ['TY', (a) => cP(a.cf)]]],
   ['MG DESPUÉS DE CFI', [['TY', (a) => cP(a.mgc)], ['Δ', cD('mgc')]]],
 ];
-const goaMonthly = (U, C, ty) => {
+const nrm = (x) => String(x ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toUpperCase().trim();
+const goaMonthly = (U, C, ty, F = {}) => {
   const ly = ty - 1, corte = Math.max(...U.filter((r) => r.a === ty).map((r) => r.mes), 0), by = {};
-  const g = (k) => (by[k] ||= { goa: k, sec: 'Sin sección', m: { [ly]: Array.from({ length: 13 }, gz), [ty]: Array.from({ length: 13 }, gz) } });
-  for (const r of U) if ((r.a === ty || r.a === ly) && r.mes <= corte) { const o = g(r.goa).m[r.a][r.mes]; for (const k of ['vn', 'uvv', 'ubm', 'ubs', 'bp', 'bm', 'rg', 'mr', 'cf', 'ot']) o[k] += r[k]; }
-  for (const r of C) if ((r.a === ty || r.a === ly) && r.mes <= corte) { const x = g(r.goa); if (r.sec) x.sec = r.sec; const o = x.m[r.a][r.mes]; o.pv += r.pv; o.pc += r.pc; if (r.D) { o.pvD += r.pv; o.pcD += r.pc; } }
-  const goas = Object.values(by), months = Array.from({ length: corte }, (_, i) => i + 1);
+  const of = F.orig?.length ? new Set(F.orig) : null, mf = F.mes?.length ? F.mes.map(Number) : null, sf = F.sec?.length ? new Set(F.sec.map(nrm)) : null;
+  const divOk = !F.div?.length || F.div.some((d) => /MERCANC/i.test(d));
+  const secOf = {}; for (const r of C) if (r.sec) secOf[r.goa] = r.sec;
+  const ok = (r) => (r.a === ty || r.a === ly) && r.mes <= corte && (!of || of.has(r.o)) && (!mf || mf.includes(r.mes));
+  const g = (k) => (by[k] ||= { goa: k, sec: secOf[k] || 'Sin sección', m: { [ly]: Array.from({ length: 13 }, gz), [ty]: Array.from({ length: 13 }, gz) } });
+  if (divOk) {
+    for (const r of U) if (ok(r)) { const o = g(r.goa).m[r.a][r.mes]; for (const k of ['vn', 'uvv', 'ubm', 'ubs', 'bp', 'bm', 'rg', 'mr', 'cf', 'ot']) o[k] += r[k]; }
+    for (const r of C) if (ok(r)) { const o = g(r.goa).m[r.a][r.mes]; o.pv += r.pv; o.pc += r.pc; if (r.D) { o.pvD += r.pv; o.pcD += r.pc; } }
+  }
+  for (const k of Object.keys(by)) if (sf && !sf.has(nrm(by[k].sec))) delete by[k];
+  const goas = Object.values(by), months = Array.from({ length: corte }, (_, i) => i + 1).filter((m) => !mf || mf.includes(m));
   const secs = {}; for (const x of goas) (secs[x.sec] ||= []).push(x);
   const sections = Object.entries(secs).map(([name, list]) => ({ name, list, vn: gsum(list, ty, months).vn })).sort((a, b) => b.vn - a.vn);
-  return { ty, ly, corte, months, goas, sections };
+  return { ty, ly, corte, months, goas, sections, divOk };
 };
 const zero = () => ({ pl: 0, vn: 0, c: 0, b: 0, me: 0, f: 0, ub: 0 });
 const add = (s, r) => { for (const k in s) s[k] += r[k]; };
@@ -207,7 +215,7 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
   const [msg, setMsg] = useState(null);
   const fileRef = useRef(null);
 
-  useEffect(() => { idbGet('data').then((d) => { if (d) { setX(d); setF(defFilter(d)); } }); idbGet('cat').then((c) => c && setCAT(c)); idbGet('goa').then((g) => { if (g?.v === 2) setGX(g); else if (g) { idbSet('goa', null); setMsg({ ok: false, text: 'Los archivos GOA guardados son de una versión anterior: vuelve a cargarlos con el botón GOA (utilidad por GOA + Compras del BI).' }); } }); }, []);
+  useEffect(() => { idbGet('data').then((d) => { if (d) { setX(d); setF(defFilter(d)); } }); idbGet('cat').then((c) => c && setCAT(c)); idbGet('goa').then((g) => { if (g?.v === 3) setGX(g); else if (g) { idbSet('goa', null); setMsg({ ok: false, text: 'Los archivos GOA guardados son de una versión anterior: vuelve a cargarlos con el botón GOA (utilidad por GOA + Compras del BI).' }); } }); }, []);
   const defFilter = () => ({});
 
   const onFile = async (e) => {
@@ -249,21 +257,20 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
   const onGoa = async (e) => {
     const fs = [...(e.target.files || [])]; e.target.value = ''; if (!fs.length) return;
     try {
-      const n = { ...(GX || {}), v: 2 };
+      const n = { ...(GX || {}), v: 3 };
       for (const f of fs) { const tx = await readTxt(f); if (tx.includes('UTILIDAD_DE_LO_VENDIDO')) n.u = parseGoaU(tx); else if (tx.includes('COMPRAS NETAS')) n.c = parseGoaC(tx); else throw new Error(`${f.name}: no reconozco el formato (utilidad por GOA o Compras del BI)`); }
       setGX(n); await idbSet('goa', n); setTab('goa');
       setMsg({ ok: true, text: `GOA: utilidad ${n.u?.length ?? 0} filas · compras ${n.c?.length ?? 0} filas` });
     } catch (err) { setMsg({ ok: false, text: `Error: ${err.message}` }); }
   };
-  const G = useMemo(() => { if (!GX?.u?.length) return null; const ty = Math.max(...GX.u.map((r) => r.a)); return goaMonthly(GX.u, GX.c || [], ty); }, [GX]);
-  const Gv = useMemo(() => {
-    if (!G) return null;
-    const sf = F.gsec?.length ? new Set(F.gsec) : null, mf = F.gmes?.length ? F.gmes.map((x) => MES.indexOf(x) + 1) : null;
-    const goas = G.goas.filter((g) => !sf || sf.has(g.sec)), months = mf ? G.months.filter((m) => mf.includes(m)) : G.months;
-    const secs = {}; for (const x of goas) (secs[x.sec] ||= []).push(x);
-    const sections = Object.entries(secs).map(([name, list]) => ({ name, list, vn: gsum(list, G.ty, months).vn })).sort((x, y) => y.vn - x.vn);
-    return { ...G, goas, months, sections };
-  }, [G, F.gsec, F.gmes]);
+  const G = useMemo(() => { if (!GX?.u?.length) return null; const ty = Math.max(...GX.u.map((r) => r.a)); return goaMonthly(GX.u, GX.c || [], ty, F); }, [GX, F]);
+  const Gopt = useMemo(() => {
+    if (!GX?.u?.length) return null;
+    const u = (a) => [...new Set(a.filter(Boolean))].sort();
+    const ty = Math.max(...GX.u.map((r) => r.a)), ms = u(GX.u.filter((r) => r.a === ty).map((r) => r.mes)).sort((a, b) => a - b);
+    return { div: [{ value: 'MERCANCÍAS GENERALES', label: 'MERCANCÍAS GENERALES' }], sec: u((GX.c || []).map((r) => r.sec)).map((v) => ({ value: v, label: v })), orig: u([...GX.u, ...(GX.c || [])].map((r) => r.o)).map((v) => ({ value: v, label: v })), mes: ms.map((m) => ({ value: String(m), label: MES[m - 1] })) };
+  }, [GX]);
+  const Gv = G;
   const [gm, setGm] = useState('deg');
   const [ex, setEx] = useState({});
   const clearAll = async () => { if (!confirm('¿Borrar la base de Margen?')) return; setX(null); setCAT(null); setGX(null); setF({}); await idbSet('data', null); await idbSet('cat', null); await idbSet('goa', null); try { localStorage.removeItem(LS_FILES); } catch {} };
@@ -313,28 +320,20 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
   const stk = (top) => ({ position: 'sticky', top, zIndex: 2, background: isDark ? '#1d1830' : '#f4f0fc' });
   const axisTick = { fontSize: 10, fill: isDark ? '#948FA0' : '#6b7280' };
 
-  const nF = Object.entries(F).filter(([k, v]) => k !== "gsec" && k !== "gmes" && v?.length).length;
+  const nF = Object.entries(F).filter(([, v]) => v?.length).length;
+  const hasR = R && !R.err, FO = (k) => (hasR && R.opt[k]?.length ? R.opt[k] : Gopt?.[k] || []);
+  const showMenu = hasR || G;
   const headerRight = (
     <>
-      {G && (tab === 'goa' || !R) && (
-        <FilterMenu isDark={isDark} count={(F.gsec?.length ? 1 : 0) + (F.gmes?.length ? 1 : 0)} width={480}>
-          <FilterSection label="Filtros GOA" isDark={isDark}>
-            <MS label="Sección" t={t} isDark={isDark} options={G.sections.map((x) => x.name).sort()} selected={F.gsec || []} onChange={(a) => setF((s) => ({ ...s, gsec: a }))} />
-            <MS label="Mes" t={t} isDark={isDark} options={G.months.map((m) => MES[m - 1])} selected={F.gmes || []} onChange={(a) => setF((s) => ({ ...s, gmes: a }))} />
-            {(F.gsec?.length || F.gmes?.length) ? <button onClick={() => setF((s) => ({ ...s, gsec: [], gmes: [] }))} className={`px-3 py-1.5 text-xs rounded-lg ${t.btnGhost}`}>✕ Limpiar</button> : null}
-          </FilterSection>
-        </FilterMenu>
-      )}
-      {R && !R.err && !(G && tab === 'goa') && (
+      {showMenu && (
         <FilterMenu isDark={isDark} count={nF} width={640}>
-          <FilterSection label="Filtros (cascada, venta neta)" isDark={isDark}>
-            {DIMS.map(([k, l]) => <MS key={k} label={l} t={t} isDark={isDark} options={R.opt[k]} selected={F[k] || []} onChange={(a) => setF((s) => ({ ...s, [k]: a }))} />)}
-            {X.hasMes && <MS label="Mes" t={t} isDark={isDark} options={R.opt.mes || []} selected={F.mes || []} onChange={(a) => setF((s) => ({ ...s, mes: a }))} />}
+          <FilterSection label="Filtros (aplican a Resumen, Detalle y Por GOA)" isDark={isDark}>
+            {DIMS.filter(([k]) => hasR || (G && ['div', 'sec', 'orig'].includes(k))).map(([k, l]) => <MS key={k} label={l} t={t} isDark={isDark} options={FO(k)} selected={F[k] || []} onChange={(a) => setF((s) => ({ ...s, [k]: a }))} />)}
+            {((hasR && X.hasMes) || G) && <MS label="Mes" t={t} isDark={isDark} options={FO('mes')} selected={F.mes || []} onChange={(a) => setF((s) => ({ ...s, mes: a }))} />}
             {nF > 0 && <button onClick={() => setF({})} className={`px-3 py-1.5 text-xs rounded-lg ${t.btnGhost}`}>✕ Limpiar</button>}
           </FilterSection>
         </FilterMenu>
       )}
-      <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden" onChange={onFile} />
       <button onClick={traerBQ} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg font-bold ${t.btnGhost}`}><Database size={14} /> BigQuery</button>
       <button onClick={() => fileRef.current?.click()} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg font-bold ${t.btnGhost}`}><Upload size={14} /> CSV</button>
       <input ref={goaRef} type="file" accept=".csv,.txt" multiple className="hidden" onChange={onGoa} />
@@ -498,7 +497,7 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
               <span className="ml-auto">{R.ty} vs {R.ly} · {R.n.toLocaleString('es-MX')} filas</span>
             </div>
           )}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+          <div className={`grid grid-cols-2 md:grid-cols-4 gap-3 ${tab === 'goa' ? 'hidden' : ''}`}>
             {[[`Margen ${R.ly}`, pc(R.ML), null], [`Margen ${R.ty}`, pc(R.MT), null], ['Δ pts', pts(R.MT - R.ML), col(R.MT - R.ML)], ['Impacto UB', `${R.MT - R.ML >= 0 ? '+' : '-'}${fmtM(Math.abs((R.MT - R.ML) * R.VT))}`, col(R.MT - R.ML)]].map(([l, v, c]) => (
               <div key={l} className={`${card} text-center`}>
                 <div className={`text-[10px] font-bold uppercase ${t.textMuted}`}>{l}</div>
