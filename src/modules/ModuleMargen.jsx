@@ -317,7 +317,9 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
           </FilterSection>
         </FilterMenu>
       )}
+      <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden" onChange={onFile} />
       <button onClick={traerBQ} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg font-bold ${t.btnGhost}`}><Database size={14} /> BigQuery</button>
+      <button onClick={() => fileRef.current?.click()} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg font-bold ${t.btnGhost}`}><Upload size={14} /> CSV</button>
       <input ref={goaRef} type="file" accept=".csv,.txt" multiple className="hidden" onChange={onGoa} />
       <button onClick={() => goaRef.current?.click()} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg font-bold ${t.btnGhost}`}><Upload size={14} /> GOA</button>
       {(X || GX) && <button onClick={clearAll} className={`p-1.5 rounded-lg ${t.btnGhost}`} title="Borrar base"><Trash2 size={14} /></button>}
@@ -465,7 +467,7 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
       {!X && !G && (
         <div className={`${card} text-center py-16`}>
           <Upload className="mx-auto mb-3 opacity-60" size={28} />
-          <p className={`font-bold ${t.text}`}>Carga utilidad y compras con el botón GOA</p>
+          <p className={`font-bold ${t.text}`}>Carga el CSV de margen (Resumen / Detalle) o utilidad y compras con GOA</p>
           <p className={`text-xs mt-1 ${t.textMuted}`}>Selecciona los dos archivos juntos. Se guardan localmente (IndexedDB) y sobreviven al refresh.</p>
         </div>
       )}
