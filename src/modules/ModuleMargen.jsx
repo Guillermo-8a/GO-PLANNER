@@ -256,6 +256,14 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
     } catch (err) { setMsg({ ok: false, text: `Error: ${err.message}` }); }
   };
   const G = useMemo(() => { if (!GX?.u?.length) return null; const ty = Math.max(...GX.u.map((r) => r.a)); return goaMonthly(GX.u, GX.c || [], ty); }, [GX]);
+  const Gv = useMemo(() => {
+    if (!G) return null;
+    const sf = F.gsec?.length ? new Set(F.gsec) : null, mf = F.gmes?.length ? F.gmes.map((x) => MES.indexOf(x) + 1) : null;
+    const goas = G.goas.filter((g) => !sf || sf.has(g.sec)), months = mf ? G.months.filter((m) => mf.includes(m)) : G.months;
+    const secs = {}; for (const x of goas) (secs[x.sec] ||= []).push(x);
+    const sections = Object.entries(secs).map(([name, list]) => ({ name, list, vn: gsum(list, G.ty, months).vn })).sort((x, y) => y.vn - x.vn);
+    return { ...G, goas, months, sections };
+  }, [G, F.gsec, F.gmes]);
   const [gm, setGm] = useState('deg');
   const [ex, setEx] = useState({});
   const clearAll = async () => { if (!confirm('¿Borrar la base de Margen?')) return; setX(null); setCAT(null); setGX(null); setF({}); await idbSet('data', null); await idbSet('cat', null); await idbSet('goa', null); try { localStorage.removeItem(LS_FILES); } catch {} };
@@ -305,10 +313,19 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
   const stk = (top) => ({ position: 'sticky', top, zIndex: 2, background: isDark ? '#1d1830' : '#f4f0fc' });
   const axisTick = { fontSize: 10, fill: isDark ? '#948FA0' : '#6b7280' };
 
-  const nF = Object.values(F).filter((v) => v?.length).length;
+  const nF = Object.entries(F).filter(([k, v]) => k !== "gsec" && k !== "gmes" && v?.length).length;
   const headerRight = (
     <>
-      {R && !R.err && (
+      {G && (tab === 'goa' || !R) && (
+        <FilterMenu isDark={isDark} count={(F.gsec?.length ? 1 : 0) + (F.gmes?.length ? 1 : 0)} width={480}>
+          <FilterSection label="Filtros GOA" isDark={isDark}>
+            <MS label="Sección" t={t} isDark={isDark} options={G.sections.map((x) => x.name).sort()} selected={F.gsec || []} onChange={(a) => setF((s) => ({ ...s, gsec: a }))} />
+            <MS label="Mes" t={t} isDark={isDark} options={G.months.map((m) => MES[m - 1])} selected={F.gmes || []} onChange={(a) => setF((s) => ({ ...s, gmes: a }))} />
+            {(F.gsec?.length || F.gmes?.length) ? <button onClick={() => setF((s) => ({ ...s, gsec: [], gmes: [] }))} className={`px-3 py-1.5 text-xs rounded-lg ${t.btnGhost}`}>✕ Limpiar</button> : null}
+          </FilterSection>
+        </FilterMenu>
+      )}
+      {R && !R.err && !(G && tab === 'goa') && (
         <FilterMenu isDark={isDark} count={nF} width={640}>
           <FilterSection label="Filtros (cascada, venta neta)" isDark={isDark}>
             {DIMS.map(([k, l]) => <MS key={k} label={l} t={t} isDark={isDark} options={R.opt[k]} selected={F[k] || []} onChange={(a) => setF((s) => ({ ...s, [k]: a }))} />)}
@@ -335,7 +352,7 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
             const goaView = (!G ? (
             <div className={card}><p className={`text-xs text-center py-8 ${t.textMuted}`}>Carga con el botón GOA los dos archivos: utilidad por GOA (CSV de BQ) y Compras del BI (PV y PC).</p></div>
           ) : (() => {
-            const { ty, ly, months, goas, sections } = G, all = (y, ms = months) => gmet(gsum(goas, y, ms)), A = all(ty), B = all(ly);
+            const { ty, ly, months, goas, sections } = Gv, all = (y, ms = months) => gmet(gsum(goas, y, ms)), A = all(ty), B = all(ly);
             const fm = (k, v) => (k === 'vn' ? fmtM(v) : k === 'deg' ? pts(v) : pc(v));
             const tile = (l, k, sub) => { const d = A[k] != null && B[k] != null ? A[k] - B[k] : null; return (
               <div key={l} className={`${card} text-center`}>
