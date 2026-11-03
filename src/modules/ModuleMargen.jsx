@@ -317,12 +317,10 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
           </FilterSection>
         </FilterMenu>
       )}
-      <input ref={fileRef} type="file" accept=".csv,.txt" className="hidden" onChange={onFile} />
       <button onClick={traerBQ} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg font-bold ${t.btnGhost}`}><Database size={14} /> BigQuery</button>
-      <button onClick={() => fileRef.current?.click()} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg font-bold ${t.btnGhost}`}><Upload size={14} /> CSV</button>
       <input ref={goaRef} type="file" accept=".csv,.txt" multiple className="hidden" onChange={onGoa} />
       <button onClick={() => goaRef.current?.click()} className={`flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-lg font-bold ${t.btnGhost}`}><Upload size={14} /> GOA</button>
-      {X && <button onClick={clearAll} className={`p-1.5 rounded-lg ${t.btnGhost}`} title="Borrar base"><Trash2 size={14} /></button>}
+      {(X || GX) && <button onClick={clearAll} className={`p-1.5 rounded-lg ${t.btnGhost}`} title="Borrar base"><Trash2 size={14} /></button>}
     </>
   );
 
@@ -332,44 +330,7 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
   const copiar = () => { if (!SUM) return; const tx = [SUM.head, '', ...SUM.blocks.flatMap(([h, it]) => [h.toUpperCase(), ...it.map((i) => (i.startsWith('  ·') ? i : `- ${i}`)), ''])].join('\n'); navigator.clipboard?.writeText(tx); setMsg({ ok: true, text: 'Resumen copiado' }); };
   const rows = R?.list ? R.list.filter((x) => Math.abs(x.contrib) >= 0.0005 || x.L.vn >= 1e6 || x.T.vn >= 1e6).filter((x) => !soloBaja || x.contrib < 0).sort((a, b) => a.contrib - b.contrib) : [];
 
-  return (
-    <div className="p-4 md:p-8 space-y-4">
-      <ModuleHeader Icon={navIcon} label={navLabel} desc={navDesc} t={t} isDark={isDark} right={headerRight} />
-      {busy && <div className={`px-3 py-2 rounded-lg border text-xs ${t.warningBg}`}>{busy}</div>}
-      {msg && (
-        <div className={`flex items-center justify-between px-3 py-2 rounded-lg border text-xs ${msg.ok ? t.successBg : t.dangerBg}`}>
-          <span>{msg.text}</span><button onClick={() => setMsg(null)}>✕</button>
-        </div>
-      )}
-      {!X && (
-        <div className={`${card} text-center py-16`}>
-          <Upload className="mx-auto mb-3 opacity-60" size={28} />
-          <p className={`font-bold ${t.text}`}>Carga el CSV de margen</p>
-          <p className={`text-xs mt-1 ${t.textMuted}`}>Se guarda localmente (IndexedDB) y sobrevive al refresh.</p>
-        </div>
-      )}
-      {R?.err && <div className={`px-3 py-2 rounded-lg border text-xs ${t.dangerBg}`}>{R.err}</div>}
-      {R && !R.err && (
-        <>
-          {nF > 0 && (
-            <div className={`flex flex-wrap items-center gap-1.5 text-[11px] ${t.textMuted}`}>
-              {DIMS.filter(([k]) => F[k]?.length).map(([k, l]) => <button key={k} onClick={() => setF((s) => ({ ...s, [k]: [] }))} className={`px-2 py-0.5 rounded-md border font-bold ${t.badge || ''}`} title="Quitar filtro">{F[k].length === 1 ? F[k][0] : `${l}: ${F[k].length}`} ✕</button>)}
-              <span className="ml-auto">{R.ty} vs {R.ly} · {R.n.toLocaleString('es-MX')} filas</span>
-            </div>
-          )}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-            {[[`Margen ${R.ly}`, pc(R.ML), null], [`Margen ${R.ty}`, pc(R.MT), null], ['Δ pts', pts(R.MT - R.ML), col(R.MT - R.ML)], ['Impacto UB', `${R.MT - R.ML >= 0 ? '+' : '-'}${fmtM(Math.abs((R.MT - R.ML) * R.VT))}`, col(R.MT - R.ML)]].map(([l, v, c]) => (
-              <div key={l} className={`${card} text-center`}>
-                <div className={`text-[10px] font-bold uppercase ${t.textMuted}`}>{l}</div>
-                <div className="text-2xl font-black tabular-nums" style={{ color: c }}>{v}</div>
-              </div>
-            ))}
-          </div>
-
-          <div className={`inline-flex rounded-lg border p-0.5 ${t.toggle}`}>
-            {[['resumen', 'Resumen'], ['detalle', 'Detalle'], ['goa', 'Por GOA']].map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={`px-4 py-1 text-xs rounded-md font-bold ${tab === k ? t.toggleActive : t.textMuted}`}>{l}</button>)}
-          </div>
-          {tab === 'goa' && (!G ? (
+            const goaView = (!G ? (
             <div className={card}><p className={`text-xs text-center py-8 ${t.textMuted}`}>Carga con el botón GOA los dos archivos: utilidad por GOA (CSV de BQ) y Compras del BI (PV y PC).</p></div>
           ) : (() => {
             const { ty, ly, months, goas, sections } = G, all = (y, ms = months) => gmet(gsum(goas, y, ms)), A = all(ty), B = all(ly);
@@ -490,7 +451,47 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
                 <p className={`text-[10px] mt-2 ${t.textMuted}`}>MG compra = 1 − compras a costo ÷ compras a precio de venta. MG vendido = utilidad de lo vendido ÷ venta neta. Degradación = MG vendido − MG compra (negativa; entre menos negativa, mejor). En Δ, positivo = mejor que {ly}. GOA con menos de $1 M de venta no se listan, pero sí suman en su sección.</p>
               </div>
             </>);
-          })())}
+          })());
+
+  return (
+    <div className="p-4 md:p-8 space-y-4">
+      <ModuleHeader Icon={navIcon} label={navLabel} desc={navDesc} t={t} isDark={isDark} right={headerRight} />
+      {busy && <div className={`px-3 py-2 rounded-lg border text-xs ${t.warningBg}`}>{busy}</div>}
+      {msg && (
+        <div className={`flex items-center justify-between px-3 py-2 rounded-lg border text-xs ${msg.ok ? t.successBg : t.dangerBg}`}>
+          <span>{msg.text}</span><button onClick={() => setMsg(null)}>✕</button>
+        </div>
+      )}
+      {!X && !G && (
+        <div className={`${card} text-center py-16`}>
+          <Upload className="mx-auto mb-3 opacity-60" size={28} />
+          <p className={`font-bold ${t.text}`}>Carga utilidad y compras con el botón GOA</p>
+          <p className={`text-xs mt-1 ${t.textMuted}`}>Selecciona los dos archivos juntos. Se guardan localmente (IndexedDB) y sobreviven al refresh.</p>
+        </div>
+      )}
+      {!R && G && goaView}
+      {R?.err && <div className={`px-3 py-2 rounded-lg border text-xs ${t.dangerBg}`}>{R.err}</div>}
+      {R && !R.err && (
+        <>
+          {nF > 0 && (
+            <div className={`flex flex-wrap items-center gap-1.5 text-[11px] ${t.textMuted}`}>
+              {DIMS.filter(([k]) => F[k]?.length).map(([k, l]) => <button key={k} onClick={() => setF((s) => ({ ...s, [k]: [] }))} className={`px-2 py-0.5 rounded-md border font-bold ${t.badge || ''}`} title="Quitar filtro">{F[k].length === 1 ? F[k][0] : `${l}: ${F[k].length}`} ✕</button>)}
+              <span className="ml-auto">{R.ty} vs {R.ly} · {R.n.toLocaleString('es-MX')} filas</span>
+            </div>
+          )}
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            {[[`Margen ${R.ly}`, pc(R.ML), null], [`Margen ${R.ty}`, pc(R.MT), null], ['Δ pts', pts(R.MT - R.ML), col(R.MT - R.ML)], ['Impacto UB', `${R.MT - R.ML >= 0 ? '+' : '-'}${fmtM(Math.abs((R.MT - R.ML) * R.VT))}`, col(R.MT - R.ML)]].map(([l, v, c]) => (
+              <div key={l} className={`${card} text-center`}>
+                <div className={`text-[10px] font-bold uppercase ${t.textMuted}`}>{l}</div>
+                <div className="text-2xl font-black tabular-nums" style={{ color: c }}>{v}</div>
+              </div>
+            ))}
+          </div>
+
+          <div className={`inline-flex rounded-lg border p-0.5 ${t.toggle}`}>
+            {[['resumen', 'Resumen'], ['detalle', 'Detalle'], ['goa', 'Por GOA']].map(([k, l]) => <button key={k} onClick={() => setTab(k)} className={`px-4 py-1 text-xs rounded-md font-bold ${tab === k ? t.toggleActive : t.textMuted}`}>{l}</button>)}
+          </div>
+          {tab === 'goa' && goaView}
           {tab === 'resumen' && SUM && (
             <div className="space-y-3">
               <div className={`${card} flex items-start justify-between gap-3`}>
