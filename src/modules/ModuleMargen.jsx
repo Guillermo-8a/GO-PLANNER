@@ -15,7 +15,7 @@ import FilterMenu, { FilterSection } from '../components/FilterMenu';
 const LS_FILES = 'gop_margen_files', DB_NAME = 'gop_margen_db';
 const norm = (s) => String(s ?? '').trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[_.]+/g, ' ').replace(/\s+/g, ' ').trim();
 const num = (v) => { const n = typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(/[$,\s]/g, '')); return isFinite(n) ? n : 0; };
-const fmtM = (v) => { const a = Math.abs(v), g = v < 0 ? '-' : ''; return a >= 1e6 ? `${g}$${(a / 1e6).toFixed(1)} M` : `${g}$${Math.round(a / 1e3).toLocaleString('es-MX')} K`; };
+const fmtM = (v) => { if (v == null || !isFinite(v)) return '—'; const a = Math.abs(v), g = v < 0 ? '-' : ''; return a >= 1e6 ? `${g}$${(a / 1e6).toFixed(1)} M` : `${g}$${Math.round(a / 1e3).toLocaleString('es-MX')} K`; };
 const pts = (v) => (v == null || !isFinite(v) ? '—' : `${v > 0 ? '+' : ''}${(v * 100).toFixed(1)}`);
 const pc = (v, d = 1) => (v == null || !isFinite(v) ? '—' : `${(v * 100).toFixed(d)}%`);
 const POS = '#A78BFA', NEG = '#D63F8C', LYC = '#6B5B8E'; // violeta GO / magenta GO / violeta apagado (LY)
@@ -351,6 +351,7 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
             const goaView = (!G ? (
             <div className={card}><p className={`text-xs text-center py-8 ${t.textMuted}`}>Carga con el botón GOA los dos archivos: utilidad por GOA (CSV de BQ) y Compras del BI (PV y PC).</p></div>
           ) : (() => {
+            if (!Gv.divOk) return <div className={card}><p className={`text-xs text-center py-8 ${t.textMuted}`}>Los archivos GOA cargados solo traen Mercancías Generales; la división filtrada no tiene datos de GOA.</p></div>;
             const { ty, ly, months, goas, sections } = Gv, all = (y, ms = months) => gmet(gsum(goas, y, ms)), A = all(ty), B = all(ly);
             const fm = (k, v) => (k === 'vn' ? fmtM(v) : k === 'deg' ? pts(v) : pc(v));
             const tile = (l, k, sub) => { const d = A[k] != null && B[k] != null ? A[k] - B[k] : null; return (
@@ -497,7 +498,7 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
               <span className="ml-auto">{R.ty} vs {R.ly} · {R.n.toLocaleString('es-MX')} filas</span>
             </div>
           )}
-          <div className={`grid grid-cols-2 md:grid-cols-4 gap-3 ${tab === 'goa' ? 'hidden' : ''}`}>
+          <div className={`grid grid-cols-2 md:grid-cols-4 gap-3`}>
             {[[`Margen ${R.ly}`, pc(R.ML), null], [`Margen ${R.ty}`, pc(R.MT), null], ['Δ pts', pts(R.MT - R.ML), col(R.MT - R.ML)], ['Impacto UB', `${R.MT - R.ML >= 0 ? '+' : '-'}${fmtM(Math.abs((R.MT - R.ML) * R.VT))}`, col(R.MT - R.ML)]].map(([l, v, c]) => (
               <div key={l} className={`${card} text-center`}>
                 <div className={`text-[10px] font-bold uppercase ${t.textMuted}`}>{l}</div>
