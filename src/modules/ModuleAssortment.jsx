@@ -3,6 +3,7 @@ import FilterMenu, { FilterSection } from '../components/FilterMenu';
 import MultiSelect from '../components/MultiSelect';
 import { useAltTabs } from '../utils/excelNav';
 import ModuleHeader from '../components/ModuleHeader';
+import MatrizCompra from './assortment/MatrizCompra';
 import { Settings, Store, Package, Upload, ArrowUpDown, Sliders, Layers, MoreVertical, Sun, Moon, Info, Map as MapIcon, Database, ShoppingCart, BarChart3, Plus, Trash2, Save, Download, Zap, DollarSign, Target, FileSpreadsheet, Edit3, Lightbulb, CalendarDays, Compass, Activity, Wand2, RefreshCw, ClipboardList, Calculator, ChevronDown, ChevronRight, LayoutList } from 'lucide-react';
 import * as XLSX from 'xlsx';
 
@@ -145,7 +146,7 @@ export default function App() {
   const budgetFileInputRef = useRef(null);
   const forecastFileInputRef = useRef(null);
   const [activeTab, setActiveTab] = useState('data');
-  useAltTabs(['data', 'calc', 'budget', 'assortment', 'reports', 'vsreal', 'chequeras'], setActiveTab);
+  useAltTabs(['data', 'calc', 'budget', 'assortment', 'reports', 'vsreal', 'chequeras', 'matriz'], setActiveTab);
 
   // --- ESTADOS PARA GUARDAR SESIÓN ---
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
@@ -2016,6 +2017,7 @@ export default function App() {
             <TabButton id="calc" label="2. Curvas y Reglas" icon={ClipboardList} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
             <TabButton id="budget" label="3. Forecast GO Planner" icon={Database} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
             <TabButton id="assortment" label="4. Compra: Ppto / Preventa" icon={Package} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
+            <TabButton id="matriz" label="4B. Matriz de compra" icon={Layers} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
             <TabButton id="reports" label="5. Reportes / Plan OTB" icon={Compass} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
             <TabButton id="vsreal" label="6. VS Compra Real" icon={Activity} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
             <TabButton id="chequeras" label="7. Generador Chequeras" icon={FileSpreadsheet} activeTab={activeTab} setActiveTab={setActiveTab} t={t} />
@@ -2908,6 +2910,11 @@ export default function App() {
         )}
 
         {/* === PESTAÑA 5: REPORTES E INTELIGENCIA === */}
+        {activeTab === 'matriz' && (
+          <MatrizCompra t={t} theme={theme} goas={goas} setGoas={setGoas} buckets={buckets} stores={stores} sizeCurves={sizeCurves} calcRules={calcRules} pvpMix={pvpMix}
+            bucketShareFor={bucketShareFor} rulesOf={rulesOf} mesesNorm={mesesNorm} getMonthLabel={getMonthLabel} />
+        )}
+
         {activeTab === 'reports' && (
           <div className="space-y-6">
             
