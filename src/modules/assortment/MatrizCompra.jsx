@@ -49,7 +49,12 @@ export default function MatrizCompra({ t, theme, goas, setGoas, buckets, stores,
     const auto = pricePoints(hist, 4);
     const bks = (buckets || []).filter(b => share[b.id]).map(b => {
       const cfg = g.bkCfg?.[b.id] || {};
-      const rule = (calcRules || []).find(r => r.id === Number(rulesOf(g, b.id)[0]?.ruleId));
+      // Reglas del bucket (OPP/MID/MAX…): cada una pesa por su %; las que no traen % se reparten lo que falte para 100
+      const rl = rulesOf(g, b.id).map(r => ({ rule: (calcRules || []).find(x => x.id === Number(r.ruleId)), w: r.pct !== '' && r.pct != null ? Number(r.pct) || 0 : null })).filter(r => r.rule);
+      const conPct = rl.filter(r => r.w != null).reduce((a, r) => a + r.w, 0), sinPct = rl.filter(r => r.w == null).length;
+      rl.forEach(r => { if (r.w == null) r.w = sinPct ? Math.max(0, 100 - conPct) / sinPct : 0; });
+      const wTot = rl.reduce((a, r) => a + r.w, 0) || 1;
+      const rule = rl.length ? { corridas: Object.fromEntries([...new Set(rl.flatMap(r => Object.keys(r.rule.corridas || {})))].map(c => [c, rl.reduce((a, r) => a + (r.rule.corridas?.[c] || 0) * r.w / wTot, 0)])) } : null;
       const curve = (sizeCurves || []).find(c => c.id === Number(cfg.curveId || g.autoCurveId)) || (sizeCurves || [])[0];
       if (!rule) warn.push(`${b.name}: falta regla (paso 2 / 4)`);
       if (!curve) warn.push(`${b.name}: falta curva de tallas`);
