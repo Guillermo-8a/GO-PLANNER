@@ -2,6 +2,7 @@
 // Diagnóstico de demanda (Demand Planner): tipo de demanda por modelo (Suave / Errático / Intermitente / Irregular)
 // y accionable (Básico, Temporada, Falla de inventario, No sirve). Lógica en utils/demandaEngine.js.
 // Escribe `gop_demanda_diag` (modelo → acción) para que Nulo Movimiento lo muestre en su detalle.
+import BQButton from '../components/BQButton';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import { ScatterChart, Scatter, XAxis, YAxis, ZAxis, Tooltip, ResponsiveContainer, ReferenceLine, Cell, ComposedChart, Bar, Line, CartesianGrid } from 'recharts';
 import { Upload, Download, Trash2, Search, ChevronDown } from 'lucide-react';
@@ -98,6 +99,7 @@ export default function ModuleDemanda({ t, isDark, navIcon, navLabel, navDesc })
       )}
       <button onClick={() => fileRef.current?.click()} disabled={!!busy} className={`flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg font-bold ${t.btn} disabled:opacity-50`}><Upload size={14} />Cargar CSV</button>
       <button onClick={clearAll} className={`p-2 rounded-lg border ${t.btnDanger}`} title="Borrar base"><Trash2 size={14} /></button>
+      <BQButton source="demanda" onFile={onFile} className={t.btn} />
       <input ref={fileRef} type="file" className="hidden" onChange={onFile} />
     </>
   );

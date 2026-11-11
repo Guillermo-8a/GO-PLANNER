@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useEffect } from 'react';
+import BQButton from '../components/BQButton';
 import FilterMenu from '../components/FilterMenu';
 import MultiSelect from '../components/MultiSelect';
 import { 
@@ -997,6 +998,7 @@ export default function App() {
                             Subir Archivo CSV
                             <input type="file" accept=".csv" className="hidden" onChange={handleFileUpload} />
                         </label>
+                        <BQButton source="resurtido" onFile={handleFileUpload} className="border-purple-500/40 text-purple-600 dark:text-purple-300" />
                         <span className="text-gray-400 dark:text-gray-600 text-xs font-bold hidden sm:block">Ó</span>
                         <Database className="text-gray-400 w-5 h-5 ml-1 hidden sm:block" />
                         <input type="text" placeholder="Link CSV de Sheets..." value={sheetUrl} onChange={(e) => setSheetUrl(e.target.value)} className="bg-transparent border-none text-sm text-gray-800 dark:text-white outline-none w-full sm:w-64 px-2" />

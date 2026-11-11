@@ -23,6 +23,8 @@ export default async function handler(req, res) {
   const q = QUERIES[req.query.source];
   if (!q) return res.status(404).send(`Fuente desconocida. Disponibles: ${Object.keys(QUERIES).join(', ')}`);
 
+  if (q.pendiente || q.sql('').includes('TODO_')) return res.status(501).send(`Consulta pendiente: falta el SQL real de «${req.query.source}» en api/_queries.js`);
+
   try {
     const credentials = JSON.parse(process.env.GCP_SA_KEY);
     const projectId = process.env.GCP_PROJECT_ID || credentials.project_id;

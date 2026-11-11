@@ -15,6 +15,7 @@ function doPost(e) {
     const email = verificar_(body.id_token);
     const q = QUERIES[body.source];
     if (!q) return out_(`ERROR 404\nFuente desconocida. Disponibles: ${Object.keys(QUERIES).join(', ')}`);
+    if (q.pendiente) return out_(`ERROR 501\nConsulta pendiente: falta el SQL real de «${body.source}» en api/_queries.js`);
     console.log(`${email} → ${body.source} ${JSON.stringify(body.params || {})}`);
     return out_(correr_(q, body.params || {}));
   } catch (err) {

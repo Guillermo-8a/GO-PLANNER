@@ -6,23 +6,27 @@ const QUERIES = {
   },
   "resurtido": {
     "params": [],
-    "sql": "\n      SELECT goa AS GOA, centro AS Centro, oh AS OH, oo AS OO,\n             marca, modelo, sku_nombre\n      FROM `crp-pro-dwh-semanticagold.mus_pro_dwh_views_sap.TODO_inventario_resurtido`"
+    "sql": "\n      SELECT goa AS GOA, centro AS Centro, oh AS OH, oo AS OO,\n             marca, modelo, sku_nombre\n      FROM `crp-pro-dwh-semanticagold.mus_pro_dwh_views_sap.TODO_inventario_resurtido`",
+    "pendiente": true
   },
   "dayli_ventas": {
     "params": [
       "desde"
     ],
-    "sql": "\n      SELECT division AS DIVISION, seccion AS SECCION, n_seccion AS `#SECCION`, goa AS GOA,\n             marca AS MARCA, norma AS NORMA, canal AS CANAL, tipo_pago AS TIPO_PAGO,\n             FORMAT_DATE('%Y-%m-%d', fecha) AS FECHA, venta_pesos AS VENTA_PESOS, venta_u AS VENTA_U,\n             mg AS MG, utilidad AS UTILIDAD, markdown AS MARKDOWN\n      FROM `crp-pro-dwh-semanticagold.mus_pro_dwh_views_sap.TODO_ventas_diarias`\n      WHERE fecha >= @desde"
+    "sql": "\n      SELECT division AS DIVISION, seccion AS SECCION, n_seccion AS `#SECCION`, goa AS GOA,\n             marca AS MARCA, norma AS NORMA, canal AS CANAL, tipo_pago AS TIPO_PAGO,\n             FORMAT_DATE('%Y-%m-%d', fecha) AS FECHA, venta_pesos AS VENTA_PESOS, venta_u AS VENTA_U,\n             mg AS MG, utilidad AS UTILIDAD, markdown AS MARKDOWN\n      FROM `crp-pro-dwh-semanticagold.mus_pro_dwh_views_sap.TODO_ventas_diarias`\n      WHERE fecha >= @desde",
+    "pendiente": true
   },
   "dayli_inventario": {
     "params": [],
-    "sql": "\n      SELECT division AS DIVISION, seccion AS SECCION, n_seccion AS `#SECCION`, goa AS GOA,\n             marca AS MARCA, norma AS NORMA, ubicacion AS UBICACION, tipo_ubicacion AS TIPO_UBICACION,\n             oh AS OH, oo AS OO\n      FROM `crp-pro-dwh-semanticagold.mus_pro_dwh_views_sap.TODO_inventario_foto`"
+    "sql": "\n      SELECT division AS DIVISION, seccion AS SECCION, n_seccion AS `#SECCION`, goa AS GOA,\n             marca AS MARCA, norma AS NORMA, ubicacion AS UBICACION, tipo_ubicacion AS TIPO_UBICACION,\n             oh AS OH, oo AS OO\n      FROM `crp-pro-dwh-semanticagold.mus_pro_dwh_views_sap.TODO_inventario_foto`",
+    "pendiente": true
   },
   "dispersion": {
     "params": [
       "anio"
     ],
-    "sql": "\n      SELECT anio AS `AÑO`, mes AS MES, direccion AS DIRECCION, division AS DIVISION, seccion AS SECCION,\n             norma AS NORMA, grupo_articulos AS GRUPO_ARTICULOS, proveedor AS PROVEEDOR, marca AS MARCA,\n             centro AS CENTRO, tienda AS TIENDA, vtas_pesos AS VTAS_PESOS, prom_inventario AS PROM_INVENTARIO,\n             inventario_inicial AS INVENTARIO_INICIAL, inventario_final AS INVENTARIO_FINAL\n      FROM `crp-pro-dwh-semanticagold.mus_pro_dwh_views_sap.TODO_venta_inventario_mensual`\n      WHERE anio >= @anio"
+    "sql": "\n      SELECT anio AS `AÑO`, mes AS MES, direccion AS DIRECCION, division AS DIVISION, seccion AS SECCION,\n             norma AS NORMA, grupo_articulos AS GRUPO_ARTICULOS, proveedor AS PROVEEDOR, marca AS MARCA,\n             centro AS CENTRO, tienda AS TIENDA, vtas_pesos AS VTAS_PESOS, prom_inventario AS PROM_INVENTARIO,\n             inventario_inicial AS INVENTARIO_INICIAL, inventario_final AS INVENTARIO_FINAL\n      FROM `crp-pro-dwh-semanticagold.mus_pro_dwh_views_sap.TODO_venta_inventario_mensual`\n      WHERE anio >= @anio",
+    "pendiente": true
   },
   "eventos_oh": {
     "params": [
@@ -49,7 +53,8 @@ const QUERIES = {
   },
   "traslados": {
     "params": [],
-    "sql": "\n      SELECT goa AS GOA, sku AS SKU, centro AS CENTRO, oh AS OH, zona AS ZONA, tipo_centro AS TIPO_CENTRO\n      FROM `crp-pro-dwh-semanticagold.mus_pro_dwh_views_sap.TODO_inventario_sku_centro`"
+    "sql": "\n      SELECT goa AS GOA, sku AS SKU, centro AS CENTRO, oh AS OH, zona AS ZONA, tipo_centro AS TIPO_CENTRO\n      FROM `crp-pro-dwh-semanticagold.mus_pro_dwh_views_sap.TODO_inventario_sku_centro`",
+    "pendiente": true
   },
   "margen": {
     "params": [
@@ -64,5 +69,20 @@ const QUERIES = {
       "mes"
     ],
     "sql": "\n      WITH p AS (\n        SELECT CAST(ARTICULO_KEY AS STRING) art,\n               MAX(SAFE_CAST(PRECIO_VENTA_INIC AS FLOAT64)) / 1.16 p_ini, MAX(SAFE_CAST(PRECIO_VENTA_ACT AS FLOAT64)) / 1.16 p_act\n        FROM `crp-pro-dwh-semanticagold.mus_pro_dwh_views_sap.VEIL_TAB_VENTAS_MENSUALES_U_S`\n        WHERE SAFE_CAST(PRECIO_VENTA_INIC AS FLOAT64) > 0 GROUP BY 1)\n      SELECT EXTRACT(YEAR FROM SAFE_CAST(v.DIA_PERIODO AS DATE)) AS anio, EXTRACT(MONTH FROM SAFE_CAST(v.DIA_PERIODO AS DATE)) AS mes,\n             v.DIVISION, v.SECCION, v.MARCA,\n             SUM(SAFE_CAST(v.VTAS_U AS FLOAT64) * p.p_ini) AS pl_ini, SUM(SAFE_CAST(v.VTAS_U AS FLOAT64) * p.p_act) AS pl_act,\n             SUM(SAFE_CAST(v.TOTAL_COSTO_DE_VENTA_RK AS FLOAT64)) AS costo\n      FROM `crp-pro-dwh-semanticagold.mus_pro_dwh_views_sap.VEIL_ANALISIS_VTAS_DIARIAS` v\n      JOIN p ON p.art = CAST(v.ARTICULO_KEY AS STRING)\n      WHERE EXTRACT(YEAR FROM SAFE_CAST(v.DIA_PERIODO AS DATE)) IN (CAST(@anio AS INT64) - 1, CAST(@anio AS INT64))\n        AND EXTRACT(MONTH FROM SAFE_CAST(v.DIA_PERIODO AS DATE)) <= CAST(@mes AS INT64)\n      GROUP BY 1, 2, 3, 4, 5"
+  },
+  "nulo": {
+    "params": [],
+    "sql": "",
+    "pendiente": true
+  },
+  "demanda": {
+    "params": [],
+    "sql": "",
+    "pendiente": true
+  },
+  "pedidos": {
+    "params": [],
+    "sql": "",
+    "pendiente": true
   }
 };

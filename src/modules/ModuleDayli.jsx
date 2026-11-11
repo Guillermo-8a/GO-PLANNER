@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import BQButton from '../components/BQButton';
 import * as Icons from '../utils/icons';
 import FilterMenu, { FilterSection } from '../components/FilterMenu';
 import { useGlobal } from '../context/GlobalContext';
@@ -1003,8 +1004,10 @@ export default function ModuleDaily(){
             {hasData&&<FilterMenu isDark={isDark} count={[fCanal,fSub,fDiv,fSec,fGoa,fMarca,fNorma,fPago].filter(a=>a.length).length+(dateFrom||dateTo?1:0)} width={920}>{FilterBar()}</FilterMenu>}
             <input ref={salesRef} type="file" accept=".csv,.txt" className="hidden" onChange={upload(salesRef,setAllData,parseSalesCSV)}/>
             <button onClick={()=>salesRef.current?.click()} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${t.btnGhost}`}><UpIcon size={14}/> CSV Ventas</button>
+            <BQButton source="dayli_ventas" params={()=>({desde:`${new Date().getFullYear()-1}-01-01`})} onFile={upload(salesRef,setAllData,parseSalesCSV)} label="Ventas BQ" className={t.btnGhost}/>
             <input ref={invRef} type="file" accept=".csv,.txt" className="hidden" onChange={upload(invRef,setInvData,parseInvCSV)}/>
             <button onClick={()=>invRef.current?.click()} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${t.btnGhost}`}><PkgIcon size={14}/> CSV Inventario</button>
+            <BQButton source="dayli_inventario" onFile={upload(invRef,setInvData,parseInvCSV)} label="Inventario BQ" className={t.btnGhost}/>
             <input ref={promoRef} type="file" accept=".csv,.txt" className="hidden" onChange={upload(promoRef,setPromoEntries,parsePromoCSV)}/>
             <button onClick={()=>promoRef.current?.click()} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${t.btnGhost}`}>🏷️ CSV Promos</button>
             {allData.length>0&&<span className={`px-3 py-1 rounded-full text-[10px] font-black border ${t.badge}`}>{allData.length.toLocaleString()} regs</span>}

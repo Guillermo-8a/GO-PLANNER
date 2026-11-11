@@ -146,4 +146,9 @@ export const QUERIES = {
         AND EXTRACT(MONTH FROM SAFE_CAST(v.DIA_PERIODO AS DATE)) <= CAST(@mes AS INT64)
       GROUP BY 1, 2, 3, 4, 5`,
   },
+
+  // Pendientes: falta pegar el SQL real (el que hoy corres a mano en BigQuery). El botón del módulo ya está conectado.
+  nulo: { pendiente: true, sql: () => '' },
+  demanda: { pendiente: true, sql: () => '' },
+  pedidos: { pendiente: true, sql: () => '' },
 };

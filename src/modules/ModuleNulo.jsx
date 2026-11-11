@@ -3,6 +3,7 @@
 // Entrada: CSV de BigQuery (o la hoja BASE del Excel "Nulo Propuesta"). Una fila por SKU × centro.
 // Regla: meses desde la última venta > umbral (3 por default, editable por sección).
 //   Sin venta en la ventana (">14 meses") → se mide la antigüedad desde la 1a recepción (si es reciente no es nulo).
+import BQButton from '../components/BQButton';
 import { useState, useEffect, useMemo, useRef } from 'react';
 import * as XLSX from 'xlsx';
 import { PieChart, Pie, Cell, Tooltip, ResponsiveContainer, BarChart, Bar, XAxis, YAxis } from 'recharts';
@@ -433,6 +434,7 @@ export default function ModuleNulo({ t, isDark, navIcon, navLabel, navDesc }) {
       <button onClick={() => fileRef.current?.click()} disabled={!!busy} className={`flex items-center gap-1.5 px-3 py-2 text-xs rounded-lg font-bold ${t.btn} disabled:opacity-50`}><Upload size={14} />Cargar CSV / Excel</button>
       <button onClick={() => setShowCfg((v) => !v)} className={`p-2 rounded-lg border ${t.btnEdit}`} title="Umbral por sección y mes de corte"><Settings size={14} /></button>
       <button onClick={clearAll} className={`p-2 rounded-lg border ${t.btnDanger}`} title="Borrar base"><Trash2 size={14} /></button>
+      <BQButton source="nulo" onFile={onFile} className={t.btnEdit} />
       <input ref={fileRef} type="file" accept=".csv,.txt,.xlsx,.xls" className="hidden" onChange={onFile} />
     </>
   );

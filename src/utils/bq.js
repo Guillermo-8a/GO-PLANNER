@@ -51,3 +51,8 @@ export async function fetchBQ(source, params = {}) {
   if (!r.ok) throw new Error(txt);
   return txt;
 }
+
+// Lo mismo que fetchBQ pero regresa un File, para alimentar el lector de archivos que ya tiene cada módulo.
+export async function fetchBQFile(source, params = {}, name = `${source}.csv`) {
+  return new File([await fetchBQ(source, params)], name, { type: 'text/csv' });
+}

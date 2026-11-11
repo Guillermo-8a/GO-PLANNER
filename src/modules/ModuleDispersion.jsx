@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect } from 'react';
+import BQButton from '../components/BQButton';
 import MultiSelect from '../components/MultiSelect';
 import * as Icons from '../utils/icons';
 import { useGlobal } from '../context/GlobalContext';
@@ -269,6 +270,7 @@ export default function ModuleDispersion(){
             </div>
             <input ref={fileRef} type="file" accept=".csv,.txt,.xlsx" className="hidden" onChange={handleUpload}/>
             <button onClick={()=>fileRef.current?.click()} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${t.btnGhost}`}><Icons.Upload size={14}/> CSV / Excel Extracción</button>
+            <BQButton source="dispersion" params={()=>({anio:new Date().getFullYear()-1})} onFile={handleUpload} className={t.btnGhost}/>
             {hasData&&periodo&&<span className={`px-3 py-1 rounded-full text-[10px] font-black border ${t.badgeAmber}`}>Info de: {periodo}</span>}
             {hasData&&<span className={`px-3 py-1 rounded-full text-[10px] font-black border ${t.badge}`}>{data.length.toLocaleString()} filas</span>}
             {hasData&&<button onClick={clearData} className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${t.btnGhost} opacity-40 hover:opacity-100`}><Icons.Trash2 size={14}/></button>}

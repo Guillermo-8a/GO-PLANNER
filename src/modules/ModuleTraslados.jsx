@@ -1,4 +1,5 @@
 import React, { useState, useMemo, useRef, useEffect, useCallback } from 'react';
+import BQButton from '../components/BQButton';
 import { seasonalShift } from '../utils/fcstEngine';
 import { useAltTabs } from '../utils/excelNav';
 import * as Icons from '../utils/icons';
@@ -1586,6 +1587,7 @@ export default function Traslados() {
             })()}
             {/* Carga CSV principal */}
             <input ref={csvInputRef} type="file" accept=".csv,.txt" className="hidden" onChange={handleCSVUpload} />
+            <BQButton source="traslados" onFile={handleCSVUpload} className={t.btnGhost} />
             <button onClick={() => csvInputRef.current?.click()}
               className={`flex items-center gap-2 px-3 py-2 rounded-lg text-xs font-bold border transition-all ${t.btnGhost}`}>
               <Icons.Upload size={14} /> Cargar CSV Artículos
