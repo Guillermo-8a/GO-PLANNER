@@ -9,6 +9,7 @@ import * as XLSX from 'xlsx';
 import { BarChart, Bar, Cell, XAxis, YAxis, Tooltip, ResponsiveContainer, ReferenceLine, LineChart, Line, Legend } from 'recharts';
 import { Upload, Trash2, Database } from 'lucide-react';
 import ModuleHeader from '../components/ModuleHeader';
+import { fetchBQ } from '../utils/bq';
 import MS from '../components/MultiSelect';
 import FilterMenu, { FilterSection } from '../components/FilterMenu';
 
@@ -237,16 +238,13 @@ export default function ModuleMargen({ t, isDark, navIcon, navLabel, navDesc }) 
     const now = new Date(); const last = now.getMonth() === 0 ? [now.getFullYear() - 1, 12] : [now.getFullYear(), now.getMonth()];
     const inp = window.prompt('Año y mes de corte (AAAA-M). Compara contra el año anterior, acumulado ene → mes:', localStorage.getItem('gop_margen_corte') || `${last[0]}-${last[1]}`);
     const m = inp && inp.match(/^(20\d{2})[-/ ](\d{1,2})$/); if (!m || +m[2] < 1 || +m[2] > 12) { if (inp) setMsg({ ok: false, text: 'Formato: AAAA-M (ej. 2026-9)' }); return; }
-    let tok = localStorage.getItem('gop_api_token') || ''; if (!tok) { tok = window.prompt('Token de GO PLANNER (GOP_API_TOKEN):') || ''; if (!tok) return; localStorage.setItem('gop_api_token', tok); }
     localStorage.setItem('gop_margen_corte', `${m[1]}-${+m[2]}`);
     setMsg(null); setBusy('Consultando BigQuery…');
     try {
-      const r = await fetch(`/api/bq?source=margen&anio=${m[1]}&mes=${+m[2]}`, { headers: { 'x-gop-token': tok } });
-      const txt = await r.text(); if (r.status === 401) localStorage.removeItem('gop_api_token'); if (!r.ok) throw new Error(txt);
+      const txt = await fetchBQ('margen', { anio: m[1], mes: +m[2] });
       await load(parse(txt, `BigQuery · ene-${MES[+m[2] - 1]} ${m[1]}`));
       try {
-        const rc = await fetch(`/api/bq?source=margen_cat&anio=${m[1]}&mes=${+m[2]}`, { headers: { 'x-gop-token': tok } });
-        const tc = await rc.text(); if (!rc.ok) throw new Error(tc);
+        const tc = await fetchBQ('margen_cat', { anio: m[1], mes: +m[2] });
         const wb = XLSX.read(tc, { type: 'string' });
         const cat = XLSX.utils.sheet_to_json(wb.Sheets[wb.SheetNames[0]], { defval: '' }).map((r) => ({ a: +r.anio, mes: String(r.mes), div: r.DIVISION, sec: r.SECCION, marca: r.MARCA, pi: +r.pl_ini || 0, pa: +r.pl_act || 0, c: +r.costo || 0 }));
         setCAT(cat); await idbSet('cat', cat);

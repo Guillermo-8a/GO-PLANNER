@@ -2,6 +2,7 @@ import React, { useState, useMemo, useRef, useEffect } from 'react';
 import { useAltTabs } from '../utils/excelNav';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell, ComposedChart, Line, PieChart, Pie, Legend, ReferenceLine } from 'recharts';
 import * as XLSX from 'xlsx';
+import { fetchBQ } from '../utils/bq';
 import * as Icons from '../utils/icons';
 import FilterMenu, { FilterSection } from '../components/FilterMenu';
 import MultiSelect from '../components/MultiSelect';
@@ -358,22 +359,20 @@ export default function ModuleEventos(){
   const traerBQ=async()=>{
     const ev=events.find(e=>e.id===activeId); if(!ev||!ev.fechaInicio||!ev.fechaFin) return;
     if(salesRows.length>0 && !window.confirm('Ya hay ventas cargadas para este evento. Traerlas de BigQuery las REEMPLAZARÁ. ¿Continuar?')) return;
-    let tok=localStorage.getItem('gop_api_token')||''; if(!tok){ tok=window.prompt('Token de GO PLANNER (GOP_API_TOKEN):')||''; if(!tok) return; localStorage.setItem('gop_api_token',tok); }
     const sec=window.prompt('Secciones (número o nombre, separadas por coma):',localStorage.getItem('gop_eventos_secs')||'870,872,873,892'); if(!sec) return;
     localStorage.setItem('gop_eventos_secs',sec);
     const needSnap=snapRows.length===0 && new Date().toLocaleDateString('en-CA')<=ev.fechaInicio;
     setBqBusy(true);
     try{
-      const get=async url=>{ const r=await fetch(url,{headers:{'x-gop-token':tok}}); const txt=await r.text(); if(r.status===401) localStorage.removeItem('gop_api_token'); if(!r.ok) throw new Error(txt); return txt; };
       if(needSnap){
-        const {rows,error}=parseSnapshotCSV(await get(`/api/bq?source=eventos_oh&secciones=${encodeURIComponent(sec)}`));
+        const {rows,error}=parseSnapshotCSV(await fetchBQ('eventos_oh',{secciones:sec}));
         if(error) throw new Error(error); if(!rows.length) throw new Error('BigQuery no regresó SKUs con OH para esas secciones.');
         setSnapRows(rows); idbSet(`snap_${activeId}`,rows).catch(()=>{});
       }
       const shift=(s,days,yrs=0)=>{ const d=new Date(s+'T00:00:00Z'); d.setUTCFullYear(d.getUTCFullYear()+yrs); d.setUTCDate(d.getUTCDate()+days); return d.toISOString().slice(0,10); };
       const wins=[]; for(const yrs of [0,-1]){ let a=shift(ev.fechaInicio,0,yrs); const z=shift(ev.fechaFin,0,yrs); while(a<=z){ const b=shift(a,2); wins.push([a,b<z?b:z]); a=shift(b,1); } }
       const parts=[];
-      for(let i=0;i<wins.length;i+=4) parts.push(...await Promise.all(wins.slice(i,i+4).map(([a,b])=>get(`/api/bq?source=eventos_ventas&ini=${a}&fin=${b}&secciones=${encodeURIComponent(sec)}`))));
+      for(let i=0;i<wins.length;i+=4) parts.push(...await Promise.all(wins.slice(i,i+4).map(([a,b])=>fetchBQ('eventos_ventas',{ini:a,fin:b,secciones:sec}))));
       const ok=parts.filter(t=>t.trim()); if(!ok.length) throw new Error('BigQuery no regresó ventas para esas fechas/secciones.');
       const csv=[ok[0],...ok.slice(1).map(t=>t.slice(t.indexOf('\n')+1))].join('\n');
       const {rows,error}=parseSalesCSV(csv); if(error) throw new Error(error); if(!rows.length) throw new Error('No se encontraron filas válidas.');
