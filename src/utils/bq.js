@@ -1,48 +1,82 @@
-// fetchBQ(source, params) → texto CSV.
-// Si hay VITE_GAS_URL usa el puente de Apps Script (login con Google, solo @suburbia.com.mx);
-// si no, cae a /api/bq con el token compartido (cuenta de servicio en Vercel/Cloud Run).
-const GAS_URL = import.meta.env.VITE_GAS_URL;
-const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
-const DOMINIO = 'suburbia.com.mx';
-const KEY = 'gop_id_token';
+// fetchBQ(source, params) → texto CSV con los encabezados que ya esperan los módulos.
+// Con VITE_GOOGLE_CLIENT_ID: cada usuario inicia sesión con su cuenta de Google y el navegador consulta BigQuery directo
+// con SUS permisos (BigQuery decide qué puede leer cada quien). Sin esa variable cae a /api/bq (cuenta de servicio + token).
+import { QUERIES } from '../../api/_queries.js';
 
-const loadGis = () => window.google?.accounts?.id ? Promise.resolve() : new Promise((ok, ko) => {
+const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID;
+const PROJECT = import.meta.env.VITE_BQ_PROJECT || 'crp-pro-dwh-semanticagold'; // proyecto donde se corren (y cobran) los jobs
+const DS = 'crp-pro-dwh-semanticagold.mus_pro_dwh_views_sap';
+const SCOPE = 'https://www.googleapis.com/auth/bigquery.readonly';
+const DOMINIO = 'suburbia.com.mx';
+const KEY = 'gop_bq_token';
+
+const loadGis = () => window.google?.accounts?.oauth2 ? Promise.resolve() : new Promise((ok, ko) => {
   const s = document.createElement('script');
   s.src = 'https://accounts.google.com/gsi/client'; s.onload = ok; s.onerror = () => ko(new Error('No cargó Google Sign-In'));
   document.head.appendChild(s);
 });
 
-const expOf = (t) => { try { return JSON.parse(atob(t.split('.')[1].replace(/-/g, '+').replace(/_/g, '/'))).exp * 1000; } catch { return 0; } };
-
 let pending = null;
-const idToken = () => {
-  const t = localStorage.getItem(KEY);
-  if (t && expOf(t) - Date.now() > 60000) return Promise.resolve(t);
+const accessToken = () => {
+  try { const c = JSON.parse(sessionStorage.getItem(KEY) || 'null'); if (c && c.exp - Date.now() > 60000) return Promise.resolve(c.t); } catch { /* sin token */ }
   return pending ||= loadGis().then(() => new Promise((ok, ko) => {
-    // Overlay con el botón de Google (One Tap puede estar bloqueado; el botón siempre funciona)
     const ov = document.createElement('div');
     ov.style.cssText = 'position:fixed;inset:0;z-index:99999;background:rgba(0,0,0,.55);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:12px;font:14px system-ui;color:#fff';
-    ov.innerHTML = `<div>Inicia sesión con tu cuenta @${DOMINIO} para traer datos</div><div id="gop-gis"></div><button style="opacity:.7">Cancelar</button>`;
+    ov.innerHTML = `<div>Inicia sesión con tu cuenta @${DOMINIO} para traer datos de BigQuery</div><button id="gop-go" style="padding:10px 18px;border-radius:8px;background:#7c3aed;color:#fff;font-weight:700">Iniciar sesión con Google</button><button id="gop-x" style="opacity:.7">Cancelar</button>`;
     document.body.appendChild(ov);
-    const close = () => { ov.remove(); pending = null; };
-    ov.querySelector('button').onclick = () => { close(); ko(new Error('Inicio de sesión cancelado')); };
-    window.google.accounts.id.initialize({
-      client_id: CLIENT_ID, hd: DOMINIO, auto_select: true,
-      callback: ({ credential }) => { localStorage.setItem(KEY, credential); close(); ok(credential); },
+    const done = () => { ov.remove(); pending = null; };
+    const client = window.google.accounts.oauth2.initTokenClient({
+      client_id: CLIENT_ID, scope: SCOPE, hd: DOMINIO,
+      callback: (r) => {
+        done();
+        if (r.error) return ko(new Error(`Google: ${r.error_description || r.error}`));
+        sessionStorage.setItem(KEY, JSON.stringify({ t: r.access_token, exp: Date.now() + r.expires_in * 1000 }));
+        ok(r.access_token);
+      },
+      error_callback: (e) => { done(); ko(new Error(`Inicio de sesión: ${e.type || 'cancelado'}`)); },
     });
-    window.google.accounts.id.renderButton(ov.querySelector('#gop-gis'), { theme: 'filled_blue', size: 'large', text: 'signin_with' });
+    ov.querySelector('#gop-go').onclick = () => client.requestAccessToken(); // el clic abre el popup (requiere gesto del usuario)
+    ov.querySelector('#gop-x').onclick = () => { done(); ko(new Error('Inicio de sesión cancelado')); };
   }));
 };
 
-export async function fetchBQ(source, params = {}) {
-  if (GAS_URL) {
-    const r = await fetch(GAS_URL, { method: 'POST', body: JSON.stringify({ id_token: await idToken(), source, params }) });
-    const txt = await r.text();
-    const m = txt.match(/^ERROR (\d+)\n/);
-    if (m) { if (m[1] === '401') localStorage.removeItem(KEY); throw new Error(txt.slice(m[0].length)); }
-    if (!r.ok) throw new Error(txt);
-    return txt;
+const api = async (url, token, body) => {
+  const r = await fetch(url, { method: body ? 'POST' : 'GET', headers: { Authorization: `Bearer ${token}`, ...(body ? { 'Content-Type': 'application/json' } : {}) }, body: body && JSON.stringify(body) });
+  const j = await r.json().catch(() => ({}));
+  if (!r.ok) { if (r.status === 401) sessionStorage.removeItem(KEY); throw new Error(j.error?.message || `HTTP ${r.status}`); }
+  return j;
+};
+
+const cell = (v) => { if (v === null || v === undefined) return ''; const s = String(v); return /[",\n\r]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+
+async function directo(source, params) {
+  const q = QUERIES[source];
+  if (!q) throw new Error(`Fuente desconocida: ${source}`);
+  const sql = q.sql(DS);
+  if (q.pendiente || sql.includes('TODO_')) throw new Error(`Consulta pendiente: falta el SQL real de «${source}» en api/_queries.js`);
+  const token = await accessToken();
+  const base = `https://bigquery.googleapis.com/bigquery/v2/projects/${PROJECT}/queries`;
+  let res = await api(base, token, {
+    query: sql, useLegacySql: false, location: 'US', timeoutMs: 60000, maxResults: 50000, parameterMode: 'NAMED',
+    queryParameters: (q.params || []).map((p) => ({ name: p, parameterType: { type: 'STRING' }, parameterValue: { value: String(params[p] ?? '') } })),
+  });
+  const jobId = res.jobReference.jobId;
+  while (!res.jobComplete) {
+    await new Promise((r) => setTimeout(r, 1000));
+    res = await api(`${base}/${jobId}?location=US&maxResults=50000`, token);
   }
+  const lines = [res.schema.fields.map((f) => f.name).join(',')];
+  const add = (rows) => (rows || []).forEach((r) => lines.push(r.f.map((c) => cell(c.v)).join(',')));
+  add(res.rows);
+  for (let page = res.pageToken; page;) {
+    const p = await api(`${base}/${jobId}?location=US&maxResults=50000&pageToken=${encodeURIComponent(page)}`, token);
+    add(p.rows); page = p.pageToken;
+  }
+  return lines.join('\n');
+}
+
+export async function fetchBQ(source, params = {}) {
+  if (CLIENT_ID) return directo(source, params);
   let tok = localStorage.getItem('gop_api_token') || '';
   if (!tok) { tok = window.prompt('Token de GO PLANNER (GOP_API_TOKEN):') || ''; if (!tok) throw new Error('Sin token'); localStorage.setItem('gop_api_token', tok); }
   const r = await fetch(`/api/bq?${new URLSearchParams({ source, ...params })}`, { headers: { 'x-gop-token': tok } });
