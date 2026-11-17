@@ -108,18 +108,42 @@ function emptyForm(team) {
 }
 
 // --- Backend: Google Sheets vía Apps Script (una hoja "KV" de key/value) ---
+// Una celda de Sheets acepta máx. 50,000 caracteres: si el valor es más largo, el Apps Script truena
+// y el navegador solo ve "Failed to fetch". Los valores largos se guardan en trozos (key__0, key__1…)
+// y la llave principal queda como "__CHUNKS__:n".
+const CHUNK = 40000;
+const CHUNK_TAG = '__CHUNKS__:';
 async function kvLoadAll() {
   const res = await fetch(APPS_SCRIPT_URL);
   if (!res.ok) throw new Error('HTTP ' + res.status);
-  return res.json();
+  const all = await res.json();
+  Object.keys(all).forEach((k) => {
+    const v = all[k];
+    if (typeof v === 'string' && v.startsWith(CHUNK_TAG)) {
+      const n = Number(v.slice(CHUNK_TAG.length));
+      all[k] = Array.from({ length: n }, (_, i) => String(all[`${k}__${i}`] ?? '')).join('');
+    }
+  });
+  return all;
 }
-async function kvSet(key, value) {
+async function kvPost(key, value) {
   const res = await fetch(APPS_SCRIPT_URL, {
     method: 'POST',
     headers: { 'Content-Type': 'text/plain' },
     body: JSON.stringify({ key, value }),
   });
   if (!res.ok) throw new Error('HTTP ' + res.status);
+}
+async function kvSet(key, value) {
+  if (typeof value !== 'string' || value.length <= CHUNK) return kvPost(key, value);
+  const parts = [];
+  for (let i = 0; i < value.length;) {
+    let j = Math.min(i + CHUNK, value.length);
+    while (j < value.length && /[=+\-@\d\s]/.test(value[j])) j--; // que ningún trozo empiece como fórmula o número
+    parts.push(value.slice(i, j)); i = j;
+  }
+  for (let i = 0; i < parts.length; i++) await kvPost(`${key}__${i}`, parts[i]);
+  await kvPost(key, CHUNK_TAG + parts.length);
 }
 
 const HO_DEFAULT = { lives: 3, days: {}, strikes: [] };
