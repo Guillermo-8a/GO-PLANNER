@@ -113,6 +113,11 @@ function emptyForm(team) {
 // y la llave principal queda como "__CHUNKS__:n".
 const CHUNK = 40000;
 const CHUNK_TAG = '__CHUNKS__:';
+// Dos juegos de trozos (a / b): se escribe el que no está en uso y al final se cambia el marcador,
+// así quien lea a la mitad del guardado ve el tablero anterior completo y no una mezcla.
+const slotInUse = {};
+// Guardados en curso: mientras haya uno (o acabe de terminar) el refresco automático no pisa lo local.
+const kvSync = { pending: 0, lastDone: 0 };
 async function kvLoadAll() {
   const res = await fetch(APPS_SCRIPT_URL);
   if (!res.ok) throw new Error('HTTP ' + res.status);
@@ -120,8 +125,10 @@ async function kvLoadAll() {
   Object.keys(all).forEach((k) => {
     const v = all[k];
     if (typeof v === 'string' && v.startsWith(CHUNK_TAG)) {
-      const n = Number(v.slice(CHUNK_TAG.length));
-      all[k] = Array.from({ length: n }, (_, i) => String(all[`${k}__${i}`] ?? '')).join('');
+      const [slot, n] = v.slice(CHUNK_TAG.length).split(':').length === 2 ? v.slice(CHUNK_TAG.length).split(':') : ['', v.slice(CHUNK_TAG.length)];
+      slotInUse[k] = slot;
+      const pre = slot ? `${k}__${slot}` : `${k}_`;
+      all[k] = Array.from({ length: Number(n) }, (_, i) => String(all[`${pre}_${i}`] ?? '')).join('');
     }
   });
   return all;
@@ -134,7 +141,7 @@ async function kvPost(key, value) {
   });
   if (!res.ok) throw new Error('HTTP ' + res.status);
 }
-async function kvSet(key, value) {
+async function kvWrite(key, value) {
   if (typeof value !== 'string' || value.length <= CHUNK) return kvPost(key, value);
   const parts = [];
   for (let i = 0; i < value.length;) {
@@ -142,8 +149,18 @@ async function kvSet(key, value) {
     while (j < value.length && /[=+\-@\d\s]/.test(value[j])) j--; // que ningún trozo empiece como fórmula o número
     parts.push(value.slice(i, j)); i = j;
   }
-  for (let i = 0; i < parts.length; i++) await kvPost(`${key}__${i}`, parts[i]);
-  await kvPost(key, CHUNK_TAG + parts.length);
+  const slot = slotInUse[key] === 'a' ? 'b' : 'a';
+  for (let i = 0; i < parts.length; i++) await kvPost(`${key}__${slot}_${i}`, parts[i]);
+  await kvPost(key, `${CHUNK_TAG}${slot}:${parts.length}`);
+  slotInUse[key] = slot;
+}
+// Los guardados van en fila (uno detrás de otro) para que dos cambios rápidos no se encimen.
+let kvQueue = Promise.resolve();
+function kvSet(key, value) {
+  kvSync.pending++;
+  const job = kvQueue.then(() => kvWrite(key, value));
+  kvQueue = job.catch(() => {});
+  return job.finally(() => { kvSync.pending--; kvSync.lastDone = Date.now(); });
 }
 
 const HO_DEFAULT = { lives: 3, days: {}, strikes: [] };
@@ -185,8 +202,11 @@ export default function TeamTrackerPage() {
 
   async function loadAll({ silent } = {}) {
     try {
+      const startedAt = Date.now();
       const all = await kvLoadAll();
       if (editingRef.current) return; // no pisar mientras hay algo abierto
+      // lectura vieja: empezó antes de que terminara un guardado (o hay uno en curso) → se descarta
+      if (kvSync.pending > 0 || startedAt < kvSync.lastDone + 2000) return;
       const nextTasks = all['tasks-board'] ? JSON.parse(all['tasks-board']) : [];
       const nextTeam = all['team-roster'] ? JSON.parse(all['team-roster']) : [];
       const nextPin = all['admin-pin'] != null && all['admin-pin'] !== '' ? String(all['admin-pin']) : null;
