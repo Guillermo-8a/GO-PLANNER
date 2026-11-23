@@ -254,4 +254,15 @@ export const CSV_SCHEMAS = [
       },
     ],
   },
+  {
+    module: 'Mapa de tiendas',
+    formats: [
+      {
+        title: 'Catálogo de tiendas',
+        desc: 'Una fila por tienda. Con LAT/LNG (o COORDENADAS "19.43, -99.13") se escanea directo; sin coordenadas, "Ubicar" las busca en Google con TIENDA + DIRECCION + CIUDAD. El escaneo usa /api/places (env GOOGLE_MAPS_KEY en Vercel).',
+        columns: ['CENTRO*', 'TIENDA*', 'LAT', 'LNG', 'DIRECCION', 'CIUDAD', 'ZONA'],
+        template: [['0101', 'Suburbia Toreo', 19.4545, -99.2185, 'Blvd. Manuel Ávila Camacho 5', 'Naucalpan', 'Metro']],
+      },
+    ],
+  },
 ];

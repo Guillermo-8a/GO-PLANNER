@@ -1,7 +1,7 @@
 // Contenido de la página About: pilares, módulos (todos los del menú de la app), problemas que resuelve y FAQ.
 // Si agregas un módulo a NAV_ITEMS en App.jsx, agrégalo aquí también.
 import {
-  BarChart3, PieChart, Radar, ShoppingCart, TrendingUp, Map, RefreshCw, Stethoscope, BarChart2, ArrowLeftRight, Wallet,
+  BarChart3, PieChart, Radar, ShoppingCart, TrendingUp, Map, RefreshCw, Stethoscope, Store, BarChart2, ArrowLeftRight, Wallet,
   CalendarDays, Tag, ListChecks, Truck, Hourglass, Percent, ShieldCheck,
 } from 'lucide-react';
 
@@ -27,6 +27,7 @@ export const PILLARS = [
       { name: 'Distribución', Icon: Map, desc: 'Surtido inicial por clúster con curva de tallas, topes de MOS y la estacionalidad del retail en México.', chips: ['Push / Pack', 'Curva de tallas'] },
       { name: 'Resurtido', Icon: RefreshCw, desc: 'Pedido sugerido por días de inventario: demanda diaria × (lead time + cobertura + seguridad) − lo que ya tienes.', chips: ['Pedido sugerido', 'Por clúster'] },
       { name: 'Diagnóstico de demanda', Icon: Stethoscope, desc: 'Clasifica cada modelo por cómo se vende (suave, errático, intermitente o irregular) y te dice qué hacer con él.', chips: ['Básico vs temporada', 'Acción por modelo'] },
+      { name: 'Mapa de tiendas', Icon: Store, desc: 'Ubica cada tienda con Google Maps: si está en plaza o junto a un Walmart y qué tiene a 1 y 3 km (hospitales, escuelas, parques, deportivos, playa, metro) para clusterizar por cercanía y que no falte el producto que pide la zona.', chips: ['Google Places', 'Perfil de cercanía'] },
     ],
   },
   {

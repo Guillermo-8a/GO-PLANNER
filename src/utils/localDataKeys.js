@@ -14,4 +14,5 @@ export const LOCAL_DATA_KEYS = {
   validador: ['gop_validador_files'],
   demanda: ['gop_demanda_files'],
   comparador: ['gop_comparador'],
+  tiendas: ['gop_tiendas'],
 };

@@ -28,13 +28,14 @@ import ModuleMargen from "./modules/ModuleMargen";
 import ModuleValidador from "./modules/ModuleValidador";
 import ModuleDemanda from "./modules/ModuleDemanda";
 import ModuleComparador from "./modules/ModuleComparador";
+import ModuleTiendas from "./modules/ModuleTiendas";
 import { GoBotProvider } from "./context/GoBotContext";
 import { LOCAL_DATA_KEYS } from "./utils/localDataKeys";
 import GoBotStage, { GoBotRailButton } from "./components/GoBotRightDock";
 
 import {
   Layers, Bell, Sun, Moon, ShoppingCart, Map, LayoutDashboard, Radar,
-  HelpCircle, Wallet, Zap, Search, Mail, Circle, Tag, PieChart, ListChecks, Truck, Hourglass, Stethoscope, ShieldCheck, Percent,} from 'lucide-react';
+  HelpCircle, Wallet, Zap, Search, Mail, Circle, Tag, PieChart, ListChecks, Truck, Hourglass, Stethoscope, ShieldCheck, Percent, Store,} from 'lucide-react';
 
 // ─── Paletas de tema ──────────────────────────────────────────────────────────
 export const THEMES = {
@@ -130,6 +131,7 @@ const NAV_ITEMS = [
   { id: 'comparador', label: 'Radar Competencia', Icon: Radar, desc: 'Precios vs Coppel, Liverpool, Amazon y más', dataKey: null },
   { id: 'validador', label: 'Validador de parametrizaciones', Icon: ShieldCheck, desc: 'Combinaciones de O9, tipos de afectación y CSV corregido', dataKey: null },
   { id: 'margen', label: 'Margen', Icon: Percent, desc: 'Dónde se mueve el margen: división, sección y marca', dataKey: null },
+  { id: 'tiendas', label: 'Mapa de tiendas', Icon: Store, desc: 'Plaza, Walmart y puntos de interés a 1–3 km por tienda', dataKey: null },
   { id: 'nulo', label: 'Nulo Movimiento', Icon: Hourglass, desc: 'Mercancía sin venta por SKU × centro', dataKey: null },
 ];
 
@@ -158,7 +160,7 @@ const PIPELINE_STEPS = [
 // ─── Mundos (agrupación del sidebar y del dashboard) ──────────────────────────
 const NAV_GROUPS = [
   { id: 'financial',  label: 'Financial',        Icon: Calculator,   color: '#B39DDB', items: ['planning', 'suplementarios', 'comparador'] },
-  { id: 'demand',     label: 'Demand Planner',   Icon: TrendingUp,   color: '#E0BB3E', items: ['assortment', 'forecast', 'distribucion', 'resurtido', 'demanda'] },
+  { id: 'demand',     label: 'Demand Planner',   Icon: TrendingUp,   color: '#E0BB3E', items: ['assortment', 'forecast', 'distribucion', 'resurtido', 'demanda', 'tiendas'] },
   { id: 'inventory',  label: 'Inventory Control',Icon: Boxes,        color: '#8A73AD', items: ['dispersion', 'traslados', 'chequera'] },
   { id: 'checkcoo',   label: 'Check Coo',        Icon: CircleCheck,  color: '#9A9CA3', items: ['dayli', 'eventos', 'allocation', 'pedidos', 'nulo', 'margen', 'validador'] },
 ];
@@ -499,6 +501,7 @@ function Shell() {
       case 'validador': return <ModuleValidador {...moduleProps} />;
       case 'demanda': return <ModuleDemanda {...moduleProps} />;
       case 'comparador': return <ModuleComparador {...moduleProps} />;
+      case 'tiendas': return <ModuleTiendas {...moduleProps} />;
       default:             return <Dashboard {...moduleProps} />;
     }
   };
