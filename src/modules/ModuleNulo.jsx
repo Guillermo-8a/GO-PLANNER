@@ -14,7 +14,7 @@ import MS from '../components/MultiSelect';
 const LS_CFG = 'gop_nulo_cfg', LS_FILES = 'gop_nulo_files', DB_NAME = 'gop_nulo_db';
 
 // ─── Utilidades ───────────────────────────────────────────────────────────────
-const norm = (s) => String(s ?? '').trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[_.]+/g, ' ').replace(/\s+/g, ' ').trim();
+const norm = (s) => String(s ?? '').trim().toUpperCase().normalize('NFD').replace(/[̀-ͯ]/g, '').replace(/[_.*]+/g, ' ').replace(/\s+/g, ' ').trim();
 const num = (v) => (typeof v === 'number' ? v : parseFloat(String(v ?? '').replace(/[$,\s]/g, '')));
 const str = (v) => String(v ?? '').trim();
 const ctr = (v) => { const s = str(v); return /^\d{1,3}$/.test(s) ? s.padStart(4, '0') : s; };
